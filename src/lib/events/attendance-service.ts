@@ -326,6 +326,77 @@ export async function checkIn(input: {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Check-in por crachá (leitor de QR Code)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Credencia pelo TOKEN do crachá, em vez do id da inscrição.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE TOKEN, E NÃO LEITURA DE CÂMERA NO NAVEGADOR
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O QR Code do crachá carrega `badgeToken`. No balcão, o equipamento real é um
+ *  LEITOR USB, que se comporta como teclado: lê o código e "digita" o conteúdo no
+ *  campo focado. Aceitar o token por formulário atende esse fluxo sem exigir
+ *  câmera, permissão de vídeo e uma API de decodificação que varia por navegador —
+ *  e funciona igual em um tablet sem câmera traseira.
+ *
+ *  O token é único globalmente (`Registration.badgeToken`), então a busca não
+ *  precisa de contexto adicional além do tenant — e a RLS garante que um crachá de
+ *  outra instituição não seja encontrado aqui.
+ */
+export async function checkInByBadgeToken(input: {
+  tenantId: string;
+  badgeToken: string;
+  staffUserId: string;
+  now?: Date;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): Promise<AttendanceResult<CheckinOutcome & { registrationId: string }>> {
+  const token = input.badgeToken.trim();
+
+  if (token.length === 0) {
+    return { ok: false as const, code: 'NOT_FOUND', message: 'Informe o código do crachá.' };
+  }
+
+  try {
+    const registration = await withTenant(input.tenantId, (tx) =>
+      tx.registration.findFirst({
+        where: { tenantId: input.tenantId, badgeToken: token, deletedAt: null },
+        select: { id: true },
+      }),
+    );
+
+    if (!registration) {
+      return {
+        ok: false as const,
+        code: 'NOT_FOUND',
+        message: 'Crachá não encontrado nesta instituição. Confira o código ou faça a busca por nome.',
+      };
+    }
+
+    const result = await checkIn({
+      tenantId: input.tenantId,
+      registrationId: registration.id,
+      staffUserId: input.staffUserId,
+      now: input.now,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+    });
+
+    if (!result.ok) return result;
+
+    return { ...result, registrationId: registration.id };
+  } catch (error) {
+    console.error(`[attendance] falha no check-in por crachá: ${errorMessage(error)}`);
+    return {
+      ok: false as const,
+      code: 'INTERNAL',
+      message: 'Não foi possível registrar a entrada pelo crachá.',
+    };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Check-out
 // ───────────────────────────────────────────────────────────────────────────────
 export interface CheckoutOutcome {

@@ -73,7 +73,7 @@ export async function recordAudit(input: AuditInput, tx?: TxClient): Promise<voi
     action: input.action,
     entityType: input.entityType.slice(0, 80),
     entityId: input.entityId ?? null,
-    changes: sanitizeChanges(input.changes ?? {}),
+    changes: sanitizeChanges(input.changes ?? {}) as unknown as object,
     ipAddress: input.ipAddress?.slice(0, 64) ?? null,
     userAgent: input.userAgent?.slice(0, 500) ?? null,
   };

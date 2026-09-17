@@ -5,7 +5,9 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listCheckinQueue } from '@/lib/events/attendance-service';
 import { CheckinQueue } from '@/components/gamification/checkin-queue';
+import { BadgeCheckinForm } from '@/components/gamification/badge-checkin-form';
 import { checkInAction, checkOutAction } from '@/app/actions/attendance-actions';
+import { checkInByBadgeAction } from '@/app/actions/admin-actions';
 
 export const metadata = { title: 'Credenciamento' };
 export const dynamic = 'force-dynamic';
@@ -82,6 +84,13 @@ export default async function CheckinPage({
         </p>
       ) : (
         <>
+          {/*
+            O credenciamento por crachá vem PRIMEIRO: no balcão, o fluxo comum é o
+            QR Code. A busca por nome é o caminho de exceção (crachá perdido, leitor
+            quebrado) — não o contrário.
+          */}
+          <BadgeCheckinForm tenantSlug={tenantSlug} action={checkInByBadgeAction} />
+
           <form method="get" className="flex flex-wrap items-end gap-3" data-testid="checkin-filters">
             <label className="space-y-1 text-xs font-medium">
               Evento

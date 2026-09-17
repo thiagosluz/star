@@ -22,7 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { withTenant, type TxClient } from '@/lib/db/tenant-client';
+import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { resolveTheme } from '@/domain/events/landing-page';
@@ -54,7 +54,7 @@ export interface EventInput {
   subtitle?: string | null;
   summary?: string | null;
   description?: string | null;
-  status: 'DRAFT' | 'PUBLISHED' | 'REGISTRATION_OPEN' | 'REGISTRATION_CLOSED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED';
+  status: 'DRAFT' | 'PUBLISHED' | 'REGISTRATION_OPEN' | 'REGISTRATION_CLOSED' | 'IN_PROGRESS' | 'FINISHED' | 'CANCELED' | 'ARCHIVED';
   modality: 'IN_PERSON' | 'ONLINE' | 'HYBRID';
   startsAt: Date;
   endsAt: Date;
@@ -80,8 +80,7 @@ export interface EventInput {
  */
 export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventId: string; created: boolean }>> {
   try {
-    const theme = resolveTheme(input.theme ?? {});
-
+    const resolved = resolveTheme(input.theme ?? {});
     if (input.endsAt.getTime() <= input.startsAt.getTime()) {
       return {
         ok: false as const,
@@ -106,8 +105,8 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
         venueName: input.venueName ?? null,
         city: input.city ?? null,
         state: input.state ?? null,
-        primaryColor: input.primaryColor ?? theme.primaryColor,
-        theme: theme as unknown as object,
+        primaryColor: input.primaryColor ?? resolved.theme.primaryColor,
+        theme: resolved.theme as unknown as object,
         registrationOpensAt: input.registrationOpensAt ?? null,
         registrationClosesAt: input.registrationClosesAt ?? null,
         cfpOpensAt: input.cfpOpensAt ?? null,
@@ -484,7 +483,7 @@ export interface ActivityInput {
     | 'ORAL_PRESENTATION'
     | 'CULTURAL'
     | 'OTHER';
-  status: 'DRAFT' | 'SCHEDULED' | 'FULL' | 'CANCELED' | 'COMPLETED';
+  status: 'DRAFT' | 'SCHEDULED' | 'FULL' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED';
   modality: 'IN_PERSON' | 'ONLINE' | 'HYBRID';
   startsAt: Date;
   endsAt: Date;
@@ -588,7 +587,7 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
         });
 
         if (conflict.hasConflict) {
-          const clashing = conflict.conflicts?.[0];
+          const clashing = conflict.roomConflicts[0];
           return {
             ok: false as const,
             code: 'ROOM_CONFLICT',
@@ -738,8 +737,28 @@ export async function saveTrack(input: TrackInput): Promise<AdminResult<{ trackI
 
     const { rubric, usedDefault, errors } = parseRubric(input.rubric);
 
-    if (errors.length > 0 && !usedDefault) {
-      return { ok: false as const, code: 'INVALID_INPUT', message: 'Rubrica inválida.', details: errors };
+    /**
+     * ─────────────────────────────────────────────────────────────────────────
+     *  RUBRICA INVÁLIDA É RECUSADA — NÃO SUBSTITUÍDA PELA PADRÃO
+     * ─────────────────────────────────────────────────────────────────────────
+     *  `parseRubric` devolve a rubrica padrão em dois casos MUITO diferentes:
+     *
+     *    • nada foi informado (sem erros)  → aplicar a padrão é o esperado;
+     *    • algo inválido foi informado     → substituir em silêncio faria o
+     *      organizador acreditar que a rubrica dele foi salva, quando o sistema
+     *      gravou OUTRA. Ele só descobriria ao ver os pareceres calculados por
+     *      critérios que não definiu.
+     *
+     *  Erro presente significa que o organizador tentou definir algo e errou — e a
+     *  resposta precisa dizer o que está errado.
+     */
+    if (errors.length > 0) {
+      return {
+        ok: false as const,
+        code: 'INVALID_INPUT',
+        message: 'Rubrica inválida — corrija os critérios informados.',
+        details: errors.map((entry) => entry.message),
+      };
     }
 
     return await withTenant(input.tenantId, async (tx) => {
@@ -794,7 +813,7 @@ export async function saveTrack(input: TrackInput): Promise<AdminResult<{ trackI
           ok: true as const,
           trackId: before.id,
           created: false,
-          rubricWarning: usedDefault && errors.length > 0 ? 'Rubrica inválida: foi aplicada a rubrica padrão.' : null,
+          rubricWarning: usedDefault ? 'Nenhuma rubrica informada: foi aplicada a rubrica padrão.' : null,
         };
       }
 
