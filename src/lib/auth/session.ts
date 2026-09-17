@@ -33,7 +33,7 @@ import { cookies } from 'next/headers';
 import { auth } from '@/lib/auth/auth';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant } from '@/lib/db/tenant-client';
-import type { Principal, RoleAssignment } from '@/domain/rbac/authorization';
+import type { PlatformPrincipal, Principal, RoleAssignment } from '@/domain/rbac/authorization';
 
 /** Nome do cookie que carrega a instituição ativa. */
 export const ACTIVE_TENANT_COOKIE = 'ef_tenant';
@@ -227,6 +227,80 @@ export async function loadPrincipal(
     membershipStatus,
     assignments: mapped,
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Principal de PLATAFORMA (FASE 9)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Carrega o principal de plataforma de um usuário.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTA LEITURA USA A CONEXÃO ADMINISTRATIVA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Papéis de plataforma têm `tenantId = NULL` e a policy de RLS compara a coluna
+ *  com o contexto da transação — ou seja, essas linhas são INVISÍVEIS para a role
+ *  de runtime, em qualquer contexto. Isso é deliberado: a governança da plataforma
+ *  não pertence a instituição alguma, então não deve ser alcançável por uma
+ *  consulta "de dentro" de um tenant.
+ *
+ *  Diferente dos outros usos de `adminPrisma` (CLI/seed), aqui a leitura é feita em
+ *  nome de uma REQUISIÇÃO de usuário — por isso a consulta é estritamente escopada
+ *  por `userId` e `scope = PLATFORM`, e devolve apenas o necessário para autorizar.
+ *
+ *  Um usuário sem concessão de plataforma recebe `assignments: []` e o `can()`
+ *  nega tudo (fail-closed).
+ */
+export async function loadPlatformPrincipal(userId: string): Promise<PlatformPrincipal> {
+  const assignments = await adminPrisma.roleAssignment.findMany({
+    where: {
+      userId,
+      scope: 'PLATFORM',
+      tenantId: null,
+      revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: {
+      role: true,
+      scope: true,
+      eventId: true,
+      activityId: true,
+      expiresAt: true,
+      revokedAt: true,
+    },
+  });
+
+  return {
+    userId,
+    tenantId: null,
+    // Não existe "vínculo" de plataforma a validar: quem tem a concessão vigente
+    // está operacional. O campo existe para reaproveitar `isMembershipOperational`.
+    membershipStatus: 'ACTIVE',
+    assignments: assignments.map((assignment) => ({
+      role: assignment.role,
+      scope: assignment.scope,
+      eventId: assignment.eventId,
+      activityId: assignment.activityId,
+      expiresAt: assignment.expiresAt,
+      revokedAt: assignment.revokedAt,
+    })),
+  };
+}
+
+/**
+ * Principal de plataforma da requisição atual (ou `null` sem sessão).
+ *
+ * Não usa `cache()` do React de propósito: este módulo também roda no worker, fora
+ * do Next.js — a mesma razão documentada no cliente de banco.
+ */
+export async function getPlatformContext(): Promise<{
+  user: AuthenticatedUser;
+  principal: PlatformPrincipal;
+} | null> {
+  const user = await getAuthenticatedUser();
+  if (!user) return null;
+
+  return { user, principal: await loadPlatformPrincipal(user.id) };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

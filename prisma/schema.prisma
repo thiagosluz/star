@@ -55,9 +55,11 @@ enum MembershipStatus {
   REMOVED
 }
 
-/// Papel RBAC. OWNER/ADMIN são escopo-tenant; os demais podem ser concedidos
-/// por evento ou até por atividade (ex.: coordenador de um único minicurso).
+/// Papel RBAC. SUPERADMIN é de PLATAFORMA; OWNER/ADMIN são escopo-tenant; os
+/// demais podem ser concedidos por evento ou até por atividade (ex.: coordenador
+/// de um único minicurso).
 enum RoleKey {
+  SUPERADMIN
   OWNER
   ADMIN
   ORGANIZER
@@ -72,6 +74,9 @@ enum RoleKey {
 
 /// Dimensão à qual uma atribuição de papel pertence.
 enum RoleScope {
+  /// Governança da PLATAFORMA (FASE 9). Não pertence a instituição alguma: a
+  /// atribuição tem `tenantId`, `eventId` e `activityId` NULOS.
+  PLATFORM
   TENANT
   EVENT
   ACTIVITY
@@ -432,6 +437,21 @@ model Tenant {
   locale       String  @default("pt-BR") @db.VarChar(10)
   timezone     String  @default("America/Bahia") @db.VarChar(64)
 
+  // ── Diretório público (FASE 9) ─────────────────────────────────────────────
+  /// Aparece na vitrine global de instituições. Desligar é a saída para quem não
+  /// quer ser descoberto, sem precisar sair da plataforma.
+  isPublic    Boolean @default(true)
+  /// Apresentação curta exibida no diretório e no card da instituição.
+  description String? @db.Text
+  /// Site institucional externo (validado por allowlist http/https).
+  websiteUrl  String? @db.VarChar(1024)
+
+  // ── Ciclo de vida (FASE 9) ─────────────────────────────────────────────────
+  /// Quando o tráfego foi cortado. Nulo em instituição operante.
+  suspendedAt      DateTime? @db.Timestamptz(6)
+  /// Justificativa OBRIGATÓRIA da suspensão — exibida na página de bloqueio.
+  suspensionReason String?   @db.VarChar(400)
+
   settings Json @default("{}")
 
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
@@ -665,14 +685,21 @@ model UserTenantProfile {
 /// Concessão de papel. `scope` + alvo definem onde o papel vale.
 /// Ex.: REVIEWER aplicado a um EVENT; SPEAKER aplicado a uma ACTIVITY.
 model RoleAssignment {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @db.Uuid
-  userId   String @db.Uuid
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Instituição da concessão.
+  ///
+  /// NULO em `scope = PLATFORM` (FASE 9): a governança da plataforma não pertence
+  /// a instituição alguma. A policy de RLS compara esta coluna com o contexto da
+  /// transação, então uma linha com NULL é INVISÍVEL para a role de runtime — os
+  /// papéis de plataforma só são lidos pela conexão administrativa.
+  tenantId String? @db.Uuid
+  userId   String  @db.Uuid
 
   role  RoleKey
   scope RoleScope
 
-  /// Preenchido conforme `scope`. Null em TENANT.
+  /// Preenchido conforme `scope`. Nulos em TENANT e em PLATFORM.
   eventId    String? @db.Uuid
   activityId String? @db.Uuid
 
@@ -686,7 +713,7 @@ model RoleAssignment {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   event    Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   activity Activity? @relation(fields: [activityId], references: [id], onDelete: Cascade)
@@ -696,6 +723,8 @@ model RoleAssignment {
   @@index([eventId, role])
   @@index([activityId, role])
   @@index([userId, revokedAt])
+  /// Papéis de PLATAFORMA são lidos por usuário, sem contexto de instituição.
+  @@index([userId, scope])
   @@map("role_assignments")
 }
 

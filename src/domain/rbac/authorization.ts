@@ -41,19 +41,32 @@ export interface RoleAssignment {
 }
 
 /**
- * Identidade autorizável dentro de UM tenant.
+ * Identidade autorizável.
  *
  * O acúmulo de papéis acontece aqui: `assignments` pode conter vários papéis
  * simultâneos (Participante no evento A, Palestrante no evento B, Revisor no
  * evento C) — inclusive mais de um no mesmo alvo.
+ *
+ * `tenantId` é **nulo** para um principal de PLATAFORMA (FASE 9): papéis de
+ * plataforma não pertencem a instituição alguma. O campo deixa de ser obrigatório
+ * exatamente para que essa distinção exista no TIPO — um papel de plataforma não
+ * pode ser confundido com um papel de tenant por engano de construção.
  */
 export interface Principal {
   userId: string;
-  tenantId: string;
+  tenantId: string | null;
   /** Status do vínculo (`UserTenantProfile.status`). */
   membershipStatus: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'REMOVED';
   assignments: readonly RoleAssignment[];
 }
+
+/**
+ * Principal de plataforma.
+ *
+ * Açúcar sintático sobre `Principal` com `tenantId: null`, deixando explícito em
+ * quem carrega o SuperAdmin que ele NÃO está operando dentro de uma instituição.
+ */
+export type PlatformPrincipal = Principal & { tenantId: null };
 
 /** Onde a permissão está sendo exercida. */
 export interface AuthorizationScope {
@@ -96,6 +109,18 @@ export function assignmentCoversScope(
   if (!scopeCovers(assignment.scope, target.scope)) return false;
 
   switch (assignment.scope) {
+    case 'PLATFORM':
+      /**
+       * Papel de plataforma não tem alvo: vale no escopo de plataforma e em mais
+       * nada (`scopeCovers` já recusou qualquer escopo de instituição antes de
+       * chegar aqui).
+       *
+       * A ausência deste `case` fazia a concessão de SuperAdmin cair no `default`
+       * e ser negada — o escopo novo existia no tipo e na hierarquia, mas a
+       * atribuição não autorizava nada.
+       */
+      return true;
+
     case 'TENANT':
       // Cobre tudo dentro do tenant.
       return true;

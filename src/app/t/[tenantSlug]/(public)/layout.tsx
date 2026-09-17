@@ -1,6 +1,6 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
-import { getTenantContext } from '@/lib/events/event-repository';
+import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 import { isValidSlug } from '@/domain/tenancy/resolution';
 
 /**
@@ -42,8 +42,27 @@ export default async function PublicTenantLayout({
     notFound();
   }
 
-  const tenant = await getTenantContext(tenantSlug);
-  if (!tenant) {
+  const lookup = await lookupTenant({
+    kind: 'resolved',
+    source: 'path',
+    identifier: tenantSlug,
+    isCustomDomain: false,
+  });
+
+  /**
+   * Instituição SUSPENSA não é "endereço que não existe": é conteúdo bloqueado.
+   * Por isso a página amigável de bloqueio, com o motivo — e o 404 fica reservado
+   * para o slug que realmente não existe.
+   *
+   * O Proxy já corta o tráfego antes de chegar aqui; esta checagem existe porque
+   * uma página pública também pode ser alcançada por renderização direta no
+   * servidor, e a decisão de bloquear não pode depender de uma única camada.
+   */
+  if (lookup.kind === 'not-operational') {
+    redirect(`/instituicao-bloqueada?slug=${encodeURIComponent(tenantSlug)}`);
+  }
+
+  if (lookup.kind !== 'ok') {
     notFound();
   }
 

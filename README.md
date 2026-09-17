@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 8 concluídas · **675 testes** unitários/integração · **35 testes E2E**
+> **Estado:** FASES 1 a 9 concluídas · **745 testes** unitários/integração · **41 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 
 ---
@@ -33,7 +33,7 @@ avaliação por pares e gamificação.
 
 | Domínio | Capacidade |
 |---|---|
-| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 10 papéis e 53 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
+| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 54 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
 | **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO e landing pages públicas personalizáveis |
 | **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
@@ -41,6 +41,7 @@ avaliação por pares e gamificação.
 | **Credenciamento** | Check-in/check-out com carga horária real, por busca ou por leitor de QR Code |
 | **Painel administrativo** | Eventos, salas, programação, trilhas, cartas, missões e certificados pela interface, com trilha de auditoria |
 | **Sorteios** | Sorteio por evento, dia ou atividade, elegível apenas por **presença real**, com amostragem criptográfica, hash auditável e revelação animada |
+| **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
 
 ---
 
@@ -187,6 +188,9 @@ Credenciamento ..... /t/ufba-demo/credenciamento    (equipe: busca e leitor de Q
 Painel admin ....... /t/ufba-demo/administracao     (gestão + trilha de auditoria)
 Sorteios ........... /t/ufba-demo/administracao/eventos/<id>/sorteios
 Validação pública .. /validar/<código>              (sem login)
+Diretório público .. /organizacoes                  (sem login: todas as instituições)
+Governança ......... /superadmin                    (só SuperAdmin; 404 para os demais)
+Instituição suspensa /instituicao-bloqueada?slug=<slug>
 ```
 
 ---
@@ -225,6 +229,23 @@ Validação pública .. /validar/<código>              (sem login)
 > **Observação sobre `carla@example.test`:** o vínculo com status `INVITED` **não
 > concede contexto** — a plataforma é *fail-closed*: sem vínculo ativo, a
 > instituição não aparece no seletor e o acesso é negado.
+
+### Primeiro SuperAdmin (governança da plataforma)
+
+O seed **não** cria um SuperAdmin, e isso é deliberado: a primeira concessão não pode
+depender de alguém que já a tenha. Crie a conta em `/signup` e conceda o papel pela
+conexão administrativa (a única que enxerga concessões de plataforma, que têm
+`tenantId = NULL`):
+
+```bash
+docker exec -it eventflow-postgres psql -U eventflow_admin -d eventflow -c "
+INSERT INTO role_assignments (id, \"tenantId\", \"userId\", role, scope, \"grantedAt\", \"updatedAt\", reason)
+SELECT gen_random_uuid(), NULL, id, 'SUPERADMIN', 'PLATFORM', now(), now(), 'Concessão inicial'
+FROM \"user\" WHERE email = 'seu.email@exemplo.test';"
+```
+
+A partir daí o painel `/superadmin/governanca` concede e revoga os demais — e
+`/superadmin` responde **404** para quem não tem o papel.
 
 ---
 
@@ -294,8 +315,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 617 testes (20 arquivos) — unit + integração com banco real
-npm run test:e2e          # 32 testes E2E contra o container de produção
+npm test                  # 745 testes (24 arquivos) — unit + integração com banco real
+npm run test:e2e          # 41 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro
@@ -324,16 +345,17 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | Documento | Conteúdo | ADRs |
 |---|---|---|
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
-| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 10 papéis (53 permissões hoje), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
+| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 10 papéis de instituição (54 permissões hoje, incluindo a de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
 | [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado | ADR-014 … 018 |
 | [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão | ADR-019 … 024 |
 | [`docs/fase-05-gamificacao.md`](docs/fase-05-gamificacao.md) | Motor de recompensas, XP idempotente, curva de níveis, prestígio, cartas, foil, missões, credenciamento | ADR-025 … 031 |
 | [`docs/fase-06-certificacao.md`](docs/fase-06-certificacao.md) | Elegibilidade, carga horária real, conteúdo canônico, assinatura HMAC, PDF/SVG, QR, fila BullMQ, validação pública | ADR-032 … 038 |
 | [`docs/fase-07-painel-admin-e2e.md`](docs/fase-07-painel-admin-e2e.md) | Painel administrativo, trilha de auditoria, validações de agenda ligadas, E2E completo e estado final do projeto | ADR-039 … 043 |
 | [`docs/fase-08-motor-de-sorteios.md`](docs/fase-08-motor-de-sorteios.md) | Sorteios por evento/dia/atividade, elegibilidade por presença real, amostragem criptográfica, trava pessimista na apuração, hash auditável e RLS por introspecção | ADR-044 … 049 |
+| [`docs/fase-09-diretorio-e-superadmin.md`](docs/fase-09-diretorio-e-superadmin.md) | Escopo `PLATFORM`, SuperAdmin, provisionamento atômico, suspensão com corte imediato de tráfego, métricas consolidadas e diretório público de instituições | ADR-050 … 059 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **49 decisões** registradas até aqui.
+> são **59 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -365,11 +387,16 @@ src/
 │   ├── gamification/  motor de recompensas, serviços, ganchos
 │   ├── certificates/  assinatura, renderização (PDF/SVG), serviço, fila
 │   ├── admin/         trilha de auditoria e catálogo do painel
+│   ├── platform/      governança global: repositório administrativo, serviços,
+│   │                  diretório público e guarda de plataforma (404)
 │   ├── storage/       cliente S3/MinIO (URLs pré-assinadas)
 │   └── tenancy/       resolução e cache de instituição
 ├── app/               Next.js
 │   ├── actions/       Server Actions (toda autorização é verificada aqui)
 │   ├── api/           Route Handlers (auth, health, download de certificado)
+│   ├── (public)/organizacoes     diretório público de instituições
+│   ├── superadmin/               painel de governança da plataforma
+│   ├── instituicao-bloqueada/    página de bloqueio (instituição suspensa)
 │   ├── t/[tenantSlug]/(public)  landing pages sem autenticação
 │   ├── t/[tenantSlug]/(app)     painel autenticado
 │   └── validar/[code]           validação pública de certificado
@@ -381,9 +408,9 @@ prisma/
 ├── scripts/           RLS, verificação de contrato, prova de isolamento
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              539 testes de regra pura (domínio, sem banco)
-├── integration/       136 testes com banco e storage reais
-└── e2e/               Playwright contra o container
+├── unit/              587 testes de regra pura (domínio, sem banco)
+├── integration/       158 testes com banco e storage reais
+└── e2e/               41 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**

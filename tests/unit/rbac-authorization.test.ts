@@ -82,10 +82,19 @@ describe('catálogo de permissões', () => {
     }
   });
 
-  it('OWNER tem todas as permissões e ADMIN tem um subconjunto próprio', () => {
-    expect(permissionsForRole('OWNER')).toHaveLength(ALL_PERMISSIONS.length);
+  it('OWNER tem todas as permissões de INSTITUIÇÃO — e nunca a de plataforma', () => {
+    /**
+     * A FASE 9 introduziu `platform:manage`, que não pertence a instituição alguma.
+     * O OWNER continua sendo o topo DENTRO da instituição, e é por isso que este
+     * teste mudou: antes ele afirmava "OWNER tem TODAS as permissões", o que passou
+     * a incluir governar a plataforma inteira. A asserção nova é mais forte — ela
+     * fixa a fronteira em vez de contar itens.
+     */
+    expect(permissionsForRole('OWNER')).toHaveLength(ALL_PERMISSIONS.length - 1);
+    expect(permissionsForRole('OWNER')).not.toContain(PERMISSIONS.PLATFORM_MANAGE);
     expect(permissionsForRole('ADMIN').length).toBeLessThan(ALL_PERMISSIONS.length);
     expect(permissionsForRole('ADMIN')).not.toContain(PERMISSIONS.TENANT_DELETE);
+    expect(permissionsForRole('ADMIN')).not.toContain(PERMISSIONS.PLATFORM_MANAGE);
   });
 
   it('nenhum papel comum recebe permissões destrutivas do tenant', () => {
@@ -238,11 +247,20 @@ describe('can() — decisão de acesso', () => {
     }
   });
 
-  it('permite ao OWNER qualquer permissão no escopo de tenant', () => {
+  it('permite ao OWNER qualquer permissão de instituição no escopo de tenant', () => {
     const p = principal([{ role: 'OWNER', scope: 'TENANT' }]);
     for (const permission of ALL_PERMISSIONS) {
       // Permissões `:own` ainda exigem posse; testamos sem para as demais.
       if (permission.endsWith(':own')) continue;
+      /**
+       * `platform:manage` é a única exceção, e ela é o ponto: o escopo `PLATFORM`
+       * não é coberto pelo escopo de uma instituição. Um OWNER não suspende a
+       * instituição vizinha.
+       */
+      if (permission === PERMISSIONS.PLATFORM_MANAGE) {
+        expect(can(p, permission, tenantScope)).toBe(false);
+        continue;
+      }
       expect(can(p, permission, tenantScope)).toBe(true);
     }
   });

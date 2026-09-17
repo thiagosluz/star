@@ -7,6 +7,8 @@
  *    • seed
  *    • scripts de verificação de contrato
  *    • Better Auth (ver nota abaixo)
+ *    • `src/lib/platform/**` — governança da plataforma e diretório público
+ *      (FASE 9). Ver a nota sobre operações globais ao final do arquivo.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE O BETTER AUTH USA A CONEXÃO ADMIN
@@ -23,6 +25,24 @@
  *
  *  Qualquer código de DOMÍNIO que use este cliente é um bug. Para isso existe
  *  `tenant-client.ts`.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A EXCEÇÃO DAS OPERAÇÕES GLOBAIS (FASE 9)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Governar instituições e medir a plataforma são operações que NÃO CABEM em um
+ *  contexto de tenant: com `app.tenant_id` definido, o `COUNT` das outras
+ *  instituições seria zero — a RLS devolveria uma resposta errada, não uma
+ *  negação. O mesmo vale para a vitrine pública, que soma eventos abertos de
+ *  todas as instituições.
+ *
+ *  Por isso `src/lib/platform/global-repository.ts` é o ÚNICO módulo de
+ *  aplicação que usa este cliente, e ele:
+ *    • declara campo a campo o que devolve (nada de `SELECT *`);
+ *    • não expõe dado pessoal — a vitrine mostra o que a instituição publicou e
+ *      as métricas são contagens;
+ *    • nunca é alcançado sem passar por `requirePlatformPermission`.
+ *
+ *  O tráfego das instituições continua na role `eventflow_app`, sob RLS.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import 'dotenv/config';

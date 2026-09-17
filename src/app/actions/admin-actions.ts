@@ -17,7 +17,7 @@
  *  permissão nova inventada para o painel.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { z } from 'zod';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
@@ -25,6 +25,7 @@ import { adminPrisma } from '@/lib/db/admin-client';
 import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
 import { DEFAULT_RUBRIC } from '@/domain/review/review-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, TASK_KINDS, XP_SOURCE_KINDS } from '@/domain/gamification/types';
 import {
@@ -202,6 +203,23 @@ export async function saveEventAction(
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/eventos'));
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A VITRINE PÚBLICA MUDA QUANDO UM EVENTO É PUBLICADO (FASE 9)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O diretório ordena as instituições por VOLUME DE EVENTOS ABERTOS, e essa
+   *  contagem é cacheada. Publicar um evento muda a ordem da vitrine — sem esta
+   *  invalidação, a instituição que acabou de abrir inscrições continuaria
+   *  aparecendo depois das outras por até cinco minutos.
+   *
+   *  A invalidação só acontece quando o status é de evento ABERTO: rascunho não
+   *  aparece no diretório, e invalidar por rascunho seria trabalho sem efeito.
+   */
+  if (parsed.data.status === 'PUBLISHED' || parsed.data.status === 'REGISTRATION_OPEN') {
+    revalidateTag(PUBLIC_TENANTS_TAG, 'max');
+    revalidatePath('/organizacoes');
+  }
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message, details: result.details };
 

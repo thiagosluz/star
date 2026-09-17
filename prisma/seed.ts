@@ -107,6 +107,11 @@ async function main() {
         plan: 'PROFESSIONAL',
         primaryColor: '#1d4ed8',
         timezone: 'America/Bahia',
+        // FASE 9 — perfil público: é o que aparece no diretório `/organizacoes`.
+        isPublic: true,
+        description:
+          'Universidade pública federal com ensino, pesquisa e extensão — sede em Salvador, Bahia.',
+        websiteUrl: 'https://www.ufba.br',
       },
       {
         id: fiocruzId,
@@ -116,6 +121,10 @@ async function main() {
         plan: 'STARTER',
         primaryColor: '#0f766e',
         timezone: 'America/Sao_Paulo',
+        isPublic: true,
+        description:
+          'Instituição de ciência e tecnologia em saúde, vinculada ao Ministério da Saúde.',
+        websiteUrl: 'https://www.fiocruz.br',
       },
     ],
   });

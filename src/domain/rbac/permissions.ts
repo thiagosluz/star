@@ -108,6 +108,17 @@ export const PERMISSIONS = {
 
   // ── Conteúdo / Landing page ─────────────────────────────────────────────────
   PAGE_MANAGE: 'page:manage',
+
+  // ── Plataforma (FASE 9) ─────────────────────────────────────────────────────
+  /**
+   * Governança global: provisionar instituições, definir planos e quotas,
+   * suspender tráfego e ler métricas consolidadas.
+   *
+   * Existe em um escopo PRÓPRIO (`PLATFORM`) e nunca é concedida a papéis de
+   * tenant: quem administra uma instituição não administra a plataforma, e quem
+   * administra a plataforma não entra no conteúdo das instituições.
+   */
+  PLATFORM_MANAGE: 'platform:manage',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -127,7 +138,7 @@ export function isPermission(value: string): value is Permission {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Escopos
 // ───────────────────────────────────────────────────────────────────────────────
-export const ROLE_SCOPES = ['TENANT', 'EVENT', 'ACTIVITY'] as const;
+export const ROLE_SCOPES = ['PLATFORM', 'TENANT', 'EVENT', 'ACTIVITY'] as const;
 export type RoleScope = (typeof ROLE_SCOPES)[number];
 
 /**
@@ -138,8 +149,19 @@ export type RoleScope = (typeof ROLE_SCOPES)[number];
  *
  * Exemplo: quem é ORGANIZER no tenant também organiza qualquer evento dele.
  * O contrário NÃO vale: um papel concedido em um evento não vaza para o tenant.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  PLATFORM EXISTE, MAS NÃO COBRE OS DEMAIS ESCOPOS
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O papel de plataforma governa INSTITUIÇÕES (criar, suspender, medir) e NÃO
+ *  concede poder DENTRO delas: um SuperAdmin não vira ADMIN de todos os tenants.
+ *
+ *  Para agir em uma instituição, a pessoa precisa de vínculo e papel ali. É o que
+ *  mantém a fronteira de RLS com significado — e o que impede que uma conta de
+ *  suporte comprometida seja uma chave-mestra de todo o conteúdo hospedado.
  */
 export const SCOPE_RANK: Record<RoleScope, number> = {
+  PLATFORM: 4,
   TENANT: 3,
   EVENT: 2,
   ACTIVITY: 1,
@@ -147,6 +169,15 @@ export const SCOPE_RANK: Record<RoleScope, number> = {
 
 /** O escopo `granted` cobre o escopo `required`? */
 export function scopeCovers(granted: RoleScope, required: RoleScope): boolean {
+  /**
+   * A plataforma é um mundo à parte: cobre a si mesma e nada mais. A comparação
+   * por nota seria perigosa aqui justamente porque `PLATFORM` tem a maior nota —
+   * ela diria que o SuperAdmin cobre `TENANT`, que é exatamente o que não pode.
+   */
+  if (granted === 'PLATFORM' || required === 'PLATFORM') {
+    return granted === 'PLATFORM' && required === 'PLATFORM';
+  }
+
   return SCOPE_RANK[granted] >= SCOPE_RANK[required];
 }
 
@@ -154,6 +185,14 @@ export function scopeCovers(granted: RoleScope, required: RoleScope): boolean {
 //  Papéis
 // ───────────────────────────────────────────────────────────────────────────────
 export const ROLE_KEYS = [
+  /**
+   * Papel de PLATAFORMA (FASE 9): governa instituições, não conteúdo.
+   *
+   * Fica no mesmo enum dos papéis de tenant porque a concessão usa a mesma tabela
+   * — mas vive em outro escopo (`PLATFORM`), e `scopeCovers` garante que ele não
+   * vaze para dentro das instituições.
+   */
+  'SUPERADMIN',
   'OWNER',
   'ADMIN',
   'ORGANIZER',
@@ -248,11 +287,35 @@ const PARTICIPANT_PERMISSIONS: Permission[] = [
  * não lhe fazem sentido — na prática, todas. É derivado do catálogo para que
  * uma permissão nova não seja esquecida.
  */
+/**
+ * Permissões que valem DENTRO de uma instituição.
+ *
+ * A separação existe por causa de `OWNER: ALL_PERMISSIONS`: ao acrescentar
+ * `platform:manage` ao catálogo, listá-la para os papéis de tenant daria a TODO
+ * dono de instituição uma permissão de plataforma — inofensiva hoje (o `can()`
+ * exige escopo `PLATFORM`), mas um vazamento à espera de quem consultar a
+ * permissão sem olhar o escopo.
+ *
+ * A defesa é em profundidade: permissão de plataforma só consta em papel de
+ * plataforma, E o escopo precisa bater.
+ */
+export const TENANT_PERMISSIONS: readonly Permission[] = Object.freeze(
+  ALL_PERMISSIONS.filter((permission) => permission !== PERMISSIONS.PLATFORM_MANAGE),
+);
+
 export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
-  OWNER: ALL_PERMISSIONS,
+  /**
+   * SuperAdmin da plataforma: UMA permissão, em UM escopo.
+   *
+   * Não herda nada de tenant — o que ele pode fazer é criar, medir, suspender e
+   * reativar instituições.
+   */
+  SUPERADMIN: [PERMISSIONS.PLATFORM_MANAGE],
+
+  OWNER: TENANT_PERMISSIONS,
 
   // ADMIN é o OWNER sem os poderes destrutivos/financeiros do tenant.
-  ADMIN: ALL_PERMISSIONS.filter(
+  ADMIN: TENANT_PERMISSIONS.filter(
     (p) =>
       p !== PERMISSIONS.TENANT_DELETE &&
       p !== PERMISSIONS.TENANT_BILLING_MANAGE &&

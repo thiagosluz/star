@@ -90,7 +90,29 @@ export async function grantRole(options: {
   });
 }
 
+/**
+ * Concede o papel de PLATAFORMA (FASE 9).
+ *
+ * Não há `tenantId` aqui de propósito: a governança da plataforma não pertence a
+ * instituição alguma (`scope = PLATFORM`, `tenant_id = NULL`). A linha é inserida
+ * pela conexão administrativa, que é o mesmo caminho do provisionamento real —
+ * nenhuma transação de instituição enxerga uma concessão de plataforma.
+ */
+export async function grantPlatformRole(options: { userId: string; role?: 'SUPERADMIN' }) {
+  return e2eDb.roleAssignment.create({
+    data: {
+      id: randomUUID(),
+      tenantId: null,
+      userId: options.userId,
+      role: options.role ?? 'SUPERADMIN',
+      scope: 'PLATFORM',
+      reason: 'Concessão do teste E2E da FASE 9',
+    },
+  });
+}
+
 /** Cria um evento dentro de uma instituição (para papéis com escopo de evento). */
+
 export async function createEvent(options: {
   tenantId: string;
   slug: string;

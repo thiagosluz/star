@@ -16,10 +16,10 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 8 (cada uma documentada em docs/fase-NN-*.md)
-Testes ................. 675 (Vitest: unit + integração) + 35 (Playwright E2E)
-ADRs ................... 49 (numeração GLOBAL e sequencial — a próxima é ADR-050)
-Permissões ............. 53 (10 papéis)
+Fases concluídas ........ 1 a 9 (cada uma documentada em docs/fase-NN-*.md)
+Testes ................. 745 (Vitest: unit + integração) + 41 (Playwright E2E)
+ADRs ................... 59 (numeração GLOBAL e sequencial — a próxima é ADR-060)
+Permissões ............. 54 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 31 sob RLS + FORCE
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 675+ testes passando
+npm test              # esperado: 745+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -106,7 +106,7 @@ npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 35+ testes passando
+npm run test:e2e      # esperado: 41+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -133,6 +133,9 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 10 | Rate limiter do Better Auth é em memória/por processo | `RATE_LIMIT_ENABLED=false` no container para os E2E |
 | 11 | `docker compose ps` esconde erro de build quando a saída é filtrada | Nunca filtre (`Select-Object -Last 3`) a saída de um `--build` |
 | 12 | Contagens escritas em prosa envelhecem (o doc da F2 dizia "50 permissões"; o código tinha 52 desde então) | **Confira no código**: `npx tsx -e "import {ALL_PERMISSIONS} from '@/domain/rbac/permissions'; console.log(ALL_PERMISSIONS.length)"` |
+| 13 | No Next.js 16 `revalidateTag(tag)` exige 2 argumentos (o segundo é um perfil de `cacheLife`) | Use `revalidateTag(tag, 'max')` e `revalidatePath()` das telas afetadas |
+| 14 | O Next.js empacota Proxy, páginas e Server Actions em **bundles separados**: cada um tem a própria instância dos módulos, então um `Map` de cache invalidado em uma Server Action **não** alcança o Proxy | Não coloque decisão de acesso em cache de módulo. O status do tenant é relido a cada resolução (`tenant-resolver.ts`); o cache guarda só a identidade, e vive no `globalThis` para ser um só por processo |
+| 15 | `unstable_cache` **serializa** o valor: uma `Date` pode voltar como string | Cacheie números/strings (ex.: `getTime()`) e converta na leitura — `getTime()` em string estoura só em produção |
 
 ---
 
@@ -177,11 +180,15 @@ emitidos (códigos impressos no fim do seed) e **1 sorteio apurado**. Percursos 
 docs/                  documentação por fase (ADRs, lições, evidências)
 README.md              instalação, seed, contas, variáveis, scripts, índice dos docs
 src/domain/**          regras puras por área (tenancy, rbac, events, review,
-                       gamification, certificates, raffles)
+                       gamification, certificates, raffles, platform)
 src/lib/**             aplicação e infraestrutura (db, auth, events, review,
                        gamification, certificates, raffles, admin, storage)
+src/lib/platform/**    governança global (único uso de adminPrisma na aplicação)
 src/app/actions/**     Server Actions — TODA autorização é verificada aqui
 src/app/t/[slug]/**    (public) landing pages · (app) painel autenticado
+src/app/(public)/organizacoes/**  diretório público de instituições
+src/app/superadmin/**  painel de governança (404 para quem não é SuperAdmin)
+src/app/instituicao-bloqueada/**  página de bloqueio de instituição suspensa
 src/app/validar/**     validação pública de certificado (sem login)
 src/workers/           worker BullMQ (fila de certificados)
 prisma/schema.prisma   modelo de dados (camelCase citado nas colunas)
@@ -195,7 +202,9 @@ tests/{unit,integration,e2e}
 ## 8. Invariantes do sistema (não quebre)
 
 1. **RUNTIME NUNCA** usa a role admin: `withTenant()` (role `eventflow_app`, sujeita
-   a RLS) para tudo da aplicação; `adminPrisma` só para CLI/seed/provisionamento.
+   a RLS) para tudo da aplicação; `adminPrisma` só para CLI/seed/provisionamento e
+   para `src/lib/platform/**` (governança/diretório — operação global que, sob o
+   contexto de UMA instituição, devolveria contagem zero em vez de negar).
 2. **Contexto de tenant por transação** (`set_config(..., true)` = `SET LOCAL`). Nunca
    `SET` global — vaza entre requisições no pool.
 3. **RLS é a última linha, não a única:** layout, páginas e Server Actions autorizam;
@@ -224,7 +233,8 @@ tests/{unit,integration,e2e}
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
 | 7 | Painel administrativo + E2E completo | ✅ |
 | 8 | Motor de sorteios por presença real | ✅ |
-| 9+ | *a definir pelo humano* | ⏳ |
+| 9 | Diretório público de organizações e governança global (SuperAdmin) | ✅ |
+| 10+ | *a definir pelo humano* | ⏳ |
 
 **Dívidas mapeadas** (candidatas naturais às próximas fases, por risco):
 rate limit em Redis · assinatura assimétrica (PKCS#7/CMS) · observabilidade
@@ -236,9 +246,10 @@ antivírus nos arquivos de submissão.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md` e o documento da **última fase** (`docs/fase-08-*.md`).
+1. Ler `README.md` e o documento da **última fase** (`docs/fase-09-*.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →
    testes → documentação) e **aguardar** a definição/requisitos dela.
 4. Implementar, verificar, documentar e **parar** em `Aguardando APROVADO: AVANÇAR`.
+

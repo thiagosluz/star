@@ -46,6 +46,18 @@ export default async function TenantLayout({
     isCustomDomain: false,
   });
 
+  /**
+   * Suspensa ≠ inexistente.
+   *
+   * A suspensão corta o PAINEL imediatamente — e não só a vitrine: as pessoas da
+   * instituição perdem acesso às ferramentas de trabalho enquanto a pendência
+   * existir. O motivo vai junto, porque quem abre o painel todos os dias é
+   * exatamente quem precisa saber o que aconteceu.
+   */
+  if (lookup.kind === 'not-operational') {
+    redirect(`/instituicao-bloqueada?slug=${encodeURIComponent(tenantSlug)}`);
+  }
+
   if (lookup.kind !== 'ok') {
     redirect('/404-tenant');
   }

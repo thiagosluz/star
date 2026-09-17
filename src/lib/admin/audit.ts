@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 
@@ -43,7 +44,11 @@ export type AuditActionName =
   | 'IMPERSONATE';
 
 export interface AuditInput {
-  tenantId: string;
+  /**
+   * Instituição do fato. `null` = ação de PLATAFORMA (FASE 9): provisionar,
+   * suspender ou reativar instituição não pertence a instituição alguma.
+   */
+  tenantId: string | null;
   userId?: string | null;
   action: AuditActionName;
   entityType: string;
@@ -61,6 +66,12 @@ export interface AuditInput {
  * alteração falhar, a trilha não registra um fato que não aconteceu. É o
  * comportamento correto — auditoria de evento inexistente é ruído que atrapalha
  * a investigação.
+ *
+ * Com `tenantId = null` a gravação usa a conexão administrativa — não por
+ * conveniência, mas por necessidade: a policy de RLS compara `tenant_id` com o
+ * contexto da transação, e uma linha com NULL é invisível para a role de runtime
+ * (fail-closed). Esse é o MESMO caminho da leitura (ver `listPlatformAudit`), de
+ * modo que a trilha de plataforma é escrita e lida pelo mesmo escopo.
  *
  * NUNCA lança: uma falha ao auditar não pode desfazer uma operação de negócio já
  * validada. O erro vai para o log do processo.
@@ -81,6 +92,11 @@ export async function recordAudit(input: AuditInput, tx?: TxClient): Promise<voi
   try {
     if (tx) {
       await tx.auditLog.create({ data });
+      return;
+    }
+
+    if (input.tenantId === null) {
+      await adminPrisma.auditLog.create({ data });
       return;
     }
 

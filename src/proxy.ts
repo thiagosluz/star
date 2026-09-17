@@ -40,6 +40,32 @@ export const TENANT_HEADERS = {
   source: 'x-ef-tenant-source',
 } as const;
 
+/** Rota da página amigável de instituição bloqueada (fora de `/t/`). */
+const BLOCKED_PATH = '/instituicao-bloqueada';
+
+/**
+ * Instituição existe, mas o tráfego não é permitido.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO NÃO É UM 404
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Um 404 diz "não existe", e o dono da instituição suspensa passaria a achar que
+ *  o sistema perdeu os dados dele. O que aconteceu é diferente: a instituição
+ *  existe e está bloqueada, com um motivo que ele precisa ler. A resposta é 403
+ *  com a explicação — e o corte vale para TUDO que estiver sob esse host/slug, não
+ *  apenas para o painel.
+ *
+ *  A decisão é tomada aqui, no caminho de toda requisição, e não em um cache: uma
+ *  suspensão passa a valer na requisição seguinte, sem esperar expirar nada.
+ */
+function blockedResponse(request: NextRequest, slug: string, status: string): NextResponse {
+  const url = new URL(BLOCKED_PATH, request.url);
+  url.searchParams.set('slug', slug);
+  url.searchParams.set('estado', status);
+
+  return NextResponse.rewrite(url, { status: 403 });
+}
+
 /**
  * Segmentos que pertencem à INSTITUIÇÃO e por isso, quando o host não identifica
  * um tenant, não fazem sentido e devem responder 404 em vez de cair na landing
@@ -90,6 +116,10 @@ export async function proxy(request: NextRequest) {
   if (resolution.kind === 'resolved' && resolution.source === 'path') {
     const lookup = await lookupTenant(resolution);
 
+    if (lookup.kind === 'not-operational') {
+      return blockedResponse(request, lookup.tenant.slug, lookup.reason);
+    }
+
     if (lookup.kind !== 'ok') {
       return NextResponse.rewrite(new URL('/404-tenant', request.url), {
         status: 404,
@@ -118,6 +148,10 @@ export async function proxy(request: NextRequest) {
 
   // ── Tenant vindo do host (subdomínio ou domínio customizado) ───────────────
   const lookup = await lookupTenant(resolution);
+
+  if (lookup.kind === 'not-operational') {
+    return blockedResponse(request, lookup.tenant.slug, lookup.reason);
+  }
 
   if (lookup.kind !== 'ok') {
     return NextResponse.rewrite(new URL('/404-tenant', request.url), { status: 404 });
