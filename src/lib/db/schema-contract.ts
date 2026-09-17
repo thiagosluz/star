@@ -56,6 +56,8 @@ export const TENANT_SCOPED_TABLES = [
   'audit_logs',
   'reviewer_expertise',
   'reviewer_conflict_declarations',
+  'raffles',
+  'raffle_winners',
 ];
 
 /**

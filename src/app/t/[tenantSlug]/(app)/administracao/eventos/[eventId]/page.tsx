@@ -106,13 +106,24 @@ export default async function AdminEventDetailPage({
           {event.registrationCount} inscrição(ões) · {event.activityCount} atividade(s) ·{' '}
           {event.trackCount} trilha(s)
         </p>
-        <p className="text-xs">
+        <p className="flex flex-wrap items-center gap-4 text-xs">
           <Link
             href={tenantPath(tenantSlug, `/eventos/${event.slug}`)}
             target="_blank"
             className="underline underline-offset-4"
           >
             Ver página pública →
+          </Link>
+          {/*
+            O sorteio tem tela própria e fica a um clique do evento: é operação de
+            palco, e quem organiza precisa achar rápido.
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/sorteios`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="raffles-link"
+          >
+            Sorteios →
           </Link>
         </p>
       </header>

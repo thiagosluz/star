@@ -36,6 +36,7 @@ import {
   generateCertificate,
   requestCertificate,
 } from '../src/lib/certificates/certificate-service';
+import { createRaffle, drawRaffle } from '../src/lib/raffles/raffle-service';
 
 const connectionString = process.env.MIGRATE_DATABASE_URL;
 if (!connectionString) {
@@ -978,6 +979,44 @@ async function main() {
 
   console.log(`  ✓ certificação: ${certificadosDemo.length} certificado(s) de demonstração`);
 
+  // ── Sorteio de demonstração (FASE 8) ───────────────────────────────────────
+  /**
+   * Um sorteio REAL, apurado pelo mesmo caminho de produção: universo restrito ao
+   * minicurso, piso de 120 minutos e um vencedor.
+   *
+   * Com os dados semeados, apenas Bruno cumpre o piso (240 min medidos) — o que
+   * torna o resultado da demonstração verificável: quem conferir a lista de
+   * elegíveis verá exatamente uma pessoa, e ela é o vencedor.
+   */
+  const sorteioDemo = await createRaffle({
+    tenantId: ufbaId,
+    eventId: congressoUfba,
+    actorId: ana,
+    title: 'Sorteio de brindes do minicurso',
+    description: 'Sorteio entre os participantes que concluíram o minicurso com ao menos 120 minutos.',
+    scope: 'ACTIVITY',
+    activityId: minicursoRustId,
+    minAttendanceMinutes: 120,
+    winnersCount: 1,
+    allowPriorEventWinners: true,
+  });
+
+  let sorteioRealizado = 'não configurado';
+
+  if (sorteioDemo.ok) {
+    const apuracao = await drawRaffle({
+      tenantId: ufbaId,
+      raffleId: sorteioDemo.raffleId,
+      actorId: ana,
+    });
+
+    sorteioRealizado = apuracao.ok
+      ? `${apuracao.winners.length} vencedor(es) entre ${apuracao.eligibleCount} elegíveis (hash ${apuracao.resultHash.slice(0, 16)}…)`
+      : `configurado, sem apuração: ${apuracao.message}`;
+  }
+
+  console.log(`  ✓ sorteio: ${sorteioRealizado}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1012,6 +1051,9 @@ async function main() {
       `    ${certificado.quem}: ${certificado.codigo} (${certificado.tipo}) · http://localhost:3000/validar/${certificado.codigo}`,
     );
   }
+  console.log(`\n  Sorteios (FASE 8):`);
+  console.log(`    ${sorteioRealizado}`);
+  console.log(`    /t/ufba-demo/administracao/eventos/<id>/sorteios`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

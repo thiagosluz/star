@@ -45,6 +45,15 @@ export const PERMISSIONS = {
   EVENT_UPDATE: 'event:update',
   EVENT_DELETE: 'event:delete',
   EVENT_PUBLISH: 'event:publish',
+  /**
+   * Administração operacional do evento — FASE 8.
+   *
+   * Distinta de `event:update` (editar cadastro): `event:manage` cobre ações que
+   * AFETAM PESSOAS e produzem resultado auditável — hoje, executar sorteios.
+   * Separar as duas permite conceder "cuida do evento" sem conceder "pode
+   * sortear".
+   */
+  EVENT_MANAGE: 'event:manage',
 
   // ── Atividades ──────────────────────────────────────────────────────────────
   ACTIVITY_CREATE: 'activity:create',
@@ -181,6 +190,12 @@ const ORGANIZER_PERMISSIONS: Permission[] = [
   PERMISSIONS.EVENT_UPDATE,
   PERMISSIONS.EVENT_DELETE,
   PERMISSIONS.EVENT_PUBLISH,
+  /**
+   * `event:manage` — sortear participantes é ato de organização, com efeito
+   * público e auditável. Fica com quem responde pelo evento, não com quem apenas
+   * coordena a trilha científica (CHAIR).
+   */
+  PERMISSIONS.EVENT_MANAGE,
   PERMISSIONS.ACTIVITY_CREATE,
   PERMISSIONS.ACTIVITY_READ,
   PERMISSIONS.ACTIVITY_UPDATE,

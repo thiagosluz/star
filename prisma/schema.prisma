@@ -293,6 +293,119 @@ enum AuditAction {
   IMPERSONATE
 }
 
+/// Universo de onde os sorteados são tirados.
+enum RaffleScope {
+  /// Todos os presentes no evento (qualquer atividade).
+  EVENT
+  /// Presentes em atividades que acontecem na data de referência.
+  DAY
+  /// Presentes em UMA atividade, com carga horária mínima cumprida.
+  ACTIVITY
+}
+
+enum RaffleStatus {
+  /// Configurado, ainda não apurado.
+  DRAFT
+  /// Apurado: os vencedores estão gravados e não mudam mais.
+  DRAWN
+  /// Cancelado pelo organizador (o histórico permanece para auditoria).
+  CANCELED
+}
+
+/// Sorteio de participantes elegíveis por PRESENÇA REAL.
+///
+/// O sorteio é uma operação de AUDITORIA, não um enfeite: guarda o universo
+/// considerado, as regras aplicadas e o hash do resultado, para que a instituição
+/// possa demonstrar depois COMO o sorteio foi feito.
+model Raffle {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  /// Atividade alvo. Obrigatória apenas no escopo ACTIVITY.
+  activityId String? @db.Uuid
+
+  title       String  @db.VarChar(200)
+  description String? @db.Text
+
+  scope RaffleScope
+
+  /// Data de referência do escopo DAY (dia no fuso da instituição, sem hora).
+  referenceDate DateTime? @db.Date
+
+  /// Piso de minutos assistidos para ser considerado presente.
+  /// `0` = basta ter presença registrada (quem compareceu sem check-out conta).
+  minAttendanceMinutes Int @default(0)
+
+  /// Quantos vencedores devem ser sorteados.
+  winnersCount Int
+
+  /// Quando falso, quem já ganhou qualquer sorteio anterior deste evento sai do páreo.
+  allowPriorEventWinners Boolean @default(false)
+
+  status RaffleStatus @default(DRAFT)
+
+  /// Quantas pessoas foram consideradas elegíveis na apuração (auditoria).
+  eligibleCount        Int @default(0)
+  /// Quantas presenças foram inspecionadas (auditoria do universo considerado).
+  inspectedAttendances Int @default(0)
+
+  drawnAt DateTime? @db.Timestamptz(6)
+
+  /// SHA-256 do resultado canônico: regras + vencedores na ordem sorteada.
+  /// Permite reconferir depois que a apuração não foi alterada.
+  resultHash  String? @db.Char(64)
+  /// Incrementa a cada apuração (um sorteio cancelado e refeito gera versão nova).
+  drawVersion Int     @default(1)
+
+  createdById String @db.Uuid
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event     Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activity  Activity?      @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  createdBy User           @relation("RaffleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  winners   RaffleWinner[]
+
+  @@index([tenantId, eventId, status])
+  @@index([tenantId, eventId, drawnAt])
+  @@map("raffles")
+}
+
+/// Vencedor de um sorteio. Imutável depois da apuração.
+model RaffleWinner {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  raffleId String @db.Uuid
+  userId   String @db.Uuid
+
+  /// Ordem em que foi sorteado (1 = primeiro).
+  position Int
+
+  /// Minutos assistidos que fundamentaram a elegibilidade (auditoria).
+  attendanceMinutes Int     @default(0)
+  /// Presença que comprovou a elegibilidade (quando houve uma específica).
+  attendanceId      String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  raffle     Raffle      @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+
+  /// A ANTIDUPLICAÇÃO É GARANTIDA PELO BANCO: o mesmo participante não pode
+  /// aparecer duas vezes no mesmo sorteio, mesmo que a aplicação falhe.
+  @@unique([raffleId, userId])
+  /// Duas pessoas não podem ocupar a mesma posição.
+  @@unique([raffleId, position])
+  @@index([tenantId, userId])
+  @@map("raffle_winners")
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  TENANCY
 // ───────────────────────────────────────────────────────────────────────────────
@@ -344,6 +457,8 @@ model Tenant {
   reviewAssignments ReviewAssignment[]
   reviews           Review[]
   reviewConflicts   ReviewConflict[]
+  raffles           Raffle[]
+  raffleWinners     RaffleWinner[]
   cardTemplates     CardTemplate[]
   userCards         UserCard[]
   xpProfiles        UserXpProfile[]
@@ -422,11 +537,16 @@ model User {
   /// Configuração de revisor (áreas de atuação), uma por instituição — FASE 4.
   /// É uma lista porque a mesma pessoa pode revisar para instituições
   /// diferentes, com áreas de atuação diferentes em cada uma.
-  reviewerExpertise ReviewerExpertise[]
+  reviewerExpertise    ReviewerExpertise[]
   /// Conflitos de interesse declarados pelo próprio revisor — FASE 4.
   conflictDeclarations ReviewerConflictDeclaration[] @relation("ConflictDeclaredBy")
   /// Conflitos em que esta pessoa é a PARTE conflitante — FASE 4.
-  conflictsAgainstMe ReviewerConflictDeclaration[] @relation("ConflictWithUser")
+  conflictsAgainstMe   ReviewerConflictDeclaration[] @relation("ConflictWithUser")
+
+  /// Sorteios que esta pessoa criou — FASE 8.
+  rafflesCreated Raffle[]       @relation("RaffleCreatedBy")
+  /// Sorteios em que esta pessoa foi sorteada — FASE 8.
+  raffleWins     RaffleWinner[]
 
   @@index([email])
   @@index([deletedAt])
@@ -475,7 +595,7 @@ model Session {
   userAgent String? @db.VarChar(500)
 
   /// Rastro do último tenant usado — apenas telemetria/UX, jamais autorização.
-  lastTenantId String? @db.Uuid
+  lastTenantId   String? @db.Uuid
   /// Quem personificou esta sessão (suporte/impersonação auditada).
   impersonatedBy String? @db.Uuid
 
@@ -663,6 +783,7 @@ model Event {
   attendances     Attendance[]
   userCards       UserCard[]
   xpTransactions  XpTransaction[]
+  raffles         Raffle[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -768,6 +889,7 @@ model Activity {
   roleAssignments RoleAssignment[]
   certificates    Certificate[]
   xpTransactions  XpTransaction[]
+  raffles         Raffle[]
 
   @@unique([eventId, slug])
   @@index([tenantId, eventId, status])
@@ -1056,12 +1178,13 @@ model Attendance {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  activity     Activity?     @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event        Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activity     Activity?      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  registration Registration?  @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   certificates Certificate[]
+  raffleWins   RaffleWinner[]
 
   @@index([tenantId, activityId, userId])
   @@index([tenantId, eventId, checkedInAt])
@@ -1101,7 +1224,7 @@ model Track {
   /// Nota mínima (0-100) para sugestão de aceite.
   acceptanceThreshold Decimal @default(70) @db.Decimal(5, 2)
   /// Nota abaixo da qual a sugestão é rejeição.
-  rejectThreshold Decimal @default(45) @db.Decimal(5, 2)
+  rejectThreshold     Decimal @default(45) @db.Decimal(5, 2)
 
   /// Quantos pareceres a trilha exige para considerar a avaliação concluída.
   /// Configurável: pós-graduação costuma exigir 3, iniciação científica 2.
@@ -1415,7 +1538,7 @@ model ReviewerExpertise {
   /// Instituição declarada para fins de conflito de interesse. Pode divergir da
   /// instituição do vínculo (`UserTenantProfile`) quando a pessoa revisa para uma
   /// instituição diferente da sua.
-  declaredInstitution String? @db.VarChar(200)
+  declaredInstitution      String? @db.VarChar(200)
   /// Domínio de e-mail institucional. Preferido sobre o domínio do e-mail no
   /// cálculo de conflito, porque é uma declaração explícita.
   institutionalEmailDomain String? @db.VarChar(120)
@@ -1443,17 +1566,17 @@ model ReviewerExpertise {
 ///    • `submissionId` nulo        → conflito com uma PESSOA, válido para todas
 ///      as submissões em que ela apareça como autora
 model ReviewerConflictDeclaration {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @db.Uuid
+  id               String  @id @default(uuid(7)) @db.Uuid
+  tenantId         String  @db.Uuid
   /// Quem declara (o revisor).
-  reviewerId String @db.Uuid
+  reviewerId       String  @db.Uuid
   /// Pessoa com quem existe conflito. Nulo quando o conflito é com a submissão.
   conflictedUserId String? @db.Uuid
   /// Submissão específica. Nulo quando o conflito é com a pessoa.
-  submissionId String? @db.Uuid
+  submissionId     String? @db.Uuid
 
   type   ConflictType
-  reason String? @db.VarChar(500)
+  reason String?      @db.VarChar(500)
 
   /// Vigência: um conflito pode ser temporário (ex.: orientação em andamento).
   expiresAt DateTime? @db.Timestamptz(6)
@@ -1462,12 +1585,12 @@ model ReviewerConflictDeclaration {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   /// Quem declarou o conflito.
-  reviewer User   @relation("ConflictDeclaredBy", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewer       User   @relation("ConflictDeclaredBy", fields: [reviewerId], references: [id], onDelete: Cascade)
   /// Pessoa com quem existe o conflito (quando o conflito é com alguém
   /// específico, e não com uma submissão).
-  conflictedUser User? @relation("ConflictWithUser", fields: [conflictedUserId], references: [id], onDelete: Cascade)
+  conflictedUser User?  @relation("ConflictWithUser", fields: [conflictedUserId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, reviewerId, revokedAt])
   @@index([tenantId, conflictedUserId])

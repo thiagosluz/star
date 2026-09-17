@@ -151,23 +151,35 @@ $$;
 --
 --  Tabelas com `tenant_id` anulável (card_templates.event_id, por exemplo) são
 --  cobertas porque a coluna tenant_id é NOT NULL em todas, garantido no schema.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  A LISTA DE TABELAS É DESCOBERTA, NÃO ESCRITA À MÃO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Até a FASE 7 este bloco iterava sobre um array literal de nomes de tabela. Na
+--  FASE 8, duas tabelas novas (`raffles`, `raffle_winners`) nasceram SEM policy —
+--  o array não foi atualizado, e a RLS teria ficado fail-closed para elas. A
+--  assertiva da seção 6 barrou a aplicação, mas o defeito era de manutenção: uma
+--  lista que precisa ser lembrada.
+--
+--  Agora a seleção é por INTROSPECÇÃO: qualquer tabela com a coluna `tenantId`
+--  recebe a policy. Criar tabela nova passa a ser suficiente — não há lista para
+--  esquecer. O contrato em `src/lib/db/schema-contract.ts` continua sendo a
+--  checagem independente (JS), e as duas verificações precisam concordar.
 DO $$
 DECLARE
   t text;
-  tenant_tables text[] := ARRAY[
-    'user_tenant_profiles','role_assignments','events','rooms','activities',
-    'activity_speakers','event_pages','page_blocks','sponsor_tiers','sponsors',
-    'registrations','attendances','tracks','submissions','submission_authors',
-    'submission_files','review_assignments','reviews','review_conflicts',
-    'card_templates','user_cards','user_xp_profiles','xp_transactions',
-    'task_definitions','user_task_progress','certificates','audit_logs',
-    'reviewer_expertise','reviewer_conflict_declarations'
-  ];
 BEGIN
-  FOREACH t IN ARRAY tenant_tables LOOP
-    IF to_regclass(format('public.%I', t)) IS NULL THEN
-      CONTINUE;
-    END IF;
+  FOR t IN
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenantId' AND a.attnum > 0
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'r'
+    ORDER BY c.relname
+  LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t);
     EXECUTE format($f$
       CREATE POLICY tenant_isolation ON public.%I
@@ -177,7 +189,7 @@ BEGIN
         WITH CHECK ("tenantId" = app_current_tenant_id())
     $f$, t);
   END LOOP;
-  RAISE NOTICE '[OK] policy tenant_isolation garantida nas tabelas de tenant existentes.';
+  RAISE NOTICE '[OK] policy tenant_isolation garantida em todas as tabelas com tenantId.';
 END
 $$;
 
