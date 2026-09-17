@@ -1,0 +1,1714 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  EventFlow Platform — Canonical Data Model
+//  FASE 1 — Infraestrutura & Modelagem
+//
+//  Estratégia multi-tenant: SHARED SCHEMA + tenant_id + PostgreSQL Row-Level
+//  Security (RLS). Ver docs/fase-01-infra-e-modelagem.md (ADR-001..ADR-004).
+//
+//  Invariantes estruturais:
+//   1. Toda tabela de domínio de tenant carrega `tenantId` diretamente
+//      (denormalizado quando necessário) para que a policy de RLS seja um
+//      predicado de uma única coluna — barato e impossível de contornar por
+//      um JOIN esquecido.
+//   2. Identidade (`User`) é GLOBAL e não possui RLS. O vínculo
+//      pessoa↔instituição vive em `UserTenantProfile` (tenant-scoped).
+//   3. Papéis são concedidos por ESCOPO (tenant | event | activity), o que
+//      permite acúmulo de papéis e troca de contexto sem perda de sessão.
+//
+//  Prisma 7: o `url` da datasource NÃO mora mais aqui — ver prisma.config.ts.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  runtime  = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  ENUMS
+// ───────────────────────────────────────────────────────────────────────────────
+
+enum TenantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+/// Plano comercial do tenant. Sobrescreve limites de quota (eventos, storage).
+enum TenantPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+/// Vínculo entre uma pessoa global e uma instituição.
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+/// Papel RBAC. OWNER/ADMIN são escopo-tenant; os demais podem ser concedidos
+/// por evento ou até por atividade (ex.: coordenador de um único minicurso).
+enum RoleKey {
+  OWNER
+  ADMIN
+  ORGANIZER
+  FINANCE
+  REVIEWER
+  CHAIR
+  SPEAKER
+  STAFF
+  PARTICIPANT
+  SPONSOR
+}
+
+/// Dimensão à qual uma atribuição de papel pertence.
+enum RoleScope {
+  TENANT
+  EVENT
+  ACTIVITY
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  IN_PROGRESS
+  FINISHED
+  CANCELED
+  ARCHIVED
+}
+
+enum EventModality {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum ActivityType {
+  LECTURE
+  MINI_COURSE
+  WORKSHOP
+  ROUND_TABLE
+  HACKATHON
+  POSTER_SESSION
+  ORAL_PRESENTATION
+  CULTURAL
+  OTHER
+}
+
+enum ActivityStatus {
+  DRAFT
+  SCHEDULED
+  FULL
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  WAITLISTED
+  CANCELED
+  ATTENDED
+  NO_SHOW
+}
+
+/// Como a presença foi comprovada — base de auditoria da carga horária.
+enum AttendanceSource {
+  QR_CODE_CHECKIN
+  QR_CODE_CHECKOUT
+  MANUAL_STAFF
+  SELF_DECLARED
+  IMPORTS
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  PARTIAL
+  EXCUSED
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  REVISION_REQUESTED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  CANCELED
+}
+
+enum SubmissionFileKind {
+  BLIND_PDF
+  IDENTIFIED_PDF
+  SUPPLEMENTARY
+  PRESENTATION
+  CAMERA_READY
+}
+
+enum ReviewRecommendation {
+  ACCEPT
+  MINOR_REVISION
+  MAJOR_REVISION
+  REJECT
+}
+
+enum ReviewStatus {
+  INVITED
+  ACCEPTED
+  DECLINED
+  IN_PROGRESS
+  SUBMITTED
+  RECUSED
+}
+
+/// Motivo de conflito de interesse declarado/detectado.
+enum ConflictType {
+  SAME_INSTITUTION
+  COAUTHOR
+  ADVISOR_ADVISEE
+  FINANCIAL_TIE
+  PERSONAL_RELATIONSHIP
+  SELF_DECLARED
+}
+
+enum CardRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+/// Como a carta é liberada.
+enum CardTrigger {
+  CHECKIN
+  ACTIVITY_COMPLETION
+  MINI_COURSE_COMPLETION
+  SUBMISSION_ACCEPTED
+  SUBMISSION_SUBMITTED
+  REVIEW_COMPLETED
+  REVIEWER_TOP
+  XP_THRESHOLD
+  LEVEL_UP
+  MANUAL_GRANT
+  STREAK
+  EVENT_ATTENDANCE_FULL
+}
+
+enum XpSourceKind {
+  CHECKIN
+  ACTIVITY_ATTENDANCE
+  MINI_COURSE_COMPLETION
+  SUBMISSION_SUBMITTED
+  SUBMISSION_ACCEPTED
+  REVIEW_COMPLETED
+  TASK_COMPLETED
+  BONUS
+  ADMIN_ADJUSTMENT
+  REFERRAL
+}
+
+enum TaskKind {
+  DAILY
+  WEEKLY
+  EVENT_LONG
+  ONE_OFF
+  ACHIEVEMENT
+}
+
+enum TaskProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  CLAIMED
+  EXPIRED
+}
+
+enum CertificateKind {
+  ATTENDANCE
+  SPEAKER
+  ORGANIZER
+  REVIEWER
+  AUTHOR
+  MINI_COURSE
+  PARTICIPATION
+  MERIT
+}
+
+enum CertificateStatus {
+  QUEUED
+  GENERATING
+  ISSUED
+  REVOKED
+  FAILED
+}
+
+enum SponsorTierKey {
+  DIAMOND
+  GOLD
+  SILVER
+  BRONZE
+  SUPPORTER
+  MEDIA_PARTNER
+  CUSTOM
+}
+
+enum PageBlockType {
+  HERO
+  RICH_TEXT
+  SCHEDULE
+  SPEAKERS
+  SPONSORS
+  FAQ
+  GALLERY
+  COUNTDOWN
+  VENUE_MAP
+  REGISTRATION_CTA
+  TRACKS
+  CUSTOM_HTML
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  PERMISSION_CHANGE
+  IMPERSONATE
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  TENANCY
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Instituição / empresa. Raiz do isolamento. NÃO possui RLS.
+model Tenant {
+  id   String @id @default(uuid(7)) @db.Uuid
+  slug String @unique @db.VarChar(63)
+  name String @db.VarChar(160)
+
+  /// Domínio dedicado (ex.: eventos.ufba.br). Habilita resolução por host.
+  customDomain String? @unique @db.VarChar(253)
+
+  status TenantStatus @default(PENDING)
+  plan   TenantPlan   @default(FREE)
+
+  /// Quotas aplicadas pela camada de aplicação (billing/limites).
+  maxEvents       Int    @default(3)
+  maxStorageBytes BigInt @default(5368709120) // 5 GiB
+  maxMembers      Int    @default(100)
+
+  logoUrl      String? @db.VarChar(1024)
+  primaryColor String? @db.VarChar(9)
+  locale       String  @default("pt-BR") @db.VarChar(10)
+  timezone     String  @default("America/Bahia") @db.VarChar(64)
+
+  settings Json @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  memberships       UserTenantProfile[]
+  roleAssignments   RoleAssignment[]
+  events            Event[]
+  rooms             Room[]
+  activities        Activity[]
+  activitySpeakers  ActivitySpeaker[]
+  tracks            Track[]
+  eventPages        EventPage[]
+  pageBlocks        PageBlock[]
+  sponsorTiers      SponsorTier[]
+  sponsors          Sponsor[]
+  registrations     Registration[]
+  attendances       Attendance[]
+  submissions       Submission[]
+  submissionAuthors SubmissionAuthor[]
+  submissionFiles   SubmissionFile[]
+  reviewAssignments ReviewAssignment[]
+  reviews           Review[]
+  reviewConflicts   ReviewConflict[]
+  cardTemplates     CardTemplate[]
+  userCards         UserCard[]
+  xpProfiles        UserXpProfile[]
+  xpTransactions    XpTransaction[]
+  taskDefinitions   TaskDefinition[]
+  userTaskProgress  UserTaskProgress[]
+  certificates      Certificate[]
+  auditLogs         AuditLog[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("tenants")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  IDENTIDADE (GLOBAL — sem RLS por tenantId) — schema Better Auth
+// ───────────────────────────────────────────────────────────────────────────────
+//  Nomes em camelCase são exigidos pelo Better Auth. As anotações `@map`
+//  preservam o nome camelCase na coluna (o padrão do Prisma já seria esse, mas
+//  explicitá-las documenta que a escolha é do Better Auth, não nossa).
+//
+//  Estas tabelas recebem RLS com policies PRÓPRIAS (ver
+//  docker/postgres/init/02-rls-policies.sql, seção 4): não têm `tenantId`
+//  porque a identidade é global (ADR-002).
+
+model User {
+  id            String  @id @default(uuid(7)) @map("id") @db.Uuid
+  name          String  @db.VarChar(160)
+  email         String  @unique @db.VarChar(255)
+  emailVerified Boolean @default(false)
+
+  image        String? @db.VarChar(1024)
+  /// Hash de senha (scrypt, gerado pelo Better Auth). Null em login social.
+  passwordHash String? @db.VarChar(255)
+
+  /// Perfil público gamificado.
+  publicHandle    String? @unique @db.VarChar(63)
+  bio             String? @db.VarChar(1000)
+  headline        String? @db.VarChar(160)
+  country         String? @db.VarChar(2)
+  orcidId         String? @db.VarChar(19)
+  lattesId        String? @db.VarChar(32)
+  isPublicProfile Boolean @default(true)
+
+  twoFactorEnabled Boolean   @default(false)
+  banned           Boolean   @default(false)
+  banReason        String?   @db.VarChar(500)
+  banExpires       DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  accounts          Account[]
+  sessions          Session[]
+  memberships       UserTenantProfile[]
+  roleAssignments   RoleAssignment[]
+  registrations     Registration[]
+  attendances       Attendance[]
+  submissions       Submission[]
+  submissionAuthors SubmissionAuthor[]
+  reviews           Review[]
+  reviewAssignments ReviewAssignment[]
+  activitySpeakers  ActivitySpeaker[]
+  cards             UserCard[]
+  xpTransactions    XpTransaction[]
+  userProgress      UserTaskProgress[]
+  xpProfiles        UserXpProfile[]
+  certificates      Certificate[]
+  auditLogs         AuditLog[]
+
+  @@index([email])
+  @@index([deletedAt])
+  @@map("user")
+}
+
+/// Provedores de login (credencial, Google, GitHub, ORCID...).
+model Account {
+  id         String @id @default(uuid(7)) @db.Uuid
+  accountId  String @db.VarChar(255)
+  providerId String @db.VarChar(64)
+  userId     String @db.Uuid
+
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
+  scope                 String?   @db.VarChar(500)
+  password              String?   @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+/// Sessão de autenticação (Better Auth).
+///
+/// ATENÇÃO — o tenant ativo NÃO mora aqui.
+/// O contexto ativo é resolvido por requisição a partir de um cookie assinado
+/// (`ef_tenant`) e revalidado contra os vínculos reais do usuário. Ver ADR-009:
+/// guardar o tenant na sessão criaria uma janela em que um usuário removido da
+/// instituição continuaria operando com o contexto antigo.
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  token     String   @unique @db.VarChar(512)
+  userId    String   @db.Uuid
+  expiresAt DateTime @db.Timestamptz(6)
+
+  ipAddress String? @db.VarChar(64)
+  userAgent String? @db.VarChar(500)
+
+  /// Rastro do último tenant usado — apenas telemetria/UX, jamais autorização.
+  lastTenantId String? @db.Uuid
+  /// Quem personificou esta sessão (suporte/impersonação auditada).
+  impersonatedBy String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+/// Tokens efêmeros do fluxo de autenticação (verificação de e-mail, reset de
+/// senha, magic link). O Better Auth valida em runtime que `updatedAt` existe —
+/// a ausência desse campo é reportada como "Prisma schema mismatch".
+model Verification {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  identifier String   @db.VarChar(255)
+  value      String   @db.VarChar(512)
+  expiresAt  DateTime @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  RBAC — papéis por escopo (acúmulo de papéis e context switching)
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Vínculo pessoa↔instituição. É a tabela que o RLS protege para responder
+/// "quem pode operar nesta instituição".
+model UserTenantProfile {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+
+  status MembershipStatus @default(INVITED)
+
+  /// Cargo/afiliação declarada dentro da instituição.
+  jobTitle    String? @db.VarChar(120)
+  department  String? @db.VarChar(120)
+  institution String? @db.VarChar(200)
+  /// Identificador do usuário no sistema de origem (SSO/legado).
+  externalRef String? @db.VarChar(120)
+
+  invitedById  String?   @db.Uuid
+  invitedAt    DateTime? @db.Timestamptz(6)
+  joinedAt     DateTime? @db.Timestamptz(6)
+  lastAccessAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId, status])
+  @@index([tenantId, status])
+  @@map("user_tenant_profiles")
+}
+
+/// Concessão de papel. `scope` + alvo definem onde o papel vale.
+/// Ex.: REVIEWER aplicado a um EVENT; SPEAKER aplicado a uma ACTIVITY.
+model RoleAssignment {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+
+  role  RoleKey
+  scope RoleScope
+
+  /// Preenchido conforme `scope`. Null em TENANT.
+  eventId    String? @db.Uuid
+  activityId String? @db.Uuid
+
+  /// Vigência. `expiresAt` permite papéis temporários (ex.: staff do dia).
+  grantedAt   DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt   DateTime? @db.Timestamptz(6)
+  grantedById String?   @db.Uuid
+  reason      String?   @db.VarChar(300)
+  revokedAt   DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event    Event?    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, role])
+  @@index([tenantId, role, scope])
+  @@index([eventId, role])
+  @@index([activityId, role])
+  @@index([userId, revokedAt])
+  @@map("role_assignments")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  EVENTOS & ATIVIDADES
+// ───────────────────────────────────────────────────────────────────────────────
+
+model Event {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+
+  slug        String  @db.VarChar(120)
+  title       String  @db.VarChar(200)
+  subtitle    String? @db.VarChar(300)
+  summary     String? @db.VarChar(600)
+  description String? @db.Text
+
+  status   EventStatus   @default(DRAFT)
+  modality EventModality @default(IN_PERSON)
+
+  startsAt DateTime @db.Timestamptz(6)
+  endsAt   DateTime @db.Timestamptz(6)
+
+  timezone String @default("America/Bahia") @db.VarChar(64)
+
+  /// Janelas de inscrição (independentes da janela do evento).
+  registrationOpensAt  DateTime? @db.Timestamptz(6)
+  registrationClosesAt DateTime? @db.Timestamptz(6)
+
+  /// Janela de submissão de trabalhos.
+  cfpOpensAt  DateTime? @db.Timestamptz(6)
+  cfpClosesAt DateTime? @db.Timestamptz(6)
+
+  venueName    String?  @db.VarChar(200)
+  venueAddress String?  @db.VarChar(300)
+  city         String?  @db.VarChar(120)
+  state        String?  @db.VarChar(120)
+  country      String?  @db.VarChar(2)
+  onlineUrl    String?  @db.VarChar(1024)
+  latitude     Decimal? @db.Decimal(10, 7)
+  longitude    Decimal? @db.Decimal(10, 7)
+
+  /// Lotação do evento como um todo. null = ilimitado; 0 = esgotado.
+  capacity Int? @default(0)
+
+  /// ─── Contadores denormalizados (reserva de vaga atômica) ──────────────────
+  /// Mantidos pelos casos de uso de inscrição. A reserva de vaga é feita com
+  /// um UPDATE condicional sobre `confirmedCount`, que o PostgreSQL serializa
+  /// por linha — é o que impede superlotação sob concorrência sem
+  /// `SELECT FOR UPDATE`. Ver src/domain/events/registration-rules.ts.
+  confirmedCount Int @default(0)
+  waitlistCount  Int @default(0)
+
+  coverImageUrl  String? @db.VarChar(1024)
+  logoUrl        String? @db.VarChar(1024)
+  primaryColor   String? @db.VarChar(9)
+  secondaryColor String? @db.VarChar(9)
+  accentColor    String? @db.VarChar(9)
+
+  /// Tema da landing page modular (tokens visuais, tipografia, raio, sombra).
+  theme    Json @default("{}")
+  /// Configurações de negócio: certificados, XP, regras de check-in.
+  settings Json @default("{}")
+
+  publishedAt DateTime? @db.Timestamptz(6)
+  createdById String?   @db.Uuid
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activities      Activity[]
+  rooms           Room[]
+  tracks          Track[]
+  registrations   Registration[]
+  submissions     Submission[]
+  pages           EventPage[]
+  sponsors        Sponsor[]
+  sponsorTiers    SponsorTier[]
+  roleAssignments RoleAssignment[]
+  cardTemplates   CardTemplate[]
+  taskDefinitions TaskDefinition[]
+  certificates    Certificate[]
+  attendances     Attendance[]
+  userCards       UserCard[]
+  xpTransactions  XpTransaction[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@index([tenantId, startsAt])
+  @@index([status, startsAt])
+  @@index([deletedAt])
+  @@map("events")
+}
+
+/// Espaço físico/lógico com controle de lotação e conflito de horário.
+model Room {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  name     String  @db.VarChar(120)
+  building String? @db.VarChar(120)
+  floor    String? @db.VarChar(40)
+  capacity Int     @default(0)
+
+  /// Recursos disponíveis: projetor, som, acessibilidade, etc.
+  resources Json    @default("[]")
+  mapUrl    String? @db.VarChar(1024)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activities Activity[]
+
+  @@unique([eventId, name])
+  @@index([tenantId, eventId])
+  @@map("rooms")
+}
+
+/// Atividade: palestra, minicurso, workshop, mesa-redonda, hackathon...
+model Activity {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  slug        String         @db.VarChar(140)
+  title       String         @db.VarChar(200)
+  description String?        @db.Text
+  type        ActivityType   @default(LECTURE)
+  status      ActivityStatus @default(DRAFT)
+  modality    EventModality  @default(IN_PERSON)
+
+  startsAt DateTime @db.Timestamptz(6)
+  endsAt   DateTime @db.Timestamptz(6)
+
+  roomId String? @db.Uuid
+
+  /// Lotação. `capacity` null = ILIMITADO; `0` = ESGOTADO.
+  /// A distinção entre null e 0 é significativa: tratar 0 como ilimitado
+  /// liberaria inscrições em uma atividade configurada como lotada.
+  capacity        Int?    @default(0)
+  waitlistEnabled Boolean @default(false)
+
+  /// ─── Contadores denormalizados (reserva de vaga atômica) ──────────────────
+  /// Fonte da verdade para ocupação. Ver `SEAT_AVAILABLE_PREDICATE` em
+  /// src/domain/events/registration-rules.ts — o predicado de disponibilidade
+  /// existe em um único lugar para que a semântica de null/0 não divirja.
+  confirmedCount Int @default(0)
+  waitlistCount  Int @default(0)
+
+  /// Carga horária oficial em MINUTOS. Base para XP e certificados.
+  workloadMinutes Int @default(60)
+
+  /// Exige presença para emitir certificado / conceder XP.
+  requiresAttendance   Boolean @default(true)
+  /// Percentual mínimo de presença para considerar concluída (0-100).
+  minAttendancePercent Int     @default(75)
+
+  /// Habilita check-in por QR Code nesta atividade.
+  checkInEnabled  Boolean   @default(true)
+  checkInOpensAt  DateTime? @db.Timestamptz(6)
+  checkInClosesAt DateTime? @db.Timestamptz(6)
+
+  /// Valor de XP concedido pela conclusão (override do padrão do tenant).
+  xpReward             Int     @default(0)
+  /// Carta concedida na conclusão, se houver.
+  rewardCardTemplateId String? @db.Uuid
+
+  isFeatured    Boolean  @default(false)
+  coverImageUrl String?  @db.VarChar(1024)
+  tags          String[] @default([])
+  metadata      Json     @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  room   Room?  @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  registrations   Registration[]
+  attendances     Attendance[]
+  submissions     Submission[]
+  speakers        ActivitySpeaker[]
+  roleAssignments RoleAssignment[]
+  certificates    Certificate[]
+  xpTransactions  XpTransaction[]
+
+  @@unique([eventId, slug])
+  @@index([tenantId, eventId, status])
+  @@index([eventId, startsAt])
+  @@index([roomId, startsAt])
+  @@index([tenantId, type])
+  @@index([deletedAt])
+  @@map("activities")
+}
+
+/// Palestrante/convidado vinculado a uma atividade (relação N:N com metadados).
+model ActivitySpeaker {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @db.Uuid
+  activityId String  @db.Uuid
+  userId     String? @db.Uuid
+
+  /// Convidado externo sem conta na plataforma.
+  guestName        String? @db.VarChar(160)
+  guestEmail       String? @db.VarChar(255)
+  guestInstitution String? @db.VarChar(200)
+  guestBio         String? @db.Text
+
+  isKeynote       Boolean @default(false)
+  displayOrder    Int     @default(0)
+  /// Carga horária atribuída a este palestrante (para certificado individual).
+  workloadMinutes Int?    @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  /// Palestrante com conta na plataforma. `null` para convidado externo.
+  /// A relação faltava desde a FASE 1 e impedia consultar o nome do palestrante
+  /// junto do vínculo — descoberto ao montar a agenda pública na FASE 3.
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([activityId, userId])
+  @@index([tenantId, activityId])
+  @@index([userId])
+  @@map("activity_speakers")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  LANDING PAGE MODULAR
+// ───────────────────────────────────────────────────────────────────────────────
+
+model EventPage {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  slug        String  @db.VarChar(120)
+  title       String  @db.VarChar(200)
+  isHome      Boolean @default(false)
+  isPublished Boolean @default(false)
+
+  /// SEO
+  metaTitle       String? @db.VarChar(200)
+  metaDescription String? @db.VarChar(320)
+  ogImageUrl      String? @db.VarChar(1024)
+
+  /// Overrides de tema específicos desta página.
+  theme Json @default("{}")
+
+  displayOrder Int @default(0)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event  Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  blocks PageBlock[]
+
+  @@unique([eventId, slug])
+  @@index([tenantId, eventId, isPublished])
+  @@map("event_pages")
+}
+
+/// Bloco visual da landing page. `content` é validado por schema Zod na
+/// camada de aplicação conforme `type` (union discriminada).
+model PageBlock {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  pageId   String @db.Uuid
+
+  type    PageBlockType
+  content Json          @default("{}")
+  /// Overrides visuais do bloco (paleta, espaçamento, animação).
+  style   Json          @default("{}")
+
+  displayOrder Int     @default(0)
+  isVisible    Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page   EventPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, pageId, displayOrder])
+  @@map("page_blocks")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  PATROCINADORES
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Cota configurável por evento (Diamante, Ouro, Prata ou cota customizada).
+model SponsorTier {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  key         SponsorTierKey @default(CUSTOM)
+  name        String         @db.VarChar(80)
+  description String?        @db.VarChar(400)
+  color       String?        @db.VarChar(9)
+  /// Ordem de exibição (Diamante = 0).
+  rank        Int            @default(0)
+  /// Valor comercial da cota, para relatórios financeiros.
+  priceCents  Int            @default(0)
+  currency    String         @default("BRL") @db.VarChar(3)
+  /// Quantidade máxima de patrocinadores nesta cota (0 = ilimitado).
+  maxSponsors Int            @default(0)
+  /// O que a cota entrega (logo no site, stand, palestra...).
+  benefits    Json           @default("[]")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sponsors Sponsor[]
+
+  @@unique([eventId, name])
+  @@index([tenantId, eventId, rank])
+  @@map("sponsor_tiers")
+}
+
+model Sponsor {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  eventId  String? @db.Uuid
+  tierId   String? @db.Uuid
+
+  name        String  @db.VarChar(160)
+  slug        String  @db.VarChar(120)
+  description String? @db.Text
+  logoUrl     String? @db.VarChar(1024)
+  websiteUrl  String? @db.VarChar(1024)
+
+  contactName  String? @db.VarChar(160)
+  contactEmail String? @db.VarChar(255)
+  contactPhone String? @db.VarChar(40)
+  /// Documento fiscal (CNPJ/CPF) — dado sensível, mascarado em logs.
+  taxId        String? @db.VarChar(32)
+
+  isActive           Boolean   @default(true)
+  /// Contrato/ativo veiculado.
+  contractUrl        String?   @db.VarChar(1024)
+  contractValueCents Int?      @default(0)
+  contractStart      DateTime? @db.Timestamptz(6)
+  contractEnd        DateTime? @db.Timestamptz(6)
+
+  displayOrder Int  @default(0)
+  metadata     Json @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tier   SponsorTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, eventId, isActive])
+  @@index([tierId])
+  @@map("sponsors")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  INSCRIÇÕES, PRESENÇA & CREDENCIAMENTO
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Inscrição em uma atividade. `userId` é pessoa global.
+/// Também cobre inscrição "no evento" via Activity do tipo OTHER/check-in geral.
+model Registration {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @db.Uuid
+  eventId    String  @db.Uuid
+  activityId String? @db.Uuid
+  userId     String  @db.Uuid
+
+  status RegistrationStatus @default(PENDING)
+
+  /// Posição na lista de espera quando `status = WAITLISTED`.
+  waitlistPosition Int? @default(0)
+
+  /// Consentimentos LGPD (imagem, dados, comunicações).
+  consentImage Boolean   @default(false)
+  consentData  Boolean   @default(false)
+  consentAt    DateTime? @db.Timestamptz(6)
+
+  /// Requisitos de acessibilidade / dieta informados na inscrição.
+  accessibilityNotes String? @db.VarChar(600)
+  dietaryNotes       String? @db.VarChar(300)
+
+  /// Respostas de formulário dinâmico da inscrição.
+  formResponses Json @default("{}")
+
+  /// Credenciamento: token opaco impresso no QR Code do badge.
+  badgeToken    String?   @unique @db.VarChar(64)
+  checkedInAt   DateTime? @db.Timestamptz(6)
+  checkedInById String?   @db.Uuid
+
+  canceledAt   DateTime? @db.Timestamptz(6)
+  cancelReason String?   @db.VarChar(300)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  attendances    Attendance[]
+  xpTransactions XpTransaction[]
+
+  /// NÃO existe `@@unique([activityId, userId])` aqui de propósito.
+  ///
+  /// Um cancelamento é TERMINAL: a linha permanece com status CANCELED. Se a
+  /// unicidade fosse global, um participante que cancelou jamais conseguiria se
+  /// inscrever de novo. A unicidade efetiva é garantida por um índice único
+  /// PARCIAL no banco, aplicado apenas a inscrições vivas:
+  ///
+  ///     CREATE UNIQUE INDEX ... ON registrations ("activityId", "userId")
+  ///       WHERE status IN ('PENDING','CONFIRMED','WAITLISTED','ATTENDED')
+  ///
+  /// Esse índice é criado pela migração `registration_live_unique`
+  /// (ver prisma/migrations) porque o Prisma Schema Language ainda não
+  /// expressa índices parciais.
+  @@index([tenantId, eventId, status])
+  @@index([tenantId, userId, status])
+  @@index([eventId, status])
+  @@index([badgeToken])
+  @@map("registrations")
+}
+
+/// Registro de presença. Um por check-in/check-out — permite múltiplos
+/// registros por atividade (entrada + saída) e auditoria completa.
+model Attendance {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  tenantId       String  @db.Uuid
+  eventId        String  @db.Uuid
+  activityId     String? @db.Uuid
+  registrationId String? @db.Uuid
+  userId         String  @db.Uuid
+
+  status AttendanceStatus @default(PRESENT)
+  source AttendanceSource
+
+  /// Janela efetivamente cumprida (calculada entre check-in e check-out).
+  checkedInAt     DateTime  @db.Timestamptz(6)
+  checkedOutAt    DateTime? @db.Timestamptz(6)
+  minutesAttended Int?      @default(0)
+
+  /// Geolocalização opcional do check-in (auditoria antifraude).
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+  /// IP/dispositivo que originou o registro.
+  ipAddress String?  @db.VarChar(64)
+  userAgent String?  @db.VarChar(500)
+
+  /// Quem validou (staff), quando manual.
+  validatedById String? @db.Uuid
+  /// Nonce do QR Code consumido, para impedir replay.
+  qrNonce       String? @db.VarChar(64)
+  notes         String? @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activity     Activity?     @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  certificates Certificate[]
+
+  @@index([tenantId, activityId, userId])
+  @@index([tenantId, eventId, checkedInAt])
+  @@index([registrationId])
+  @@index([qrNonce])
+  @@map("attendances")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  SUBMISSÕES & PEER REVIEW
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Trilha temática da chamada de trabalhos.
+model Track {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  slug        String  @db.VarChar(120)
+  name        String  @db.VarChar(160)
+  description String? @db.Text
+  color       String? @db.VarChar(9)
+
+  /// Coordenador da trilha.
+  chairId String? @db.Uuid
+
+  /// Limite de submissões por autor nesta trilha (0 = ilimitado).
+  maxSubmissionsPerAuthor Int     @default(0)
+  /// Exige versão cega para submissão.
+  requiresBlindReview     Boolean @default(true)
+
+  /// Rubrica de avaliação: lista de critérios com peso e escala.
+  /// [{ key, label, weight, maxScore, description }]
+  reviewRubric        Json    @default("[]")
+  /// Nota mínima (0-100) para recomendação automática de aceite.
+  acceptanceThreshold Decimal @default(60) @db.Decimal(5, 2)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+
+  @@unique([eventId, slug])
+  @@index([tenantId, eventId, isActive])
+  @@map("tracks")
+}
+
+model Submission {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @db.Uuid
+  eventId    String  @db.Uuid
+  trackId    String? @db.Uuid
+  activityId String? @db.Uuid
+
+  /// Código público de protocolo (ex.: ABC123).
+  protocol String   @db.VarChar(20)
+  title    String   @db.VarChar(300)
+  abstract String   @db.Text
+  keywords String[] @default([])
+  language String   @default("pt-BR") @db.VarChar(10)
+
+  status SubmissionStatus @default(DRAFT)
+
+  /// Autor que realizou a submissão (corresponding author).
+  submittedById String    @db.Uuid
+  submittedAt   DateTime? @db.Timestamptz(6)
+
+  /// Resultado final da avaliação.
+  finalScore    Decimal?  @db.Decimal(6, 2)
+  decisionAt    DateTime? @db.Timestamptz(6)
+  decisionById  String?   @db.Uuid
+  decisionNotes String?   @db.Text
+
+  /// Apresentação aprovada (sessão, horário, sala).
+  presentationScheduledAt DateTime? @db.Timestamptz(6)
+  presentationRoomId      String?   @db.Uuid
+  presentationFormat      String?   @db.VarChar(40)
+
+  version Int @default(1)
+
+  metadata Json @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  track    Track?    @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  author   User      @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+
+  authors        SubmissionAuthor[]
+  files          SubmissionFile[]
+  assignments    ReviewAssignment[]
+  reviews        Review[]
+  conflicts      ReviewConflict[]
+  xpTransactions XpTransaction[]
+
+  @@unique([tenantId, protocol])
+  @@index([tenantId, eventId, status])
+  @@index([eventId, trackId, status])
+  @@index([submittedById])
+  @@index([tenantId, status, submittedAt])
+  @@map("submissions")
+}
+
+/// Coautoria com ordem de crédito e afiliação — base do certificado de autor.
+model SubmissionAuthor {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  tenantId     String  @db.Uuid
+  submissionId String  @db.Uuid
+  userId       String? @db.Uuid
+
+  /// Coautor sem conta na plataforma.
+  guestName        String? @db.VarChar(160)
+  guestEmail       String? @db.VarChar(255)
+  guestInstitution String? @db.VarChar(200)
+  guestOrcidId     String? @db.VarChar(19)
+
+  institution     String? @db.VarChar(200)
+  /// Ordem de autoria (1 = primeiro autor).
+  authorOrder     Int     @default(1)
+  isCorresponding Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([submissionId, authorOrder])
+  @@index([tenantId, submissionId])
+  @@index([userId])
+  @@map("submission_authors")
+}
+
+/// Arquivo armazenado em S3/MinIO. Metadados suficientes para auditoria
+/// de integridade (hash, tamanho, tipo) e para varredura antivírus.
+model SubmissionFile {
+  id           String @id @default(uuid(7)) @db.Uuid
+  tenantId     String @db.Uuid
+  submissionId String @db.Uuid
+
+  kind SubmissionFileKind @default(BLIND_PDF)
+
+  /// Chave no bucket (tenant-scoped: tenants/{tenantId}/events/{eventId}/...).
+  storageKey String @db.VarChar(1024)
+  bucket     String @db.VarChar(120)
+  fileName   String @db.VarChar(300)
+  mimeType   String @db.VarChar(120)
+  sizeBytes  BigInt
+  /// SHA-256 do conteúdo — detecta substituição e deduplica.
+  checksum   String @db.Char(64)
+  /// Versão do arquivo (reenvios em revisão).
+  version    Int    @default(1)
+
+  isCurrent  Boolean @default(true)
+  /// Resultado da varredura antivírus (ClamAV/serviço externo).
+  scanStatus String  @default("PENDING") @db.VarChar(20)
+
+  uploadedById String?   @db.Uuid
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt    DateTime? @db.Timestamptz(6)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, kind, version])
+  @@index([tenantId, submissionId, isCurrent])
+  @@index([checksum])
+  @@map("submission_files")
+}
+
+/// Atribuição de parecerista. Registra afinidade e status do convite.
+model ReviewAssignment {
+  id           String @id @default(uuid(7)) @db.Uuid
+  tenantId     String @db.Uuid
+  submissionId String @db.Uuid
+  reviewerId   String @db.Uuid
+
+  status ReviewStatus @default(INVITED)
+
+  /// Pontuação de afinidade (0-100) calculada na distribuição automática.
+  affinityScore Decimal? @db.Decimal(5, 2)
+  /// Justificativa da escolha (matching por keywords, trilha, histórico).
+  matchReason   String?  @db.VarChar(400)
+
+  isBlind Boolean @default(true)
+
+  invitedAt   DateTime  @default(now()) @db.Timestamptz(6)
+  respondedAt DateTime? @db.Timestamptz(6)
+  dueAt       DateTime? @db.Timestamptz(6)
+
+  assignedById String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewer   User       @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  reviews Review[]
+
+  @@unique([submissionId, reviewerId])
+  @@index([tenantId, reviewerId, status])
+  @@index([submissionId, status])
+  @@index([dueAt])
+  @@map("review_assignments")
+}
+
+/// Parecer. Notas por critério ficam em `scores` (JSON validado pela rubrica
+/// da trilha) e o total ponderado em `weightedScore`.
+model Review {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  tenantId     String  @db.Uuid
+  submissionId String  @db.Uuid
+  reviewerId   String  @db.Uuid
+  /// Atribuição que originou este parecer (rastreabilidade do convite).
+  assignmentId String? @db.Uuid
+
+  status         ReviewStatus          @default(IN_PROGRESS)
+  recommendation ReviewRecommendation?
+
+  /// Notas por critério: { "originality": 8, "methodology": 6 }
+  scores        Json     @default("{}")
+  /// Média ponderada calculada (0-100), persistida para ordenação/relatórios.
+  weightedScore Decimal? @db.Decimal(6, 2)
+
+  /// Comentários para o comitê (não visíveis ao autor).
+  confidentialComments String? @db.Text
+  /// Comentários devolvidos ao autor.
+  feedbackToAuthor     String? @db.Text
+
+  isBlind Boolean @default(true)
+
+  submittedAt DateTime? @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt   DateTime? @db.Timestamptz(6)
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission Submission        @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewer   User              @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+  assignment ReviewAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  xpTransactions XpTransaction[]
+
+  @@unique([submissionId, reviewerId])
+  @@index([tenantId, reviewerId, status])
+  @@index([submissionId, status])
+  @@map("reviews")
+}
+
+/// Conflito de interesse detectado ou declarado. Bloqueia atribuição.
+model ReviewConflict {
+  id           String @id @default(uuid(7)) @db.Uuid
+  tenantId     String @db.Uuid
+  submissionId String @db.Uuid
+  /// Usuário conflitante (potencial revisor ou autor).
+  userId       String @db.Uuid
+
+  type         ConflictType
+  /// Como foi descoberto: regra automática ou declaração.
+  isDetected   Boolean      @default(true)
+  reason       String?      @db.VarChar(500)
+  /// Quem declarou o conflito (null se detectado por regra).
+  declaredById String?      @db.Uuid
+  resolvedAt   DateTime?    @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, userId, type])
+  @@index([tenantId, submissionId])
+  @@index([userId])
+  @@map("review_conflicts")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  GAMIFICAÇÃO — CARDS COLECIONÁVEIS
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Template de carta colecionável. `art` descreve a arte/efeito visual
+/// (gradiente, sprite, animação, moldura) renderizada no front.
+model CardTemplate {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  eventId  String? @db.Uuid
+
+  slug        String  @db.VarChar(120)
+  name        String  @db.VarChar(160)
+  description String? @db.Text
+  lore        String? @db.Text
+
+  rarity        CardRarity
+  /// Nível mínimo para a carta poder ser concedida/equipada.
+  levelRequired Int        @default(1)
+
+  /// Paleta dinâmica: { primary, secondary, glow, text }
+  palette Json @default("{}")
+  /// Arte e efeitos: { imageUrl, frameUrl, animation, particle, foil }
+  art     Json @default("{}")
+
+  /// Gatilho padrão de distribuição.
+  trigger          CardTrigger
+  /// Condição extra avaliada pela engine: { activityId, trackId, threshold, streak }
+  triggerCondition Json        @default("{}")
+
+  /// Peso na distribuição aleatória dentro da raridade (maior = mais comum).
+  dropWeight     Int       @default(100)
+  /// Carta não pode ser obtida após esta data (edições limitadas).
+  availableUntil DateTime? @db.Timestamptz(6)
+  /// Limite global de emissões (0 = ilimitado) — controla escassez.
+  maxSupply      Int       @default(0)
+  /// Contador denormalizado de emissões, para checagem rápida de escassez.
+  mintedCount    Int       @default(0)
+
+  isActive Boolean @default(true)
+  /// Carta não negociável/oculta do catálogo público.
+  isSecret Boolean @default(false)
+
+  metadata Json @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event  Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userCards       UserCard[]
+  taskDefinitions TaskDefinition[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, eventId, rarity])
+  @@index([tenantId, trigger, isActive])
+  @@map("card_templates")
+}
+
+/// Carta obtida por um usuário. A mesma carta pode ser colecionada em
+/// múltiplos tenants (cada tenant tem seu próprio álbum).
+model UserCard {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  tenantId       String  @db.Uuid
+  userId         String  @db.Uuid
+  cardTemplateId String  @db.Uuid
+  eventId        String? @db.Uuid
+
+  /// Nível da carta no álbum do usuário (cartas evoluem com XP).
+  level    Int     @default(1)
+  /// Quantidade de cópias (duplicatas viram "poeira"/crafting).
+  quantity Int     @default(1)
+  /// Se está fixada no perfil público (destaque estético).
+  isPinned Boolean @default(false)
+  /// Carta em foil/holográfica — variante rara da mesma carta.
+  isFoil   Boolean @default(false)
+
+  source      CardTrigger
+  /// Origem concreta: activityId, submissionId, reviewId...
+  sourceRef   String?     @db.VarChar(120)
+  grantedById String?     @db.Uuid
+  grantedAt   DateTime    @default(now()) @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardTemplate CardTemplate @relation(fields: [cardTemplateId], references: [id], onDelete: Cascade)
+  event        Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId, cardTemplateId, isFoil])
+  @@index([tenantId, userId, grantedAt])
+  @@index([cardTemplateId])
+  @@index([userId, isPinned])
+  @@map("user_cards")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  GAMIFICAÇÃO — ENGINE DE XP, NÍVEIS & MISSÕES
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Perfil de XP agregado. Denormalizado de propósito: leitura O(1) no perfil
+/// público. A verdade contábil é `XpTransaction` (append-only).
+model UserXpProfile {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+
+  totalXp   Int     @default(0)
+  /// XP gasto/resetado em temporadas (season).
+  spentXp   Int     @default(0)
+  /// XP da temporada corrente.
+  seasonXp  Int     @default(0)
+  seasonKey String? @db.VarChar(20)
+
+  level         Int @default(1)
+  /// Nível de prestígio (prestígio é reset de nível mantendo recompensas).
+  prestigeLevel Int @default(0)
+
+  currentStreak  Int       @default(0)
+  longestStreak  Int       @default(0)
+  lastActivityAt DateTime? @db.Timestamptz(6)
+
+  /// Moldura/badge equipados no perfil público.
+  equippedFrame String? @db.VarChar(80)
+  equippedTitle String? @db.VarChar(80)
+  equippedBadge String? @db.VarChar(80)
+
+  cardsCollected Int @default(0)
+  tasksCompleted Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, totalXp])
+  @@index([tenantId, level])
+  @@map("user_xp_profiles")
+}
+
+/// Livro-razão de XP. Append-only. `idempotencyKey` impede crédito duplicado
+/// (ex.: dois check-ins no mesmo QR Code).
+model XpTransaction {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  userId   String  @db.Uuid
+  eventId  String? @db.Uuid
+
+  amount Int // pode ser negativo (estorno/ajuste)
+  source XpSourceKind
+  reason String?      @db.VarChar(300)
+
+  /// Referências de origem para rastreabilidade.
+  activityId     String? @db.Uuid
+  submissionId   String? @db.Uuid
+  reviewId       String? @db.Uuid
+  registrationId String? @db.Uuid
+
+  /// Saldo após o lançamento (auditoria contábil).
+  balanceAfter Int? @default(0)
+
+  /// Chave única de idempotência da regra que gerou o crédito.
+  idempotencyKey String @unique @db.VarChar(160)
+
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event        Event?        @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  activity     Activity?     @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  submission   Submission?   @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  review       Review?       @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, userId, createdAt])
+  @@index([tenantId, eventId, source])
+  @@index([userId, source])
+  @@map("xp_transactions")
+}
+
+/// Definição de missão/tarefa recompensada com XP e possivelmente carta.
+model TaskDefinition {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  eventId  String? @db.Uuid
+
+  slug        String  @db.VarChar(120)
+  name        String  @db.VarChar(160)
+  description String? @db.Text
+
+  kind    TaskKind     @default(ONE_OFF)
+  /// Evento que dispara progresso (ex.: CHECKIN, REVIEW_COMPLETED).
+  trigger XpSourceKind
+  /// Meta a atingir: { count, activityType, trackId, minutes }
+  target  Json         @default("{}")
+
+  xpReward             Int     @default(0)
+  rewardCardTemplateId String? @db.Uuid
+
+  /// Janela de validade da missão.
+  startsAt         DateTime? @db.Timestamptz(6)
+  endsAt           DateTime? @db.Timestamptz(6)
+  /// Repetível a cada N horas (0 = não repetível).
+  repeatEveryHours Int       @default(0)
+
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+  /// Exibir no painel de missões do participante.
+  isVisible    Boolean @default(true)
+
+  metadata Json @default("{}")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event      Event?             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rewardCard CardTemplate?      @relation(fields: [rewardCardTemplateId], references: [id], onDelete: SetNull)
+  progress   UserTaskProgress[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, eventId, isActive])
+  @@index([tenantId, trigger])
+  @@map("task_definitions")
+}
+
+model UserTaskProgress {
+  id               String @id @default(uuid(7)) @db.Uuid
+  tenantId         String @db.Uuid
+  userId           String @db.Uuid
+  taskDefinitionId String @db.Uuid
+
+  status   TaskProgressStatus @default(NOT_STARTED)
+  progress Int                @default(0)
+  target   Int                @default(1)
+
+  /// Chave da janela corrente (permite missões diárias/semanais repetíveis).
+  periodKey String? @db.VarChar(20)
+
+  startedAt   DateTime? @db.Timestamptz(6)
+  completedAt DateTime? @db.Timestamptz(6)
+  claimedAt   DateTime? @db.Timestamptz(6)
+  expiresAt   DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskDefinition TaskDefinition @relation(fields: [taskDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, taskDefinitionId, periodKey])
+  @@index([tenantId, userId, status])
+  @@index([taskDefinitionId, status])
+  @@map("user_task_progress")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  CERTIFICAÇÃO
+// ───────────────────────────────────────────────────────────────────────────────
+
+model Certificate {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @db.Uuid
+  eventId    String  @db.Uuid
+  userId     String  @db.Uuid
+  activityId String? @db.Uuid
+
+  kind   CertificateKind
+  status CertificateStatus @default(QUEUED)
+
+  /// Código público de validação (impresso no QR Code).
+  validationCode String @unique @db.VarChar(32)
+
+  /// Snapshot imutável do conteúdo no momento da emissão — o certificado não
+  /// muda se o evento for editado depois.
+  title             String @db.VarChar(300)
+  recipientName     String @db.VarChar(200)
+  bodyText          String @db.Text
+  /// Carga horária efetivamente cumprida, em MINUTOS.
+  workloadMinutes   Int    @default(0)
+  /// Detalhamento das atividades que compuseram a carga horária.
+  workloadBreakdown Json   @default("[]")
+
+  issuedAt  DateTime? @db.Timestamptz(6)
+  expiresAt DateTime? @db.Timestamptz(6)
+
+  /// Objeto gerado no storage.
+  storageKey String? @db.VarChar(1024)
+  bucket     String? @db.VarChar(120)
+  mimeType   String  @default("application/pdf") @db.VarChar(120)
+  sizeBytes  BigInt?
+
+  /// SHA-256 do PDF emitido — garante integridade do documento.
+  contentHash    String? @db.Char(64)
+  /// Assinatura digital destacada (PKCS#7/CMS em base64) ou HMAC.
+  signature      String? @db.Text
+  /// Identificador da chave usada na assinatura (rotação de chaves).
+  signatureKeyId String? @db.VarChar(80)
+  signatureAlg   String? @db.VarChar(40)
+
+  /// Verificação pública: contador e último acesso ao link de validação.
+  validationCount Int       @default(0)
+  lastValidatedAt DateTime? @db.Timestamptz(6)
+
+  /// Falha de geração (para retry pelo worker).
+  failureReason String? @db.VarChar(500)
+  attempts      Int     @default(0)
+
+  /// Job do BullMQ que gerou/gera este certificado.
+  jobId        String? @db.VarChar(120)
+  /// Presenças que fundamentaram a emissão (auditoria).
+  attendanceId String? @db.Uuid
+
+  revokedAt     DateTime? @db.Timestamptz(6)
+  revokedReason String?   @db.VarChar(400)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity   Activity?   @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  attendance Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId, eventId, activityId, kind])
+  @@index([tenantId, eventId, status])
+  @@index([tenantId, userId, status])
+  @@index([validationCode])
+  @@index([status, createdAt])
+  @@map("certificates")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  OBSERVABILIDADE & AUDITORIA
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Trilha de auditoria imutável. Gravada pela aplicação (não pelo banco) para
+/// capturar ator, IP e contexto de tenant mesmo em operações cross-tenant.
+model AuditLog {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String? @db.Uuid
+  userId   String? @db.Uuid
+
+  action     AuditAction
+  entityType String      @db.VarChar(80)
+  entityId   String?     @db.Uuid
+
+  /// Diff das alterações: { before, after } — com PII mascarada.
+  changes   Json    @default("{}")
+  /// Metadados da requisição.
+  ipAddress String? @db.VarChar(64)
+  userAgent String? @db.VarChar(500)
+  requestId String? @db.VarChar(80)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}

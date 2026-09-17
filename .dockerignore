@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  .dockerignore — mantém o contexto de build pequeno e determinístico
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Dependências e artefatos de build (reinstalados dentro da imagem)
+node_modules
+.next
+out
+dist
+build
+*.tsbuildinfo
+
+# Ambiente — NUNCA envie segredos para o contexto de build
+.env
+.env.local
+.env.*.local
+
+# Controle de versão e editores
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.swp
+
+# Dados locais e volumes
+.docker-data
+infra/data
+docker/postgres/init
+
+# Testes (não são necessários na imagem de produção)
+coverage
+playwright-report
+test-results
+tests/e2e
+
+# Documentação e logs
+docs
+*.md
+!README.md
+*.log
+npm-debug.log*
+
+# SO
+.DS_Store
+Thumbs.db

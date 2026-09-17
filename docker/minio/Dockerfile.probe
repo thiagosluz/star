@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  eventflow/minio-probe — healthcheck para o servidor MinIO
+#
+#  ─────────────────────────────────────────────────────────────────────────────
+#  O PROBLEMA
+#  ─────────────────────────────────────────────────────────────────────────────
+#  O `healthcheck` do docker-compose executa DENTRO do container alvo. A imagem
+#  oficial do MinIO é distroless: tem apenas o binário `/usr/bin/minio`, sem
+#  shell, sem curl, sem wget. Não há como escrever um probe HTTP ali.
+#
+#  ─────────────────────────────────────────────────────────────────────────────
+#  A SOLUÇÃO
+#  ─────────────────────────────────────────────────────────────────────────────
+#  Esta imagem é a MESMA do servidor MinIO, com o binário `mc` (MinIO Client)
+#  adicionado. O container `minio` sobrescreve o entrypoint, mas o healthcheck
+#  roda o processo SECUNDÁRIO `mc` — que existe no sistema de arquivos desta
+#  imagem e é estático, portanto funciona sem shell e sem glibc extra.
+#
+#  O alias `local` não precisa de `mc alias set`: o `mc` lê o formato
+#  MC_HOST_<alias> direto do ambiente.
+#
+#  `mc ready` é o probe oficial de prontidão do MinIO — mais correto que um
+#  simples teste de porta TCP, porque valida que o servidor responde de fato.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FROM cgr.dev/chainguard/minio-client:latest AS mc
+
+FROM cgr.dev/chainguard/minio:latest
+
+COPY --from=mc /usr/bin/mc /usr/local/bin/mc
+
+# Mantém o entrypoint original do servidor; o healthcheck sobrescreve o comando.
+ENTRYPOINT ["/usr/bin/minio"]
+CMD ["server", "/data", "--console-address", ":9001"]

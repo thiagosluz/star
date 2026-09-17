@@ -1,0 +1,148 @@
+@import 'tailwindcss';
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Tema das páginas públicas de evento
+
+   As páginas de evento são personalizadas por instituição. O organizador escolhe
+   cores, raio, tipografia e densidade; o servidor traduz isso em CSS custom
+   properties `--ef-*` (ver src/domain/events/landing-page.ts). Este arquivo
+   apenas CONSOME essas variáveis.
+
+   Por que variáveis e não classes utilitárias dinâmicas: o Tailwind precisa
+   enxergar as classes em tempo de build. Uma cor vinda do banco não pode virar
+   `bg-[#abc]` dinamicamente. Custom properties resolvem isso e ainda permitem
+   trocar o tema sem re-render no servidor.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ef-theme {
+  /* Fallbacks: se o organizador não definir nada, a página continua legível. */
+  --ef-primary: oklch(0.55 0.2 265);
+  --ef-secondary: oklch(0.97 0 0);
+  --ef-accent: oklch(0.72 0.16 85);
+  --ef-background: oklch(1 0 0);
+  --ef-text: oklch(0.17 0 0);
+  --ef-radius: 12px;
+  --ef-spacing-scale: 1;
+  --ef-font-sans: var(--font-inter), system-ui, sans-serif;
+
+  background-color: var(--ef-background);
+  color: var(--ef-text);
+  font-family: var(--ef-font-sans);
+}
+
+/* Modo escuro: o organizador escolhe explicitamente, não seguimos o sistema por
+   padrão — a identidade visual do evento precisa ser previsível. */
+.ef-theme[data-theme-mode='dark'] {
+  --ef-background: oklch(0.15 0.01 265);
+  --ef-text: oklch(0.97 0 0);
+  --ef-secondary: oklch(0.26 0.01 265);
+}
+
+.ef-theme[data-theme-mode='auto'] {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ef-theme[data-theme-mode='auto'] {
+    --ef-background: oklch(0.15 0.01 265);
+    --ef-text: oklch(0.97 0 0);
+    --ef-secondary: oklch(0.26 0.01 265);
+  }
+}
+
+/* ─── Componentes do tema ───────────────────────────────────────────────────── */
+
+.ef-card {
+  background-color: color-mix(in oklab, var(--ef-background) 92%, var(--ef-text) 8%);
+  border: 1px solid color-mix(in oklab, var(--ef-text) 12%, transparent);
+  border-radius: var(--ef-radius);
+}
+
+.ef-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--ef-radius);
+  background-color: var(--ef-primary);
+  color: oklch(0.99 0 0);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: opacity 150ms ease;
+}
+
+.ef-button:hover {
+  opacity: 0.9;
+}
+
+.ef-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ef-button-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--ef-radius);
+  border: 1px solid color-mix(in oklab, var(--ef-text) 20%, transparent);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.ef-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: calc(var(--ef-radius) * 0.75);
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: color-mix(in oklab, var(--ef-text) 8%, transparent);
+}
+
+.ef-hero-gradient {
+  background-image: linear-gradient(
+    135deg,
+    var(--ef-primary) 0%,
+    color-mix(in oklab, var(--ef-primary) 55%, var(--ef-accent)) 100%
+  );
+  color: oklch(0.99 0 0);
+}
+
+/* ─── Animações de entrada ──────────────────────────────────────────────────── */
+/* Respeitamos `prefers-reduced-motion`: acessibilidade não é opcional, e uma
+   animação de entrada pode causar desconforto vestibular. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .ef-anim-fade > * {
+    animation: ef-fade-in 400ms ease both;
+  }
+
+  .ef-anim-slide > * {
+    animation: ef-slide-up 450ms ease both;
+  }
+}
+
+@keyframes ef-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ef-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

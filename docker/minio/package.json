@@ -1,0 +1,11 @@
+{
+  "name": "eventflow-minio-init",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Provisionamento idempotente de buckets S3/MinIO para o EventFlow",
+  "main": "provision.mjs",
+  "engines": {
+    "node": ">=22"
+  }
+}

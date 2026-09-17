@@ -1,0 +1,40 @@
+# ─── Dependências ─────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ─── Build ────────────────────────────────────────────────────────────────────
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# ─── Prisma (client é gerado) ─────────────────────────────────────────────────
+src/generated/
+
+# ─── Ambiente ─────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ─── Dados locais de infraestrutura ───────────────────────────────────────────
+.docker-data/
+infra/data/
+
+# ─── Testes ───────────────────────────────────────────────────────────────────
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ─── Editor / SO ──────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*

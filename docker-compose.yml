@@ -1,0 +1,330 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  EventFlow — Stack local de desenvolvimento
+#
+#  Serviços:
+#    postgres       PostgreSQL 18 + provisionamento de roles e RLS
+#    redis          Redis 8 (cache, rate limit, filas BullMQ)
+#    minio          Object storage S3-compatível, com provisionamento de buckets
+#    web            Next.js 16 (output: standalone)      [perfil: app]
+#    worker         Worker BullMQ (certificados, e-mails) [perfil: app]
+#
+#  Subir apenas a infraestrutura (recomendado na FASE 1):
+#      docker compose up -d
+#
+#  Subir a stack completa (a partir da FASE 2):
+#      docker compose --profile app up -d --build
+#
+#  ─────────────────────────────────────────────────────────────────────────────
+#  NOTA SOBRE O MINIO (importante)
+#  ─────────────────────────────────────────────────────────────────────────────
+#  Em 23/10/2025 a MinIO deixou de publicar as imagens Docker da edição
+#  comunitária: as tags `minio/minio` e `minio/mc` foram REMOVIDAS do Docker Hub
+#  e do Quay, e os mantenedores recusaram corrigir a CVE-2025-62506 nas imagens.
+#  Todas as tags remanescentes no Quay são de 2022.
+#
+#  Por isso usamos as imagens mantidas e sem CVE publicadas pela Chainguard
+#  (cgr.dev/chainguard/minio), disponíveis gratuitamente. São "distroless":
+#  NÃO possuem shell. É exatamente por isso que o provisionamento de buckets é
+#  feito por um script Node (`docker/minio/provision.mjs`) e não por shell.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+name: eventflow
+
+# ───────────────────────────────────────────────────────────────────────────────
+#  Âncoras reutilizáveis
+# ───────────────────────────────────────────────────────────────────────────────
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  PostgreSQL 18
+  # ═════════════════════════════════════════════════════════════════════════════
+  postgres:
+    image: postgres:18-trixie
+    container_name: eventflow-postgres
+    <<: [*restart, *default-logging]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eventflow_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eventflow_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-eventflow}
+      # Necessário para que os scripts de init apliquem a senha da role de app.
+      APP_DB_USER: ${APP_DB_USER:-eventflow_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-eventflow_app_password}
+      # Ordenação/ctype previsíveis (evita divergência entre máquinas).
+      # C.UTF-8 é obrigatório para casar com --encoding=UTF8.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # ATENÇÃO — mudança de layout no PostgreSQL 18:
+      # antes montava-se o volume em /var/lib/postgresql/data. A partir da 18 a
+      # imagem usa diretórios com o número da major version (compatível com
+      # pg_ctlcluster), e o ponto de montagem correto passou a ser o DIRETÓRIO
+      # PAI /var/lib/postgresql. Montar em .../data faz o container recusar-se a
+      # iniciar (ele detecta o volume como "não utilizado").
+      # Ref.: https://github.com/docker-library/postgres/pull/1259
+      - postgres-data:/var/lib/postgresql
+      # Executados em ordem alfabética, APENAS quando o volume está vazio.
+      #   00-roles.sql        roles admin/app + GRANTs + default privileges
+      #   01-database.sql     extensões e parâmetros do banco
+      #   02-rls-policies.sql policies de Row-Level Security + assertivas
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eventflow_admin} -d ${POSTGRES_DB:-eventflow} -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    command:
+      - postgres
+      # Loga todas as queries que passam de 200ms — ajuda a pegar N+1 cedo.
+      - -c
+      - log_min_duration_statement=200
+      # RLS é a fronteira de segurança: nunca desligue em produção.
+      - -c
+      - row_security=on
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+    networks: [eventflow]
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  Redis — cache, rate limit e broker do BullMQ
+  # ═════════════════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:8-alpine
+    container_name: eventflow-redis
+    <<: [*restart, *default-logging]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    command:
+      - redis-server
+      # As filas do BullMQ não podem perder dados em restart.
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      # Limite de memória com política que preserva as filas.
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+    networks: [eventflow]
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  MinIO — object storage S3-compatível
+  #
+  #  A imagem é construída localmente (docker/minio/Dockerfile.probe) porque
+  #  precisamos do binário `mc` presente NO container do servidor: o healthcheck
+  #  do compose roda dentro dele, e a imagem oficial do MinIO é distroless.
+  #  A base continua sendo a imagem oficial da Chainguard.
+  # ═════════════════════════════════════════════════════════════════════════════
+  minio:
+    build:
+      context: ./docker/minio
+      dockerfile: Dockerfile.probe
+    image: eventflow/minio:local
+    container_name: eventflow-minio
+    <<: [*restart, *default-logging]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-eventflow_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-eventflow_minio_secret}
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:${MINIO_CONSOLE_PORT:-9001}
+      # Formato de alias do `mc`, consumido apenas pelo healthcheck abaixo.
+      MC_HOST_local: http://${MINIO_ROOT_USER:-eventflow_minio}:${MINIO_ROOT_PASSWORD:-eventflow_minio_secret}@127.0.0.1:9000
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks: [eventflow]
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  #  Provisionamento dos buckets (roda uma vez e encerra)
+  # ─────────────────────────────────────────────────────────────────────────────
+  minio-init:
+    build:
+      context: ./docker/minio
+      dockerfile: Dockerfile
+    image: eventflow/minio-init:local
+    container_name: eventflow-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-eventflow_minio}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-eventflow_minio_secret}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_BUCKET_SUBMISSIONS: ${S3_BUCKET_SUBMISSIONS:-eventflow-submissions}
+      S3_BUCKET_CERTIFICATES: ${S3_BUCKET_CERTIFICATES:-eventflow-certificates}
+      S3_BUCKET_ASSETS: ${S3_BUCKET_ASSETS:-eventflow-assets}
+      S3_BUCKET_AVATARS: ${S3_BUCKET_AVATARS:-eventflow-avatars}
+      S3_BUCKET_TEMP: ${S3_BUCKET_TEMP:-eventflow-temp}
+    networks: [eventflow]
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  Aplicação Next.js (standalone) — FASE 2 em diante
+  # ═════════════════════════════════════════════════════════════════════════════
+  web:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN:-lvh.me}
+    image: eventflow/web:local
+    container_name: eventflow-web
+    <<: [*restart, *default-logging]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-lvh.me}
+      NEXT_PUBLIC_ROOT_DOMAIN: ${NEXT_PUBLIC_ROOT_DOMAIN:-lvh.me}
+
+      # Hostnames internos da rede do compose.
+      DB_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-eventflow}
+      APP_DB_USER: ${APP_DB_USER:-eventflow_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-eventflow_app_password}
+      # Usada SOMENTE por scripts administrativos rodados dentro do container.
+      MIGRATE_DATABASE_URL: postgresql://${POSTGRES_USER:-eventflow_admin}:${POSTGRES_PASSWORD:-eventflow_dev_password}@postgres:5432/${POSTGRES_DB:-eventflow}?schema=public
+
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-eventflow_minio}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-eventflow_minio_secret}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_BUCKET_SUBMISSIONS: ${S3_BUCKET_SUBMISSIONS:-eventflow-submissions}
+      S3_BUCKET_CERTIFICATES: ${S3_BUCKET_CERTIFICATES:-eventflow-certificates}
+      S3_BUCKET_ASSETS: ${S3_BUCKET_ASSETS:-eventflow-assets}
+      S3_BUCKET_AVATARS: ${S3_BUCKET_AVATARS:-eventflow-avatars}
+
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-in-production-min-32-chars}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+
+      # O rate limiter do Better Auth é em MEMÓRIA e por processo: em produção
+      # real ele não protege entre instâncias (deve migrar para Redis). Nos
+      # testes E2E, que rodam contra este container e disparam dezenas de
+      # cadastros do mesmo IP, ele derruba a suíte com 429.
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [eventflow]
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  Worker BullMQ — certificados, e-mails, distribuição de cards
+  # ═════════════════════════════════════════════════════════════════════════════
+  worker:
+    profiles: [app]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    image: eventflow/worker:local
+    container_name: eventflow-worker
+    <<: [*restart, *default-logging]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-eventflow}
+      APP_DB_USER: ${APP_DB_USER:-eventflow_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-eventflow_app_password}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-eventflow_minio}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-eventflow_minio_secret}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_BUCKET_CERTIFICATES: ${S3_BUCKET_CERTIFICATES:-eventflow-certificates}
+      CERTIFICATE_SIGNING_KEY_ID: ${CERTIFICATE_SIGNING_KEY_ID:-dev-key-2025-01}
+      CERTIFICATE_HMAC_SECRET: ${CERTIFICATE_HMAC_SECRET:-dev-hmac-secret-change-me}
+      # O worker não aceita tráfego HTTP: nenhuma porta publicada.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+    networks: [eventflow]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Volumes nomeados
+# ═══════════════════════════════════════════════════════════════════════════════
+volumes:
+  postgres-data:
+    name: eventflow-postgres-data
+  redis-data:
+    name: eventflow-redis-data
+  minio-data:
+    name: eventflow-minio-data
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Rede
+# ═══════════════════════════════════════════════════════════════════════════════
+networks:
+  eventflow:
+    name: eventflow-network
+    driver: bridge
