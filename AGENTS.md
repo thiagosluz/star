@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 9 (cada uma documentada em docs/fase-NN-*.md)
-Testes ................. 745 (Vitest: unit + integração) + 41 (Playwright E2E)
-ADRs ................... 59 (numeração GLOBAL e sequencial — a próxima é ADR-060)
+Fases concluídas ........ 1 a 10 (cada uma documentada em docs/fase-NN-*.md)
+Testes ................. 770 (Vitest: unit + integração) + 42 (Playwright E2E)
+ADRs ................... 63 (numeração GLOBAL e sequencial — a próxima é ADR-064)
 Permissões ............. 54 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 31 sob RLS + FORCE
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 745+ testes passando
+npm test              # esperado: 770+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -106,7 +106,7 @@ npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 41+ testes passando
+npm run test:e2e      # esperado: 42+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -136,6 +136,8 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 13 | No Next.js 16 `revalidateTag(tag)` exige 2 argumentos (o segundo é um perfil de `cacheLife`) | Use `revalidateTag(tag, 'max')` e `revalidatePath()` das telas afetadas |
 | 14 | O Next.js empacota Proxy, páginas e Server Actions em **bundles separados**: cada um tem a própria instância dos módulos, então um `Map` de cache invalidado em uma Server Action **não** alcança o Proxy | Não coloque decisão de acesso em cache de módulo. O status do tenant é relido a cada resolução (`tenant-resolver.ts`); o cache guarda só a identidade, e vive no `globalThis` para ser um só por processo |
 | 15 | `unstable_cache` **serializa** o valor: uma `Date` pode voltar como string | Cacheie números/strings (ex.: `getTime()`) e converta na leitura — `getTime()` em string estoura só em produção |
+| 16 | Diagnóstico de depuração deixado na interface: a página pública exibia `cap=… mem=… can=…` para qualquer visitante | Estado interno vai para atributos `data-*`, nunca para texto visível; o teste E2E lê atributo com `evaluate`, não `innerText` |
+| 17 | Dois cenários E2E com o mesmo `label` colidem no slug da instituição (`tenants_slug_key`) | Rótulo ÚNICO por cenário (`publica-inscricao`, não `publica`) |
 
 ---
 
@@ -234,7 +236,8 @@ tests/{unit,integration,e2e}
 | 7 | Painel administrativo + E2E completo | ✅ |
 | 8 | Motor de sorteios por presença real | ✅ |
 | 9 | Diretório público de organizações e governança global (SuperAdmin) | ✅ |
-| 10+ | *a definir pelo humano* | ⏳ |
+| 10 | Inscrição pública e vínculo automático de participante | ✅ |
+| 11+ | *a definir pelo humano* | ⏳ |
 
 **Dívidas mapeadas** (candidatas naturais às próximas fases, por risco):
 rate limit em Redis · assinatura assimétrica (PKCS#7/CMS) · observabilidade
@@ -246,7 +249,7 @@ antivírus nos arquivos de submissão.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md` e o documento da **última fase** (`docs/fase-09-*.md`).
+1. Ler `README.md` e o documento da **última fase** (`docs/fase-10-*.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

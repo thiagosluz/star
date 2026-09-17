@@ -95,6 +95,62 @@ async function guard(
   return { userId: user.id, tenantId: tenant.id, principal };
 }
 
+/**
+ * Contexto para INSCRIÇÃO PRÓPRIA em evento público (FASE 10).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  DOIS CAMINHOS, E POR QUE ELES NÃO SE MISTURAM
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  1. PESSOA DE FORA (sem vínculo com a instituição). A inscrição é pública: basta
+ *     estar autenticado. O vínculo de participante é criado pelo próprio serviço,
+ *     na mesma transação da inscrição — e as regras de bloqueio (vínculo suspenso
+ *     ou removido) são aplicadas lá, onde o estado é lido sob RLS.
+ *
+ *  2. MEMBRO (vínculo ATIVO). Continua valendo `registration:create`: um
+ *     patrocinador com vínculo e sem essa permissão NÃO se inscreve. Isto é
+ *     deliberado — a FASE 10 abriu a porta para quem está fora, não reescreveu as
+ *     regras de quem está dentro.
+ *
+ *  Devolve o contexto ou a resposta de erro já pronta, para que a ação não precise
+ *  repetir a lógica em cada ramo.
+ */
+async function guardSelfRegistration(tenantSlug: string): Promise<
+  | { ok: true; userId: string; tenantId: string; viaPublicLink: boolean }
+  | { ok: false; reason: 'NOT_AUTHENTICATED' | 'TENANT_NOT_FOUND' | 'FORBIDDEN' }
+> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { ok: false, reason: 'NOT_AUTHENTICATED' };
+
+  const tenant = await adminPrisma.tenant.findUnique({
+    where: { slug: tenantSlug },
+    select: { id: true },
+  });
+  if (!tenant) return { ok: false, reason: 'TENANT_NOT_FOUND' };
+
+  /**
+   * O vínculo é lido SEM filtrar `deletedAt`: quem foi removido precisa receber
+   * "acesso bloqueado" (mensagem do serviço), e não o silêncio de um vínculo
+   * inexistente. Um filtro aqui transformaria um bloqueio em "não encontrado".
+   */
+  const membership = await adminPrisma.userTenantProfile.findFirst({
+    where: { tenantId: tenant.id, userId: user.id },
+    select: { status: true, deletedAt: true },
+  });
+
+  if (membership?.status === 'ACTIVE' && membership.deletedAt === null) {
+    const principal = await loadPrincipal(user.id, tenant.id, 'ACTIVE');
+
+    const allowed = can(principal, PERMISSIONS.REGISTRATION_CREATE, { scope: 'TENANT' });
+
+    if (!allowed) return { ok: false, reason: 'FORBIDDEN' };
+
+    return { ok: true, userId: user.id, tenantId: tenant.id, viaPublicLink: false };
+  }
+
+  // Sem vínculo ativo: a inscrição pública decide (inclusive os bloqueios).
+  return { ok: true, userId: user.id, tenantId: tenant.id, viaPublicLink: true };
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Inscrição
 // ───────────────────────────────────────────────────────────────────────────────
@@ -127,10 +183,19 @@ export async function registerForActivityAction(
 
   const data = parsed.data;
 
-  const context = await guard(data.tenantSlug, PERMISSIONS.REGISTRATION_CREATE);
+  const context = await guardSelfRegistration(data.tenantSlug);
 
-  // Sem sessão ou sem vínculo: manda para o login preservando o destino exato.
-  if (!context) {
+  // Sem sessão: manda para o login preservando o destino exato.
+  if (!context.ok) {
+    if (context.reason === 'FORBIDDEN') {
+      return {
+        ok: false,
+        code: 'FORBIDDEN',
+        message:
+          'Seu perfil não tem permissão para se inscrever em atividades nesta instituição.',
+      };
+    }
+
     const target = tenantPath(
       data.tenantSlug,
       `/eventos/${data.eventSlug}/atividades/${data.activitySlug}`,
@@ -180,7 +245,9 @@ export async function registerForActivityAction(
     waitlistPosition: outcome.waitlistPosition,
     message:
       outcome.status === 'CONFIRMED'
-        ? 'Inscrição confirmada!'
+        ? outcome.linkedAsParticipant
+          ? 'Inscrição confirmada! Sua conta passou a ser participante desta instituição.'
+          : 'Inscrição confirmada!'
         : `Você entrou na lista de espera (posição ${outcome.waitlistPosition}).`,
   };
 }

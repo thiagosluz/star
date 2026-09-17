@@ -15,7 +15,7 @@
  *      docker compose up -d && npm run db:setup
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   RUN_ID,
   cleanupRun,
@@ -38,6 +38,39 @@ test.afterAll(async () => {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Auxiliares
 // ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Estado da inscrição, para a MENSAGEM de falha de um teste.
+ *
+ * O diagnóstico vive em atributos `data-*` na página, e não em texto: a página
+ * pública não deve expor estado interno a quem visita (havia uma linha visível com
+ * `cap=… mem=… can=…`, deixada durante a depuração da FASE 3). Este helper lê os
+ * atributos e monta a mesma frase — útil exatamente quando um teste falha.
+ */
+async function registrationDiagnostics(page: Page): Promise<string> {
+  return page
+    .getByTestId('activity-flags')
+    .evaluate((element: HTMLElement) => {
+      const data = element.dataset;
+
+      return [
+        ['cap', data.capacity],
+        ['conf', data.confirmed],
+        ['rem', data.remaining],
+        ['full', data.full],
+        ['wl', data.waitlist],
+        ['st', data.status],
+        ['win', data.windowOpen],
+        ['reg', data.registered],
+        ['mem', data.membership],
+        ['can', data.canRegister],
+        ['user', data.authenticated],
+      ]
+        .map(([key, value]) => `${key}=${value ?? '?'}`)
+        .join(' ');
+    })
+    .catch(() => 'SEM FLAGS');
+}
 
 /**
  * Cadastra pela UI e devolve o usuário persistido.
@@ -269,10 +302,7 @@ test.describe('jornada de inscrição', () => {
     await makeParticipant(tenant.id, user.id);
 
     await page.reload();
-    const flags = await page
-      .getByTestId('activity-flags')
-      .innerText()
-      .catch(() => 'SEM FLAGS');
+    const flags = await registrationDiagnostics(page);
     await expect(
       page.getByRole('button', { name: /confirmar inscrição/i }),
       `url=${page.url()} | estado=${flags}`,
@@ -473,10 +503,7 @@ test.describe('jornada de inscrição', () => {
       );
 
       // A UI reconhece que há lista de espera e muda o rótulo do botão.
-      const waitlistFlags = await secondPage
-        .getByTestId('activity-flags')
-        .innerText()
-        .catch(() => 'SEM FLAGS');
+      const waitlistFlags = await registrationDiagnostics(secondPage);
       await expect(
         secondPage.getByRole('button', { name: /entrar na lista de espera/i }),
         `url=${secondPage.url()} | estado=${waitlistFlags}`,
@@ -654,24 +681,86 @@ test.describe('RBAC na inscrição', () => {
     expect(count).toBe(0);
   });
 
-  test('usuário sem vínculo ativo não consegue se inscrever', async ({ page }) => {
+  test('visitante SEM vínculo se inscreve e passa a ser participante (FASE 10)', async ({
+    page,
+  }) => {
     const { tenant, event, activity } = await scenario({
-      label: 'semvinculo',
+      label: 'publica-inscricao',
       activityCapacity: 10,
     });
 
-    const outsider = await signUpThroughUi(page, 'Sem Vínculo');
-    // Vínculo apenas CONVIDADO — não é ACTIVE.
-    await linkUser({ tenantId: tenant.id, userId: outsider.id, status: 'INVITED' });
-    await grantRole({ tenantId: tenant.id, userId: outsider.id, role: 'PARTICIPANT' });
+    /**
+     * O caso REAL desta fase: a pessoa chegou por um link compartilhado, criou a
+     * conta e NÃO tem — nem terá — vínculo prévio com a instituição. Antes, esta
+     * era a tela do beco sem saída ("peça um convite à organização").
+     */
+    const visitor = await signUpThroughUi(page, 'Visitante do Link');
 
-    await page.goto(
-      `/t/${tenant.slug}/eventos/${event.slug}/atividades/${activity.slug}`,
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}/atividades/${activity.slug}`);
+
+    // A tela avisa o que vai acontecer com a conta — antes de acontecer.
+    await expect(page.getByTestId('public-registration-notice')).toContainText(
+      /participante/i,
     );
 
-    await expect(page.getByText(/sem vínculo com a instituição/i)).toBeVisible();
+    await page.getByRole('checkbox', { name: /autorizo o tratamento/i }).check();
+    await page.getByRole('button', { name: /confirmar inscrição/i }).click();
+
+    await expect(page.getByTestId('registration-status')).toContainText(/confirmada/i, {
+      timeout: 15_000,
+    });
+
+    // ── O banco confirma o vínculo e o papel ─────────────────────────────────
+    const membership = await e2eDb.userTenantProfile.findFirst({
+      where: { tenantId: tenant.id, userId: visitor.id },
+      select: { status: true, joinedAt: true, deletedAt: true },
+    });
+
+    expect(membership?.status).toBe('ACTIVE');
+    expect(membership?.joinedAt).not.toBeNull();
+    expect(membership?.deletedAt).toBeNull();
+
+    const roles = await e2eDb.roleAssignment.findMany({
+      where: { tenantId: tenant.id, userId: visitor.id, revokedAt: null },
+      select: { role: true, scope: true },
+    });
+
+    expect(roles.map((role) => role.role)).toEqual(['PARTICIPANT']);
+    expect(roles[0]?.scope).toBe('TENANT');
+
+    /**
+     * ── A área autenticada da instituição passa a existir para essa pessoa ────
+     *
+     * É o efeito prático do vínculo: "Minhas inscrições" (e certificados, cartas,
+     * conquistas) deixam de ser inalcançáveis. Sem esta verificação, o teste
+     * provaria apenas a linha no banco — não a jornada.
+     */
+    await page.goto(`/t/${tenant.slug}/minhas-inscricoes`);
+    await expect(page.getByRole('heading', { name: 'Minhas inscrições' })).toBeVisible();
+    await expect(page.getByText(activity.title)).toBeVisible();
+  });
+
+  test('vínculo SUSPENSO pela instituição continua bloqueado', async ({ page }) => {
+    const { tenant, event, activity } = await scenario({
+      label: 'suspenso',
+      activityCapacity: 10,
+    });
+
+    const blocked = await signUpThroughUi(page, 'Acesso Suspenso');
+    await linkUser({ tenantId: tenant.id, userId: blocked.id, status: 'SUSPENDED' });
+
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}/atividades/${activity.slug}`);
+
+    // A instituição barrou esta pessoa: a inscrição pública NÃO a readmite.
+    await expect(page.getByText(/acesso bloqueado/i)).toBeVisible();
     await expect(
       page.getByRole('button', { name: /confirmar inscrição/i }),
     ).toHaveCount(0);
+
+    const count = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.registration.count({ where: { activityId: activity.id } });
+    });
+    expect(count).toBe(0);
   });
 });

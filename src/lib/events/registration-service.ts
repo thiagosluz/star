@@ -38,6 +38,15 @@ import {
   type ActivityStatus,
   type EventStatus,
 } from '@/domain/events/event-rules';
+import {
+  PUBLIC_REGISTRATION_ROLE,
+  evaluateParticipantLink,
+  isPublicEventStatus,
+  shouldGrantParticipantRole,
+  type MembershipStatusName,
+  type ParticipantLinkDecision,
+} from '@/domain/events/public-registration-rules';
+import { recordAudit } from '@/lib/admin/audit';
 import { invalidateTenantCache } from '@/lib/tenancy/tenant-resolver';
 import {
   isTransientDbError,
@@ -60,6 +69,8 @@ export type RegistrationErrorCode =
   | 'ALREADY_WAITLISTED'
   | 'ACTIVITY_CANCELED'
   | 'ACTIVITY_NOT_OPEN'
+  /** A instituição suspendeu ou removeu o vínculo desta pessoa. */
+  | 'MEMBERSHIP_BLOCKED'
   | 'INVALID_TRANSITION'
   | 'NOT_REGISTERED'
   /** Conflito transitório do banco: a operação merece nova tentativa. */
@@ -89,6 +100,12 @@ export type RegistrationOutcome =
       waitlistPosition: number | null;
       /** Vagas restantes após a operação. `null` = ilimitado. */
       remainingSeats: number | null;
+      /**
+       * `true` quando esta inscrição CRIOU o vínculo de participante (inscrição
+       * pública). A UI usa para explicar à pessoa que ela passou a ser participante
+       * da instituição — e que aquilo foi consequência do que ela pediu.
+       */
+      linkedAsParticipant: boolean;
     }
   | {
       ok: false;
@@ -247,6 +264,28 @@ async function attemptRegistration(
           }
         }
 
+        // ── Vínculo do participante ------------------------------------------
+        /**
+         * Lido ANTES de reservar a vaga, por dois motivos:
+         *   1. quem está bloqueado pela instituição recebe a recusa sem consumir
+         *      vaga nem criar linha de inscrição;
+         *   2. a decisão é tomada uma única vez, e aplicada depois — aplicar o
+         *      vínculo só depois de a inscrição existir mantém a atomicidade: se a
+         *      reserva falhar, ninguém vira participante de lugar nenhum.
+         */
+        const linkDecision = await decideParticipantLink(tx, {
+          tenantId,
+          userId,
+          eventIsPublic: isPublicEventStatus(event.status),
+        });
+
+        if (linkDecision.action === 'BLOCKED') {
+          throw new RegistrationError(
+            'MEMBERSHIP_BLOCKED',
+            linkDecision.message ?? 'Inscrição não permitida para esta conta.',
+          );
+        }
+
         // ── Inscrição existente? ---------------------------------------------
         // O @@unique([activityId, userId]) é a garantia final; esta checagem
         // existe para devolver uma mensagem boa em vez de erro de constraint.
@@ -296,12 +335,19 @@ async function attemptRegistration(
           }
         }
 
+        const linkedAsParticipant = await applyParticipantLink(tx, {
+          tenantId,
+          userId,
+          decision: linkDecision,
+        });
+
         return {
           ok: true as const,
           status: attempt.status,
           registrationId: attempt.registrationId,
           waitlistPosition: attempt.waitlistPosition,
           remainingSeats: attempt.remainingAfter,
+          linkedAsParticipant,
         };
       },
       { timeout: 15_000 },
@@ -309,6 +355,127 @@ async function attemptRegistration(
   } catch (error) {
     return toOutcome(error);
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Vínculo do participante (inscrição pública)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Descobre o que fazer com o vínculo de quem está se inscrevendo.
+ *
+ * Roda sob RLS, dentro da transação da inscrição: os dois vínculos possíveis
+ * (`user_tenant_profiles` e `role_assignments`) têm `tenantId`, então a policy
+ * cobre a leitura e a escrita. Não há nada aqui que precise da conexão
+ * administrativa — o que é uma boa notícia: a regra que amplia acesso é executada
+ * com o MESMO nível de privilégio do resto do fluxo.
+ */
+async function decideParticipantLink(
+  tx: TxClient,
+  input: { tenantId: string; userId: string; eventIsPublic: boolean },
+): Promise<ParticipantLinkDecision> {
+  const membership = await tx.userTenantProfile.findFirst({
+    where: { tenantId: input.tenantId, userId: input.userId },
+    select: { status: true, deletedAt: true },
+  });
+
+  return evaluateParticipantLink({
+    membershipStatus: (membership?.status ?? null) as MembershipStatusName | null,
+    // Vínculo apagado (soft delete) é "removido" para todos os efeitos.
+    deleted: Boolean(membership?.deletedAt),
+    eventIsPublic: input.eventIsPublic,
+  });
+}
+
+/**
+ * Aplica a decisão, criando ou ativando o vínculo — e devolvendo `true` quando o
+ * vínculo nasceu aqui.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE `upsert` E NÃO `create`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Duas inscrições simultâneas da MESMA pessoa nova (duas abas abertas, por
+ *  exemplo) leriam "sem vínculo" ao mesmo tempo e tentariam criar a mesma linha. O
+ *  `upsert` transforma a corrida em `ON CONFLICT DO UPDATE`, que o PostgreSQL
+ *  resolve sem erro — e o efeito é o mesmo nos dois casos.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O PAPEL SÓ É CONCEDIDO A QUEM NÃO TEM PAPEL NENHUM
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Um membro que já tem papel (patrocinador, revisor, equipe) não recebe
+ *  `PARTICIPANT` de brinde: o acúmulo de papéis ampliaria permissões que a
+ *  instituição não concedeu. A inscrição de quem já é membro continua dependendo
+ *  de `registration:create` — verificado na Server Action.
+ *
+ *  A concessão é auditada como `PERMISSION_CHANGE`, porque é o que ela é.
+ */
+async function applyParticipantLink(
+  tx: TxClient,
+  input: { tenantId: string; userId: string; decision: ParticipantLinkDecision },
+): Promise<boolean> {
+  if (input.decision.action === 'ALREADY_MEMBER' || input.decision.action === 'BLOCKED') {
+    return false;
+  }
+
+  const now = new Date();
+  const activated = input.decision.action === 'ACTIVATE';
+
+  await tx.userTenantProfile.upsert({
+    where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
+    create: {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      status: 'ACTIVE',
+      joinedAt: now,
+      invitedAt: null,
+      invitedById: null,
+    },
+    update: { status: 'ACTIVE', deletedAt: null, joinedAt: now },
+    select: { id: true },
+  });
+
+  const roles = await tx.roleAssignment.findMany({
+    where: { tenantId: input.tenantId, userId: input.userId, revokedAt: null },
+    select: { role: true },
+  });
+
+  if (shouldGrantParticipantRole(roles.map((role) => role.role))) {
+    await tx.roleAssignment.create({
+      data: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        role: PUBLIC_REGISTRATION_ROLE,
+        scope: 'TENANT',
+        reason: 'Inscrição em atividade de evento público',
+      },
+    });
+
+    await recordAudit(
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        action: 'PERMISSION_CHANGE',
+        entityType: 'RoleAssignment',
+        changes: { role: { from: null, to: PUBLIC_REGISTRATION_ROLE } },
+      },
+      tx,
+    );
+  }
+
+  await recordAudit(
+    {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      action: activated ? 'UPDATE' : 'CREATE',
+      entityType: 'UserTenantProfile',
+      changes: {
+        status: { from: activated ? 'INVITED' : null, to: 'ACTIVE' },
+        origem: { from: null, to: 'inscrição pública' },
+      },
+    },
+    tx,
+  );
+
+  return true;
 }
 
 /**

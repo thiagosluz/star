@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 9 concluídas · **745 testes** unitários/integração · **41 testes E2E**
+> **Estado:** FASES 1 a 10 concluídas · **770 testes** unitários/integração · **42 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 
 ---
@@ -34,7 +34,7 @@ avaliação por pares e gamificação.
 | Domínio | Capacidade |
 |---|---|
 | **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 54 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
-| **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO e landing pages públicas personalizáveis |
+| **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado) |
 | **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
 | **Certificação** | PDF/SVG assinado (HMAC-SHA256), hash de integridade, QR Code e **validação pública sem login** |
@@ -315,8 +315,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 745 testes (24 arquivos) — unit + integração com banco real
-npm run test:e2e          # 41 testes E2E contra o container de produção
+npm test                  # 770 testes (26 arquivos) — unit + integração com banco real
+npm run test:e2e          # 42 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro
@@ -353,9 +353,10 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-07-painel-admin-e2e.md`](docs/fase-07-painel-admin-e2e.md) | Painel administrativo, trilha de auditoria, validações de agenda ligadas, E2E completo e estado final do projeto | ADR-039 … 043 |
 | [`docs/fase-08-motor-de-sorteios.md`](docs/fase-08-motor-de-sorteios.md) | Sorteios por evento/dia/atividade, elegibilidade por presença real, amostragem criptográfica, trava pessimista na apuração, hash auditável e RLS por introspecção | ADR-044 … 049 |
 | [`docs/fase-09-diretorio-e-superadmin.md`](docs/fase-09-diretorio-e-superadmin.md) | Escopo `PLATFORM`, SuperAdmin, provisionamento atômico, suspensão com corte imediato de tráfego, métricas consolidadas e diretório público de instituições | ADR-050 … 059 |
+| [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **59 decisões** registradas até aqui.
+> são **63 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -408,9 +409,9 @@ prisma/
 ├── scripts/           RLS, verificação de contrato, prova de isolamento
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              587 testes de regra pura (domínio, sem banco)
-├── integration/       158 testes com banco e storage reais
-└── e2e/               41 testes Playwright contra o container
+├── unit/              603 testes de regra pura (domínio, sem banco)
+├── integration/       167 testes com banco e storage reais
+└── e2e/               42 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -505,3 +506,4 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 **Próximos passos sugeridos:** fechar as dívidas acima por prioridade de risco
 (rate limit em Redis e PKCS#7 primeiro), adicionar observabilidade (OpenTelemetry,
 métricas de fila) e preparar o deploy com segredos gerenciados por cofre.
+

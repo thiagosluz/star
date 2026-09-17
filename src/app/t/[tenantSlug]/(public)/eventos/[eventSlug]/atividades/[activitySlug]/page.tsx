@@ -25,6 +25,7 @@ import {
   evaluateRegistrationWindow,
   formatDuration,
 } from '@/domain/events/event-rules';
+import { publicRegistrationNotice } from '@/domain/events/public-registration-rules';
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { findMyRegistrationFor } from '@/lib/events/registration-service';
@@ -115,17 +116,30 @@ export default async function ActivityPage({
 
   if (user) {
     const membership = await adminPrisma.userTenantProfile.findFirst({
-      where: { tenantId: tenant.tenantId, userId: user.id, deletedAt: null },
-      select: { status: true },
+      where: { tenantId: tenant.tenantId, userId: user.id },
+      select: { status: true, deletedAt: true },
     });
-    membershipStatus = membership?.status ?? null;
+    membershipStatus = membership?.deletedAt ? 'REMOVED' : (membership?.status ?? null);
 
-    if (membership?.status === 'ACTIVE') {
+    if (membershipStatus === 'ACTIVE') {
       const principal = await loadPrincipal(user.id, tenant.tenantId, 'ACTIVE');
       canRegister = can(principal, PERMISSIONS.REGISTRATION_CREATE, {
         scope: 'TENANT',
       });
+    } else {
+      /**
+       * INSCRIÇÃO PÚBLICA (FASE 10).
+       *
+       * Quem não é membro entra pela porta pública — a decisão definitiva é do
+       * servidor (`decideParticipantLink`, sob RLS); aqui só espelhamos o resultado
+       * para a tela não oferecer o que o servidor vai recusar. Vínculo suspenso ou
+       * removido é BLOQUEIO da instituição, e a tela diz isso em vez de oferecer o
+       * formulário.
+       */
+      canRegister = membershipStatus !== 'SUSPENDED' && membershipStatus !== 'REMOVED';
+    }
 
+    if (membershipStatus === 'ACTIVE') {
       const mine = await findMyRegistrationFor(
         tenant.tenantId,
         user.id,
@@ -252,10 +266,33 @@ export default async function ActivityPage({
                       ? ` · ${activity.remainingSeats} restantes`
                       : ''}
                   </dd>
-                  {/* DIAGNÓSTICO TEMPORÁRIO — remover após depurar. */}
-                  <dd data-testid="activity-flags" className="font-mono text-[10px] opacity-40">
-                    {`cap=${String(activity.capacity)} conf=${activity.confirmedCount} rem=${String(activity.remainingSeats)} full=${String(isFull)} wl=${String(activity.waitlistEnabled)} st=${activity.status} win=${String(window.open)} reg=${String(alreadyRegistered)} mem=${membershipStatus ?? 'null'} can=${String(canRegister)} user=${user ? 'sim' : 'nao'}`}
-                  </dd>
+                  {/**
+                   * DIAGNÓSTICO PARA OS TESTES, EM ATRIBUTOS — nunca em texto.
+                   *
+                   * Aqui existia uma linha visível (`cap=150 conf=0 rem=150 mem=null
+                   * can=false`), deixada durante a depuração da FASE 3 e esquecida: ela
+                   * aparecia para QUALQUER visitante, expondo estado interno da inscrição
+                   * (lotação, janela, vínculo, permissão) em página pública.
+                   *
+                   * O que os testes E2E precisam é do estado no momento da falha — e isso
+                   * se entrega em atributos, que não renderizam nada. A tela não é lugar
+                   * de diagnóstico.
+                   */}
+                  <dd
+                    data-testid="activity-flags"
+                    hidden
+                    data-capacity={String(activity.capacity)}
+                    data-confirmed={String(activity.confirmedCount)}
+                    data-remaining={String(activity.remainingSeats)}
+                    data-full={String(isFull)}
+                    data-waitlist={String(activity.waitlistEnabled)}
+                    data-status={activity.status}
+                    data-window-open={String(window.open)}
+                    data-registered={String(alreadyRegistered)}
+                    data-membership={membershipStatus ?? 'null'}
+                    data-can-register={String(canRegister)}
+                    data-authenticated={user ? 'sim' : 'nao'}
+                  />
                 </div>
               </div>
             </dl>
@@ -324,15 +361,25 @@ export default async function ActivityPage({
                   Criar conta
                 </Link>
               </div>
-            ) : membershipStatus !== 'ACTIVE' ? (
+            ) : membershipStatus === 'SUSPENDED' || membershipStatus === 'REMOVED' ? (
+              /**
+               * BLOQUEIO DA INSTITUIÇÃO (FASE 10).
+               *
+               * Antes esta tela dizia "peça um convite" para QUALQUER pessoa sem
+               * vínculo — inclusive para quem a instituição havia removido. Eram
+               * duas mensagens diferentes espremidas em uma: quem nunca teve
+               * relação com a instituição (que agora se inscreve sozinho) e quem foi
+               * bloqueado (que não deve se inscrever). Separar as duas é o que
+               * permite a inscrição pública sem abrir a porta para quem foi barrado.
+               */
               <div className="ef-card space-y-2 p-5">
                 <p className="flex items-center gap-2 font-medium">
                   <AlertCircle className="size-4" aria-hidden />
-                  Sem vínculo com a instituição
+                  Acesso bloqueado
                 </p>
                 <p className="text-sm opacity-70">
-                  Sua conta ainda não tem acesso ativo a {tenant.name}. Peça um
-                  convite à organização do evento.
+                  Seu acesso a {tenant.name} está bloqueado. Fale com a organização do
+                  evento.
                 </p>
               </div>
             ) : !canRegister ? (
@@ -375,13 +422,29 @@ export default async function ActivityPage({
                 </p>
               </div>
             ) : (
-              <RegistrationForm
-                tenantSlug={tenantSlug}
-                eventSlug={eventSlug}
-                activitySlug={activitySlug}
-                isWaitlist={isFull && activity.waitlistEnabled}
-                alreadyRegistered={alreadyRegistered}
-              />
+              <>
+                {/**
+                 * Aviso de vínculo (FASE 10): quem não é membro precisa saber que a
+                 * inscrição cria o vínculo de participante. Fazer isso sem avisar
+                 * seria inscrever a pessoa em algo que ela não pediu.
+                 */}
+                {membershipStatus !== 'ACTIVE' ? (
+                  <div
+                    className="ef-card space-y-1 p-4 text-xs opacity-80"
+                    data-testid="public-registration-notice"
+                  >
+                    <p>{publicRegistrationNotice(tenant.name)}</p>
+                  </div>
+                ) : null}
+
+                <RegistrationForm
+                  tenantSlug={tenantSlug}
+                  eventSlug={eventSlug}
+                  activitySlug={activitySlug}
+                  isWaitlist={isFull && activity.waitlistEnabled}
+                  alreadyRegistered={alreadyRegistered}
+                />
+              </>
             )}
 
             {myRegistrationId && alreadyRegistered ? (
