@@ -46,6 +46,22 @@ const NAV_ITEMS: readonly NavItem[] = [
     permission: PERMISSIONS.REVIEW_SUBMIT_OWN,
   },
   {
+    /**
+     * Conquistas (FASE 5): XP, nível, ofensiva, missões e ranking.
+     *
+     * `xp:read:own` — é a página PESSOAL do participante. A guarda de página
+     * resolve a posse automaticamente para permissões `:own`.
+     */
+    href: '/conquistas',
+    label: 'Conquistas',
+    permission: PERMISSIONS.XP_READ_OWN,
+  },
+  {
+    href: '/cartas',
+    label: 'Cartas',
+    permission: PERMISSIONS.CARD_READ_OWN,
+  },
+  {
     href: '/certificados',
     label: 'Certificados',
     permission: PERMISSIONS.CERTIFICATE_READ_OWN,

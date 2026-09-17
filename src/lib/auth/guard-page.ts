@@ -48,7 +48,16 @@ export async function requirePagePermission(input: {
     redirect('/selecionar-instituicao');
   }
 
-  const allowed = can(context.principal, input.permission, { scope: 'TENANT' });
+  /**
+   * Permissão `:own` exige posse — e a posse, numa página PESSOAL, é o próprio
+   * usuário da sessão. Sem passar `ownerId`, `can()` nega (fail-closed) e todas
+   * as páginas "minhas" ficariam inacessíveis.
+   */
+  const ownership = input.permission.endsWith(':own')
+    ? { ownerId: context.user.id }
+    : undefined;
+
+  const allowed = can(context.principal, input.permission, { scope: 'TENANT' }, ownership);
 
   if (!allowed) {
     redirect(tenantPath(input.tenantSlug, input.fallbackPath ?? '/dashboard'));

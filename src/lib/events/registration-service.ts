@@ -39,6 +39,11 @@ import {
   type EventStatus,
 } from '@/domain/events/event-rules';
 import { invalidateTenantCache } from '@/lib/tenancy/tenant-resolver';
+import {
+  isTransientDbError,
+  isUniqueViolation,
+  violatedIndexName,
+} from '@/lib/db/prisma-errors';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Erros de aplicação
@@ -790,42 +795,6 @@ function toCancelOutcome(error: unknown): CancelOutcome {
   };
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === 'P2002'
-  );
-}
-
-/**
- * Extrai o nome do índice violado.
- *
- * Com o driver adapter do Prisma 7 o nome NÃO chega em `meta.target` (como no
- * engine antigo): ele vem aninhado em
- * `meta.driverAdapterError.cause.constraint.index`. Lemos as duas formas para
- * não depender de um detalhe interno de versão.
- *
- * Descoberto inspecionando o erro real — ver prisma/scripts/diag-unique-error.ts.
- */
-function violatedIndexName(error: unknown): string | null {
-  const meta = (error as { meta?: Record<string, unknown> }).meta;
-  if (!meta) return null;
-
-  // Formato antigo (engine binário).
-  const legacy = meta.target;
-  if (typeof legacy === 'string') return legacy;
-  if (Array.isArray(legacy) && typeof legacy[0] === 'string') return legacy[0];
-
-  // Formato do driver adapter.
-  const driverError = meta.driverAdapterError as
-    | { cause?: { constraint?: { index?: string } } }
-    | undefined;
-
-  return driverError?.cause?.constraint?.index ?? null;
-}
-
 /**
  * O erro é uma colisão que vale a pena reprocessar?
  *
@@ -839,6 +808,9 @@ function violatedIndexName(error: unknown): string | null {
  *     existe, então devolvemos "já inscrito" em vez de tentar de novo.
  *
  * Qualquer outra violação (inclusive posse não reconhecida) propaga.
+ *
+ * `isUniqueViolation` e `violatedIndexName` vêm de `@/lib/db/prisma-errors` —
+ * a leitura do formato do driver adapter mora em um lugar só.
  */
 function classifyUniqueConflict(
   error: unknown,
@@ -871,22 +843,6 @@ function logUnexpected(operation: string, error: unknown): void {
  */
 function isTransientFailure(code: RegistrationErrorCode | undefined): boolean {
   return code === 'SERIALIZATION_FAILURE' || code === 'CONFLICT';
-}
-
-/** O erro cru é um conflito transitório do banco? */
-function isTransientDbError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-
-  const code = (error as { code?: string }).code;
-  if (code === 'P2034' || code === 'P2028') return true;
-
-  const message = String((error as { message?: string }).message ?? '');
-  return (
-    message.includes('write conflict') ||
-    message.includes('deadlock') ||
-    message.includes('could not serialize') ||
-    message.includes('Transaction API error')
-  );
 }
 
 /** Exposto para os testes de integração medirem o estado real. */

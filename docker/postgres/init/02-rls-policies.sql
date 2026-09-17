@@ -299,6 +299,50 @@ END
 $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+--  5b. `certificates` — VALIDAÇÃO PÚBLICA por código (FASE 6)
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  O QR Code impresso no certificado precisa ser validável por QUALQUER pessoa,
+--  sem login e sem saber a qual instituição o documento pertence. É o mesmo
+--  problema resolvido para `tenants` na seção 5: leitura antes de existir
+--  contexto de tenant.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  A SOLUÇÃO: O CÓDIGO É A CAPACIDADE
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Uma policy ADICIONAL de SELECT libera exatamente as linhas cujo
+--  `validationCode` é igual à variável de sessão `app.validation_code`. Sem essa
+--  variável definida, `current_setting(..., true)` devolve NULL, a comparação
+--  nunca é verdadeira e NADA é visível — fail-closed, como todo o resto.
+--
+--  O acesso é concedido por TRANSACÃO: `set_config(..., true)` é local, então a
+--  capacidade morre no COMMIT e não vaza no pool de conexões (mesmo raciocínio do
+--  `app.tenant_id`).
+--
+--  Observe que a policy é SOMENTE de SELECT: quem valida pode LER o certificado
+--  pelo código, mas não alterá-lo. Os contadores de validação são atualizados
+--  dentro do contexto de tenant, depois que o tenant foi resolvido pela leitura.
+DO $$
+BEGIN
+  IF to_regclass('public.certificates') IS NULL THEN
+    RAISE NOTICE '[ADIADO] Tabela certificates ausente: policy publica nao aplicada.';
+    RETURN;
+  END IF;
+
+  EXECUTE 'DROP POLICY IF EXISTS certificate_public_validation ON public.certificates';
+  EXECUTE $f$
+    CREATE POLICY certificate_public_validation ON public.certificates
+      FOR SELECT
+      TO eventflow_app
+      USING (
+        "validationCode" = NULLIF(current_setting('app.validation_code', true), '')
+      )
+  $f$;
+
+  RAISE NOTICE '[OK] policy de validacao publica de certificados aplicada.';
+END
+$$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 --  6. ASSERTIVAS — provamos que a RLS realmente isola
 -- ═══════════════════════════════════════════════════════════════════════════════
 --  Este bloco falha o provisionamento se qualquer premissa for violada — melhor
@@ -372,6 +416,18 @@ BEGIN
     WHERE p.proname = 'app_current_tenant_id' AND n.nspname = 'public'
   ) THEN
     RAISE EXCEPTION 'FALHA: funcao app_current_tenant_id() ausente.';
+  END IF;
+
+  -- 6.6 A policy de validação pública de certificados precisa existir.
+  --     Sem ela, o QR Code impresso não valida em lugar nenhum — e o participante
+  --     descobre isso segurando um documento que não pode ser comprovado.
+  IF to_regclass('public.certificates') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_policy p
+       JOIN pg_class c ON c.oid = p.polrelid
+       WHERE c.relname = 'certificates' AND p.polname = 'certificate_public_validation'
+     ) THEN
+    RAISE EXCEPTION 'FALHA: policy certificate_public_validation ausente.';
   END IF;
 
   RAISE NOTICE '[OK] RLS verificada: isolamento fail-closed ativo em todas as tabelas de tenant.';

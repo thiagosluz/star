@@ -254,6 +254,14 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-in-production-min-32-chars}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
 
+      # Assinatura de certificados (FASE 6).
+      #
+      # O web precisa das MESMAS chaves do worker: a emissão cria a assinatura
+      # (fase 1, na requisição) e a validação pública precisa verificá-la. Chaves
+      # divergentes entre os processos fariam todo certificado parecer adulterado.
+      CERTIFICATE_SIGNING_KEY_ID: ${CERTIFICATE_SIGNING_KEY_ID:-dev-key-2025-01}
+      CERTIFICATE_HMAC_SECRET: ${CERTIFICATE_HMAC_SECRET:-dev-hmac-secret-change-me}
+
       # O rate limiter do Better Auth é em MEMÓRIA e por processo: em produção
       # real ele não protege entre instâncias (deve migrar para Redis). Nos
       # testes E2E, que rodam contra este container e disparam dezenas de

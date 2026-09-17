@@ -35,6 +35,11 @@ import {
   recordDecision,
   submitReview,
 } from '@/lib/review/review-service';
+import {
+  rewardReviewCompletedById,
+  rewardSubmissionAcceptedById,
+  rewardSubmissionSubmittedById,
+} from '@/lib/gamification/hooks';
 import type { SubmissionFileKind } from '@/domain/review/submission-rules';
 import type { ReviewRecommendation } from '@/domain/review/review-rules';
 
@@ -404,10 +409,26 @@ export async function submitSubmissionAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
+  /**
+   * Recompensa de gamificação — NÃO-FATAL por construção.
+   *
+   * A submissão já está enviada; o retorno desta chamada é `null` em qualquer
+   * falha e o erro vai para o log. Um problema ao sortear uma carta não pode
+   * impedir alguém de submeter um trabalho.
+   */
+  const reward = await rewardSubmissionSubmittedById({
+    tenantId: context.tenantId,
+    submissionId: parsed.data.submissionId,
+  });
+
   return {
     ok: true,
     message: 'Submissão enviada para avaliação.',
-    data: { status: result.status },
+    data: {
+      status: result.status,
+      ...(reward && reward.xpAwarded > 0 ? { xpAwarded: reward.xpAwarded } : {}),
+      ...(reward && reward.cards.length > 0 ? { cards: reward.cards } : {}),
+    },
   };
 }
 
@@ -541,10 +562,22 @@ export async function submitReviewAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
+  // Avaliar é o trabalho do revisor: é ele quem recebe o XP.
+  const reward = await rewardReviewCompletedById({
+    tenantId: context.tenantId,
+    reviewId: result.reviewId,
+  });
+
   return {
     ok: true,
     message: `Parecer registrado. Nota ponderada: ${result.weightedScore.toFixed(1)}.`,
-    data: { reviewId: result.reviewId, weightedScore: result.weightedScore },
+    data: {
+      reviewId: result.reviewId,
+      weightedScore: result.weightedScore,
+      ...(reward && reward.xpAwarded > 0 ? { xpAwarded: reward.xpAwarded } : {}),
+      ...(reward && reward.cards.length > 0 ? { cards: reward.cards } : {}),
+      ...(reward && reward.missions.length > 0 ? { missions: reward.missions } : {}),
+    },
   };
 }
 
@@ -597,9 +630,28 @@ export async function recordDecisionAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
+  /**
+   * Aceite recompensa quem escreveu o trabalho.
+   *
+   * Só o ACEITE credita: rejeitar não pode punir com perda de XP — a avaliação
+   * por pares já é o resultado, e transformar rejeição em penalidade de pontos
+   * desencorajaria a submissão de trabalhos arriscados.
+   */
+  const reward =
+    result.status === 'ACCEPTED'
+      ? await rewardSubmissionAcceptedById({
+          tenantId: context.tenantId,
+          submissionId: data.submissionId,
+        })
+      : null;
+
   return {
     ok: true,
     message: `Decisão registrada: ${result.status}.`,
-    data: { status: result.status, finalScore: result.finalScore },
+    data: {
+      status: result.status,
+      finalScore: result.finalScore,
+      ...(reward && reward.xpAwarded > 0 ? { xpAwarded: reward.xpAwarded } : {}),
+    },
   };
 }

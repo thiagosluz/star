@@ -3,28 +3,35 @@
  *  Entrypoint do worker de background
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  ESTADO ATUAL (FASE 2)
+ *  FILA DE CERTIFICADOS (FASE 6)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O worker ainda NÃO processa filas: as filas reais (geração de certificados,
- *  envio de e-mails, distribuição de cards) chegam nas FASES 5 e 6.
+ *  O worker processa a fila `certificates`: renderiza o PDF/SVG, envia ao storage
+ *  e marca o certificado como emitido. É o trabalho que NÃO pode rodar no ciclo de
+ *  uma requisição HTTP (ver `src/lib/certificates/queue.ts`).
  *
- *  O que ele já faz é o essencial para a FASE 2:
+ *  O que ele também faz, desde a FASE 2:
  *    • valida que o processo consegue falar com Redis e PostgreSQL;
  *    • expõe um ciclo de vida com shutdown gracioso (SIGTERM/SIGINT);
  *    • mantém o container vivo e saudável, para que o `depends_on` do compose
  *      tenha significado em vez de reiniciar em loop.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE O WORKER EXISTE DESDE JÁ
+ *  CONTEXTO DE TENANT NO WORKER
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Porque a partir da FASE 5 há trabalho que NÃO pode rodar no ciclo de uma
- *  requisição HTTP: gerar PDF de certificado leva segundos, e fazê-lo dentro de
- *  uma Server Action bloquearia o usuário. Ter o processo separado desde o
- *  início evita a refatoração de "depois a gente separa".
+ *  O job carrega `tenantId` no payload e cada operação abre a própria transação com
+ *  `withTenant`. Não existe "worker global" lendo dados de todos os tenants: o
+ *  paralelismo do BullMQ não pode virar brecha de isolamento.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import 'dotenv/config';
 import { Redis } from 'ioredis';
+import { Worker, type Job } from 'bullmq';
+
+/**
+ * Import de TIPO: apagado na compilação, portanto não arrasta o módulo da fila
+ * (nem o `bullmq`) para dentro do bundle do worker antes de ser necessário.
+ */
+import type { CertificateJobData } from '@/lib/certificates/queue';
 
 const line = '─'.repeat(78);
 
@@ -60,10 +67,12 @@ async function start(): Promise<void> {
     process.exit(1);
   }
 
-  // O banco é validado aqui também: um worker sem banco não tem utilidade.
-  const { withTenant, disconnectDb } = await import('@/lib/db/tenant-client');
+  const { disconnectDb } = await import('@/lib/db/tenant-client');
   const { adminPrisma } = await import('@/lib/db/admin-client');
+  const { generateCertificate } = await import('@/lib/certificates/certificate-service');
+  const { CERTIFICATE_QUEUE_NAME, redisConnection } = await import('@/lib/certificates/queue');
 
+  // O banco é validado aqui também: um worker sem banco não tem utilidade.
   try {
     await adminPrisma.$queryRaw`SELECT 1`;
     console.log('  ✓ PostgreSQL respondeu');
@@ -76,9 +85,58 @@ async function start(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(
-    `\n  Worker pronto. Nenhuma fila registrada ainda — as filas chegam nas FASES 5 e 6.`,
+  const { isSigningConfigured } = await import('@/lib/certificates/signer');
+  if (!isSigningConfigured()) {
+    /**
+     * Sem segredo de assinatura, todo certificado sairia com assinatura vazia —
+     * e um documento sem assinatura é indistinguível de um documento falso. O
+     * worker avisa ALTO e continua vivo (a fila pode estar vazia), mas cada job
+     * vai falhar com o motivo correto.
+     */
+    console.error(
+      '  ⚠ CERTIFICATE_HMAC_SECRET ausente ou curto: a emissão de certificados vai falhar.',
+    );
+  }
+
+  // ── Fila de certificados ───────────────────────────────────────────────────
+  const worker = new Worker<CertificateJobData>(
+    CERTIFICATE_QUEUE_NAME,
+    async (job: Job<CertificateJobData>) => {
+      const { tenantId, certificateId } = job.data;
+
+      if (!tenantId || !certificateId) {
+        throw new Error('Job inválido: tenantId e certificateId são obrigatórios.');
+      }
+
+      console.log(`  → gerando certificado ${certificateId} (tentativa ${job.attemptsMade + 1})`);
+
+      const result = await generateCertificate({ tenantId, certificateId });
+
+      if (!result.ok) {
+        // Lançar faz o BullMQ aplicar o backoff e contabilizar a falha — o motivo
+        // fica gravado no próprio job e no certificado (`failureReason`).
+        throw new Error(`[${result.code}] ${result.message}`);
+      }
+
+      console.log(`  ✓ certificado ${certificateId} emitido (${result.sizeBytes} bytes)`);
+
+      return { storageKey: result.storageKey, contentHash: result.contentHash };
+    },
+    {
+      connection: redisConnection(),
+      concurrency,
+    },
   );
+
+  worker.on('failed', (job, error) => {
+    console.error(`  ✗ job ${job?.id ?? '?'} falhou: ${error.message}`);
+  });
+
+  worker.on('completed', (job) => {
+    console.log(`  ✓ job ${job.id} concluído`);
+  });
+
+  console.log(`\n  Worker pronto. Fila "${CERTIFICATE_QUEUE_NAME}" registrada.`);
   console.log(`${line}\n`);
 
   // ── Shutdown gracioso ──────────────────────────────────────────────────────
@@ -89,6 +147,9 @@ async function start(): Promise<void> {
     console.log(`\n  ${signal} recebido: encerrando com graciosidade...`);
 
     try {
+      // `close()` espera o job em andamento terminar: matar no meio deixaria um
+      // certificado em GENERATING para sempre.
+      await worker.close();
       await redis.quit();
       await disconnectDb();
       await adminPrisma.$disconnect();
@@ -102,11 +163,6 @@ async function start(): Promise<void> {
 
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
-
-  // Mantém o processo vivo aguardando trabalho. `withTenant` é referenciado para
-  // garantir que o módulo (e a conexão de runtime com RLS) seja carregado e
-  // validado agora, não no primeiro job.
-  void withTenant;
 
   setInterval(() => {
     // Heartbeat: confirma que Redis segue acessível. Um worker que perdeu o

@@ -1,15 +1,18 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Seed de desenvolvimento — FASE 2
+ *  Seed de desenvolvimento — FASES 2 a 5
  *
- *  Cria duas instituições com o MESMO usuário atuando em papéis diferentes, e um
- *  terceiro usuário com vínculo em apenas uma. Esse arranjo é o que permite
- *  verificar de verdade:
+ *  Cria duas instituições com o MESMO usuário atuando em papéis diferentes, um
+ *  terceiro usuário com vínculo em apenas uma, e — a partir da FASE 5 — um
+ *  catálogo de cartas colecionáveis, missões e XP de demonstração.
+ *
+ *  Esse arranjo é o que permite verificar de verdade:
  *
  *    • acúmulo de papéis (Palestrante + Revisor no mesmo evento);
  *    • papéis por escopo (Organizador em A, apenas Participante em B);
  *    • troca de contexto sem perda de sessão;
- *    • isolamento entre instituições (a RLS impede que A veja dados de B).
+ *    • isolamento entre instituições (a RLS impede que A veja dados de B);
+ *    • gamificação com dado real (álbum, extrato de XP, ranking, missões).
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  ATENÇÃO — POR QUE ESTE SEED DEFINE CONTEXTO DE TENANT
@@ -28,6 +31,11 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.ts';
 import { randomUUID } from 'node:crypto';
+import { awardForEvent } from '../src/lib/gamification/reward-engine';
+import {
+  generateCertificate,
+  requestCertificate,
+} from '../src/lib/certificates/certificate-service';
 
 const connectionString = process.env.MIGRATE_DATABASE_URL;
 if (!connectionString) {
@@ -189,6 +197,8 @@ async function main() {
   const salaPrincipal = randomUUID();
   const salaOficinas = randomUUID();
   const trilhaTecnologia = randomUUID();
+  /** Minicurso usado como base dos certificados de demonstração (FASE 6). */
+  const minicursoRustId = randomUUID();
 
   await inTenant(ufbaId, async () => {
     await prisma.event.create({
@@ -271,7 +281,7 @@ async function main() {
           tags: ['abertura', 'conferência'],
         },
         {
-          id: randomUUID(),
+          id: minicursoRustId,
           tenantId: ufbaId,
           eventId: congressoUfba,
           slug: 'minicurso-rust',
@@ -401,6 +411,245 @@ async function main() {
           maxConcurrentAssignments: 5,
           declaredInstitution: 'Universidade Estadual de Feira de Santana',
           institutionalEmailDomain: 'uefs.br',
+        },
+      ],
+    });
+
+    /**
+     * ── Cartas colecionáveis (FASE 5) ────────────────────────────────────────
+     *
+     * Sete cartas cobrindo os cinco níveis de raridade e os gatilhos principais.
+     * A paleta e a arte são DADO: o componente aplica as cores como variáveis
+     * CSS, nunca como string de estilo.
+     *
+     * Duas cartas têm tiragem limitada de propósito — escassez é o que dá valor
+     * percebido à coleção, e o `mintedCount` é reservado NO BANCO a cada emissão.
+     */
+    const premioPresencaId = randomUUID();
+
+    await prisma.cardTemplate.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'cracha-pioneiro',
+          name: 'Crachá do Pioneiro',
+          description: 'Para quem chegou primeiro: credenciamento no evento.',
+          lore: 'O primeiro dia começa com uma fila e termina com uma história.',
+          rarity: 'COMMON',
+          trigger: 'CHECKIN',
+          palette: {
+            primary: '#0f766e',
+            secondary: '#134e4a',
+            glow: '#5eead4',
+            text: '#f0fdfa',
+          },
+          art: { animation: 'none', particle: 'none' },
+          dropWeight: 120,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'presenca-constante',
+          name: 'Presença Constante',
+          description: 'Conquistada por participar de uma atividade completa.',
+          rarity: 'RARE',
+          trigger: 'ACTIVITY_COMPLETION',
+          palette: {
+            primary: '#2563eb',
+            secondary: '#1e3a8a',
+            glow: '#60a5fa',
+            text: '#eff6ff',
+          },
+          art: { animation: 'shimmer', particle: 'sparkle' },
+          dropWeight: 100,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'autor-estreante',
+          name: 'Autor Estreante',
+          description: 'Primeiro trabalho submetido para avaliação por pares.',
+          rarity: 'EPIC',
+          trigger: 'SUBMISSION_SUBMITTED',
+          palette: {
+            primary: '#7c3aed',
+            secondary: '#3b0764',
+            glow: '#c084fc',
+            text: '#faf5ff',
+          },
+          art: { animation: 'float', particle: 'orbit' },
+          dropWeight: 100,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'trabalho-aprovado',
+          name: 'Trabalho Aprovado',
+          description: 'O resultado que o evento existe para produzir: artigo aceito.',
+          lore: 'Revisado às cegas, defendido em público, aceito pelo comitê.',
+          rarity: 'LEGENDARY',
+          trigger: 'SUBMISSION_ACCEPTED',
+          palette: {
+            primary: '#d97706',
+            secondary: '#78350f',
+            glow: '#fbbf24',
+            text: '#fffbeb',
+          },
+          art: { animation: 'shimmer', particle: 'sparkle', foil: true },
+          dropWeight: 60,
+          maxSupply: 50,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'guardiao-do-metodo',
+          name: 'Guardião do Método',
+          description: 'Parecer concluído — o trabalho invisível que sustenta a ciência.',
+          rarity: 'MYTHIC',
+          trigger: 'REVIEW_COMPLETED',
+          palette: {
+            primary: '#db2777',
+            secondary: '#500724',
+            glow: '#f472b6',
+            text: '#fdf2f8',
+          },
+          art: { animation: 'pulse', particle: 'orbit', foil: true },
+          dropWeight: 40,
+          maxSupply: 10,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'chama-da-constancia',
+          name: 'Chama da Constância',
+          description: 'Três dias consecutivos de participação.',
+          rarity: 'EPIC',
+          trigger: 'STREAK',
+          triggerCondition: { streak: 3 },
+          palette: {
+            primary: '#ea580c',
+            secondary: '#7c2d12',
+            glow: '#fb923c',
+            text: '#fff7ed',
+          },
+          art: { animation: 'pulse', particle: 'sparkle' },
+          dropWeight: 100,
+        },
+        {
+          id: premioPresencaId,
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'veterano-do-evento',
+          name: 'Veterano do Evento',
+          description: 'Recompensa da missão "Presença tripla".',
+          rarity: 'RARE',
+          trigger: 'MANUAL_GRANT',
+          palette: {
+            primary: '#0891b2',
+            secondary: '#164e63',
+            glow: '#22d3ee',
+            text: '#ecfeff',
+          },
+          art: { animation: 'none', particle: 'dust' },
+          dropWeight: 100,
+        },
+      ],
+    });
+
+    /**
+     * ── Missões (FASE 5) ────────────────────────────────────────────────────
+     *
+     * O gatilho da missão é uma origem de XP: a missão avança quando o fato
+     * correspondente acontece. O XP só é creditado no RESGATE — completar não é o
+     * mesmo que receber, e é essa distinção que cria o momento de recompensa.
+     */
+    await prisma.taskDefinition.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'primeiro-credenciamento',
+          name: 'Primeiro credenciamento',
+          description: 'Faça o credenciamento no evento.',
+          kind: 'ONE_OFF',
+          trigger: 'CHECKIN',
+          target: { count: 1 },
+          xpReward: 100,
+          displayOrder: 1,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'presenca-tripla',
+          name: 'Presença tripla',
+          description: 'Participe de três atividades com carga horária cumprida.',
+          kind: 'ONE_OFF',
+          trigger: 'ACTIVITY_ATTENDANCE',
+          target: { count: 3 },
+          xpReward: 150,
+          rewardCardTemplateId: premioPresencaId,
+          displayOrder: 2,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'maratona-de-minicursos',
+          name: 'Maratona de minicursos',
+          description: 'Conclua um minicurso completo.',
+          kind: 'ONE_OFF',
+          trigger: 'MINI_COURSE_COMPLETION',
+          target: { count: 1, activityType: 'MINI_COURSE' },
+          xpReward: 120,
+          displayOrder: 3,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'voz-cientifica',
+          name: 'Voz científica',
+          description: 'Submeta um trabalho para a chamada de trabalhos.',
+          kind: 'ONE_OFF',
+          trigger: 'SUBMISSION_SUBMITTED',
+          target: { count: 1 },
+          xpReward: 200,
+          displayOrder: 4,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'revisor-dedicado',
+          name: 'Revisor dedicado',
+          description: 'Conclua dois pareceres.',
+          kind: 'ACHIEVEMENT',
+          trigger: 'REVIEW_COMPLETED',
+          target: { count: 2 },
+          xpReward: 250,
+          displayOrder: 5,
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'atividade-do-dia',
+          name: 'Atividade do dia',
+          description: 'Assista a uma atividade hoje.',
+          kind: 'DAILY',
+          trigger: 'ACTIVITY_ATTENDANCE',
+          target: { count: 1 },
+          xpReward: 30,
+          displayOrder: 6,
         },
       ],
     });
@@ -551,6 +800,184 @@ async function main() {
 
   console.log('  ✓ papéis atribuídos (acúmulo e escopos variados)');
 
+  // ── Gamificação: fatos de demonstração (FASE 5) ────────────────────────────
+  /**
+   * Em vez de gravar XP "na mão", o seed reproduz FATOS e deixa o motor de
+   * recompensas fazer o trabalho. Assim o dado de demonstração nasce com a mesma
+   * consistência do dado de produção: livro-razão, perfil, cartas e progresso de
+   * missão coerentes entre si.
+   *
+   * O sorteio de cartas recebe uma sequência determinística para que duas
+   * execuções do seed produzam o mesmo álbum — dado de demonstração que muda a
+   * cada execução atrapalha quem está testando.
+   */
+  /**
+   * Sorteio determinístico do seed.
+   *
+   * A sequência é criada UMA vez e avança a cada número pedido. Criar uma
+   * sequência nova a cada chamada (`(() => sequenceRandom([...])())`) devolveria
+   * sempre o primeiro valor — o sorteio pareceria funcionar e estaria fixo em um
+   * único número, escondendo completamente o comportamento da distribuição.
+   *
+   * Os valores foram escolhidos para produzir um álbum de demonstração
+   * interessante: `0.3` na raridade, `0.5` na escolha dentro da raridade e
+   * `0.05` no foil (abaixo da chance de épica/lendária/mítica, acima da comum).
+   */
+  let demoCursor = 0;
+  const demoSequence = [0.3, 0.5, 0.05];
+  const demoRandom = () => demoSequence[demoCursor++ % demoSequence.length]!;
+  const ganhosDemo = [
+    // Ana: submeteu e teve o trabalho aceito.
+    { userId: ana, source: 'SUBMISSION_SUBMITTED' as const, key: 'seed-ana-submeteu' },
+    { userId: ana, source: 'SUBMISSION_ACCEPTED' as const, key: 'seed-ana-aceito' },
+    // Bruno: credenciou, assistiu três atividades, concluiu um minicurso e deu
+    // dois pareceres — o suficiente para completar missões e subir de nível.
+    { userId: bruno, source: 'CHECKIN' as const, key: 'seed-bruno-credenciou' },
+    { userId: bruno, source: 'ACTIVITY_ATTENDANCE' as const, key: 'seed-bruno-presenca-1' },
+    { userId: bruno, source: 'ACTIVITY_ATTENDANCE' as const, key: 'seed-bruno-presenca-2' },
+    { userId: bruno, source: 'ACTIVITY_ATTENDANCE' as const, key: 'seed-bruno-presenca-3' },
+    { userId: bruno, source: 'MINI_COURSE_COMPLETION' as const, key: 'seed-bruno-minicurso' },
+    { userId: bruno, source: 'REVIEW_COMPLETED' as const, key: 'seed-bruno-parecer-1' },
+    { userId: bruno, source: 'REVIEW_COMPLETED' as const, key: 'seed-bruno-parecer-2' },
+  ];
+
+  let eventosPremiados = 0;
+
+  for (const ganho of ganhosDemo) {
+    const resultado = await awardForEvent({
+      tenantId: ufbaId,
+      userId: ganho.userId,
+      source: ganho.source,
+      idempotencyKey: `seed:${ufbaId}:${ganho.key}`,
+      eventId: congressoUfba,
+      activityType: ganho.source === 'MINI_COURSE_COMPLETION' ? 'MINI_COURSE' : null,
+      minutes: ganho.source === 'ACTIVITY_ATTENDANCE' ? 240 : null,
+      random: demoRandom,
+    });
+
+    if (resultado.ok) eventosPremiados += 1;
+  }
+
+  console.log(`  ✓ gamificação: 7 cartas, 6 missões e ${eventosPremiados} fatos de XP`);
+
+  // ── Certificação: fatos reais + documentos emitidos (FASE 6) ───────────────
+  /**
+   * Diferente do XP (que é um fato declarado pelo seed), o certificado depende de
+   * PRESENÇA MEDIDA e de TRABALHO ACEITO — os fatos que a elegibilidade consulta
+   * no banco. Então o seed cria:
+   *
+   *   • presença completa do Bruno no minicurso (entrada, saída e minutos);
+   *   • um trabalho aceito da Ana na trilha;
+   *
+   * e emite os documentos chamando o MESMO caminho de produção. O resultado é um
+   * certificado real, com hash, assinatura e QR Code que valida de verdade — o que
+   * torna a demonstração da validação pública honesta.
+   */
+  const presencaInicio = new Date(now.getTime() - 2 * 3_600_000);
+  const inscricaoMinicursoId = randomUUID();
+
+  await inTenant(ufbaId, async () => {
+    await prisma.registration.create({
+      data: {
+        id: inscricaoMinicursoId,
+        tenantId: ufbaId,
+        eventId: congressoUfba,
+        activityId: minicursoRustId,
+        userId: bruno,
+        status: 'ATTENDED',
+        consentData: true,
+        consentImage: true,
+        consentAt: presencaInicio,
+        badgeToken: `DEMO-BADGE-${ufbaId.slice(0, 8)}`,
+        checkedInAt: presencaInicio,
+        checkedInById: ana,
+      },
+    });
+
+    await prisma.attendance.create({
+      data: {
+        id: randomUUID(),
+        tenantId: ufbaId,
+        eventId: congressoUfba,
+        activityId: minicursoRustId,
+        registrationId: inscricaoMinicursoId,
+        userId: bruno,
+        status: 'PRESENT',
+        source: 'MANUAL_STAFF',
+        checkedInAt: presencaInicio,
+        // 240 minutos: exatamente a carga declarada do minicurso.
+        checkedOutAt: new Date(presencaInicio.getTime() + 240 * 60_000),
+        minutesAttended: 240,
+        validatedById: ana,
+      },
+    });
+
+    await prisma.submission.create({
+      data: {
+        id: randomUUID(),
+        tenantId: ufbaId,
+        eventId: congressoUfba,
+        trackId: trilhaTecnologia,
+        protocol: `DEMO${ufbaId.slice(0, 4).toUpperCase()}`,
+        title: 'Tecnologias digitais na formação docente: um estudo de caso',
+        abstract:
+          'Este trabalho analisa o uso de tecnologias digitais em programas de formação docente, descrevendo a metodologia adotada, os resultados observados e as implicações para políticas de inclusão digital no ensino superior.',
+        keywords: ['tecnologia educacional', 'formação docente', 'inclusão digital'],
+        language: 'pt-BR',
+        status: 'ACCEPTED',
+        submittedById: ana,
+        submittedAt: now,
+        decisionAt: now,
+        decisionNotes: 'Aprovado com recomendação de publicação.',
+        finalScore: 88.5,
+        authors: {
+          create: [
+            {
+              id: randomUUID(),
+              tenantId: ufbaId,
+              userId: ana,
+              authorOrder: 1,
+              isCorresponding: true,
+              institution: 'Universidade Federal da Bahia',
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  const certificadosDemo: { quem: string; codigo: string; tipo: string }[] = [];
+
+  for (const pedido of [
+    { userId: bruno, kind: 'MINI_COURSE' as const, quem: 'Bruno (minicurso)' },
+    { userId: ana, kind: 'AUTHOR' as const, quem: 'Ana (autoria)' },
+  ]) {
+    const solicitado = await requestCertificate({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      userId: pedido.userId,
+      kind: pedido.kind,
+    });
+
+    if (!solicitado.ok) {
+      console.warn(`  ! certificado não emitido para ${pedido.quem}: ${solicitado.message}`);
+      continue;
+    }
+
+    const gerado = await generateCertificate({
+      tenantId: ufbaId,
+      certificateId: solicitado.certificateId,
+    });
+
+    certificadosDemo.push({
+      quem: pedido.quem,
+      codigo: solicitado.validationCode,
+      tipo: gerado.ok ? 'emitido' : 'na fila (arquivo pendente)',
+    });
+  }
+
+  console.log(`  ✓ certificação: ${certificadosDemo.length} certificado(s) de demonstração`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -565,12 +992,26 @@ async function main() {
   console.log(`    http://localhost:3000/t/ufba-demo/eventos`);
   console.log(`    http://localhost:3000/t/ufba-demo/eventos/congresso-2026`);
   console.log(`    http://localhost:3000/t/ufba-demo/eventos/congresso-2026/atividades/minicurso-rust`);
-  console.log(`\n  Submissão e avaliação (FASE 4):`);
-  console.log(`    http://localhost:3000/t/ufba-demo/submissoes        (autor)`);
+  console.log(`\n  Submissão e avaliação (FASE 4):`);  console.log(`    http://localhost:3000/t/ufba-demo/submissoes        (autor)`);
   console.log(`    http://localhost:3000/t/ufba-demo/revisoes          (revisor)`);
   console.log(`    http://localhost:3000/t/ufba-demo/comite            (comitê)`);
   console.log(`    Trilha semeada: "Trilha de Tecnologia Educacional" (rubrica 4 critérios,`);
   console.log(`    2 pareceres exigidos, aceite ≥ 70, rejeição < 45)`);
+  console.log(`\n  Gamificação (FASE 5):`);
+  console.log(`    http://localhost:3000/t/ufba-demo/conquistas      (XP, nível, missões, ranking)`);
+  console.log(`    http://localhost:3000/t/ufba-demo/cartas          (álbum colecionável)`);
+  console.log(`    http://localhost:3000/t/ufba-demo/credenciamento  (check-in da equipe)`);
+  console.log(`    7 cartas (comum → mítica, duas com tiragem limitada), 6 missões e`);
+  console.log(`    XP de demonstração para ana e bruno (líquido e consistente no extrato)`);
+  console.log(`\n  Certificação (FASE 6):`);
+  if (certificadosDemo.length === 0) {
+    console.log(`    nenhum certificado de demonstração foi emitido`);
+  }
+  for (const certificado of certificadosDemo) {
+    console.log(
+      `    ${certificado.quem}: ${certificado.codigo} (${certificado.tipo}) · http://localhost:3000/validar/${certificado.codigo}`,
+    );
+  }
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

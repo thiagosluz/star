@@ -32,6 +32,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 import {
   S3Client,
   HeadObjectCommand,
@@ -339,6 +340,41 @@ function isNotFound(error: unknown): boolean {
 /** Remove um objeto. Usado ao descartar uploads incompletos. */
 export async function deleteObject(bucket: string, objectKey: string): Promise<void> {
   await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }));
+}
+
+/**
+ * Envia um objeto GERADO PELO SERVIDOR (não pelo navegador).
+ *
+ * Diferente do upload de submissões (que usa URL pré-assinada porque o arquivo é
+ * do usuário e pode ser grande), o certificado é produzido pela própria
+ * aplicação: renderizar em memória e enviar daqui é mais simples e mais seguro —
+ * não há URL assinada circulando para um documento com dados pessoais.
+ *
+ * O `ContentType` é gravado no objeto para que o download saia com o tipo certo
+ * mesmo quando a URL assinada não informa `ResponseContentType`.
+ */
+export async function putObjectBuffer(input: {
+  bucket: string;
+  objectKey: string;
+  body: Buffer;
+  contentType: string;
+  /** Metadados ficam gravados no objeto — útil para auditoria no bucket. */
+  metadata?: Record<string, string>;
+}): Promise<{ sizeBytes: number; checksum: string }> {
+  const checksum = createHash('sha256').update(input.body).digest('hex');
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: input.bucket,
+      Key: input.objectKey,
+      Body: input.body,
+      ContentType: input.contentType,
+      ContentLength: input.body.length,
+      Metadata: { 'sha256-hash': checksum, ...(input.metadata ?? {}) },
+    }),
+  );
+
+  return { sizeBytes: input.body.length, checksum };
 }
 
 /**
