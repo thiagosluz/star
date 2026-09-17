@@ -370,7 +370,6 @@ export async function selectDirectoryTenants(): Promise<DirectoryTenantRow[]> {
   return adminPrisma.tenant.findMany({
     where: { status: 'ACTIVE', isPublic: true, deletedAt: null },
     orderBy: { name: 'asc' },
-    take: 500,
     select: {
       id: true,
       slug: true,

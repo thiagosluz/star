@@ -95,7 +95,7 @@ export default async function PlatformGovernancePage() {
           <ul className="mt-3 divide-y divide-border" data-testid="governance-audit">
             {permissionAudit.map((entry) => (
               <li key={entry.id} className="flex flex-wrap items-baseline gap-x-3 py-3 text-sm">
-                <span className="font-mono text-xs uppercase text-muted-foreground">
+                <span className="label-caps text-muted-foreground">
                   {entry.action}
                 </span>
                 <span className="text-foreground">{entry.entityType}</span>

@@ -1,6 +1,8 @@
 import { AlertTriangle, ScanLine } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { getRequestContext } from '@/lib/auth/session';
+import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listCheckinQueue } from '@/lib/events/attendance-service';
@@ -34,9 +36,15 @@ export default async function CheckinPage({
   const { tenantId, tenantName } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.REGISTRATION_CHECKIN,
+    /**
+     * FASE 12 (item I7): a equipe do dia recebe `STAFF` no escopo do EVENTO — é o
+     * padrão que o próprio seed usa. Exigir escopo de instituição aqui fazia o
+     * papel recomendado pela plataforma ser recusado pela própria plataforma.
+     */
+    allowedScopes: ['TENANT', 'EVENT'],
   });
 
-  const events = await withTenant(tenantId, (tx) =>
+  const allEvents = await withTenant(tenantId, (tx) =>
     tx.event.findMany({
       where: { tenantId, deletedAt: null, status: { not: 'DRAFT' } },
       orderBy: { startsAt: 'desc' },
@@ -44,6 +52,28 @@ export default async function CheckinPage({
       select: { id: true, title: true, slug: true, startsAt: true, status: true },
     }),
   );
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O ESCOPO ESTREITO NÃO PODE VIRAR ACESSO LARGO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Quem tem o papel na INSTITUIÇÃO credencia todos os eventos dela. Quem tem o
+   *  papel em EVENTOS credencia — e enxerga — apenas os seus. A guarda aceitou o
+   *  escopo de evento; é aqui que ele é respeitado.
+   */
+  const context = await getRequestContext();
+  const principal = context?.principal;
+
+  const isTenantWide = can(principal, PERMISSIONS.REGISTRATION_CHECKIN, { scope: 'TENANT' });
+
+  const events = isTenantWide
+    ? allEvents
+    : allEvents.filter((event) =>
+        can(principal, PERMISSIONS.REGISTRATION_CHECKIN, {
+          scope: 'EVENT',
+          eventId: event.id,
+        }),
+      );
 
   const selectedEventId = evento && events.some((event) => event.id === evento) ? evento : events[0]?.id ?? null;
 
@@ -65,7 +95,7 @@ export default async function CheckinPage({
     : [];
 
   return (
-    <main className="mx-auto max-w-4xl space-y-8 px-6 py-10">
+    <main className="max-w-4xl space-y-8">
       <header className="space-y-1.5">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -80,7 +110,9 @@ export default async function CheckinPage({
 
       {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-          Nenhum evento publicado nesta instituição.
+          {isTenantWide
+            ? 'Nenhum evento publicado nesta instituição.'
+            : 'Você não é equipe de nenhum evento desta instituição. Peça à organização a concessão de STAFF no evento em que vai atuar.'}
         </p>
       ) : (
         <>

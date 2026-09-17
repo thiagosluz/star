@@ -84,7 +84,7 @@ export default async function BlockedTenantPage({
           </span>
 
           <div className="min-w-0">
-            <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+            <p className="label-caps text-muted-foreground">
               {tenant.slug}
             </p>
             <h1 className="text-xl font-semibold text-foreground">{notice.title}</h1>

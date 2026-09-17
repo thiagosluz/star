@@ -64,7 +64,7 @@ export default async function NewSubmissionPage({
     }));
 
   return (
-    <main className="mx-auto max-w-3xl space-y-8 px-6 py-10">
+    <main className="max-w-3xl space-y-8">
       <nav>
         <Link
           href={tenantPath(tenantSlug, '/submissoes')}

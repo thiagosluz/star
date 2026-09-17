@@ -137,3 +137,60 @@ export function publicRegistrationNotice(tenantName: string): string {
     'para que você acompanhe sua inscrição, seus certificados e suas conquistas.'
   );
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Evento restrito à comunidade (item I3 do levantamento da FASE 12)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Política de inscrição declarada pela instituição no evento.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO EXISTE, SE A INSCRIÇÃO PÚBLICA É O PADRÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 10 abriu a inscrição para quem não tem vínculo — e essa é a regra certa
+ *  para um evento de divulgação. Mas nem todo evento é aberto: uma assembleia, uma
+ *  reunião de conselho ou uma turma interna quer apenas a própria comunidade, e
+ *  antes da FASE 10 isso era o comportamento de TODOS os eventos. Sem esta chave, a
+ *  instituição perdeu o direito de escolher.
+ *
+ *  O dado vive em `Event.settings` (JSON), que existe desde a FASE 3 — por isso a
+ *  chave não exige migração. O leitor é deliberadamente tolerante: `settings` é um
+ *  campo livre, e um valor de outro tipo (texto, número, ausente) NÃO pode derrubar
+ *  a página de um evento. Valor inválido cai no padrão **aberto**, que é o
+ *  comportamento de todas as fases desde a 10.
+ */
+export function readEventRegistrationPolicy(settings: unknown): {
+  requiresMembership: boolean;
+} {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return { requiresMembership: false };
+  }
+
+  const value = (settings as Record<string, unknown>).registrationRequiresMembership;
+
+  return { requiresMembership: value === true };
+}
+
+/**
+ * A inscrição deste evento está aberta a quem não tem vínculo?
+ *
+ * Combina as duas condições que autorizam alguém de fora: o evento está em estado
+ * público **e** a instituição não restringiu a inscrição à comunidade.
+ */
+export function isOpenToPublicEvent(input: {
+  eventStatus: string;
+  settings: unknown;
+}): boolean {
+  return (
+    isPublicEventStatus(input.eventStatus) &&
+    !readEventRegistrationPolicy(input.settings).requiresMembership
+  );
+}
+
+/** Mensagem para o visitante de um evento restrito à comunidade. */
+export function restrictedEventNotice(tenantName: string): string {
+  return (
+    `Este evento é restrito à comunidade de ${tenantName}. ` +
+    'Se você participa da instituição, peça à organização que ative o seu vínculo.'
+  );
+}

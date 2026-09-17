@@ -191,16 +191,32 @@ const ACCOUNTS: readonly TestAccount[] = [
     name: 'Equipe de Credenciamento',
     purpose: 'Check-in e check-out por busca ou leitura de QR Code na tela /credenciamento.',
     /**
-     * Escopo de TENANT, e não de evento, porque a tela de credenciamento exige uma
-     * permissão de alcance institucional (`attendance:manage` no escopo TENANT).
-     * Com escopo de evento a conta é redirecionada ao painel — ver a nota nas
-     * dívidas técnicas da documentação de contas de teste.
+     * Escopo de TENANT: credencia TODOS os eventos da instituição. É o perfil de
+     * quem coordena o credenciamento, não o de quem trabalha em um evento.
      */
     links: [
       {
         tenantSlug: 'ufba-demo',
         status: 'ACTIVE',
         roles: [{ role: 'STAFF', scope: 'TENANT' }],
+      },
+    ],
+  },
+  {
+    id: 'equipe-evento',
+    name: 'Equipe do Dia (um evento)',
+    /**
+     * Escopo de EVENTO — o padrão que o próprio seed da FASE 5 usa para a equipe do
+     * dia. Até a FASE 12 esta conta era redirecionada ao painel pela guarda do
+     * credenciamento; hoje ela abre a tela e enxerga apenas o Congresso 2026.
+     */
+    purpose:
+      'Credenciamento com STAFF apenas no Congresso 2026: abre /credenciamento e vê somente esse evento.',
+    links: [
+      {
+        tenantSlug: 'ufba-demo',
+        status: 'ACTIVE',
+        roles: [{ role: 'STAFF', scope: 'EVENT', eventSlug: EVENT_SLUG }],
       },
     ],
   },

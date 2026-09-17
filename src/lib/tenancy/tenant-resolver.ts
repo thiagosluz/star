@@ -32,6 +32,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { adminPrisma } from '@/lib/db/admin-client';
+import {
+  publishTenantInvalidation,
+  startTenantInvalidationSubscriber,
+} from '@/lib/tenancy/cache-bus';
 import type { TenantResolution } from '@/domain/tenancy/resolution';
 
 /** Projeção enxuta: só o que a aplicação precisa para operar. */
@@ -111,8 +115,14 @@ function writeCache(key: string, result: TenantLookupResult): void {
   cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, result });
 }
 
-/** Invalida o cache. Chamado quando um tenant é criado/alterado/removido. */
-export function invalidateTenantCache(identifier?: string): void {
+/**
+ * Invalida o cache LOCALMENTE. É o que o barramento chama em cada instância.
+ *
+ * Exportada para o `cache-bus` aplicar a invalidação recebida do Redis sem chamar
+ * `invalidateTenantCache` (que publica) — publicar em resposta a uma publicação
+ * seria um eco infinito entre instâncias.
+ */
+export function invalidateTenantCacheLocally(identifier?: string): void {
   if (!identifier) {
     cache.clear();
     return;
@@ -120,6 +130,29 @@ export function invalidateTenantCache(identifier?: string): void {
   cache.delete(`slug:${identifier}`);
   cache.delete(`domain:${identifier}`);
 }
+
+/**
+ * Invalida o cache — aqui e em TODAS as instâncias (FASE 12, item I1).
+ *
+ * Chamado quando uma instituição é criada, alterada ou removida. A limpeza local é
+ * imediata; o aviso às outras instâncias vai pelo Redis e não bloqueia nada (ver
+ * `cache-bus.ts`: a operação de negócio não espera o barramento).
+ */
+export function invalidateTenantCache(identifier?: string): void {
+  invalidateTenantCacheLocally(identifier);
+  publishTenantInvalidation(identifier);
+}
+
+/**
+ * Liga esta instância ao barramento de invalidação.
+ *
+ * No escopo do módulo de propósito: a primeira importação do resolvedor — que
+ * acontece em qualquer requisição — já deixa a instância escutando. Sem isso, a
+ * assinatura dependeria de alguém lembrar de inicializá-la.
+ */
+startTenantInvalidationSubscriber((identifier) =>
+  invalidateTenantCacheLocally(identifier ?? undefined),
+);
 
 /**
  * Lê apenas o status da instituição.

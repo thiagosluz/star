@@ -53,7 +53,7 @@ export function XpProgressPanel({
             ) : null}
           </h2>
           <p className="text-sm text-muted-foreground">
-            <span className="font-mono" data-testid="xp-total">
+            <span className="code-data" data-testid="xp-total">
               {progress.totalXp.toLocaleString('pt-BR')}
             </span>{' '}
             XP no total · {seasonXp.toLocaleString('pt-BR')} XP nesta temporada
@@ -86,7 +86,7 @@ export function XpProgressPanel({
               ? 'Complete o nível para subir de prestígio'
               : `Faltam ${progress.xpToNextLevel.toLocaleString('pt-BR')} XP para o nível ${progress.level + 1}`}
           </span>
-          <span className="font-mono">{percent}%</span>
+          <span className="code-data">{percent}%</span>
         </div>
 
         <div
@@ -116,7 +116,7 @@ export function XpProgressPanel({
                 <Sparkles className="size-3" aria-hidden />
                 Ciclo de prestígio {progress.prestigeLevel}/10
               </span>
-              <span className="font-mono">{Math.round(progress.cycleRatio * 100)}%</span>
+              <span className="code-data">{Math.round(progress.cycleRatio * 100)}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div

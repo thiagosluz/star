@@ -281,7 +281,7 @@ export function SubmissionUploader({
 
           {uploaded ? (
             <p
-              className="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground"
+              className="mt-1 flex items-center gap-1.5 code-data text-muted-foreground"
               title={`SHA-256: ${uploaded.checksum}`}
             >
               <ShieldCheck className="size-3" aria-hidden />

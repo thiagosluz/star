@@ -55,7 +55,7 @@ export default async function AdminCertificatesPage({
   const failed = certificates.filter((certificate) => certificate.failureReason);
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <nav className="text-xs">
           <Link
@@ -140,7 +140,7 @@ export default async function AdminCertificatesPage({
                     {certificate.eventTitle} · {certificate.kind} ·{' '}
                     {certificate.workloadMinutes > 0 ? `${certificate.workloadMinutes} min` : 'sem carga horária'}
                   </p>
-                  <p className="font-mono text-xs text-muted-foreground">
+                  <p className="code-data text-muted-foreground">
                     {certificate.validationCode} · {certificate.validationCount} validação(ões)
                   </p>
                 </div>

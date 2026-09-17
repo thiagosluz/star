@@ -125,7 +125,7 @@ function WinnerReveal({ winners }: { winners: readonly WinnerEntry[] }) {
           }`}
         >
           <span className="flex min-w-0 items-center gap-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/20 font-mono text-sm font-semibold text-warning-strong">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/20 code-data text-sm font-semibold text-warning-strong">
               {winner.position}º
             </span>
             <span className="min-w-0">
@@ -401,7 +401,7 @@ export function RaffleConsole({
                       <UserCheck className="size-3 text-success-strong" aria-hidden />
                       {entry.userName}
                     </span>
-                    <span className="font-mono text-muted-foreground">{entry.minutes} min</span>
+                    <span className="code-data text-muted-foreground">{entry.minutes} min</span>
                   </li>
                 ))}
               </ul>
@@ -440,7 +440,7 @@ export function RaffleConsole({
           </p>
 
           {drawState.ok && typeof drawState.data?.resultHash === 'string' ? (
-            <p className="break-all font-mono text-xs text-muted-foreground">
+            <p className="break-all code-data text-muted-foreground">
               Hash da apuração: {String(drawState.data.resultHash)}
             </p>
           ) : null}

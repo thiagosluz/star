@@ -155,7 +155,7 @@ export default async function ValidateCertificatePage({
                 {countedActivities.map((entry) => (
                   <li key={`${entry.activityId}-${entry.title}`} className="flex justify-between py-2">
                     <span className="truncate">{entry.title}</span>
-                    <span className="font-mono text-xs text-muted-foreground">
+                    <span className="code-data text-muted-foreground">
                       {entry.countedMinutes} min
                     </span>
                   </li>
@@ -181,11 +181,11 @@ export default async function ValidateCertificatePage({
                 : 'A assinatura NÃO confere: o conteúdo pode ter sido alterado.'}
             </p>
 
-            <p className="break-all font-mono text-xs text-muted-foreground">
+            <p className="break-all code-data text-muted-foreground">
               SHA-256: {certificate.contentHash}
             </p>
 
-            <p className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+            <p className="flex items-center gap-2 code-data text-muted-foreground">
               <QrCode className="size-3.5" aria-hidden />
               {certificate.validationCode}
             </p>

@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 11B concluídas · **775 testes** unitários/integração · **42 testes E2E**
+> **Estado:** FASES 1 a 12 concluídas · **799 testes** unitários/integração · **44 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 
 ---
@@ -332,8 +332,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 775 testes (27 arquivos) — unit + integração com banco real
-npm run test:e2e          # 42 testes E2E contra o container de produção
+npm test                  # 799 testes (29 arquivos) — unit + integração com banco real
+npm run test:e2e          # 44 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro
@@ -373,10 +373,12 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 45 dívidas abertas (53 menos as 8 quitadas na FASE 12), verificadas no código, por tema, com esforço e fases candidatas | — |
+| [`docs/fase-12-mutirao-dividas.md`](docs/fase-12-mutirao-dividas.md) | Mutirão de dívidas rápidas: escopo de equipe no credenciamento, evento restrito à comunidade, índice único de concessão, quota de eventos, cache distribuído, diretório sem truncamento e faxina de layout | ADR-071 … 074 |
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **70 decisões** registradas até aqui.
+> são **74 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -429,9 +431,9 @@ prisma/
 ├── scripts/           RLS, verificação de contrato, prova de isolamento
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              608 testes de regra pura (domínio, sem banco)
-├── integration/       167 testes com banco e storage reais
-└── e2e/               42 testes Playwright contra o container
+├── unit/              623 testes de regra pura (domínio, sem banco)
+├── integration/       176 testes com banco e storage reais
+└── e2e/               44 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**

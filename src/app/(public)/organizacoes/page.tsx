@@ -75,7 +75,7 @@ export default async function OrganizationsDirectoryPage({
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-12" data-testid="organizations-directory">
       <header className="max-w-2xl">
-        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        <p className="label-caps text-muted-foreground">
           EventFlow
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
@@ -185,7 +185,7 @@ export default async function OrganizationsDirectoryPage({
                     >
                       {entry.name}
                     </h2>
-                    <p className="font-mono text-xs text-muted-foreground">/{entry.slug}</p>
+                    <p className="code-data text-muted-foreground">/{entry.slug}</p>
                   </div>
                 </div>
 

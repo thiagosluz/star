@@ -90,7 +90,7 @@ export default async function AdminEventDetailPage({
   ];
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <nav className="text-xs">
           <Link
@@ -158,6 +158,17 @@ export default async function AdminEventDetailPage({
               <Field label="Chamada fecha" name="cfpClosesAt" type="datetime-local" defaultValue={toLocalInput(event.cfpClosesAt)} />
               <SelectField label="Situação" name="status" options={EVENT_STATUS} defaultValue={event.status} />
               <SelectField label="Modalidade" name="modality" options={MODALITY} defaultValue={event.modality} />
+              {/**
+                * FASE 12 (item I3): a instituição escolhe entre evento ABERTO (padrão
+                * desde a FASE 10) e restrito à própria comunidade. Sem esta caixa, a
+                * FASE 10 teria tirado da instituição o direito de fechar um evento.
+                */}
+              <CheckboxField
+                label="Exigir vínculo com a instituição para se inscrever"
+                name="registrationRequiresMembership"
+                hint="Desmarcado, qualquer pessoa com conta pode se inscrever (evento aberto)."
+                defaultChecked={event.registrationRequiresMembership}
+              />
             </div>
           </AdminForm>
         </div>
@@ -176,7 +187,7 @@ export default async function AdminEventDetailPage({
               {event.rooms.map((room) => (
                 <li key={room.id} className="flex items-center justify-between gap-3 p-3 text-sm">
                   <span>{room.name}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{room.capacity} lugares</span>
+                  <span className="code-data text-muted-foreground">{room.capacity} lugares</span>
                 </li>
               ))}
             </ul>

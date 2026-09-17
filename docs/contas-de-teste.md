@@ -9,7 +9,8 @@ vincular ao banco e conceder papel à mão. Uma conta por perfil, todas com a me
 senha.
 
 ```text
-Senha de todas as contas:  EventFlow@2026
+Senha de todas as contas:  a definida em SEED_TEST_PASSWORD no seu .env
+                           (hoje: 1234567890 · padrão do script: EventFlow@2026)
 Login:                     http://localhost:3000/login
 Instituições de teste:     ufba-demo · fiocruz-demo (do seed de demonstração)
 ```
@@ -34,7 +35,7 @@ caminho de recuperação quando você trocou a senha na interface) e reafirma os
 — inclusive devolvendo `suspenso@` ao estado suspenso depois de você testar a
 reativação.
 
-Para usar outra senha:
+Para usar outra senha (o `.env` deste ambiente já define uma):
 
 ```bash
 SEED_TEST_PASSWORD="MinhaSenhaForte123" npm run db:seed:dev
@@ -58,7 +59,8 @@ SEED_TEST_PASSWORD="MinhaSenhaForte123" npm run db:seed:dev
 | `presidente@eventflow.test` | Presidente do Comitê | `CHAIR` em ufba-demo | Distribuir avaliações, ler pareceres, decidir aceite/rejeição |
 | `revisor@eventflow.test` | Revisor | `REVIEWER` em ufba-demo | Fila de revisão cega, envio de parecer, recusa de ler parecer alheio |
 | `palestrante@eventflow.test` | Palestrante | `SPEAKER` escopo `EVENT` | Convidado de atividade: agenda própria e a atividade em que é speaker |
-| `equipe@eventflow.test` | Equipe de Credenciamento | `STAFF` em ufba-demo | Check-in/check-out por busca ou QR Code em `/credenciamento` |
+| `equipe@eventflow.test` | Equipe de Credenciamento | `STAFF` em ufba-demo | Check-in/check-out por busca ou QR Code em `/credenciamento` (todos os eventos) |
+| `equipe-evento@eventflow.test` | Equipe do Dia (um evento) | `STAFF` escopo `EVENT` | Mesma tela, enxergando **apenas** o Congresso 2026 — o caso que a FASE 12 destravou |
 | `participante@eventflow.test` | Participante | `PARTICIPANT` em ufba-demo | Jornada completa: inscrição, minhas inscrições, certificados, cartas, missões, conquistas |
 | `patrocinador@eventflow.test` | Patrocinador | `SPONSOR` em ufba-demo | **Tem vínculo e NÃO tem permissão de inscrição** — a fronteira "é membro ≠ pode agir" |
 | `multi@eventflow.test` | Multi-institucional | `ADMIN` em ufba-demo · `CHAIR` + `PARTICIPANT` em fiocruz-demo | Acúmulo de papéis e **troca de contexto** no seletor de instituição |
@@ -111,17 +113,19 @@ docker exec eventflow-postgres psql -U eventflow_admin -d eventflow -c \
 
 ---
 
-## 5. Ponto de atenção encontrado ao montar estas contas
+## 5. Ponto de atenção — **RESOLVIDO na FASE 12**
 
-**Equipe com escopo de evento não abre `/credenciamento`.** A tela exige uma permissão
-de alcance institucional (`attendance:manage` no escopo `TENANT`), então um `STAFF`
-concedido apenas para um evento é redirecionado ao painel — apesar de o próprio seed de
-demonstração usar esse padrão (equipe do dia, com validade). Por isso a conta
-`equipe@` foi criada com escopo `TENANT`, para que o credenciamento seja testável.
+**Equipe com escopo de evento não abria `/credenciamento`.** A tela exigia permissão de
+alcance institucional (`attendance:manage` no escopo `TENANT`), então um `STAFF`
+concedido apenas para um evento era redirecionado ao painel — apesar de o próprio seed de
+demonstração usar esse padrão (equipe do dia, com validade).
 
-Se o comportamento desejado é "equipe do dia credencia o evento dela", a correção é a
-guarda da página aceitar escopo de evento (por evento selecionado) — decisão de
-produto, registrada aqui para não se perder.
+A FASE 12 corrigiu a guarda (item **I7**): a tela aceita escopo `TENANT` **ou** `EVENT`, e
+a listagem passa a mostrar **somente** os eventos em que a pessoa é equipe — escopo
+estreito não vira acesso largo. A conta `equipe-evento@eventflow.test` existe hoje para
+você conferir exatamente isso, e há teste E2E
+(`tests/e2e/team-scope.spec.ts`) provando os dois lados: acesso ao próprio evento e
+ausência do evento alheio.
 
 ---
 

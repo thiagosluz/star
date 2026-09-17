@@ -19,6 +19,7 @@ import {
   type EventStatus,
 } from '@/domain/events/event-rules';
 import { remainingSeats } from '@/domain/events/registration-rules';
+import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
 
 export interface TenantContext {
   tenantId: string;
@@ -190,6 +191,13 @@ export interface PublicEventDetail extends PublicEventSummary {
   logoUrl: string | null;
   theme: ResolvedEventTheme;
   themeIsValid: boolean;
+  /**
+   * A instituição restringiu a inscrição à própria comunidade? (FASE 12, item I3)
+   *
+   * Derivado de settings.registrationRequiresMembership — a página pública e o
+   * formulário de inscrição precisam saber para não oferecer o que será recusado.
+   */
+  registrationRequiresMembership: boolean;
   page: {
     id: string;
     title: string;
@@ -259,6 +267,7 @@ export async function getPublicEvent(
         capacity: true,
         confirmedCount: true,
         theme: true,
+        settings: true,
         activities: {
           where: { deletedAt: null, status: { not: 'DRAFT' } },
           orderBy: { startsAt: 'asc' },
@@ -380,6 +389,7 @@ export async function getPublicEvent(
     activityCount: event.activities.length,
     theme,
     themeIsValid,
+    registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
     page: page
       ? {
           id: page.id,
@@ -440,6 +450,7 @@ export async function getPublicActivity(
     | 'registrationClosesAt'
     | 'timezone'
     | 'theme'
+    | 'registrationRequiresMembership'
   >;
   activity: PublicActivitySummary;
 } | null> {
@@ -461,6 +472,7 @@ export async function getPublicActivity(
       registrationClosesAt: event.registrationClosesAt,
       timezone: event.timezone,
       theme: event.theme,
+      registrationRequiresMembership: event.registrationRequiresMembership,
     },
     activity,
   };

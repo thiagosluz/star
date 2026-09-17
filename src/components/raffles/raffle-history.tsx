@@ -140,17 +140,17 @@ function RaffleRow({
             >
               <span className="flex min-w-0 items-center gap-2">
                 <Trophy className="size-3 shrink-0 text-warning" aria-hidden />
-                <span className="font-mono">{winner.position}º</span>
+                <span className="code-data">{winner.position}º</span>
                 <span className="truncate">{winner.userName}</span>
               </span>
-              <span className="shrink-0 font-mono text-muted-foreground">{winner.minutes} min</span>
+              <span className="shrink-0 code-data text-muted-foreground">{winner.minutes} min</span>
             </li>
           ))}
         </ol>
       ) : null}
 
       {raffle.resultHash ? (
-        <p className="break-all font-mono text-xs text-muted-foreground">
+        <p className="break-all code-data text-muted-foreground">
           SHA-256: {raffle.resultHash}
         </p>
       ) : null}

@@ -127,7 +127,7 @@ export default async function ReviewSubmissionPage({
   }
 
   return (
-    <main className="mx-auto max-w-4xl space-y-8 px-6 py-10">
+    <main className="max-w-4xl space-y-8">
       <nav>
         <Link
           href={tenantPath(tenantSlug, '/revisoes')}
@@ -139,7 +139,7 @@ export default async function ReviewSubmissionPage({
 
       <header className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground">
+          <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
             {submission.protocol}
           </span>
           {assignment.isBlind ? (

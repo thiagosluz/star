@@ -5,7 +5,7 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { listAdminEvents } from '@/lib/admin/catalog-service';
-import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
+import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { saveEventAction } from '@/app/actions/admin-actions';
 
 export const metadata = { title: 'Eventos' };
@@ -52,7 +52,7 @@ export default async function AdminEventsPage({
   const defaultStart = new Date(now.getTime() + 30 * 86_400_000);
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <nav className="text-xs">
           <Link
@@ -90,7 +90,7 @@ export default async function AdminEventsPage({
               <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm font-medium">{event.title}</p>
-                  <p className="font-mono text-xs text-muted-foreground">/t/{tenantSlug}/eventos/{event.slug}</p>
+                  <p className="code-data text-muted-foreground">/t/{tenantSlug}/eventos/{event.slug}</p>
                   <p className="text-xs text-muted-foreground">
                     {event.startsAt.toLocaleDateString('pt-BR')} · {event.status} ·{' '}
                     {event.activityCount} atividade(s) · {event.trackCount} trilha(s) ·{' '}
@@ -143,6 +143,11 @@ export default async function AdminEventsPage({
             <Field label="Chamada de trabalhos fecha" name="cfpClosesAt" type="datetime-local" />
             <SelectField label="Situação" name="status" options={STATUS_LABELS} defaultValue="DRAFT" />
             <SelectField label="Modalidade" name="modality" options={MODALITY_LABELS} defaultValue="IN_PERSON" />
+            <CheckboxField
+              label="Exigir vínculo com a instituição para se inscrever"
+              name="registrationRequiresMembership"
+              hint="Desmarcado, qualquer pessoa com conta pode se inscrever (evento aberto)."
+            />
           </div>
         </AdminForm>
       </section>

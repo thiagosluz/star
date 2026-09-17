@@ -72,7 +72,7 @@ export default async function CertificatesPage({
   }));
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -81,7 +81,7 @@ export default async function CertificatesPage({
         </h1>
         <p className="text-sm text-muted-foreground">
           Cada certificado tem um código público de validação: qualquer pessoa pode conferir a
-          autenticidade em <span className="font-mono">/validar/&lt;código&gt;</span> ou lendo o QR
+          autenticidade em <span className="code-data">/validar/&lt;código&gt;</span> ou lendo o QR
           Code impresso no documento.
         </p>
       </header>
@@ -129,7 +129,7 @@ export default async function CertificatesPage({
                         ? ` · ${certificate.workloadLabel} de carga horária`
                         : ''}
                     </p>
-                    <p className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+                    <p className="flex items-center gap-2 code-data text-muted-foreground">
                       <QrCode className="size-3" aria-hidden />
                       {certificate.validationCode}
                     </p>
@@ -174,7 +174,7 @@ export default async function CertificatesPage({
                   </Link>
 
                   {certificate.contentHash ? (
-                    <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5 code-data text-muted-foreground">
                       <ShieldCheck className="size-3" aria-hidden />
                       {certificate.contentHash.slice(0, 16)}…
                     </span>

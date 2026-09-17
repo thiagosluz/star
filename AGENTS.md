@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 11B (docs/fase-NN-*.md)
-Testes ................. 775 (Vitest: unit + integração) + 42 (Playwright E2E)
-ADRs ................... 70 (numeração GLOBAL e sequencial — a próxima é ADR-071)
+Fases concluídas ........ 1 a 12 (docs/fase-NN-*.md)
+Testes ................. 799 (Vitest: unit + integração) + 44 (Playwright E2E)
+ADRs ................... 74 (numeração GLOBAL e sequencial — a próxima é ADR-075)
 Permissões ............. 54 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 31 sob RLS + FORCE
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 775+ testes passando
+npm test              # esperado: 799+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -106,7 +106,7 @@ npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 42+ testes passando
+npm run test:e2e      # esperado: 44+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -172,12 +172,12 @@ ou o Prisma Studio (`npm run db:studio`).
 
 ```bash
 npm run db:seed:dev      # uma conta por perfil (os 10 papéis + estados de borda)
-# senha de todas: EventFlow@2026   ·   doc: docs/contas-de-teste.md
+# senha de todas: a de SEED_TEST_PASSWORD no .env   ·   doc: docs/contas-de-teste.md
 ```
 
-15 contas `@eventflow.test`: `superadmin@`, `owner@`, `admin@`, `organizador@`,
+16 contas `@eventflow.test`: `superadmin@`, `owner@`, `admin@`, `organizador@`,
 `organizador-evento@`, `presidente@`, `revisor@`, `palestrante@`, `equipe@`,
-`participante@`, `patrocinador@`, `multi@`, `convidado@`, `suspenso@`, `semvinculo@`.
+`equipe-evento@`, `participante@`, `patrocinador@`, `multi@`, `convidado@`, `suspenso@`, `semvinculo@`.
 O script é idempotente, **regrava a senha** em cada execução e **recusa rodar com
 `NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por
 `reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
@@ -258,24 +258,27 @@ tests/{unit,integration,e2e}
 | 10 | Inscrição pública e vínculo automático de participante | ✅ |
 | 11A | Identidade visual, primitivos de UI e shell de navegação | ✅ |
 | 11B | Propagação do design a todas as telas e quitação da dívida (catraca zerada) | ✅ |
-| 12+ | *a definir pelo humano* | ⏳ |
+| 12 | Mutirão de dívidas rápidas (I7, I3, I5, C2, I1, I2, H2, H4) | ✅ |
+| 13+ | *a definir pelo humano* | ⏳ |
 
-**Dívidas mapeadas** (candidatas naturais às próximas fases, por risco):
-rate limit em Redis · assinatura assimétrica (PKCS#7/CMS) · observabilidade
-(OpenTelemetry, métricas de fila) · entrega de prêmios e suplentes nos sorteios ·
-editor visual da landing page · convites de membros · notificações por e-mail ·
-antivírus nos arquivos de submissão.
+**Dívidas técnicas:** o levantamento consolidado (45 itens abertos — 53 menos os 8 quitados na FASE 12,
+verificados no código, com esforço e fases candidatas — F12 Operação e segurança ·
+F13 Comunicação · F14 Quotas · F15 Sorteios de ponta a ponta · F16 Landing page ·
+F17 Documentos · F18 Gamificação avançada) está em **`docs/dividas-tecnicas.md`**.
+Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
+ordem sugerida.
 
 ---
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md` e o documento da **última fase** (`docs/fase-11b-*.md`).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase** (`docs/fase-12-*.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →
    testes → documentação) e **aguardar** a definição/requisitos dela.
 4. Implementar, verificar, documentar e **parar** em `Aguardando APROVADO: AVANÇAR`.
+
 
 
 

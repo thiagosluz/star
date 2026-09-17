@@ -41,7 +41,7 @@ import {
 import {
   PUBLIC_REGISTRATION_ROLE,
   evaluateParticipantLink,
-  isPublicEventStatus,
+  isOpenToPublicEvent,
   shouldGrantParticipantRole,
   type MembershipStatusName,
   type ParticipantLinkDecision,
@@ -212,6 +212,7 @@ async function attemptRegistration(
             confirmedCount: true,
             registrationOpensAt: true,
             registrationClosesAt: true,
+            settings: true,
           },
         });
 
@@ -276,7 +277,7 @@ async function attemptRegistration(
         const linkDecision = await decideParticipantLink(tx, {
           tenantId,
           userId,
-          eventIsPublic: isPublicEventStatus(event.status),
+          eventIsPublic: isOpenToPublicEvent({ eventStatus: event.status, settings: event.settings }),
         });
 
         if (linkDecision.action === 'BLOCKED') {
@@ -439,26 +440,44 @@ async function applyParticipantLink(
   });
 
   if (shouldGrantParticipantRole(roles.map((role) => role.role))) {
-    await tx.roleAssignment.create({
-      data: {
-        tenantId: input.tenantId,
-        userId: input.userId,
-        role: PUBLIC_REGISTRATION_ROLE,
-        scope: 'TENANT',
-        reason: 'Inscrição em atividade de evento público',
-      },
-    });
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A CORRIDA AQUI É ESPERADA — E NÃO PODE DERRUBAR A INSCRIÇÃO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A FASE 12 criou o índice único de concessão vigente
+     *  (`role_assignments_live_unique`). Duas inscrições simultâneas da mesma pessoa
+     *  nova passam pelo `findMany` acima enxergando "sem papel" e tentam conceder
+     *  PARTICIPANT ao mesmo tempo; a segunda recebe violação de unicidade.
+     *
+     *  Isso NÃO é erro de negócio: o papel que ela queria conceder já existe. Deixar
+     *  a exceção subir abortaria a transação inteira e a pessoa perderia a VAGA, por
+     *  causa de um papel que já está lá. A concessão é idempotente por natureza —
+     *  então o conflito é absorvido aqui, e só aqui.
+     */
+    try {
+      await tx.roleAssignment.create({
+        data: {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          role: PUBLIC_REGISTRATION_ROLE,
+          scope: 'TENANT',
+          reason: 'Inscrição em atividade de evento público',
+        },
+      });
 
-    await recordAudit(
-      {
-        tenantId: input.tenantId,
-        userId: input.userId,
-        action: 'PERMISSION_CHANGE',
-        entityType: 'RoleAssignment',
-        changes: { role: { from: null, to: PUBLIC_REGISTRATION_ROLE } },
-      },
-      tx,
-    );
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          action: 'PERMISSION_CHANGE',
+          entityType: 'RoleAssignment',
+          changes: { role: { from: null, to: PUBLIC_REGISTRATION_ROLE } },
+        },
+        tx,
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+    }
   }
 
   await recordAudit(

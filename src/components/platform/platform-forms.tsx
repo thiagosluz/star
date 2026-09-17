@@ -299,7 +299,7 @@ export function ProvisionTenantForm() {
 
       {state?.ok && state.data?.slug ? (
         <p className="mt-3 text-xs text-muted-foreground">
-          Endereço público: <span className="font-mono">/t/{String(state.data.slug)}</span>
+          Endereço público: <span className="code-data">/t/{String(state.data.slug)}</span>
         </p>
       ) : null}
     </section>

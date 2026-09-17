@@ -25,7 +25,10 @@ import {
   evaluateRegistrationWindow,
   formatDuration,
 } from '@/domain/events/event-rules';
-import { publicRegistrationNotice } from '@/domain/events/public-registration-rules';
+import {
+  publicRegistrationNotice,
+  restrictedEventNotice,
+} from '@/domain/events/public-registration-rules';
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { findMyRegistrationFor } from '@/lib/events/registration-service';
@@ -381,6 +384,23 @@ export default async function ActivityPage({
                   Seu acesso a {tenant.name} está bloqueado. Fale com a organização do
                   evento.
                 </p>
+              </div>
+            ) : event.registrationRequiresMembership && membershipStatus !== 'ACTIVE' ? (
+              /**
+               * EVENTO RESTRITO À COMUNIDADE (FASE 12, item I3).
+               *
+               * A instituição escolheu não abrir este evento — assembleia, turma
+               * interna, reunião de conselho. É a situação que a FASE 10 passou a
+               * tratar como "inscreva-se" em TODOS os eventos; aqui ela volta a ter
+               * tratamento próprio, com `data-testid` porque o texto genérico de
+               * antes ("peça um convite") não distinguia restrição de bloqueio.
+               */
+              <div className="ef-card space-y-2 p-5" data-testid="activity-restricted">
+                <p className="flex items-center gap-2 font-medium">
+                  <AlertCircle className="size-4" aria-hidden />
+                  Restrito à comunidade
+                </p>
+                <p className="text-sm opacity-70">{restrictedEventNotice(tenant.name)}</p>
               </div>
             ) : !canRegister ? (
               <div className="ef-card space-y-2 p-5">

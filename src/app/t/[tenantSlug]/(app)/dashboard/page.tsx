@@ -51,7 +51,7 @@ export default async function DashboardPage({
   ].sort();
 
   return (
-    <main className="mx-auto max-w-6xl space-y-8 px-6 py-10">
+    <main className="max-w-6xl space-y-8">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">
           Painel de {context.activeTenant.tenantName}
@@ -88,12 +88,12 @@ export default async function DashboardPage({
                   {summary.scope}
                 </span>
                 {summary.eventId ? (
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  <p className="mt-1 code-data text-muted-foreground">
                     evento: {summary.eventId}
                   </p>
                 ) : null}
                 {summary.activityId ? (
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  <p className="mt-1 code-data text-muted-foreground">
                     atividade: {summary.activityId}
                   </p>
                 ) : null}
@@ -124,7 +124,7 @@ export default async function DashboardPage({
 
       <p className="text-xs text-muted-foreground">
         Próximas fases adicionam eventos, submissões e certificados a este painel.
-        URL canônica: <code className="font-mono">{tenantPath(tenantSlug, '/dashboard')}</code>
+        URL canônica: <code className="code-data">{tenantPath(tenantSlug, '/dashboard')}</code>
       </p>
     </main>
   );

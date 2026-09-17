@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getRequestContext } from '@/lib/auth/session';
 import { can } from '@/domain/rbac/authorization';
 import type { Permission } from '@/domain/rbac/permissions';
+import type { RoleScope } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 
 /**
@@ -33,6 +34,22 @@ export async function requirePagePermission(input: {
    * que o usuário não pode ver.
    */
   fallbackPath?: string;
+  /**
+   * Escopos que autorizam a página. O padrão é `['TENANT']`.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ISTO EXISTE (FASE 12, item I7)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A tela de credenciamento exigia permissão de escopo TENANT — e o próprio seed
+   *  de demonstração concede `STAFF` por EVENTO (a equipe do dia, com validade). O
+   *  resultado era contraditório: a plataforma recomendava um padrão de concessão e
+   *  redirecionava ao painel quem o seguia.
+   *
+   *  Aceitar `EVENT` fecha essa distância. A página que optar por isso passa a ser
+   *  responsável por LIMITAR o que mostra — o escopo mais estreito não pode virar
+   *  acesso ao evento alheio.
+   */
+  allowedScopes?: readonly RoleScope[];
 }): Promise<{ tenantId: string; tenantName: string; userId: string }> {
   const context = await getRequestContext();
 
@@ -57,7 +74,9 @@ export async function requirePagePermission(input: {
     ? { ownerId: context.user.id }
     : undefined;
 
-  const allowed = can(context.principal, input.permission, { scope: 'TENANT' }, ownership);
+  const allowed = (input.allowedScopes ?? ['TENANT']).some((scope) =>
+    can(context.principal, input.permission, { scope }, ownership),
+  );
 
   if (!allowed) {
     redirect(tenantPath(input.tenantSlug, input.fallbackPath ?? '/dashboard'));

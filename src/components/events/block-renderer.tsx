@@ -373,7 +373,7 @@ function CustomHtmlBlock({ content }: { content: unknown }) {
       <p className="mb-3 text-xs opacity-60">
         Este bloco é exibido como texto por segurança. HTML não é interpretado.
       </p>
-      <pre className="ef-card overflow-x-auto whitespace-pre-wrap p-4 font-mono text-xs opacity-80">
+      <pre className="ef-card overflow-x-auto whitespace-pre-wrap p-4 code-data opacity-80">
         {html}
       </pre>
     </Section>

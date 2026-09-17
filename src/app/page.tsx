@@ -101,8 +101,8 @@ export default async function PlatformHomePage() {
       <footer className="text-center text-xs text-muted-foreground">
         <p>
           Cada instituição acessa pelo próprio endereço
-          (<span className="font-mono">instituicao.{process.env.ROOT_DOMAIN ?? 'lvh.me'}</span>)
-          ou por <span className="font-mono">/t/&lt;instituicao&gt;</span>.
+          (<span className="code-data">instituicao.{process.env.ROOT_DOMAIN ?? 'lvh.me'}</span>)
+          ou por <span className="code-data">/t/&lt;instituicao&gt;</span>.
         </p>
       </footer>
     </main>

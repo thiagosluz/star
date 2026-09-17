@@ -43,7 +43,7 @@ export default async function AchievementsPage({
 
   if (!profileResult.ok) {
     return (
-      <main className="mx-auto max-w-4xl px-6 py-10">
+      <main className="max-w-4xl">
         <p className="rounded-lg border border-destructive/40 bg-card p-5 text-sm text-destructive">
           {profileResult.message}
         </p>
@@ -59,7 +59,7 @@ export default async function AchievementsPage({
   const claimable = missions.filter((mission) => mission.claimable).length;
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -142,7 +142,7 @@ export default async function AchievementsPage({
                     </p>
                   </div>
                   <span
-                    className={`shrink-0 font-mono text-sm ${
+                    className={`shrink-0 code-data text-sm ${
                       entry.amount >= 0 ? 'text-success-strong' : 'text-destructive'
                     }`}
                   >
@@ -176,7 +176,7 @@ export default async function AchievementsPage({
                   data-testid={`leaderboard-${entry.position}`}
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="w-6 shrink-0 text-center font-mono text-sm text-muted-foreground">
+                    <span className="w-6 shrink-0 text-center code-data text-sm text-muted-foreground">
                       {entry.position}
                     </span>
                     <div className="min-w-0">
@@ -189,7 +189,7 @@ export default async function AchievementsPage({
                       </p>
                     </div>
                   </div>
-                  <span className="shrink-0 font-mono text-sm">
+                  <span className="shrink-0 code-data text-sm">
                     {entry.totalXp.toLocaleString('pt-BR')}
                   </span>
                 </li>

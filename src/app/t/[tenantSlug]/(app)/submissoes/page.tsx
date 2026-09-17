@@ -80,7 +80,7 @@ export default async function MySubmissionsPage({
   );
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight">Minhas submissões</h1>
@@ -121,7 +121,7 @@ export default async function MySubmissionsPage({
             >
               <div className="min-w-0 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground">
+                  <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
                     {submission.protocol}
                   </span>
                   <span

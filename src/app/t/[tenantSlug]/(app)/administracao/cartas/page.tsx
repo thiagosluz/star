@@ -77,7 +77,7 @@ export default async function AdminCardsPage({
   }));
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <nav className="text-xs">
           <Link
@@ -92,7 +92,7 @@ export default async function AdminCardsPage({
           Cartas colecionáveis
         </h1>
         <p className="text-sm text-muted-foreground">
-          A paleta e a arte são validadas ao salvar: cores fora do formato (hex ou <span className="font-mono">oklch()</span>)
+          A paleta e a arte são validadas ao salvar: cores fora do formato (hex ou <span className="code-data">oklch()</span>)
           e URLs não-http(s) são descartadas.
         </p>
       </header>
@@ -131,7 +131,7 @@ export default async function AdminCardsPage({
                     {card.ownedBy} no álbum de participantes · {card.isActive ? 'ativa' : 'inativa'}
                     {card.isSecret ? ' · secreta' : ''}
                   </p>
-                  <p className="font-mono text-xs text-muted-foreground">{card.slug}</p>
+                  <p className="code-data text-muted-foreground">{card.slug}</p>
                 </div>
               </li>
             ))}

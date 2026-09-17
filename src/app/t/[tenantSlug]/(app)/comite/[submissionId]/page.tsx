@@ -53,7 +53,7 @@ export default async function ChairSubmissionPage({
 
   if (!board || !panel) {
     return (
-      <main className="mx-auto max-w-4xl px-6 py-10">
+      <main className="max-w-4xl">
         <p className="rounded-lg border border-destructive/40 bg-card p-5 text-sm text-destructive">
           {boardResult.ok ? panelResult.ok === false && panelResult.message : boardResult.message}
         </p>
@@ -64,7 +64,7 @@ export default async function ChairSubmissionPage({
   const assignedIds = new Set(board.assigned.map((a) => a.reviewerId));
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <nav>
         <Link
           href={tenantPath(tenantSlug, '/comite')}
@@ -76,7 +76,7 @@ export default async function ChairSubmissionPage({
 
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground">
+          <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
             {board.protocol}
           </span>
           <span

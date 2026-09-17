@@ -51,7 +51,7 @@ export default async function ReviewerTasksPage({
   const done = tasks.filter((task) => task.hasReview);
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">Revisões</h1>
         <p className="text-sm text-muted-foreground">
@@ -116,7 +116,7 @@ function TaskCard({
     <article className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-card p-4">
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground">
+          <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
             {task.protocol}
           </span>
 

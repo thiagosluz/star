@@ -200,6 +200,9 @@ export async function saveEventAction(
     registrationClosesAt: toDate(formData.get('registrationClosesAt')),
     cfpOpensAt: toDate(formData.get('cfpOpensAt')),
     cfpClosesAt: toDate(formData.get('cfpClosesAt')),
+    // FASE 12 (item I3): sem marcar, a inscrição segue aberta a qualquer conta —
+    // o padrão desde a FASE 10. A caixa vem do formulário do painel.
+    registrationRequiresMembership: formData.get('registrationRequiresMembership') === 'on',
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/eventos'));

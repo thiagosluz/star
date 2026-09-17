@@ -58,7 +58,7 @@ export default async function RafflesPage({
   const raffles = rafflesResult.ok ? rafflesResult.raffles : [];
 
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
         <nav className="text-xs">
           <Link

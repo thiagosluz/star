@@ -64,7 +64,7 @@ export default async function PlatformTenantDetailPage({
             <h1 className="text-2xl font-semibold tracking-tight text-foreground" data-testid="tenant-detail-name">
               {tenant.name}
             </h1>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">/{tenant.slug}</p>
+            <p className="mt-1 code-data text-muted-foreground">/{tenant.slug}</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -163,7 +163,7 @@ export default async function PlatformTenantDetailPage({
                     member.roles.map((role) => (
                       <span
                         key={`${role.role}-${role.scope}`}
-                        className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-xs text-foreground"
+                        className="rounded-full border border-border bg-muted px-2 py-0.5 code-data text-foreground"
                       >
                         {role.role}
                       </span>
@@ -191,7 +191,7 @@ export default async function PlatformTenantDetailPage({
           <ul className="mt-3 divide-y divide-border" data-testid="tenant-audit">
             {audit.map((entry) => (
               <li key={entry.id} className="flex flex-wrap items-baseline gap-x-3 py-3 text-sm">
-                <span className="font-mono text-xs uppercase text-muted-foreground">
+                <span className="label-caps text-muted-foreground">
                   {entry.action}
                 </span>
                 <span className="text-foreground">{entry.entityType}</span>

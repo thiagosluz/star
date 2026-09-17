@@ -363,6 +363,57 @@ export function validateProvisioning(input: ProvisioningInput): ValidationResult
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Quotas do plano
+// ───────────────────────────────────────────────────────────────────────────────
+export interface QuotaDecision {
+  allowed: boolean;
+  message: string | null;
+  /** Quanto ainda cabe. `null` = ilimitado. */
+  remaining: number | null;
+}
+
+/**
+ * A instituição ainda pode criar evento? (item C2 do levantamento da FASE 12)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A QUOTA PASSOU A SER VERIFICADA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `maxEvents` era gravado no provisionamento, herdado do plano e EXIBIDO no painel
+ *  de governança — e nunca consultado em nenhum caminho de escrita. O plano era, na
+ *  prática, decorativo: uma instituição FREE criava duzentos eventos e o painel
+ *  continuava dizendo "3".
+ *
+ *  A decisão fica no domínio porque é regra de negócio (o que fazer ao estourar), e
+ *  a mensagem precisa ser acionável: quem organiza deve saber que o caminho é falar
+ *  com a plataforma, não tentar de novo.
+ *
+ *  `maxEvents = 0` significa "nenhum evento" — e não "ilimitado". Ilimitado é `null`,
+ *  como no resto do sistema (mesma semântica de `Event.capacity`).
+ */
+export function evaluateEventQuota(input: {
+  currentCount: number;
+  maxEvents: number | null;
+}): QuotaDecision {
+  if (input.maxEvents === null) {
+    return { allowed: true, message: null, remaining: null };
+  }
+
+  const remaining = input.maxEvents - input.currentCount;
+
+  if (remaining <= 0) {
+    return {
+      allowed: false,
+      remaining: 0,
+      message:
+        `O plano desta instituição permite ${input.maxEvents} evento(s) e todos já foram criados. ` +
+        'Solicite à plataforma o aumento da quota ou arquive um evento antigo.',
+    };
+  }
+
+  return { allowed: true, message: null, remaining };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Ciclo de vida
 // ───────────────────────────────────────────────────────────────────────────────
 export const MIN_SUSPENSION_REASON_LENGTH = 8;

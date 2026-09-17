@@ -26,6 +26,8 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { resolveTheme } from '@/domain/events/landing-page';
+import { evaluateEventQuota } from '@/domain/platform/platform-rules';
+import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
 import { checkScheduleConflict, evaluateRoomFit } from '@/domain/events/event-rules';
 import { parseRubric } from '@/domain/review/review-rules';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
@@ -36,6 +38,8 @@ export type AdminErrorCode =
   | 'SLUG_TAKEN'
   | 'ROOM_CONFLICT'
   | 'ROOM_TOO_SMALL'
+  /** O plano da instituição atingiu o limite de eventos (FASE 12, item C2). */
+  | 'QUOTA_EXCEEDED'
   | 'INTERNAL';
 
 export type AdminResult<T> =
@@ -69,6 +73,13 @@ export interface EventInput {
   registrationClosesAt?: Date | null;
   cfpOpensAt?: Date | null;
   cfpClosesAt?: Date | null;
+  /**
+   * Restringe a inscrição à comunidade da instituição (FASE 12, item I3).
+   *
+   * Ausente/falso = inscrição aberta a quem tiver conta, que é o padrão desde a
+   * FASE 10. A chave é gravada em `Event.settings`, preservando as demais.
+   */
+  registrationRequiresMembership?: boolean;
 }
 
 /**
@@ -116,14 +127,43 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
       if (input.eventId) {
         const before = await tx.event.findFirst({
           where: { id: input.eventId, deletedAt: null },
-          select: { id: true, title: true, slug: true, status: true, startsAt: true, endsAt: true, capacity: true },
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            status: true,
+            startsAt: true,
+            endsAt: true,
+            capacity: true,
+            settings: true,
+          },
         });
 
         if (!before) {
           return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
         }
 
-        await tx.event.update({ where: { id: before.id }, data });
+        /**
+         * `settings` é um campo livre (JSON) e pode ter chaves de outras fases.
+         * A gravação faz MERGE, não substituição: escrever só a chave nova apagaria
+         * configurações que não são desta tela — o mesmo cuidado que a FASE 9 tomou
+         * ao incluir o perfil público na projeção do painel.
+         */
+        const previousSettings =
+          before.settings && typeof before.settings === 'object' && !Array.isArray(before.settings)
+            ? (before.settings as Record<string, unknown>)
+            : {};
+
+        await tx.event.update({
+          where: { id: before.id },
+          data: {
+            ...data,
+            settings: {
+              ...previousSettings,
+              registrationRequiresMembership: input.registrationRequiresMembership === true,
+            } as unknown as object,
+          },
+        });
 
         await recordAudit(
           {
@@ -141,7 +181,52 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
       }
 
       const id = randomUUID();
-      await tx.event.create({ data: { id, tenantId: input.tenantId, confirmedCount: 0, ...data } });
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  QUOTA DE EVENTOS (item C2 da FASE 12)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A checagem é aqui — no único caminho que CRIA evento — e roda DENTRO da
+       *  transação com contexto de instituição. A tabela `tenants` é global e tem
+       *  policy de leitura para a role de runtime (`tenant_resolution_read`), então a
+       *  quota é lida sem a conexão administrativa.
+       *
+       *  Contagem e criação na mesma transação: sem isso, duas criações simultâneas
+       *  passariam as duas pela verificação e a quota estouraria por dois.
+       */
+      const tenant = await tx.tenant.findUnique({
+        where: { id: input.tenantId },
+        select: { maxEvents: true },
+      });
+
+      const currentCount = await tx.event.count({
+        where: { tenantId: input.tenantId, deletedAt: null },
+      });
+
+      const quota = evaluateEventQuota({
+        currentCount,
+        maxEvents: tenant?.maxEvents ?? null,
+      });
+
+      if (!quota.allowed) {
+        return {
+          ok: false as const,
+          code: 'QUOTA_EXCEEDED' as const,
+          message: quota.message ?? 'A quota de eventos do plano foi atingida.',
+        };
+      }
+
+      await tx.event.create({
+        data: {
+          id,
+          tenantId: input.tenantId,
+          confirmedCount: 0,
+          ...data,
+          settings: {
+            registrationRequiresMembership: input.registrationRequiresMembership === true,
+          } as unknown as object,
+        },
+      });
 
       await recordAudit(
         {
@@ -237,6 +322,8 @@ export interface AdminEventDetail extends AdminEventRow {
   registrationClosesAt: Date | null;
   cfpOpensAt: Date | null;
   cfpClosesAt: Date | null;
+  /** A inscrição está restrita à comunidade? (FASE 12, item I3) */
+  registrationRequiresMembership: boolean;
   rooms: { id: string; name: string; capacity: number }[];
   activities: {
     id: string;
@@ -291,6 +378,7 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
         registrationClosesAt: true,
         cfpOpensAt: true,
         cfpClosesAt: true,
+        settings: true,
         rooms: { orderBy: { name: 'asc' }, select: { id: true, name: true, capacity: true } },
         activities: {
           orderBy: { startsAt: 'asc' },
@@ -352,6 +440,7 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
     registrationClosesAt: event.registrationClosesAt,
     cfpOpensAt: event.cfpOpensAt,
     cfpClosesAt: event.cfpClosesAt,
+    registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
     activityCount: event._count.activities,
     trackCount: event._count.tracks,
     roomCount: event._count.rooms,
