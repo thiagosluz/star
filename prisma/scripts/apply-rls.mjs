@@ -41,6 +41,30 @@ console.log(`  banco:     ${connectionString.replace(/:[^:@/]+@/, ':***@')}\n`);
 
 const files = (await readdir(initDir)).filter((f) => f.endsWith('.sql')).sort();
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS POLICIES VIVEM NA MIGRAÇÃO (FASE 13, item B2)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O diretório `docker/postgres/init` só é executado pelo PostgreSQL na PRIMEIRA
+ *  inicialização do volume — o que fazia um banco novo depender de alguém lembrar
+ *  de rodar este script. As policies foram para
+ *  `prisma/migrations/20260917191000_rls_policies/migration.sql`, e este script
+ *  passou a reaplicar ESSE arquivo, de modo que:
+ *
+ *    • `prisma migrate deploy` cria as policies em ambiente novo;
+ *    • `npm run db:rls` continua sendo o caminho para reaplicá-las depois de criar
+ *      tabela com `tenantId` (o SQL é idempotente e descobre as tabelas sozinho).
+ *
+ *  Um arquivo, dois caminhos de aplicação — sem cópia para envelhecer.
+ */
+const rlsMigration = path.resolve(
+  here,
+  '..',
+  'migrations',
+  '20260917191000_rls_policies',
+  'migration.sql',
+);
+
 if (files.length === 0) {
   console.error(`  ✗ Nenhum arquivo .sql encontrado em ${initDir}`);
   process.exit(1);
@@ -52,8 +76,8 @@ let failed = false;
 try {
   await client.connect();
 
-  for (const file of files) {
-    const sql = await readFile(path.join(initDir, file), 'utf8');
+  for (const file of [...files.map((f) => path.join(initDir, f)), rlsMigration]) {
+    const sql = await readFile(file, 'utf8');
 
     // Os arquivos começam com `\set ON_ERROR_STOP on`, um meta-comando do psql
     // e não SQL válido para o driver `pg`. Removemos as linhas de meta-comando;
@@ -64,7 +88,8 @@ try {
       .filter((l) => !l.trimStart().startsWith('\\'))
       .join('\n');
 
-    process.stdout.write(`  → ${file} ... `);
+    const label = path.relative(process.cwd(), file).replace(/\\/g, '/');
+    process.stdout.write(`  → ${label} ... `);
     try {
       await client.query('BEGIN');
       await client.query(executable);

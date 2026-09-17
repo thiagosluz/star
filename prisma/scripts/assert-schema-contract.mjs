@@ -10,6 +10,7 @@
  *    1. Toda tabela do schema.prisma com coluna `tenantId` tem RLS habilitada.
  *    2. Toda tabela com RLS também tem FORCE (para o dono não escapar).
  *    3. Nenhuma tabela com RLS ficou sem policy (fail-closed silencioso).
+ *    3b. Toda PARTIÇÃO (FASE 13) tem RLS habilitada, FORCE e policy própria.
  *    4. A allowlist de tabelas sem RLS não cresceu sem intenção.
  *    5. A role de runtime não é superuser nem tem BYPASSRLS.
  *    6. A role de runtime tem os GRANTs necessários (senão a app quebra em runtime).
@@ -44,15 +45,25 @@ try {
   // ── 1..3 Tabelas com a coluna de tenant e estado da RLS ─────────────────────
   //  O Prisma gera a coluna como "tenantId" (camelCase). Identificadores citados
   //  são case-sensitive no PostgreSQL, então a busca pela coluna usa esse nome.
+  //
+  //  `relispartition = false`: desde a FASE 13 `audit_logs` é particionada por mês
+  //  e as partições são tabelas reais com a coluna `tenantId`. Elas não estão (nem
+  //  podem estar) em `TENANT_SCOPED_TABLES`, que é escrito à mão — o nome de uma
+  //  partição depende da data. A verificação delas é própria e vem na seção 3b.
+  //
+  //  `relkind IN ('r', 'p')`: 'p' é a tabela PARTICIONADA (o pai), que continua
+  //  sendo uma tabela governada como qualquer outra. Filtrar só por 'r' deixaria o
+  //  pai fora da verificação e faria o contrato acusar `audit_logs` como ausente.
   const { rows: tenantTables } = await client.query(`
     SELECT c.relname                                   AS table_name,
+           c.relkind                                   AS kind,
            c.relrowsecurity                            AS rls_enabled,
            c.relforcerowsecurity                       AS rls_forced,
            (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid)::int AS policy_count
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenantId' AND a.attnum > 0
-    WHERE n.nspname = 'public' AND c.relkind = 'r'
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
     ORDER BY c.relname
   `);
 
@@ -71,6 +82,39 @@ try {
       row.policy_count > 0,
       `"${row.table_name}" tem RLS habilitada e NENHUMA policy (fail-closed: a app não lê nada).`,
     );
+  }
+
+  // ── 3b. Partições: RLS não é opcional na filha ───────────────────────────────
+  //  Acesso pela tabela pai já é filtrado pela policy do pai. Mas uma query que
+  //  cite a partição pelo nome encontraria todos os tenants se a filha não tivesse
+  //  policy própria — e as partições são criadas por script, ou seja, é
+  //  exatamente o tipo de objeto que nasce sem proteção quando ninguém lembra.
+  const { rows: partitions } = await client.query(`
+    SELECT c.relname                                AS partition_name,
+           parent.relname                           AS parent_name,
+           c.relrowsecurity                         AS rls_enabled,
+           c.relforcerowsecurity                    AS rls_forced,
+           (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid)::int AS policy_count
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_inherits i ON i.inhrelid = c.oid
+    JOIN pg_class parent ON parent.oid = i.inhparent
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relispartition
+    ORDER BY c.relname
+  `);
+
+  const partitionNames = partitions.map((r) => r.partition_name);
+
+  for (const row of partitions) {
+    check(
+      row.rls_enabled,
+      `Partição "${row.partition_name}" sem RLS habilitada (leitura direta vazaria tenants).`,
+    );
+    check(
+      row.rls_forced,
+      `Partição "${row.partition_name}" com RLS mas sem FORCE ROW LEVEL SECURITY.`,
+    );
+    check(row.policy_count > 0, `Partição "${row.partition_name}" sem policy.`);
   }
 
   // ── 4. Divergência entre o banco e o contrato em código ─────────────────────
@@ -95,11 +139,19 @@ try {
   const { rows: rlsTables } = await client.query(`
     SELECT relname AS table_name
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relrowsecurity
     ORDER BY relname
   `);
 
-  const knownWithRls = new Set([...tenantTableNames, 'user', 'session', 'tenants']);
+  //  As partições entram em `knownWithRls` porque a seção 3b já exigiu RLS nelas:
+  //  estarem aqui apenas impede que a seção 5 as reporte como surpresa.
+  const knownWithRls = new Set([
+    ...tenantTableNames,
+    ...partitionNames,
+    'user',
+    'session',
+    'tenants',
+  ]);
   const unexpectedRls = rlsTables
     .map((r) => r.table_name)
     .filter((t) => !knownWithRls.has(t));
@@ -109,10 +161,12 @@ try {
   );
 
   // ── 6. Tabelas deliberadamente sem RLS não podem ter crescido ───────────────
+  //  Só tabelas-BASE: partições são criadas por script e a allowlist escrita à mão
+  //  não pode contê-las (o nome muda todo mês). A proteção delas é a seção 3b.
   const { rows: allTables } = await client.query(`
     SELECT c.relname AS table_name
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND c.relkind = 'r'
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
       AND c.relname <> '_prisma_migrations'
     ORDER BY relname
   `);

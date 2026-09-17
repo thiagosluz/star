@@ -30,6 +30,7 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { nextCookies } from 'better-auth/next-js';
 import { adminPrisma } from '@/lib/db/admin-client';
+import { createRedisRateLimitStorage } from '@/lib/auth/rate-limit-storage';
 
 const rootDomain = process.env.ROOT_DOMAIN ?? 'lvh.me';
 const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
@@ -94,9 +95,10 @@ export const auth = betterAuth({
    *  de 127.0.0.1), e a resposta 429 deixa o formulário preso em "Processando…"
    *  — um modo de falha confuso e que consome tempo de depuração.
    *
-   *  Decisão: desabilitado fora de produção. Em produção o limitador DEVE vir do
-   *  Redis (já disponível na stack), com chave por IP + rota, para valer entre
-   *  instâncias. Está registrado como dívida técnica na documentação da fase.
+   *  Decisão: desabilitado fora de produção. Em produção o limitador vem do Redis
+   *  (já na stack), com chave por IP + rota, para valer ENTRE instâncias — ver
+   *  `src/lib/auth/rate-limit-storage.ts`, que conta e decide em uma operação
+   *  atômica (é o contrato do Better Auth 1.7: `consume(key, { window, max })`).
    *
    *  `RATE_LIMIT_ENABLED=false` permite desligar também em produção — usado
    *  pelos testes E2E, que rodam contra o container de produção e disparam
@@ -109,6 +111,16 @@ export const auth = betterAuth({
       process.env.RATE_LIMIT_ENABLED !== 'false',
     window: 60,
     max: 100,
+    customStorage: createRedisRateLimitStorage(),
+    /**
+     * Regras por rota: autenticação é o alvo natural de força bruta, e o padrão de
+     * 100/minuto é generoso para adivinhar senha. Os números valem por IP.
+     */
+    customRules: {
+      '/sign-in/email': { window: 60, max: 10 },
+      '/sign-up/email': { window: 60, max: 5 },
+      '/request-password-reset': { window: 300, max: 3 },
+    },
   },
 
   user: {

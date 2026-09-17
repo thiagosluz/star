@@ -27,6 +27,8 @@ import 'dotenv/config';
 import { Redis } from 'ioredis';
 import { Worker, type Job } from 'bullmq';
 
+import { logger } from '@/lib/observability/logger';
+
 /**
  * Import de TIPO: apagado na compilação, portanto não arrasta o módulo da fila
  * (nem o `bullmq`) para dentro do bundle do worker antes de ser necessário.
@@ -64,6 +66,9 @@ async function start(): Promise<void> {
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    logger.error('worker: Redis inacessível no start', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     process.exit(1);
   }
 
@@ -82,6 +87,9 @@ async function start(): Promise<void> {
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    logger.error('worker: PostgreSQL inacessível no start', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     process.exit(1);
   }
 
@@ -96,6 +104,9 @@ async function start(): Promise<void> {
     console.error(
       '  ⚠ CERTIFICATE_HMAC_SECRET ausente ou curto: a emissão de certificados vai falhar.',
     );
+    logger.warn('worker: CERTIFICATE_HMAC_SECRET ausente ou curto', {
+      consequence: 'toda emissão de certificado vai falhar',
+    });
   }
 
   // ── Fila de certificados ───────────────────────────────────────────────────
@@ -109,6 +120,11 @@ async function start(): Promise<void> {
       }
 
       console.log(`  → gerando certificado ${certificateId} (tentativa ${job.attemptsMade + 1})`);
+      logger.info('worker: gerando certificado', {
+        certificateId,
+        tenantId,
+        attempt: job.attemptsMade + 1,
+      });
 
       const result = await generateCertificate({ tenantId, certificateId });
 
@@ -119,6 +135,7 @@ async function start(): Promise<void> {
       }
 
       console.log(`  ✓ certificado ${certificateId} emitido (${result.sizeBytes} bytes)`);
+      logger.info('worker: certificado emitido', { certificateId, sizeBytes: result.sizeBytes });
 
       return { storageKey: result.storageKey, contentHash: result.contentHash };
     },
@@ -130,10 +147,23 @@ async function start(): Promise<void> {
 
   worker.on('failed', (job, error) => {
     console.error(`  ✗ job ${job?.id ?? '?'} falhou: ${error.message}`);
+    logger.error('worker: job de certificado falhou', {
+      jobId: job?.id ?? null,
+      certificateId: job?.data?.certificateId ?? null,
+      tenantId: job?.data?.tenantId ?? undefined,
+      attempt: (job?.attemptsMade ?? 0) + 1,
+      error: error.message,
+    });
   });
 
   worker.on('completed', (job) => {
     console.log(`  ✓ job ${job.id} concluído`);
+    logger.info('worker: job de certificado concluído', {
+      jobId: job.id ?? null,
+      certificateId: job.data?.certificateId ?? null,
+      tenantId: job.data?.tenantId ?? undefined,
+      durationMs: job.finishedOn && job.processedOn ? job.finishedOn - job.processedOn : null,
+    });
   });
 
   console.log(`\n  Worker pronto. Fila "${CERTIFICATE_QUEUE_NAME}" registrada.`);

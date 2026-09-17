@@ -1976,7 +1976,7 @@ model Certificate {
 /// Trilha de auditoria imutável. Gravada pela aplicação (não pelo banco) para
 /// capturar ator, IP e contexto de tenant mesmo em operações cross-tenant.
 model AuditLog {
-  id       String  @id @default(uuid(7)) @db.Uuid
+  id       String  @default(uuid(7)) @db.Uuid
   tenantId String? @db.Uuid
   userId   String? @db.Uuid
 
@@ -1996,6 +1996,18 @@ model AuditLog {
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  CHAVE PRIMÁRIA COMPOSTA — consequência do particionamento (FASE 13)
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  `audit_logs` é particionada por mês em `createdAt` (migração
+  ///  `20260917200000_audit_logs_partitioning`). No PostgreSQL a chave de
+  ///  particionamento precisa fazer parte de toda chave única da tabela, então a
+  ///  PK é `(id, createdAt)`: `id` continua sendo o identificador de negócio, mas
+  ///  deixou de bastar para um `findUnique`.
+  ///
+  ///  Consequência prática: busca por `id` usa `findFirst`/`findMany`. Nenhuma FK
+  ///  aponta para `audit_logs`, então nada mais no schema mudou.
+  @@id([id, createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, entityType, entityId])
   @@index([userId, createdAt])

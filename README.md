@@ -4,8 +4,10 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 12 concluídas · **799 testes** unitários/integração · **44 testes E2E**
+> **Estado:** FASES 1 a 13 concluídas · **832 testes** unitários/integração · **47 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
+> (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics` e
+> `audit_logs` particionada por mês
 
 ---
 
@@ -43,6 +45,7 @@ avaliação por pares e gamificação.
 | **Sorteios** | Sorteio por evento, dia ou atividade, elegível apenas por **presença real**, com amostragem criptográfica, hash auditável e revelação animada |
 | **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
 | **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
+| **Operação e segurança** | Rate limit do login contado no **Redis** (vale entre instâncias), métricas no formato **Prometheus** em `/api/metrics` com token, log estruturado com redação de senha/e-mail, RLS criada pela própria migração, `audit_logs` **particionada por mês** e pool de conexões com **PgBouncer** em modo transação |
 
 ---
 
@@ -100,8 +103,8 @@ O que o passo 4 faz, em ordem:
 | Comando interno | O que garante |
 |---|---|
 | `db:migrate` | aplica as migrações e regenera o cliente Prisma |
-| `db:rls` | (re)aplica as policies de Row-Level Security — **rode sempre que criar tabela com `tenantId`** |
-| `db:verify` | falha se alguma tabela de tenant estiver sem RLS/policy ou se a role de runtime puder ignorar a RLS |
+| `db:rls` | (re)aplica as policies de Row-Level Security — **rode sempre que criar tabela com `tenantId`** (desde a FASE 13 elas também vivem em migração: um banco novo nasce íntegro com `db:migrate:deploy`) |
+| `db:verify` | falha se alguma tabela de tenant (ou partição) estiver sem RLS/policy ou se a role de runtime puder ignorar a RLS |
 | `db:verify:isolation` | executa **9 ataques** reais de isolamento entre instituições |
 | `db:seed` | popula os dados de demonstração (seção 6) |
 
@@ -125,6 +128,10 @@ Para exercitar esse caminho (e rodar os E2E), suba a stack completa:
 docker compose --profile app up -d --build
 docker compose --profile app ps
 docker logs eventflow-worker --tail 30     # fila "certificates"
+
+# Opcional (FASE 13): pool de conexões PgBouncer, porta 6432
+docker compose --profile pooler up -d pooler
+npm run db:verify:pooling                  # prova que o contexto de tenant não vaza
 ```
 
 > **Atenção:** se o `--build` falhar, o Compose **mantém o container anterior no ar**.
@@ -286,7 +293,10 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 | `BETTER_AUTH_SECRET` | obrigatória em qualquer ambiente real; o build falha com o valor padrão |
 | `CERTIFICATE_SIGNING_KEY_ID` | identificador da chave de assinatura (permite rotação auditável) |
 | `CERTIFICATE_HMAC_SECRET` | segredo HMAC dos certificados — **o web e o worker precisam do MESMO valor**, senão todo certificado parece adulterado |
-| `RATE_LIMIT_ENABLED` | nos E2E precisa ser `false` (o rate limiter é em memória e por processo) |
+| `RATE_LIMIT_ENABLED` | nos E2E precisa ser `false` (o contador agora vive no Redis, mas a suíte dispara dezenas de cadastros do mesmo IP) |
+| `METRICS_TOKEN` | token do `/api/metrics`; **sem ele, em produção, o endpoint responde 404** (a rota não existe para quem sonda) |
+| `DATABASE_URL_POOLED` / `PGBOUNCER_PORT` | endereço do pooler (`6432`) usado pela prova de pooling |
+| `PARTITION_MONTHS_AHEAD` | quantos meses à frente o `db:partitions` mantém criados (padrão `2`) |
 
 ### Serviços e portas
 
@@ -294,6 +304,7 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 |---|---|
 | `APP_PORT` / `APP_URL` | `3000` / `http://localhost:3000` |
 | `POSTGRES_PORT` | `5432` |
+| `PGBOUNCER_PORT` | `6432` (perfil `pooler`, opcional) |
 | `REDIS_URL` | `redis://localhost:6379` |
 | `MINIO_API_PORT` / `MINIO_CONSOLE_PORT` | `9000` / `9001` |
 | `S3_ENDPOINT` / `S3_PUBLIC_ENDPOINT` | `http://localhost:9000` |
@@ -318,6 +329,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 | `npm run db:rls` | reaplica as policies de RLS (idempotente) |
 | `npm run db:verify` | verifica o contrato de isolamento (tabelas, policies, roles) |
 | `npm run db:verify:isolation` | 9 ataques de isolamento entre tenants |
+| `npm run db:verify:pooling` | prova, contra o PgBouncer, que o contexto de tenant não vaza entre transações (exige `--profile pooler`) |
+| `npm run db:partitions` | cria as partições mensais futuras de `audit_logs` e resgata linhas da partição `DEFAULT` |
 | `npm run db:seed` | dados de demonstração |
 | `npm run db:seed:dev` | **só em desenvolvimento**: uma conta por perfil, com senha padrão (recusa-se a rodar em produção) |
 | `npm run db:studio` | Prisma Studio |
@@ -332,19 +345,24 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 799 testes (29 arquivos) — unit + integração com banco real
-npm run test:e2e          # 44 testes E2E contra o container de produção
+npm test                  # 832 testes (32 arquivos) — unit + integração com banco real
+npm run test:e2e          # 47 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
-npm run db:verify         # contrato de RLS íntegro
+npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
 npm run db:verify:isolation   # 9/9 ataques de isolamento barrados
+npm run db:verify:pooling     # contexto por transação preservado sob PgBouncer
+npm run db:partitions         # partições mensais de audit_logs em dia
 ```
 
 - **Integração** roda contra o PostgreSQL e o MinIO **reais** (a RLS é a fronteira de
-  segurança; testá-la com mock testaria o mock).
+  segurança; testá-la com mock testaria o mock). Os testes de observabilidade usam o
+  **Redis real** (TTL e expiração do rate limit) e leem o catálogo do PostgreSQL para
+  provar onde cada linha de auditoria foi gravada.
 - **E2E** exige a stack no ar (`docker compose --profile app up -d --build`) e cobre,
   entre outros: isolamento entre instituições, jornada de inscrição, avaliação por
-  pares, gamificação, certificação e a jornada administrativa completa.
+  pares, gamificação, certificação, a jornada administrativa completa e o **fechamento
+  do endpoint de métricas em produção** (404 sem token).
 - `tests/unit/**` não toca banco; `tests/integration/**` exige a infraestrutura.
 
 ---
@@ -373,12 +391,13 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 45 dívidas abertas (53 menos as 8 quitadas na FASE 12), verificadas no código, por tema, com esforço e fases candidatas | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 40 dívidas abertas (53 menos as 8 quitadas na FASE 12 e as 5 da FASE 13), verificadas no código, por tema, com esforço e fases candidatas | — |
+| [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
 | [`docs/fase-12-mutirao-dividas.md`](docs/fase-12-mutirao-dividas.md) | Mutirão de dívidas rápidas: escopo de equipe no credenciamento, evento restrito à comunidade, índice único de concessão, quota de eventos, cache distribuído, diretório sem truncamento e faxina de layout | ADR-071 … 074 |
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **74 decisões** registradas até aqui.
+> são **79 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -427,13 +446,13 @@ src/
 └── workers/           entrypoint do worker BullMQ
 prisma/
 ├── schema.prisma      modelo de dados
-├── migrations/        migrações (incluindo índices parciais e policies escritas à mão)
-├── scripts/           RLS, verificação de contrato, prova de isolamento
+├── migrations/        migrações (índices parciais, policies e particionamento à mão)
+├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              623 testes de regra pura (domínio, sem banco)
-├── integration/       176 testes com banco e storage reais
-└── e2e/               44 testes Playwright contra o container
+├── unit/              645 testes de regra pura e de formato (sem banco)
+├── integration/       187 testes com banco, Redis e storage reais
+└── e2e/               47 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -443,10 +462,11 @@ tests/
    tema de página).
 2. **Todo acesso a dados passa por `withTenant()`.** O contexto da instituição é
    aplicado por transação (`SET LOCAL app.tenant_id`), propagado por
-   `AsyncLocalStorage` — nunca por `SET` global, que vazaria entre requisições.
+   `AsyncLocalStorage` — nunca por `SET` global, que vazaria entre requisições. É
+   exatamente isso que torna o PgBouncer em modo transação seguro.
 3. **A RLS é a última linha de defesa, não a única.** Autorização é verificada em
    layouts, páginas e Server Actions; a policy garante que um filtro esquecido não
-   vire vazamento.
+   vire vazamento — e vale também para cada partição da auditoria.
 4. **O banco decide o que é concorrência.** Vaga, posição na fila, tiragem de carta e
    crédito de XP usam índice único e `UPDATE` condicional — o retorno de 0 linhas é a
    resposta de negócio.
@@ -460,6 +480,7 @@ tests/
 ```bash
 npm run db:verify              # contrato: RLS + FORCE + policy em toda tabela de tenant
 npm run db:verify:isolation    # 9 ataques reais entre instituições
+npm run db:verify:pooling      # o mesmo isolamento, através do PgBouncer (perfil `pooler`)
 ```
 
 Os 9 cenários provam, contra o banco real:
@@ -476,12 +497,23 @@ Os 9 cenários provam, contra o banco real:
 [A9] a role de runtime não desliga a RLS nem escala privilégio
 ```
 
+E a prova de pooling (FASE 13) mostra que a garantia sobrevive à reutilização de
+conexão, que é o que o modo transação faz:
+
+```text
+✓ depois do COMMIT a mesma conexão não carrega contexto
+✓ nenhuma das 8 transações concorrentes viu o contexto de outra
+✓ 8 clientes simultâneos couberam em no máximo 5 conexões de servidor
+```
+
 Duas consequências práticas:
 
 - **Criou tabela com `tenantId`?** Rode `npm run db:rls` e depois `npm run db:verify`.
   Uma tabela com RLS habilitada e sem policy é *fail-closed*: a aplicação não lê nada.
 - **Nunca** conceda `BYPASSRLS` ou `SUPERUSER` à role de runtime: `db:verify` falha e
   o isolamento deixa de existir.
+- **Criou tabela particionada?** A verificação das partições é automática: o contrato
+  exige RLS + FORCE + policy em toda tabela com `relispartition`.
 
 ---
 
@@ -495,7 +527,11 @@ Duas consequências práticas:
 | Rota nova responde **404** e o container parece saudável | O `--build` falhou e o Compose manteve o container anterior | Veja o log completo do build; confirme `docker images \| grep eventflow/web` e recrie |
 | "Server Actions must be async functions" | Arquivo `'use server'` exporta função não-async | Torne a função `async` ou mova o utilitário para outro módulo |
 | Tabela nova não retorna nada | RLS habilitada sem policy (fail-closed) | `npm run db:rls` → `npm run db:verify` |
-| E2E derruba com HTTP 429 | Rate limiter do Better Auth (em memória, por processo) | `RATE_LIMIT_ENABLED=false` no `.env` do container |
+| E2E derruba com HTTP 429 | Rate limiter do Better Auth | `RATE_LIMIT_ENABLED=false` no `.env` do container (desde a FASE 13 o contador é no Redis e vale entre instâncias) |
+| `/api/metrics` responde **404** | Em produção, sem `METRICS_TOKEN`, o endpoint não existe de propósito | Defina `METRICS_TOKEN` no `.env` e consulte com `Authorization: Bearer <token>` |
+| `npm run db:verify:pooling` falha com "connect ECONNREFUSED 6432" | O PgBouncer está no perfil `pooler` e não sobe por padrão | `docker compose --profile pooler up -d pooler` |
+| Linhas de auditoria caem em `audit_logs_default` | Mês sem partição criada | Agende `npm run db:partitions` (host/cron); ele cria a partição e **move** as linhas da `DEFAULT` |
+| `CREATE TABLE ... PARTITION OF ... FOR VALUES` falha com "bind message supplies 2 parameters" | O PostgreSQL não aceita parâmetro em DDL | Interpole o limite da partição como literal `'AAAA-MM-01'` |
 | Certificado inválido na página pública | Chaves de assinatura diferentes entre web e worker | Use o mesmo `CERTIFICATE_HMAC_SECRET` (e `KEY_ID`) nos dois serviços |
 | Seed falha com "nenhuma linha visível" | O seed precisa de contexto: ele usa `set_config` por tenant | Rode via `npm run db:seed` (nunca copie o SQL sem o contexto) |
 | `docker compose up` sem MinIO | As imagens oficiais do MinIO foram removidas do Docker Hub/Quay (2025) | O projeto já usa a imagem da Chainguard + `docker/minio/Dockerfile.probe`; rode `docker compose build minio` |
@@ -509,25 +545,33 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 1. **Assinatura de certificado é HMAC (simétrica).** Permite à instituição validar os
    próprios documentos; validação offline por terceiros que não confiam na instituição
    exigiria PKCS#7/CMS com X.509 (o campo `signatureAlg` já está preparado).
-2. **Rate limiter em memória e por processo** — precisa migrar para Redis antes de
-   escalar horizontalmente.
-3. **Editor visual da landing page** e cadastro de patrocinadores pela interface ainda
+2. **Editor visual da landing page** e cadastro de patrocinadores pela interface ainda
    não existem (o domínio e a renderização estão prontos desde a FASE 3).
-4. **Convites de membros, edição de coautores e upload de capa** pela UI estão
+3. **Convites de membros, edição de coautores e upload de capa** pela UI estão
    pendentes.
-5. **Paginação** nas listagens administrativas é por limite de consulta.
-6. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
+4. **Paginação** nas listagens administrativas é por limite de consulta.
+5. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
    não é registrada (exceto o contador de validação pública).
-7. **Antivírus nos arquivos de submissão** (`scanStatus = SKIPPED`, marcado
+6. **Antivírus nos arquivos de submissão** (`scanStatus = SKIPPED`, marcado
    honestamente em vez de afirmar "limpo").
-8. **Notificações por e-mail** (atribuição de parecer, certificado emitido) dependem
+7. **Notificações por e-mail** (atribuição de parecer, certificado emitido) dependem
    do worker; a fila existe, o envio não.
+8. **Adoção do log estruturado é parcial (FASE 13).** Os pontos de operação (fila,
+   worker, rate limit) usam o `logger` com redação; os serviços ainda têm ~66
+   `console.*` (dívida B6).
+9. **Retenção da auditoria e agendamento das partições** são operação, não código: o
+   particionamento está pronto, mas nada é descartado e o `db:partitions` precisa de
+   cron/orquestrador (dívidas B7 e B8).
+10. **Não há coletor de métricas.** `/api/metrics` é o contrato; Prometheus/Grafana e
+    alertas ficam com quem opera (dívida B9).
 
 ---
 
-**Próximos passos sugeridos:** fechar as dívidas acima por prioridade de risco
-(rate limit em Redis e PKCS#7 primeiro), adicionar observabilidade (OpenTelemetry,
-métricas de fila) e preparar o deploy com segredos gerenciados por cofre.
+**Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — comunicação
+(e-mail transacional, que destrava convites e notificações), PKCS#7 e antivírus para
+uso institucional — e depois a observabilidade de segunda ordem (coletor, alerta e
+adoção completa do log estruturado). O levantamento atualizado está em
+[`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
 
 
 

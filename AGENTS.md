@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 12 (docs/fase-NN-*.md)
-Testes ................. 799 (Vitest: unit + integração) + 44 (Playwright E2E)
-ADRs ................... 74 (numeração GLOBAL e sequencial — a próxima é ADR-075)
+Fases concluídas ........ 1 a 13 (docs/fase-NN-*.md)
+Testes ................. 832 (Vitest: unit + integração) + 47 (Playwright E2E)
+ADRs ................... 79 (numeração GLOBAL e sequencial — a próxima é ADR-080)
 Permissões ............. 54 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 31 sob RLS + FORCE
+Tabelas de tenant ...... 31 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,15 +98,20 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 799+ testes passando
+npm test              # esperado: 832+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
+npm run db:partitions         # esperado: partições do mês atual e dos seguintes já criadas
+
+# Pooling (opcional, exige o perfil `pooler` no ar):
+docker compose --profile pooler up -d pooler
+npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transação preservado sob PgBouncer."
 
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 44+ testes passando
+npm run test:e2e      # esperado: 47+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -139,6 +144,11 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 16 | Diagnóstico de depuração deixado na interface: a página pública exibia `cap=… mem=… can=…` para qualquer visitante | Estado interno vai para atributos `data-*`, nunca para texto visível; o teste E2E lê atributo com `evaluate`, não `innerText` |
 | 17 | Dois cenários E2E com o mesmo `label` colidem no slug da instituição (`tenants_slug_key`) | Rótulo ÚNICO por cenário (`publica-inscricao`, não `publica`) |
 | 18 | Cor e tamanho escritos à mão em componente (`text-gray-500`, `#4F46E5`, `text-[13px]`) sobrevivem a qualquer revisão e apodrecem o visual | **Antes de qualquer tela nova:** leia `docs/design-system.md`, importe de `@/components/ui` e rode `npx vitest run tests/unit/design-system-guard.test.ts` — a trava reprova paleta crua, hexadecimal e tamanho arbitrário |
+| 19 | Comentário de bloco contendo `/t/*/admin`: a sequência `*/` **fecha o comentário** e o resto vira código (`TS1161: Unterminated regular expression literal`) | Nunca escreva `*/` dentro de comentário; em texto use `/t/<curinga>/admin` |
+| 20 | `PATH_TENANT_PREFIX` vale `'/t'` (**com barra** — é prefixo de path), não `'t'` | Ao comparar com um SEGMENTO de URL, remova a barra (`PATH_TENANT_PREFIX.replace(/^\//, '')`); comparar `'t' === '/t'` é sempre falso e falha em silêncio |
+| 21 | O PostgreSQL **não aceita parâmetro** em DDL: `CREATE TABLE … PARTITION OF … FOR VALUES FROM ($1) TO ($2)` falha com "bind message supplies 2 parameters, but prepared statement requires 0" | Interpole o limite de partição como literal (`'2026-11-01'`), gerado de uma `Date` calculada no processo |
+| 22 | Consulta de introspecção filtrando `relkind = 'r'` **ignora tabela particionada** (`relkind = 'p'`) — o contrato passou a acusar `audit_logs` como ausente e o loop de RLS deixou de cobrir o pai | Use `relkind IN ('r','p') AND NOT c.relispartition` para tabelas-base e verifique as partições separadamente (`relispartition`) |
+| 23 | `tenants` tem policy `USING (true)` **por desenho** (a resolução de slug → id acontece antes de existir contexto) | Um teste de isolamento que lê `tenants` **não prova nada**: use uma tabela de tenant de verdade (ex.: `events."tenantId"`) como leitura discriminante |
 
 ---
 
@@ -151,9 +161,36 @@ docker compose up -d            # postgres, redis, minio (+ provisionamento de b
 npm run db:setup                # migrate + rls + verify + isolation + seed
 npm run dev                     # http://localhost:3000
 docker compose --profile app up -d --build   # + web e worker (fila de certificados)
+docker compose --profile pooler up -d pooler # + PgBouncer (opcional, porta 6432)
 ```
 
-Portas: **3000** app · **5432** postgres · **6379** redis · **9000/9001** MinIO.
+Portas: **3000** app · **5432** postgres · **6379** redis · **9000/9001** MinIO ·
+**6432** PgBouncer (perfil `pooler`, opcional).
+
+### Observabilidade (FASE 13)
+
+`/api/metrics` expõe métricas no formato Prometheus. **Sem `METRICS_TOKEN` definido,
+em produção, o endpoint responde 404** — de propósito. Em desenvolvimento responde
+200 sem token, para inspeção local. As métricas são **por processo** (o coletor soma):
+o Proxy conta requisição por rota/método/status (com o slug do tenant virando
+curinga), e o scrape lê `getJobCounts()`/`getWorkersCount()` do BullMQ para saber
+tamanho da fila e se o worker está vivo. O log estruturado (`src/lib/observability/logger.ts`)
+redige senha/token e mascara e-mail; o worker de fila loga job iniciado, concluído e
+falhado com `certificateId`, `tenantId` e duração.
+
+### PgBouncer (FASE 13)
+
+Pool em modo **transação**: seguro aqui porque o contexto de tenant é `SET LOCAL`
+(invariante nº 2) e o projeto não usa recurso de sessão (advisory lock,
+`LISTEN`/`NOTIFY`, prepared statement nomeado). Para o runtime usá-lo, aponte
+`APP_DATABASE_URL` para a porta 6432. Prova automatizada: `npm run db:verify:pooling`.
+
+### Partições da auditoria (FASE 13)
+
+`audit_logs` é particionada por mês em `createdAt`, com partição `DEFAULT` para que
+gravar auditoria nunca falhe. **Agende `npm run db:partitions`** (host/cron): ele cria
+o mês atual e os seguintes e resgata linhas que caíram na `DEFAULT`. Retenção é
+`DROP TABLE audit_logs_<AAAA_MM>` — decisão de negócio, ainda em aberto (dívida B8).
 
 ### Contas do seed — **não têm senha**
 
@@ -213,8 +250,11 @@ src/app/instituicao-bloqueada/**  página de bloqueio de instituição suspensa
 src/app/validar/**     validação pública de certificado (sem login)
 src/workers/           worker BullMQ (fila de certificados)
 prisma/schema.prisma   modelo de dados (camelCase citado nas colunas)
-prisma/migrations/**   migrações (algumas escritas à mão: índices parciais, policies)
-docker/postgres/init/  roles, extensões e policies de RLS (idempotentes)
+prisma/migrations/**   migrações (algumas escritas à mão: índices parciais, policies,
+                       particionamento de audit_logs)
+docker/postgres/init/  roles, extensões e parâmetros (as policies de RLS migraram para
+                       a migração 20260917191000; 02-rls-policies.sql é só um ponteiro)
+src/lib/observability/ métricas (Prometheus), log estruturado e rótulo de rota
 tests/{unit,integration,e2e}
 ```
 
@@ -259,12 +299,15 @@ tests/{unit,integration,e2e}
 | 11A | Identidade visual, primitivos de UI e shell de navegação | ✅ |
 | 11B | Propagação do design a todas as telas e quitação da dívida (catraca zerada) | ✅ |
 | 12 | Mutirão de dívidas rápidas (I7, I3, I5, C2, I1, I2, H2, H4) | ✅ |
-| 13+ | *a definir pelo humano* | ⏳ |
+| 13 | Operação e segurança (A1, B1, B2, B3, B4: rate limit em Redis, observabilidade, RLS na migração, particionamento da auditoria, PgBouncer) | ✅ |
+| 14+ | *a definir pelo humano* | ⏳ |
 
-**Dívidas técnicas:** o levantamento consolidado (45 itens abertos — 53 menos os 8 quitados na FASE 12,
-verificados no código, com esforço e fases candidatas — F12 Operação e segurança ·
-F13 Comunicação · F14 Quotas · F15 Sorteios de ponta a ponta · F16 Landing page ·
-F17 Documentos · F18 Gamificação avançada) está em **`docs/dividas-tecnicas.md`**.
+**Dívidas técnicas:** o levantamento consolidado (**40 itens abertos** — 53 do
+levantamento original, menos os 8 quitados na FASE 12 e os 5 na FASE 13, já com as
+dívidas NOVAS declaradas pela própria FASE 13 — verificado no código, com esforço e
+fases candidatas — F14 Comunicação · F15 Quotas · F16 Sorteios de ponta a ponta ·
+F17 Landing page · F18 Documentos · F19 Gamificação avançada · F20 Observabilidade de
+segunda ordem) está em **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
 
@@ -272,7 +315,7 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase** (`docs/fase-12-*.md`).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase** (`docs/fase-13-*.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

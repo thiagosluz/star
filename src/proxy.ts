@@ -31,6 +31,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveTenant, tenantPath, PATH_TENANT_PREFIX } from '@/domain/tenancy/resolution';
+import { incCounter, observeDuration } from '@/lib/observability/metrics';
+import { routeLabel } from '@/lib/observability/route-label';
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 
 /** Headers internos com o resultado da resolução. */
@@ -92,7 +94,12 @@ function firstSegment(pathname: string): string {
   return index === -1 ? withoutLeading : withoutLeading.slice(0, index);
 }
 
-export async function proxy(request: NextRequest) {
+/**
+ * Corpo do proxy, sem instrumentação, para que o wrapper possa medir a duração
+ * e o status de TODAS as saídas (next, rewrite 403 e rewrite 404) sem repetir
+ * contabilidade em cada `return`.
+ */
+async function handle(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
 
   const rootDomain = process.env.ROOT_DOMAIN ?? 'lvh.me';
@@ -181,6 +188,51 @@ export async function proxy(request: NextRequest) {
   return NextResponse.rewrite(new URL(target, request.url), {
     request: { headers },
   });
+}
+
+/**
+ * Ponto de entrada do Proxy: mede e conta, depois delega.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A INSTRUMENTAÇÃO FICA AQUI
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O Proxy vê 100% da navegação (o matcher exclui `/api` e assets), então é o
+ *  único lugar onde uma contagem de requisições é realmente completa. O rótulo
+ *  de status captura o que importa operacionalmente: 403 de instituição suspensa
+ *  e 404 de tenant inexistente deixam de ser invisíveis.
+ *
+ *  O registro de métricas vive no `globalThis` do processo (`metrics.ts`), e o
+ *  Proxy é empacotado em um bundle separado das páginas e das rotas de API — o
+ *  `globalThis` é o mesmo processo, portanto as séries se somam no `/api/metrics`.
+ *  Nenhuma decisão de acesso depende disto: instrumentação falhar não muda a
+ *  resposta (por isso o `try/catch`).
+ */
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const started = performance.now();
+  const route = routeLabel(request.nextUrl.pathname);
+
+  let response: NextResponse;
+
+  try {
+    response = await handle(request);
+  } catch (error) {
+    // Erro inesperado no proxy não pode virar página em branco sem diagnóstico.
+    incCounter('http_requests_total', {
+      route,
+      method: request.method,
+      status: '500',
+    });
+    throw error;
+  }
+
+  incCounter('http_requests_total', {
+    route,
+    method: request.method,
+    status: String(response.status),
+  });
+  observeDuration('http_request_duration_ms', performance.now() - started, { route });
+
+  return response;
 }
 
 export const config = {

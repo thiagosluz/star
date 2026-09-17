@@ -79,7 +79,9 @@ services:
       # Executados em ordem alfabética, APENAS quando o volume está vazio.
       #   00-roles.sql        roles admin/app + GRANTs + default privileges
       #   01-database.sql     extensões e parâmetros do banco
-      #   02-rls-policies.sql policies de Row-Level Security + assertivas
+      #   02-rls-policies.sql stub — as policies vivem na migração
+      #                       20260917191000_rls_policies (FASE 13), para que um
+      #                       banco criado por `migrate deploy` já nasça sob RLS
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
@@ -199,6 +201,70 @@ services:
     networks: [eventflow]
 
   # ═════════════════════════════════════════════════════════════════════════════
+  #  PgBouncer — pool de conexões em modo TRANSACTION (FASE 13)
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  Por que existe: cada processo Node abre o próprio pool, e `next build`/
+  #  múltiplas instâncias do web somadas ao worker esgotam `max_connections=200`
+  #  do PostgreSQL muito antes de a carga justificar. O PgBouncer multiplexa
+  #  centenas de clientes em poucas conexões de servidor.
+  #
+  #  Por que TRANSACTION e não SESSION: em modo sessão o pool é por cliente e o
+  #  ganho desaparece. Em modo transação a conexão volta ao pool no COMMIT — o que
+  #  só é seguro porque o contexto de tenant é `SET LOCAL` (invariante nº 2 do
+  #  AGENTS.md). Toda a aplicação usa `set_config(..., true)` e não há uso de
+  #  recursos de sessão (advisory locks, LISTEN/NOTIFY, prepared statements
+  #  nomeados), então o reset do PgBouncer no fim da transação é suficiente.
+  #
+  #  Perfil `pooler`: NÃO sobe por padrão (o `npm run dev` não precisa dele). Para
+  #  exercitar: `docker compose --profile pooler up -d pooler && npm run db:verify:pooling`.
+  pooler:
+    image: edoburu/pgbouncer:v1.24.1-p0
+    container_name: eventflow-pooler
+    profiles: [pooler]
+    <<: [*restart, *default-logging]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${APP_DB_USER:-eventflow_app}
+      DB_PASSWORD: ${APP_DB_PASSWORD:-eventflow_app_password}
+      DB_NAME: ${POSTGRES_DB:-eventflow}
+      # A imagem escuta em 5432 por padrão — dentro do container isso é ambíguo
+      # com o PostgreSQL e não casaria com a porta publicada. 6432 é a porta
+      # convencional do PgBouncer e a que o `DATABASE_URL_POOLED` usa.
+      LISTEN_PORT: "6432"
+      # `scram-sha-256` porque é assim que o PostgreSQL 18 grava a senha da role
+      # de aplicação: com `md5` o PgBouncer não consegue verificar o hash e todo
+      # login falharia com "password authentication failed".
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      # O cliente não pode carregar parâmetros de sessão arbitrários; `options`
+      # vem do Prisma e não é suportado em modo transação.
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+      MAX_CLIENT_CONN: "200"
+      # 5 conexões de servidor para até 200 clientes: é a multiplexação que
+      # justifica o PgBouncer. O `npm run db:verify:pooling` usa este número como
+      # referência para provar que 8 transações concorrentes couberam em menos.
+      DEFAULT_POOL_SIZE: "5"
+      MIN_POOL_SIZE: "2"
+      RESERVE_POOL_SIZE: "5"
+      # Devolve a conexão ao pool limpa: descarta estado de sessão remanescente.
+      SERVER_RESET_QUERY: DISCARD ALL
+      MAX_CLIENT_CONN_LIFETIME: "1800"
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:6432"
+    healthcheck:
+      # Imagem alpine/busybox: `nc` é o probe disponível sem instalar cliente.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [eventflow]
+
+  # ═════════════════════════════════════════════════════════════════════════════
   #  Aplicação Next.js (standalone) — FASE 2 em diante
   # ═════════════════════════════════════════════════════════════════════════════
   web:
@@ -262,10 +328,16 @@ services:
       CERTIFICATE_SIGNING_KEY_ID: ${CERTIFICATE_SIGNING_KEY_ID:-dev-key-2025-01}
       CERTIFICATE_HMAC_SECRET: ${CERTIFICATE_HMAC_SECRET:-dev-hmac-secret-change-me}
 
-      # O rate limiter do Better Auth é em MEMÓRIA e por processo: em produção
-      # real ele não protege entre instâncias (deve migrar para Redis). Nos
-      # testes E2E, que rodam contra este container e disparam dezenas de
-      # cadastros do mesmo IP, ele derruba a suíte com 429.
+      # Observabilidade (FASE 13). Vazio por padrão: em produção, sem token, o
+      # endpoint /api/metrics responde 404 de propósito — métrica não fica exposta
+      # por esquecimento de configuração.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+
+      # Desde a FASE 13 o rate limiter do Better Auth usa armazenamento no Redis
+      # (`src/lib/auth/rate-limit-storage.ts`), portanto o limite vale entre
+      # instâncias. Aqui ele continua DESLIGADO apenas porque a suíte E2E dispara
+      # dezenas de cadastros do mesmo IP contra este container e seria derrubada
+      # com 429 — não porque o contador seja local.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
     ports:
       - "${APP_PORT:-3000}:3000"

@@ -25,6 +25,9 @@
  */
 import { Queue, type ConnectionOptions } from 'bullmq';
 
+import { incCounter } from '@/lib/observability/metrics';
+import { logger } from '@/lib/observability/logger';
+
 export const CERTIFICATE_QUEUE_NAME = 'certificates';
 
 export interface CertificateJobData {
@@ -106,30 +109,49 @@ export async function enqueueCertificate(
       ...(options.delayMs ? { delay: options.delayMs } : {}),
     });
 
+    incCounter('certificate_jobs_enqueued_total');
     return true;
   } catch (error) {
-    console.error(
-      `[certificates] fila indisponível (${error instanceof Error ? error.message : 'erro'}); gerando inline.`,
-    );
+    // Degradação consciente: não é erro fatal (o chamador gera inline), mas é
+    // exatamente o evento que precisa aparecer em métrica e alerta — a fila caiu
+    // e todo o trabalho passou a rodar dentro do processo web.
+    incCounter('certificate_enqueue_degraded_total');
+    logger.warn('fila de certificados indisponível; geração inline', {
+      certificateId: data.certificateId,
+      tenantId: data.tenantId,
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
     return false;
   }
 }
 
-/** Números da fila — usados pelo diagnóstico e pelo painel (FASE 7). */
+/**
+ * Números da fila — usados pelo diagnóstico, pelo painel (FASE 7) e pelo scrape
+ * de métricas (FASE 13).
+ *
+ * `workers` é a diferença entre "a fila existe" e "a fila anda": os contadores do
+ * BullMQ continuam crescendo em `waiting` mesmo com o worker morto, então um
+ * alerta baseado só no tamanho da fila demora a perceber a queda. O número de
+ * workers registrados no Redis cai para zero imediatamente.
+ */
 export async function certificateQueueStats(): Promise<{
   waiting: number;
   active: number;
   completed: number;
   failed: number;
+  workers: number;
 } | null> {
   try {
-    const counts = await getQueue().getJobCounts('waiting', 'active', 'completed', 'failed');
+    const queue = getQueue();
+    const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed');
+    const workers = await queue.getWorkersCount();
 
     return {
       waiting: counts.waiting ?? 0,
       active: counts.active ?? 0,
       completed: counts.completed ?? 0,
       failed: counts.failed ?? 0,
+      workers,
     };
   } catch {
     return null;

@@ -6,6 +6,7 @@
 > resolvido está na seção 2, para que este documento não repita trabalho feito.
 >
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
+> Atualizado após a **FASE 12** (8 itens) e a **FASE 13** (5 itens: A1, B1, B2, B3, B4).
 
 ---
 
@@ -37,6 +38,11 @@
 | Cor crua (150 ocorrências), tamanho arbitrário, dois `Field`, Tailwind duplicado no tema do evento, raridade fora dos tokens de tier | F11A | **F11B** |
 | Contagens de documentação desatualizadas (permissões, testes) | F2 | Corrigidas; a trava de fase agora confere no código |
 | **Mutirão de 8 itens rápidos**: I7 (equipe de evento no credenciamento), I3 (evento restrito), I5 (índice único de concessão), C2 (quota de eventos), I1 (cache distribuído), I2 (diretório sem truncamento), H2 (wrappers), H4 (`code-data`) | Levantamento F1–11B | **FASE 12** — `docs/fase-12-mutirao-dividas.md` |
+| **A1 — Rate limit distribuído** | F2, F3, F4 | **FASE 13** — `INCR`+`PEXPIRE`+`PTTL` atômicos em Lua, falha aberta; `src/lib/auth/rate-limit-storage.ts` |
+| **B1 — Observabilidade** | Dívida geral | **FASE 13** — métricas no formato Prometheus em `/api/metrics` (fechado por token), log estruturado com redação, Proxy instrumentado |
+| **B2 — RLS fora das migrações** | F1 | **FASE 13** — policies na migração `20260917191000_rls_policies`; o init virou stub |
+| **B3 — Particionamento do `AuditLog`** | F1 | **FASE 13** — partição mensal + PK `(id, createdAt)` + partição `DEFAULT` + `npm run db:partitions` |
+| **B4 — PgBouncer (transaction pooling)** | F1, F2 | **FASE 13** — perfil `pooler` no compose + `npm run db:verify:pooling` |
 
 ---
 
@@ -44,8 +50,8 @@
 
 | Tema | Itens abertos | Dos quais rápidos (P) | Risco se ficar como está |
 |---|---|---|---|
-| A. Segurança e conformidade | 5 | 1 | Alto — rate limit não vale entre instâncias; arquivos sem varredura |
-| B. Confiabilidade e operação | 5 | 2 | Alto — sem métricas nem particionamento; RLS fora das migrações |
+| A. Segurança e conformidade | 4 | 0 | Alto — arquivos sem varredura; assinatura de certificado ainda simétrica |
+| B. Confiabilidade e operação | 1 | 1 | Baixo — resta a migração de `unstable_cache` para `use cache` |
 | C. Quotas e billing | 2 | 1 | Médio — quota de plano é decorativa |
 | D. Comunicação e comunidade | 6 | 1 | Alto para adoção — não há um único e-mail; convite é manual |
 | E. Jornada do participante | 8 | 3 | Médio — atrito e listas sem paginação |
@@ -53,7 +59,7 @@
 | G. Sorteios | 7 | 2 | Médio — sorteio é completo, mas o prêmio não é entregue nem registrado |
 | H. Design e acessibilidade | 4 | 2 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 2 | 0 | Baixo a médio |
-| **Total** | **45** | **12** | (8 quitados na FASE 12) |
+| **Total** | **40** | **12** | (8 quitados na FASE 12 · 5 na FASE 13) |
 
 ---
 
@@ -63,21 +69,23 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| A1 | **Rate limit distribuído** | F2, F3, F4 | Limitador do Better Auth é em memória/por processo (`src/lib/auth/auth.ts`); migrar para Redis com chave por IP+rota e janela deslizante | Com 2+ instâncias, o limite não protege nada | M | Sim |
 | A2 | **Assinatura assimétrica de certificado (PKCS#7/CMS)** | F1, F6 | Trocar HMAC por chave privada + certificado; `signatureAlg`/`keyId` já preparados; exige cofre de chave | Terceiros não validam offline sem confiar na instituição | G | Decorrente |
 | A3 | **Antivírus nos arquivos de submissão** | F4, F6 | `scanStatus` é `SKIPPED` (`submission-service.ts`); integrar ClamAV ao worker | Arquivo malicioso armazenado e servido por URL assinada | M | Sim |
 | A4 | **Auditoria de leitura de dados pessoais** | F7 | A trilha registra mutações; quem **visualizou** não é registrado | Sem rastro em incidente de acesso indevido | M | Decorrente |
 | A6 | **Login social (Google/ORCID)** | F2 | Tabela `account` é multi-provedor; falta o provedor e as credenciais | Atrito de cadastro em público acadêmico | M | Sim |
 
+> A5 (verificação de e-mail) continua agrupado com **D1** na F14 candidata: depende do
+> provedor de e-mail, que é o item que a fase de Comunicação entrega primeiro.
+
 ### B. Confiabilidade e operação
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| B1 | **Observabilidade** | F-debt geral | Nenhum OpenTelemetry/métrica; 65 `console.*` como único sinal | Não há como ver latência, fila ou erro por rota | M | Sim |
-| B2 | **RLS fora das migrações** | F1 | Policies vivem em `docker/postgres/init/` e dependem de `npm run db:rls`; `migrate deploy` sozinho não as aplica | Ambiente novo sem RLS se alguém esquecer o script | M | Sim |
-| B3 | **Particionamento do `AuditLog`** | F1 | Tabela cresce indefinidamente; particionar por mês em `createdAt` | Consulta e manutenção degradam com o tempo | M | Sim |
-| B4 | **PgBouncer (transaction pooling)** | F1, F2 | Contexto por transação já é compatível; a peça não foi adicionada | Teto de conexões em escala | P | Sim |
 | B5 | **`unstable_cache` → `use cache`** | F9 | API legada no diretório público | Dívida de atualização do framework | P | Sim |
+| B6 | **Adoção do `logger` nos serviços** | F13 (novo) | A FASE 13 migrou os pontos de operação; ~66 `console.*` seguem nos serviços (`catalog-service`, `certificate-service`, `raffle-service`, …) | Log sem estrutura nem redação nesses caminhos | M | Sim |
+| B7 | **Agendamento da manutenção de partições** | F13 (novo) | `npm run db:partitions` precisa de cron/orquestrador; o projeto não tem scheduler | Mês sem partição cai na `DEFAULT`; o resgate funciona, mas a retenção por `DROP` perde o sentido | P | Sim |
+| B8 | **Política de retenção da auditoria** | F13 (novo) | Decisão de negócio (LGPD × guarda): nada é descartado hoje | A `DEFAULT` e o histórico crescem sem limite definido | P | Decorrente |
+| B9 | **Coletor de métricas (Prometheus/Grafana)** | F13 (novo) | O endpoint é o contrato; falta quem raspe e alerte | Métrica existe e ninguém lê; `bullmq_queue_up 0` não vira alerta | M | Decorrente |
 
 ### C. Quotas e billing
 
@@ -159,13 +167,14 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 
 | Fase candidata | Tema | Itens | Por que nesta ordem |
 |---|---|---|---|
-| **F12 — Operação e segurança** | Rate limit em Redis, observabilidade, particionamento do `AuditLog`, RLS nas migrações, PgBouncer | A1, B1, B2, B3, B4 | São os itens que **impedem produção com mais de uma instância**. Não dependem de nada e reduzem risco de tudo o que vem depois |
-| **F13 — Comunicação** | E-mail transacional + as notificações que dependem dele + convites de membros + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | É o maior bloqueio de adoção: sem e-mail, convite é manual e metade das fases futuras fica travada. Destrava A5 e D3–D6 de uma vez |
-| **F14 — Quotas e planos** | Aplicar `maxMembers`, edição de plano pela UI, distinção participante × membro | C1, C3, I4 | Fecha o modelo comercial e limpa a lista de membros que a F10 começou a poluir. A quota de **eventos** já foi aplicada na F12 (C2) — este item herda o mesmo desenho |
-| **F15 — Sorteios de ponta a ponta** | Suplentes, entrega de prêmio, pesos, commit-reveal, exibição pública, tempo real | G1–G7 + F1 | Transforma o sorteio (que já é robusto) em **operação completa**, incluindo a carta de presença total |
-| **F16 — Landing page e patrocínio** | Editor visual, upload de capa, patrocinadores, coautores | E3, E4, E5, E6 | Habilita a instituição a montar a própria vitrine — o maior item de produto ainda ausente |
-| **F17 — Segurança de documentos** | Assinatura assimétrica, antivírus, auditoria de leitura, ZIP, validação em lote | A2, A3, A4, E7, E8 | Documento assinado e arquivo varrido: pré-requisito para uso institucional sério |
-| **F18 — Gamificação avançada** | Trocas/crafting, níveis de carta, temporadas, ranking por evento, antifraude de proximidade | F2–F6 | Mecânicas novas; depende de dados reais de uso para calibrar economia |
+| ~~**F12 — Operação e segurança**~~ | Rate limit em Redis, observabilidade, particionamento do `AuditLog`, RLS nas migrações, PgBouncer | A1, B1, B2, B3, B4 | **Concluída como FASE 13** — `docs/fase-13-operacao-e-seguranca.md` |
+| **F14 — Comunicação** | E-mail transacional + as notificações que dependem dele + convites de membros + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | É o maior bloqueio de adoção: sem e-mail, convite é manual e metade das fases futuras fica travada. Destrava A5 e D3–D6 de uma vez |
+| **F15 — Quotas e planos** | Aplicar `maxMembers`, edição de plano pela UI, distinção participante × membro | C1, C3, I4 | Fecha o modelo comercial e limpa a lista de membros que a F10 começou a poluir. A quota de **eventos** já foi aplicada (C2, FASE 12) — este item herda o mesmo desenho |
+| **F16 — Sorteios de ponta a ponta** | Suplentes, entrega de prêmio, pesos, commit-reveal, exibição pública, tempo real | G1–G7 + F1 | Transforma o sorteio (que já é robusto) em **operação completa**, incluindo a carta de presença total |
+| **F17 — Landing page e patrocínio** | Editor visual, upload de capa, patrocinadores, coautores | E3, E4, E5, E6 | Habilita a instituição a montar a própria vitrine — o maior item de produto ainda ausente |
+| **F18 — Segurança de documentos** | Assinatura assimétrica, antivírus, auditoria de leitura, ZIP, validação em lote | A2, A3, A4, E7, E8 | Documento assinado e arquivo varrido: pré-requisito para uso institucional sério |
+| **F19 — Gamificação avançada** | Trocas/crafting, níveis de carta, temporadas, ranking por evento, antifraude de proximidade | F2–F6 | Mecânicas novas; depende de dados reais de uso para calibrar economia |
+| **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições e política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele e fecha a adoção do log |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -174,6 +183,14 @@ Os oito itens abaixo eram o "primeiro mutirão" sugerido por este levantamento e
 implementados na FASE 12** — I7, I3, I5, C2, H2, H4, I1 e I2. O registro completo
 (ADRs, lições e evidências) está em
 [`docs/fase-12-mutirao-dividas.md`](fase-12-mutirao-dividas.md).
+
+### Fase de operação executada na FASE 13 (concluído)
+
+Os cinco itens de **operação e segurança** (A1, B1, B2, B3, B4) foram implementados na
+FASE 13 — o que este documento chamava de "F12 — Operação e segurança" deslocou-se um
+número depois do mutirão. O registro completo está em
+[`docs/fase-13-operacao-e-seguranca.md`](fase-13-operacao-e-seguranca.md), que também
+declara as dívidas **novas** que a própria fase criou (B6–B9, na seção B acima).
 
 ---
 

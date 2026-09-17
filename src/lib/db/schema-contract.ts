@@ -25,6 +25,21 @@ export const ADMIN_ROLE = 'eventflow_admin';
 /**
  * Tabelas cuja coluna `tenantId` é a fronteira de isolamento.
  * Todas precisam de RLS habilitada, FORCE e a policy `tenant_isolation`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  PARTIÇÕES NÃO ENTRAM NESTA LISTA (FASE 13)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `audit_logs` é particionada por mês, e cada partição (`audit_logs_2026_09`, …)
+ *  é uma tabela real com `tenantId`. Elas não podem ser listadas aqui: o nome
+ *  depende da data corrente, e uma lista que muda todo mês é uma lista que
+ *  alguém esquece de atualizar — exatamente o defeito que motivou a descoberta
+ *  por introspecção na FASE 8.
+ *
+ *  A proteção das partições é verificada ESTRUTURALMENTE em
+ *  `assert-schema-contract.mjs` (seção 3b): toda tabela com `relispartition`
+ *  precisa de RLS + FORCE + policy, e o script de manutenção
+ *  (`prisma/scripts/ensure-audit-partitions.mjs`) aplica as três ao criar cada
+ *  partição nova.
  */
 export const TENANT_SCOPED_TABLES = [
   'user_tenant_profiles',
