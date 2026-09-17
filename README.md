@@ -33,7 +33,7 @@ avaliação por pares e gamificação.
 
 | Domínio | Capacidade |
 |---|---|
-| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 10 papéis e 51 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
+| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 10 papéis e 53 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
 | **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO e landing pages públicas personalizáveis |
 | **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
@@ -313,6 +313,10 @@ npm run db:verify:isolation   # 9/9 ataques de isolamento barrados
 
 ## 11. Documentação centralizada
 
+> **Trabalhando com um agente de código?** Leia primeiro o [`AGENTS.md`](AGENTS.md):
+> ele traz o protocolo de fases, a bateria de verificação, as convenções e as
+> armadilhas conhecidas do projeto.
+
 Toda a documentação técnica vive em `docs/`, uma fase por arquivo. Cada documento
 traz **ADRs** (decisões com contexto e consequências), **lições aprendidas** (defeitos
 reais encontrados por testes), **evidências de verificação** e **comandos**.
@@ -320,7 +324,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | Documento | Conteúdo | ADRs |
 |---|---|---|
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
-| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 10 papéis (51 permissões hoje), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
+| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 10 papéis (53 permissões hoje), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
 | [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado | ADR-014 … 018 |
 | [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão | ADR-019 … 024 |
 | [`docs/fase-05-gamificacao.md`](docs/fase-05-gamificacao.md) | Motor de recompensas, XP idempotente, curva de níveis, prestígio, cartas, foil, missões, credenciamento | ADR-025 … 031 |

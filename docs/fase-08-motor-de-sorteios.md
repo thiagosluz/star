@@ -435,7 +435,7 @@ existindo.
 **Decisão:** permissão nova `event:manage`, concedida a ADMIN/OWNER e ORGANIZER.
 **Justificativa:** permite conceder administração operacional sem conceder o poder de
 sortear — e evita que o CHAIR (trilha científica) ganhe a capacidade por tabela.
-**Consequências:** o RBAC passa a ter 51 permissões; a tela e as Server Actions de
+**Consequências:** o RBAC passa de 52 para 53 permissões; a tela e as Server Actions de
 sorteio exigem `event:manage`, e não `event:update`.
 
 ---
