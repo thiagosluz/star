@@ -157,8 +157,8 @@ Portas: **3000** app · **5432** postgres · **6379** redis · **9000/9001** Min
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e
-tenancy; o seed grava apenas um marcador em `passwordHash` (login por senha falha, e
-isso é intencional). Para usar a interface:
+tenancy; elas **não têm linha em `account`**, então login por senha falha — e isso é
+intencional. Para usar a interface com elas:
 
 1. crie uma conta em `/signup`;
 2. vincule-a (`user_tenant_profiles`, `status = ACTIVE`, com `tenantId`) e conceda um
@@ -166,6 +166,24 @@ isso é intencional). Para usar a interface:
 
 O caminho mais rápido é reaproveitar `tests/e2e/helpers.ts` (`linkUser` + `grantRole`)
 ou o Prisma Studio (`npm run db:studio`).
+
+### Contas de teste com senha — o caminho rápido para testar a interface
+
+```bash
+npm run db:seed:dev      # uma conta por perfil (os 10 papéis + estados de borda)
+# senha de todas: EventFlow@2026   ·   doc: docs/contas-de-teste.md
+```
+
+15 contas `@eventflow.test`: `superadmin@`, `owner@`, `admin@`, `organizador@`,
+`organizador-evento@`, `presidente@`, `revisor@`, `palestrante@`, `equipe@`,
+`participante@`, `patrocinador@`, `multi@`, `convidado@`, `suspenso@`, `semvinculo@`.
+O script é idempotente, **regrava a senha** em cada execução e **recusa rodar com
+`NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por
+`reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
+
+Sobre a senha: ela vive em `account.password` (`providerId = 'credential'`, hash scrypt
+do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **legado e não
+é usado pela biblioteca** — não perca tempo com ele ao depurar login.
 
 ### Dados de demonstração
 

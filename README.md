@@ -197,6 +197,19 @@ Instituição suspensa /instituicao-bloqueada?slug=<slug>
 
 ## 7. Usuários padrão do seed
 
+> ### ✅ Quer entrar e testar agora? Use as **contas de teste**
+>
+> ```bash
+> npm run db:seed:dev     # uma conta por perfil, todas com senha EventFlow@2026
+> ```
+>
+> Tabela completa (perfil → o que testar → onde clicar) em
+> [`docs/contas-de-teste.md`](docs/contas-de-teste.md). O script **se recusa a rodar
+> em produção**.
+>
+> As contas abaixo são as do seed principal, que servem para exercitar RBAC no banco —
+> e que **não têm senha**, de propósito.
+
 | Conta | Papéis | Vínculo |
 |---|---|---|
 | `ana@example.test` | ADMIN em `ufba-demo` · CHAIR + PARTICIPANT em `fiocruz-demo` | dois tenants ativos |
@@ -207,7 +220,8 @@ Instituição suspensa /instituicao-bloqueada?slug=<slug>
 > ### ⚠️ Essas contas **não têm senha**
 >
 > Elas existem para exercitar **RBAC, multi-tenancy e gamificação**, não para login
-> por senha — o seed grava apenas um marcador em `passwordHash`. Tentar entrar com
+> por senha: uma conta só consegue autenticar se tiver uma linha em `account`
+> (`providerId = 'credential'`), e o seed não cria nenhuma para elas. Tentar entrar com
 > qualquer senha falha, e isso é intencional.
 >
 > **Para usar a interface com um usuário real:** crie uma conta em `/signup` e
@@ -298,11 +312,13 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:setup` | `migrate` + `rls` + `verify` + `verify:isolation` + `seed` |
+| `npm run db:setup:dev` | o de cima + contas de teste com senha (ver `docs/contas-de-teste.md`) |
 | `npm run db:migrate` | migrações + regeneração do cliente Prisma |
 | `npm run db:rls` | reaplica as policies de RLS (idempotente) |
 | `npm run db:verify` | verifica o contrato de isolamento (tabelas, policies, roles) |
 | `npm run db:verify:isolation` | 9 ataques de isolamento entre tenants |
 | `npm run db:seed` | dados de demonstração |
+| `npm run db:seed:dev` | **só em desenvolvimento**: uma conta por perfil, com senha padrão (recusa-se a rodar em produção) |
 | `npm run db:studio` | Prisma Studio |
 | `npm test` | Vitest (unit + integração) |
 | `npm run test:e2e` | Playwright (contra o container em `http://localhost:3000`) |
@@ -354,6 +370,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-08-motor-de-sorteios.md`](docs/fase-08-motor-de-sorteios.md) | Sorteios por evento/dia/atividade, elegibilidade por presença real, amostragem criptográfica, trava pessimista na apuração, hash auditável e RLS por introspecção | ADR-044 … 049 |
 | [`docs/fase-09-diretorio-e-superadmin.md`](docs/fase-09-diretorio-e-superadmin.md) | Escopo `PLATFORM`, SuperAdmin, provisionamento atômico, suspensão com corte imediato de tráfego, métricas consolidadas e diretório público de instituições | ADR-050 … 059 |
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
+| [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
 > são **63 decisões** registradas até aqui.
