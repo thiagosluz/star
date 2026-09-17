@@ -58,7 +58,7 @@ const now = new Date();
 const days = (n: number) => new Date(now.getTime() + n * 86_400_000);
 
 async function main() {
-  console.log(`\n${line}\n  SEED — EventFlow (FASE 2)\n${line}\n`);
+  console.log(`\n${line}\n  SEED — EventFlow (FASE 4)\n${line}\n`);
 
   // ── Limpeza idempotente ────────────────────────────────────────────────────
   // Remove apenas os dados deste seed, identificados pelos e-mails/slugs abaixo.
@@ -66,6 +66,7 @@ async function main() {
     'ana@example.test',
     'bruno@example.test',
     'carla@example.test',
+    'diego@example.test',
   ];
   const seedSlugs = ['ufba-demo', 'fiocruz-demo'];
 
@@ -119,6 +120,7 @@ async function main() {
   const ana = randomUUID();
   const bruno = randomUUID();
   const carla = randomUUID();
+  const diego = randomUUID();
 
   await prisma.user.createMany({
     data: [
@@ -145,10 +147,18 @@ async function main() {
         emailVerified: true,
         publicHandle: 'carla-menezes',
       },
+      {
+        id: diego,
+        name: 'Diego Almeida',
+        email: 'diego@example.test',
+        emailVerified: true,
+        publicHandle: 'diego-almeida',
+        headline: 'Professor de tecnologia educacional',
+      },
     ],
   });
 
-  console.log('  ✓ 3 usuários criados');
+  console.log('  ✓ 4 usuários criados');
 
   // ── Vínculos ───────────────────────────────────────────────────────────────
   await inTenant(ufbaId, async () => {
@@ -156,6 +166,7 @@ async function main() {
       data: [
         { id: randomUUID(), tenantId: ufbaId, userId: ana, status: 'ACTIVE', joinedAt: now },
         { id: randomUUID(), tenantId: ufbaId, userId: bruno, status: 'ACTIVE', joinedAt: now },
+        { id: randomUUID(), tenantId: ufbaId, userId: diego, status: 'ACTIVE', joinedAt: now },
         // Convite pendente: NÃO concede contexto (fail-closed).
         { id: randomUUID(), tenantId: ufbaId, userId: carla, status: 'INVITED' },
       ],
@@ -177,6 +188,7 @@ async function main() {
   const simposioFiocruz = randomUUID();
   const salaPrincipal = randomUUID();
   const salaOficinas = randomUUID();
+  const trilhaTecnologia = randomUUID();
 
   await inTenant(ufbaId, async () => {
     await prisma.event.create({
@@ -296,6 +308,102 @@ async function main() {
         },
       ],
     });
+
+    /**
+     * ── Chamada de trabalhos (FASE 4) ────────────────────────────────────────
+     *
+     * A trilha é o eixo da avaliação por pares: define a rubrica, quantos
+     * pareceres são exigidos e os limiares de decisão. Sem uma trilha ativa, a
+     * página `/submissoes/nova` não tem para onde apontar.
+     */
+    await prisma.track.create({
+      data: {
+        id: trilhaTecnologia,
+        tenantId: ufbaId,
+        eventId: congressoUfba,
+        slug: 'tecnologia-educacional',
+        name: 'Trilha de Tecnologia Educacional',
+        description:
+          'Trabalhos sobre ferramentas, metodologias e políticas de tecnologia aplicada ao ensino.',
+        color: '#1d4ed8',
+        chairId: ana,
+        maxSubmissionsPerAuthor: 3,
+        requiresBlindReview: true,
+        // Pesos diferentes DE PROPÓSITO: a nota final é ponderada, não média.
+        reviewRubric: [
+          {
+            key: 'originality',
+            label: 'Originalidade e relevância',
+            weight: 3,
+            maxScore: 10,
+            description: 'O trabalho traz contribuição nova e relevante para a área?',
+          },
+          {
+            key: 'methodology',
+            label: 'Rigor metodológico',
+            weight: 3,
+            maxScore: 10,
+            description: 'O método é adequado, descrito e reprodutível?',
+          },
+          {
+            key: 'clarity',
+            label: 'Clareza e escrita',
+            weight: 1,
+            maxScore: 10,
+            description: 'O texto é claro, organizado e bem escrito?',
+          },
+          {
+            key: 'impact',
+            label: 'Impacto potencial',
+            weight: 1,
+            maxScore: 10,
+            description: 'Os resultados podem influenciar a prática?',
+          },
+        ],
+        requiredReviews: 2,
+        acceptanceThreshold: 70,
+        rejectThreshold: 45,
+        isActive: true,
+      },
+    });
+
+    /**
+     * ── Perfis de revisor (FASE 4) ───────────────────────────────────────────
+     *
+     * Bruno e Diego avaliam a MESMA trilha a partir de instituições diferentes:
+     *   • Bruno declara a UFBA. Se um autor também declarar a UFBA, o conflito
+     *     de mesma instituição aparece BLOQUEANDO no painel do comitê.
+     *   • Diego é de outra instituição: candidato elegível.
+     * É esse contraste que torna o painel de distribuição demonstrável.
+     */
+    await prisma.reviewerExpertise.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          userId: bruno,
+          expertiseKeywords: ['tecnologia educacional', 'saúde pública', 'inclusão digital'],
+          preferredTrackIds: [trilhaTecnologia],
+          maxConcurrentAssignments: 3,
+          declaredInstitution: 'Universidade Federal da Bahia',
+          institutionalEmailDomain: 'ufba.br',
+        },
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          userId: diego,
+          expertiseKeywords: [
+            'tecnologia educacional',
+            'aprendizagem ativa',
+            'formação docente',
+          ],
+          preferredTrackIds: [trilhaTecnologia],
+          maxConcurrentAssignments: 5,
+          declaredInstitution: 'Universidade Estadual de Feira de Santana',
+          institutionalEmailDomain: 'uefs.br',
+        },
+      ],
+    });
   });
 
   await inTenant(fiocruzId, async () => {
@@ -385,6 +493,24 @@ async function main() {
           eventId: congressoUfba,
           expiresAt: days(31),
         },
+        // Diego é revisor no Congresso — o par elegível de Bruno no painel.
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          userId: diego,
+          role: 'REVIEWER',
+          scope: 'EVENT',
+          eventId: congressoUfba,
+        },
+        // Ana é CHAIR no Congresso: é quem distribui e decide.
+        {
+          id: randomUUID(),
+          tenantId: ufbaId,
+          userId: ana,
+          role: 'CHAIR',
+          scope: 'EVENT',
+          eventId: congressoUfba,
+        },
         // Carla é PARTICIPANT (mesmo com convite pendente, o papel existe mas
         // não é utilizável — o vínculo INVITED bloqueia).
         {
@@ -431,6 +557,7 @@ async function main() {
   console.log('  ana@example.test    → ADMIN em ufba-demo · CHAIR + PARTICIPANT em fiocruz-demo');
   console.log('  bruno@example.test  → ORGANIZER + REVIEWER + STAFF em ufba-demo');
   console.log('  carla@example.test  → PARTICIPANT em ufba-demo (convite PENDENTE)');
+  console.log('  diego@example.test  → REVIEWER em ufba-demo (instituição diferente)');
   console.log(`\n  Instituições:`);
   console.log(`    http://localhost:3000/t/ufba-demo`);
   console.log(`    http://localhost:3000/t/fiocruz-demo`);
@@ -438,6 +565,12 @@ async function main() {
   console.log(`    http://localhost:3000/t/ufba-demo/eventos`);
   console.log(`    http://localhost:3000/t/ufba-demo/eventos/congresso-2026`);
   console.log(`    http://localhost:3000/t/ufba-demo/eventos/congresso-2026/atividades/minicurso-rust`);
+  console.log(`\n  Submissão e avaliação (FASE 4):`);
+  console.log(`    http://localhost:3000/t/ufba-demo/submissoes        (autor)`);
+  console.log(`    http://localhost:3000/t/ufba-demo/revisoes          (revisor)`);
+  console.log(`    http://localhost:3000/t/ufba-demo/comite            (comitê)`);
+  console.log(`    Trilha semeada: "Trilha de Tecnologia Educacional" (rubrica 4 critérios,`);
+  console.log(`    2 pareceres exigidos, aceite ≥ 70, rejeição < 45)`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

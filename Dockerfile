@@ -55,6 +55,23 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# ───────────────────────────────────────────────────────────────────────────────
+#  Segredo de COMPILAÇÃO (não é usado em runtime)
+# ───────────────────────────────────────────────────────────────────────────────
+#  A etapa `Collecting page data` do `next build` IMPORTA os módulos das rotas
+#  para analisá-las. Nessa importação `src/lib/auth/auth.ts` é avaliado, e o
+#  Better Auth lança:
+#
+#      BetterAuthError: You are using the default secret.
+#
+#  fazendo o build falhar com "Failed to collect page data".
+#
+#  Este valor existe apenas para a compilação. Ele NÃO chega à imagem final com
+#  efeito: o estágio `runner` não herda o `ENV` do `builder`, e o docker-compose
+#  injeta o `BETTER_AUTH_SECRET` real em runtime.
+ARG BUILD_BETTER_AUTH_SECRET=build-time-placeholder-not-used-at-runtime-000000
+ENV BETTER_AUTH_SECRET=$BUILD_BETTER_AUTH_SECRET
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 

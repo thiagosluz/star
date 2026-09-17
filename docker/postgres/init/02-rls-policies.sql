@@ -120,7 +120,9 @@ DECLARE
     'task_definitions',
     'user_task_progress',
     'certificates',
-    'audit_logs'
+    'audit_logs',
+    'reviewer_expertise',
+    'reviewer_conflict_declarations'
   ];
 BEGIN
   FOREACH t IN ARRAY tenant_tables LOOP
@@ -158,7 +160,8 @@ DECLARE
     'registrations','attendances','tracks','submissions','submission_authors',
     'submission_files','review_assignments','reviews','review_conflicts',
     'card_templates','user_cards','user_xp_profiles','xp_transactions',
-    'task_definitions','user_task_progress','certificates','audit_logs'
+    'task_definitions','user_task_progress','certificates','audit_logs',
+    'reviewer_expertise','reviewer_conflict_declarations'
   ];
 BEGIN
   FOREACH t IN ARRAY tenant_tables LOOP

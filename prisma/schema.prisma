@@ -353,6 +353,10 @@ model Tenant {
   certificates      Certificate[]
   auditLogs         AuditLog[]
 
+  /// FASE 4 — avaliação por pares.
+  reviewerExpertise    ReviewerExpertise[]
+  conflictDeclarations ReviewerConflictDeclaration[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -414,6 +418,15 @@ model User {
   xpProfiles        UserXpProfile[]
   certificates      Certificate[]
   auditLogs         AuditLog[]
+
+  /// Configuração de revisor (áreas de atuação), uma por instituição — FASE 4.
+  /// É uma lista porque a mesma pessoa pode revisar para instituições
+  /// diferentes, com áreas de atuação diferentes em cada uma.
+  reviewerExpertise ReviewerExpertise[]
+  /// Conflitos de interesse declarados pelo próprio revisor — FASE 4.
+  conflictDeclarations ReviewerConflictDeclaration[] @relation("ConflictDeclaredBy")
+  /// Conflitos em que esta pessoa é a PARTE conflitante — FASE 4.
+  conflictsAgainstMe ReviewerConflictDeclaration[] @relation("ConflictWithUser")
 
   @@index([email])
   @@index([deletedAt])
@@ -1081,10 +1094,18 @@ model Track {
   requiresBlindReview     Boolean @default(true)
 
   /// Rubrica de avaliação: lista de critérios com peso e escala.
+  /// Contrato validado por `validateRubric` (src/domain/review/review-rules.ts).
   /// [{ key, label, weight, maxScore, description }]
-  reviewRubric        Json    @default("[]")
-  /// Nota mínima (0-100) para recomendação automática de aceite.
-  acceptanceThreshold Decimal @default(60) @db.Decimal(5, 2)
+  reviewRubric Json @default("[]")
+
+  /// Nota mínima (0-100) para sugestão de aceite.
+  acceptanceThreshold Decimal @default(70) @db.Decimal(5, 2)
+  /// Nota abaixo da qual a sugestão é rejeição.
+  rejectThreshold Decimal @default(45) @db.Decimal(5, 2)
+
+  /// Quantos pareceres a trilha exige para considerar a avaliação concluída.
+  /// Configurável: pós-graduação costuma exigir 3, iniciação científica 2.
+  requiredReviews Int @default(2)
 
   isActive Boolean @default(true)
 
@@ -1132,7 +1153,16 @@ model Submission {
   presentationRoomId      String?   @db.Uuid
   presentationFormat      String?   @db.VarChar(40)
 
+  /// Versão corrente da submissão. Incrementada a cada reenvio durante a
+  /// revisão, para que o parecer continue apontando ao artefato avaliado.
   version Int @default(1)
+
+  /// Snapshot da identidade dos autores no momento do envio.
+  ///
+  /// Existe porque a revisão cega precisa de uma versão SEM autoria: guardar o
+  /// snapshot permite remover os dados de identificação da resposta destinada ao
+  /// revisor de forma ESTRUTURAL (campo ausente), não apenas cosmética.
+  blindSnapshot Json @default("{}")
 
   metadata Json @default("{}")
 
@@ -1293,6 +1323,17 @@ model Review {
 
   isBlind Boolean @default(true)
 
+  /// Versão da submissão que este parecer avaliou.
+  ///
+  /// Registrado no momento da emissão. Sem isso, um reenvio durante a revisão
+  /// tornaria impossível saber qual arquivo fundamentou o parecer — e o parecer
+  /// perderia valor como registro.
+  submissionVersion Int @default(1)
+
+  /// Detalhamento da nota ponderada, para auditoria.
+  /// [{ key, raw, maxScore, weight, ratio, points }]
+  scoreBreakdown Json @default("[]")
+
   submittedAt DateTime? @db.Timestamptz(6)
   createdAt   DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
@@ -1336,6 +1377,102 @@ model ReviewConflict {
   @@index([tenantId, submissionId])
   @@index([userId])
   @@map("review_conflicts")
+}
+
+/// ───────────────────────────────────────────────────────────────────────────────
+///  Áreas de atuação do revisor
+/// ───────────────────────────────────────────────────────────────────────────────
+///  Sem isso, a distribuição de pareceristas vira sorteio: quem não domina o
+///  tema escreve um parecer superficial e o comitê decide com informação fraca.
+///
+///  Escopo por TENANT porque a mesma pessoa pode atuar em áreas diferentes em
+///  instituições diferentes (ex.: revisora de saúde pública na FIOCRUZ e de
+///  ciência de dados na UFBA).
+model ReviewerExpertise {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+
+  /// Áreas de interesse em texto livre. Alimentam o casamento por afinidade
+  /// (src/domain/review/affinity.ts), que tokeniza e compara por Jaccard.
+  expertiseKeywords String[] @default([])
+
+  /// Trilhas em que a pessoa se declara apta a avaliar. É uma declaração
+  /// EXPLÍCITA de área e por isso pesa mais que a inferência por palavras.
+  preferredTrackIds String[] @default([])
+
+  /// Limite individual de pareceres simultâneos (0 = sem limite).
+  /// Serve para distribuir carga e evitar que poucos revisores concentrem tudo.
+  maxConcurrentAssignments Int @default(5)
+
+  /// Contador denormalizado de pareceres concluídos, usado como sinal de
+  /// experiência na afinidade (satura em 10).
+  completedReviewCount Int @default(0)
+
+  /// Indisponível para novos pareceres (férias, licença).
+  isAvailable Boolean @default(true)
+
+  /// Instituição declarada para fins de conflito de interesse. Pode divergir da
+  /// instituição do vínculo (`UserTenantProfile`) quando a pessoa revisa para uma
+  /// instituição diferente da sua.
+  declaredInstitution String? @db.VarChar(200)
+  /// Domínio de e-mail institucional. Preferido sobre o domínio do e-mail no
+  /// cálculo de conflito, porque é uma declaração explícita.
+  institutionalEmailDomain String? @db.VarChar(120)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, isAvailable])
+  @@map("reviewer_expertise")
+}
+
+/// ───────────────────────────────────────────────────────────────────────────────
+///  Declaração de conflito de interesse
+/// ───────────────────────────────────────────────────────────────────────────────
+///  Permite que o revisor informe proativamente situações que o sistema não
+///  consegue inferir: coautoria pregressa, relação de orientação com um autor
+///  específico, vínculo financeiro.
+///
+///  Duas granularidades no mesmo modelo:
+///    • `submissionId` preenchido  → conflito com UMA submissão específica
+///    • `submissionId` nulo        → conflito com uma PESSOA, válido para todas
+///      as submissões em que ela apareça como autora
+model ReviewerConflictDeclaration {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  /// Quem declara (o revisor).
+  reviewerId String @db.Uuid
+  /// Pessoa com quem existe conflito. Nulo quando o conflito é com a submissão.
+  conflictedUserId String? @db.Uuid
+  /// Submissão específica. Nulo quando o conflito é com a pessoa.
+  submissionId String? @db.Uuid
+
+  type   ConflictType
+  reason String? @db.VarChar(500)
+
+  /// Vigência: um conflito pode ser temporário (ex.: orientação em andamento).
+  expiresAt DateTime? @db.Timestamptz(6)
+  revokedAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Quem declarou o conflito.
+  reviewer User   @relation("ConflictDeclaredBy", fields: [reviewerId], references: [id], onDelete: Cascade)
+  /// Pessoa com quem existe o conflito (quando o conflito é com alguém
+  /// específico, e não com uma submissão).
+  conflictedUser User? @relation("ConflictWithUser", fields: [conflictedUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reviewerId, revokedAt])
+  @@index([tenantId, conflictedUserId])
+  @@index([tenantId, submissionId])
+  @@map("reviewer_conflict_declarations")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

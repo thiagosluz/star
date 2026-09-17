@@ -29,6 +29,18 @@ const NAV_ITEMS: readonly NavItem[] = [
     permission: PERMISSIONS.SUBMISSION_READ_OWN,
   },
   {
+    /**
+     * Console do comitê científico (FASE 4).
+     *
+     * Gated por `submission:read:any` — a mesma permissão que a página exige.
+     * Menu e página concordam de propósito: divergir aqui produziria ou um link
+     * que leva a um redirecionamento, ou uma tela inalcançável.
+     */
+    href: '/comite',
+    label: 'Comitê',
+    permission: PERMISSIONS.SUBMISSION_READ_ANY,
+  },
+  {
     href: '/revisoes',
     label: 'Revisões',
     permission: PERMISSIONS.REVIEW_SUBMIT_OWN,
