@@ -2,88 +2,303 @@
 @import 'tw-animate-css';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   Design tokens do EventFlow (Tailwind CSS 4)
+   IDENTIDADE VISUAL DO EVENTFLOW — tokens canônicos (FASE 11A)
 
-   No Tailwind 4 a configuração vive em CSS, não em tailwind.config.js. Os tokens
-   abaixo são a base do tema; cada tenant pode sobrescrever as cores primárias
-   via CSS custom properties injetadas na landing page (FASE 3).
+   ─────────────────────────────────────────────────────────────────────────────
+   COMO LER ESTE ARQUIVO
+   ─────────────────────────────────────────────────────────────────────────────
+   1. PALETA CRUA (`:root`): os valores exatos do DESIGN.md, com o nome que ele
+      usa. É a única parte onde aparecem cores literais.
+   2. APELIDOS SEMÂNTICOS (`:root`): o que cada cor SIGNIFICA na interface
+      (`--surface-card`, `--on-surface-variant`, `--success`…). Componentes
+      consomem apelidos, nunca a paleta crua.
+   3. `@theme inline`: liga os apelidos às utilidades do Tailwind (`bg-card`,
+      `text-muted-foreground`, `border-outline-variant`, `shadow-card`, …).
+
+   ─────────────────────────────────────────────────────────────────────────────
+   POR QUE ISSO MUDA O SISTEMA INTEIRO SEM REESCREVER AS TELAS
+   ─────────────────────────────────────────────────────────────────────────────
+   As telas das FASES 1–10 já usam nomes semânticos do Tailwind (`bg-card`,
+   `text-muted-foreground`, `border-border`, `bg-primary`…) em ~940 lugares, mas o
+   arquivo anterior definia esses nomes como o CINZA PADRÃO do shadcn — daí a
+   sensação de "sistema básico". Ao apontar os mesmos nomes para a paleta da
+   identidade, todas as telas passam a pertencer ao sistema de uma vez, sem edição
+   arquivo por arquivo. O que ganha identidade aqui é o vocabulário, não a tela.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   REGRAS (o teste `tests/unit/design-system-guard.test.ts` verifica)
+   ─────────────────────────────────────────────────────────────────────────────
+   • Nenhum componente escreve cor literal (`#4F46E5`, `bg-[#…]`) nem usa a paleta
+     cinza do Tailwind (`slate-500`, `emerald-500`). Cor vem de token.
+   • Tema escuro NÃO foi revisado nesta fase: o bloco `.dark` existe para não
+     quebrar `dark:` herdado, e está registrado como dívida técnica. A identidade
+     é clara (o DESIGN.md é explícito: "defaults to a pristine light mode").
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-@custom-variant dark (&:is(.dark *));
-
 :root {
-  --radius: 0.625rem;
+  /* ── 1. Paleta crua — exatamente o DESIGN.md ─────────────────────────────── */
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.2 265);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.55 0.2 265);
+  /* Superfícies (escala tonal Material 3 do documento) */
+  --ef-surface: #f9f9ff;
+  --ef-surface-dim: #d7dae5;
+  --ef-surface-bright: #f9f9ff;
+  --ef-surface-lowest: #ffffff;
+  --ef-surface-low: #f1f3ff;
+  --ef-surface-container: #ebedfa;
+  --ef-surface-high: #e5e8f4;
+  --ef-surface-highest: #dfe2ee;
+  --ef-surface-variant: #dfe2ee;
+
+  /* Conteúdo sobre superfícies */
+  --ef-on-surface: #181c24;
+  --ef-on-surface-variant: #464555;
+  --ef-inverse-surface: #2c3039;
+  --ef-inverse-on-surface: #eef0fc;
+
+  /* Contornos: `outline-variant` é a hairline estrutural do documento */
+  --ef-outline: #777587;
+  --ef-outline-variant: #c7c4d8;
+
+  /* Marca */
+  --ef-primary: #3525cd;
+  --ef-on-primary: #ffffff;
+  --ef-primary-container: #4f46e5;
+  --ef-primary-hover: #4338ca;
+  --ef-on-primary-container: #dad7ff;
+  --ef-inverse-primary: #c3c0ff;
+  --ef-primary-fixed: #e2dfff;
+  --ef-primary-fixed-dim: #c3c0ff;
+  --ef-on-primary-fixed: #0f0069;
+  --ef-on-primary-fixed-variant: #3323cc;
+  --ef-surface-tint: #4d44e3;
+
+  /* Secundária — telemetria, sessões ao vivo, destaques de programação */
+  --ef-secondary: #00668a;
+  --ef-on-secondary: #ffffff;
+  --ef-secondary-container: #40c2fd;
+  --ef-on-secondary-container: #004d6a;
+  --ef-secondary-fixed: #c4e7ff;
+  --ef-secondary-fixed-dim: #7bd0ff;
+  --ef-on-secondary-fixed: #001e2c;
+  --ef-on-secondary-fixed-variant: #004c69;
+
+  /* Terciária — confirmação institucional (vínculo, certificado, presença) */
+  --ef-tertiary: #005338;
+  --ef-on-tertiary: #ffffff;
+  --ef-tertiary-container: #006e4b;
+  --ef-on-tertiary-container: #67f4b7;
+  --ef-tertiary-fixed: #6ffbbe;
+  --ef-tertiary-fixed-dim: #4edea3;
+  --ef-on-tertiary-fixed: #002113;
+  --ef-on-tertiary-fixed-variant: #005236;
+
+  /* Erro (Material 3) */
+  --ef-error: #ba1a1a;
+  --ef-on-error: #ffffff;
+  --ef-error-container: #ffdad6;
+  --ef-on-error-container: #93000a;
+
+  /* ── Estados funcionais (seção "Accents & Dynamic States") ───────────────── */
+  --ef-success: #10b981;
+  --ef-success-strong: #059669;
+  --ef-warning: #f59e0b;
+  --ef-warning-strong: #d97706;
+  --ef-danger: #ef4444;
+  --ef-danger-strong: #dc2626;
+
+  /* ── Raridade de cartas e selos (seção "Tier & Rarity Tokens") ───────────── */
+  --ef-tier-common-from: #64748b;
+  --ef-tier-common-to: #94a3b8;
+  --ef-tier-rare-from: #0284c7;
+  --ef-tier-rare-to: #38bdf8;
+  --ef-tier-epic-from: #7c3aed;
+  --ef-tier-epic-to: #a855f7;
+  --ef-tier-legendary-from: #d97706;
+  --ef-tier-legendary-to: #fbbf24;
+  --ef-tier-mythic-from: #e11d48;
+  --ef-tier-mythic-mid: #f43f5e;
+  --ef-tier-mythic-to: #fb7185;
+
+  /* ── 2. Apelidos semânticos — o vocabulário dos componentes ──────────────── */
+
+  /* Fundos e texto de página */
+  --background: var(--ef-surface);
+  --foreground: var(--ef-on-surface);
+
+  /* Camadas: canvas (0) → agrupamento (1) → cartão (2) → interação (3) */
+  --surface: var(--ef-surface);
+  --surface-low: var(--ef-surface-low);
+  --surface-container: var(--ef-surface-container);
+  --surface-high: var(--ef-surface-high);
+  --surface-highest: var(--ef-surface-highest);
+  --surface-dim: var(--ef-surface-dim);
+  --on-surface: var(--ef-on-surface);
+  --on-surface-variant: var(--ef-on-surface-variant);
+  --inverse-surface: var(--ef-inverse-surface);
+  --inverse-on-surface: var(--ef-inverse-on-surface);
+
+  --card: var(--ef-surface-lowest);
+  --card-foreground: var(--ef-on-surface);
+  --popover: var(--ef-surface-lowest);
+  --popover-foreground: var(--ef-on-surface);
+  --muted: var(--ef-surface-low);
+  --muted-foreground: var(--ef-on-surface-variant);
+  --accent: var(--ef-surface-high);
+  --accent-foreground: var(--ef-on-surface);
+
+  /* Marca: `primary` é a cor de AÇÃO (contraste branco garantido) */
+  --primary: var(--ef-primary-container);
+  --primary-foreground: var(--ef-on-primary);
+  --primary-hover: var(--ef-primary-hover);
+  --primary-soft: color-mix(in oklab, var(--ef-primary-fixed) 70%, var(--ef-surface-lowest));
+  --brand: var(--ef-primary);
+  --brand-foreground: var(--ef-on-primary);
+
+  --secondary: var(--ef-secondary-fixed);
+  --secondary-foreground: var(--ef-on-secondary-fixed);
+  --secondary-strong: var(--ef-secondary);
+
+  --tertiary: var(--ef-tertiary-fixed);
+  --tertiary-foreground: var(--ef-on-tertiary-fixed);
+  --tertiary-strong: var(--ef-tertiary);
+
+  /* Estados: fill (ícone/barra) + strong (texto acessível) + soft (fundo) */
+  --success: var(--ef-success);
+  --success-strong: var(--ef-success-strong);
+  --success-soft: color-mix(in oklab, var(--ef-success) 12%, var(--ef-surface-lowest));
+  --warning: var(--ef-warning);
+  --warning-strong: var(--ef-warning-strong);
+  --warning-soft: color-mix(in oklab, var(--ef-warning) 14%, var(--ef-surface-lowest));
+  --destructive: var(--ef-danger-strong);
+  --destructive-foreground: #ffffff;
+  --destructive-soft: color-mix(in oklab, var(--ef-danger) 12%, var(--ef-surface-lowest));
+  --error: var(--ef-error);
+  --error-container: var(--ef-error-container);
+  --on-error-container: var(--ef-on-error-container);
+
+  /* Contornos */
+  --border: var(--ef-outline-variant);
+  --border-strong: var(--ef-outline);
+  --input: var(--ef-outline-variant);
+  --ring: var(--ef-primary-container);
+
+  /* Tipografia e forma */
+  --radius: 0.5rem;
+  --content-max: 1600px;
+  --gutter: 1.5rem;
+  --gutter-lg: 2rem;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.65 0.2 265);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 18%);
-  --ring: oklch(0.65 0.2 265);
-}
-
+/* ── 3. Utilidades do Tailwind ──────────────────────────────────────────────── */
 @theme inline {
+  /* Cores semânticas */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-low: var(--surface-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-high: var(--surface-high);
+  --color-surface-highest: var(--surface-highest);
+  --color-surface-dim: var(--surface-dim);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-strong: var(--secondary-strong);
+  --color-tertiary: var(--tertiary);
+  --color-tertiary-foreground: var(--tertiary-foreground);
+  --color-tertiary-strong: var(--tertiary-strong);
+  --color-success: var(--success);
+  --color-success-strong: var(--success-strong);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-strong: var(--warning-strong);
+  --color-warning-soft: var(--warning-soft);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-error: var(--error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Raridade — exposta como cor para texto/borda e como gradiente nas classes */
+  --color-tier-common: var(--ef-tier-common-from);
+  --color-tier-rare: var(--ef-tier-rare-from);
+  --color-tier-epic: var(--ef-tier-epic-from);
+  --color-tier-legendary: var(--ef-tier-legendary-from);
+  --color-tier-mythic: var(--ef-tier-mythic-from);
+
+  /* Forma */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  /* Elevação (seção "Elevation & Depth") */
+  --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -1px rgb(0 0 0 / 0.03);
+  --shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.04);
+  --shadow-glow: 0 0 0 1px color-mix(in oklab, var(--ef-primary) 18%, transparent),
+    0 8px 24px -12px color-mix(in oklab, var(--ef-primary) 45%, transparent);
 }
 
+/* Tipografia: a escala do documento, com papel definido (display usa Plus Jakarta,
+   o resto usa Inter). Fora de `inline` porque são valores literais. */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
+
+  --text-display: 3.5rem;
+  --text-display--line-height: 4rem;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 700;
+
+  --text-display-sm: 2.5rem;
+  --text-display-sm--line-height: 3rem;
+  --text-display-sm--letter-spacing: -0.025em;
+  --text-display-sm--font-weight: 700;
+
+  --text-title-lg: 1.75rem;
+  --text-title-lg--line-height: 2.25rem;
+  --text-title-lg--letter-spacing: -0.02em;
+  --text-title-lg--font-weight: 600;
+
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.75rem;
+  --text-title--letter-spacing: -0.015em;
+  --text-title--font-weight: 600;
+
+  --text-body-lg: 1rem;
+  --text-body-lg--line-height: 1.5rem;
+  --text-body-lg--letter-spacing: -0.005em;
+
+  --text-label-caps: 0.6875rem;
+  --text-label-caps--line-height: 1rem;
+  --text-label-caps--letter-spacing: 0.06em;
+  --text-label-caps--font-weight: 500;
+}
+
+/* ── 4. Base ────────────────────────────────────────────────────────────────── */
 @layer base {
   * {
     border-color: var(--border);
@@ -93,6 +308,110 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-family: var(--font-sans);
+    /* `calt`/`rlig` ligam ligaduras contextuais; `cv11` dá ao Inter um "1" com
+       base, que ajuda a ler números de vaga, hora e protocolo em tabela. */
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'cv11' 1;
   }
+
+  /* Foco visível em TODO elemento interativo: o anel é do sistema, não de quem
+     lembrar de escrever `focus:ring`. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* ── 5. Utilitários de componente do sistema ─────────────────────────────────
+   Só o que é ESTRUTURAL e repetido em HTML cru (tabelas, metadados). Componentes
+   React têm as próprias classes — não duplicamos aqui.                              */
+@layer components {
+  /* Rótulo de metadado: caixa alta obrigatória, cinza médio (exigência explícita
+     do DESIGN.md, seção "Uppercase Metadata"). */
+  .label-caps {
+    font-size: var(--text-label-caps);
+    line-height: var(--text-label-caps--line-height);
+    letter-spacing: var(--text-label-caps--letter-spacing);
+    font-weight: var(--text-label-caps--font-weight);
+    text-transform: uppercase;
+    color: var(--on-surface-variant);
+  }
+
+  /* Dado técnico: protocolo, hash, horário, contagem — sempre alinhado. */
+  .code-data {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+  }
+
+  /* Contêiner de conteúdo: uma largura máxima para todo o sistema (1600px). */
+  .content-container {
+    width: 100%;
+    max-width: var(--content-max);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  @media (min-width: 1024px) {
+    .content-container {
+      padding-inline: var(--gutter-lg);
+    }
+  }
+
+  /* Gradientes de raridade (cartas, selos). O "mythic" passa por três paradas. */
+  .tier-common {
+    background-image: linear-gradient(135deg, var(--ef-tier-common-from), var(--ef-tier-common-to));
+  }
+  .tier-rare {
+    background-image: linear-gradient(135deg, var(--ef-tier-rare-from), var(--ef-tier-rare-to));
+  }
+  .tier-epic {
+    background-image: linear-gradient(135deg, var(--ef-tier-epic-from), var(--ef-tier-epic-to));
+  }
+  .tier-legendary {
+    background-image: linear-gradient(
+      135deg,
+      var(--ef-tier-legendary-from),
+      var(--ef-tier-legendary-to)
+    );
+  }
+  .tier-mythic {
+    background-image: linear-gradient(
+      135deg,
+      var(--ef-tier-mythic-from),
+      var(--ef-tier-mythic-mid) 50%,
+      var(--ef-tier-mythic-to)
+    );
+  }
+}
+
+/* ── 6. Tema escuro — DÍVIDA TÉCNICA da FASE 11A ──────────────────────────────
+   O DESIGN.md define identidade clara. Este bloco existe apenas para que classes
+   `dark:` herdadas não apontem para variáveis indefinidas. A escala escura
+   completa (superfícies, contornos, elevação, tiers) será definida quando o tema
+   escuro entrar no produto — está registrado na documentação da fase.            */
+.dark {
+  --background: #12141a;
+  --foreground: #eef0fc;
+  --surface: #12141a;
+  --surface-low: #1a1d25;
+  --surface-container: #20232c;
+  --surface-high: #262a34;
+  --surface-highest: #2c3039;
+  --on-surface: #eef0fc;
+  --on-surface-variant: #c7c4d8;
+  --card: #1a1d25;
+  --card-foreground: #eef0fc;
+  --popover: #1a1d25;
+  --popover-foreground: #eef0fc;
+  --muted: #20232c;
+  --muted-foreground: #c7c4d8;
+  --accent: #262a34;
+  --accent-foreground: #eef0fc;
+  --primary: #c3c0ff;
+  --primary-foreground: #0f0069;
+  --border: #3a3d47;
+  --border-strong: #777587;
+  --input: #3a3d47;
+  --ring: #c3c0ff;
 }

@@ -36,7 +36,7 @@ export function SubmitSubmissionButton({
   if (state?.ok) {
     return (
       <p
-        className="flex items-center gap-2 text-sm text-green-600"
+        className="flex items-center gap-2 text-sm text-success-strong"
         data-testid="submission-submitted"
       >
         <CheckCircle2 className="size-4" aria-hidden />

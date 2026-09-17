@@ -136,23 +136,23 @@ export default async function AdminCertificatesPage({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 space-y-0.5 text-sm">
                   <p className="font-medium">{certificate.recipientName}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {certificate.eventTitle} · {certificate.kind} ·{' '}
                     {certificate.workloadMinutes > 0 ? `${certificate.workloadMinutes} min` : 'sem carga horária'}
                   </p>
-                  <p className="font-mono text-[11px] text-muted-foreground">
+                  <p className="font-mono text-xs text-muted-foreground">
                     {certificate.validationCode} · {certificate.validationCount} validação(ões)
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                       certificate.revokedAt
                         ? 'border-destructive/50 text-destructive'
                         : certificate.hasFile
-                          ? 'border-green-600/40 text-green-700'
-                          : 'border-amber-500/50 text-amber-700'
+                          ? 'border-success/40 text-success-strong'
+                          : 'border-warning/50 text-warning-strong'
                     }`}
                     data-testid={`status-${certificate.validationCode}`}
                   >
@@ -162,7 +162,7 @@ export default async function AdminCertificatesPage({
                   {certificate.hasFile ? (
                     <a
                       href={`/api/certificados/${certificate.validationCode}/arquivo`}
-                      className="rounded-md border border-border px-2 py-1 text-[11px] hover:bg-muted"
+                      className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
                     >
                       Baixar
                     </a>
@@ -184,7 +184,7 @@ export default async function AdminCertificatesPage({
               </div>
 
               {certificate.failureReason ? (
-                <p className="flex items-start gap-1.5 rounded border border-destructive/40 bg-destructive/5 p-2 text-[11px] text-destructive">
+                <p className="flex items-start gap-1.5 rounded border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
                   <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
                   Falha após {certificate.attempts} tentativa(s): {certificate.failureReason}
                 </p>

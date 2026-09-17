@@ -101,8 +101,8 @@ export default async function ChairConsolePage({
                         <span
                           className={`rounded border px-2 py-0.5 text-xs ${
                             quorumReached
-                              ? 'border-green-500/40 text-green-600'
-                              : 'border-amber-500/40 text-amber-600'
+                              ? 'border-success/40 text-success-strong'
+                              : 'border-warning/40 text-warning-strong'
                           }`}
                           data-testid="quorum-status"
                         >
@@ -157,9 +157,9 @@ function StatCard({
 }) {
   const toneClass =
     tone === 'warn'
-      ? 'text-amber-600'
+      ? 'text-warning-strong'
       : tone === 'ok'
-        ? 'text-green-600'
+        ? 'text-success-strong'
         : 'text-muted-foreground';
 
   return (

@@ -267,7 +267,7 @@ export function SubmissionUploader({
 
           {uploaded ? (
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CheckCircle2 className="size-3.5 text-green-600" aria-hidden />
+              <CheckCircle2 className="size-3.5 text-success-strong" aria-hidden />
               <span className="truncate">{uploaded.fileName}</span>
               <span className="shrink-0">
                 · {(uploaded.sizeBytes / 1024 / 1024).toFixed(2)} MB · v{uploaded.version}
@@ -281,7 +281,7 @@ export function SubmissionUploader({
 
           {uploaded ? (
             <p
-              className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground"
+              className="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground"
               title={`SHA-256: ${uploaded.checksum}`}
             >
               <ShieldCheck className="size-3" aria-hidden />

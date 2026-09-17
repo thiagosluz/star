@@ -143,13 +143,13 @@ export default async function ReviewSubmissionPage({
             {submission.protocol}
           </span>
           {assignment.isBlind ? (
-            <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 px-2 py-0.5 text-xs text-amber-600">
+            <span className="inline-flex items-center gap-1 rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong">
               <EyeOff className="size-3" aria-hidden />
               Revisão cega
             </span>
           ) : null}
           {review?.submittedAt ? (
-            <span className="rounded border border-green-500/40 px-2 py-0.5 text-xs text-green-600">
+            <span className="rounded border border-success/40 px-2 py-0.5 text-xs text-success-strong">
               Parecer enviado
             </span>
           ) : null}
@@ -170,7 +170,7 @@ export default async function ReviewSubmissionPage({
 
       {/* ── Aviso de revisão cega ─────────────────────────────────────────── */}
       {assignment.isBlind ? (
-        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
+        <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning-strong">
           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
             Esta é uma <strong>revisão cega</strong>. A identificação dos autores não é

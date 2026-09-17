@@ -63,7 +63,7 @@ function CancelButton() {
       type="submit"
       disabled={pending}
       data-testid="cancel-raffle"
-      className="inline-flex items-center gap-1.5 rounded-md border border-destructive/50 px-2 py-1 text-[11px] text-destructive transition hover:bg-destructive/10 disabled:opacity-60"
+      className="inline-flex items-center gap-1.5 rounded-md border border-destructive/50 px-2 py-1 text-xs text-destructive transition hover:bg-destructive/10 disabled:opacity-60"
     >
       {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Ban className="size-3" aria-hidden />}
       Cancelar sorteio
@@ -102,14 +102,14 @@ function RaffleRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-0.5">
           <p className="text-sm font-medium">{raffle.title}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {raffle.scopeLabel}
             {raffle.activityTitle ? ` · ${raffle.activityTitle}` : ''}
             {raffle.referenceDay ? ` · ${raffle.referenceDay}` : ''}
             {raffle.minAttendanceMinutes > 0 ? ` · piso de ${raffle.minAttendanceMinutes} min` : ''}
             {raffle.allowPriorEventWinners ? ' · permite ganhadores anteriores' : ''}
           </p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {raffle.status === 'DRAWN'
               ? `${raffle.winners.length} vencedor(es) entre ${raffle.eligibleCount} elegíveis · ${raffle.inspectedAttendances} presença(s) inspecionada(s)`
               : `Alvo: ${raffle.winnersCount} vencedor(es)`}
@@ -119,9 +119,9 @@ function RaffleRow({
         </div>
 
         <span
-          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+          className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
             raffle.status === 'DRAWN'
-              ? 'border-green-600/40 text-green-700'
+              ? 'border-success/40 text-success-strong'
               : raffle.status === 'CANCELED'
                 ? 'border-destructive/50 text-destructive'
                 : 'border-border text-muted-foreground'
@@ -136,10 +136,10 @@ function RaffleRow({
           {raffle.winners.map((winner) => (
             <li
               key={winner.userId}
-              className="flex items-center justify-between gap-2 rounded border border-amber-400/40 bg-amber-400/5 px-2 py-1 text-xs"
+              className="flex items-center justify-between gap-2 rounded border border-warning/40 bg-warning-soft px-2 py-1 text-xs"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <Trophy className="size-3 shrink-0 text-amber-500" aria-hidden />
+                <Trophy className="size-3 shrink-0 text-warning" aria-hidden />
                 <span className="font-mono">{winner.position}º</span>
                 <span className="truncate">{winner.userName}</span>
               </span>
@@ -150,7 +150,7 @@ function RaffleRow({
       ) : null}
 
       {raffle.resultHash ? (
-        <p className="break-all font-mono text-[10px] text-muted-foreground">
+        <p className="break-all font-mono text-xs text-muted-foreground">
           SHA-256: {raffle.resultHash}
         </p>
       ) : null}
@@ -183,7 +183,7 @@ function RaffleRow({
             <button
               type="button"
               onClick={() => setShowCancel(true)}
-              className="text-[11px] text-muted-foreground underline underline-offset-4"
+              className="text-xs text-muted-foreground underline underline-offset-4"
             >
               Cancelar este sorteio
             </button>
@@ -195,7 +195,7 @@ function RaffleRow({
         <p
           role={drawState.ok ? 'status' : 'alert'}
           data-testid={`draw-feedback-${raffle.id}`}
-          className={`flex items-center gap-1.5 text-xs ${drawState.ok ? 'text-green-700' : 'text-destructive'}`}
+          className={`flex items-center gap-1.5 text-xs ${drawState.ok ? 'text-success-strong' : 'text-destructive'}`}
         >
           {drawState.ok ? <CheckCircle2 className="size-3.5" aria-hidden /> : null}
           {drawState.message}
@@ -205,7 +205,7 @@ function RaffleRow({
       {state ? (
         <p
           role={state.ok ? 'status' : 'alert'}
-          className={`text-xs ${state.ok ? 'text-green-700' : 'text-destructive'}`}
+          className={`text-xs ${state.ok ? 'text-success-strong' : 'text-destructive'}`}
         >
           {state.message}
         </p>

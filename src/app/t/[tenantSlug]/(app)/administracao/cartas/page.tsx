@@ -88,7 +88,7 @@ export default async function AdminCardsPage({
           </Link>
         </nav>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Layers className="size-6 text-violet-500" aria-hidden />
+          <Layers className="size-6 text-tier-epic" aria-hidden />
           Cartas colecionáveis
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -131,7 +131,7 @@ export default async function AdminCardsPage({
                     {card.ownedBy} no álbum de participantes · {card.isActive ? 'ativa' : 'inativa'}
                     {card.isSecret ? ' · secreta' : ''}
                   </p>
-                  <p className="font-mono text-[10px] text-muted-foreground">{card.slug}</p>
+                  <p className="font-mono text-xs text-muted-foreground">{card.slug}</p>
                 </div>
               </li>
             ))}

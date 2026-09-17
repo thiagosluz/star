@@ -63,7 +63,7 @@ export default async function AchievementsPage({
       <header className="space-y-1.5">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Trophy className="size-6 text-amber-500" aria-hidden />
+          <Trophy className="size-6 text-warning" aria-hidden />
           Minhas conquistas
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -89,7 +89,7 @@ export default async function AchievementsPage({
           </h2>
           {claimable > 0 ? (
             <p
-              className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700"
+              className="rounded-full border border-warning/40 bg-warning-soft px-3 py-1 text-xs font-medium text-warning-strong"
               data-testid="claimable-count"
             >
               {claimable} recompensa(s) esperando resgate
@@ -136,14 +136,14 @@ export default async function AchievementsPage({
                     <p className="truncate text-sm">
                       {XP_SOURCE_LABELS[entry.source] ?? entry.source}
                     </p>
-                    <p className="truncate text-[11px] text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground">
                       {entry.createdAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
                       {entry.reason ? ` · ${entry.reason}` : ''}
                     </p>
                   </div>
                   <span
                     className={`shrink-0 font-mono text-sm ${
-                      entry.amount >= 0 ? 'text-green-700' : 'text-destructive'
+                      entry.amount >= 0 ? 'text-success-strong' : 'text-destructive'
                     }`}
                   >
                     {entry.amount >= 0 ? '+' : ''}
@@ -157,7 +157,7 @@ export default async function AchievementsPage({
 
         <section className="space-y-3" aria-labelledby="ranking">
           <h2 id="ranking" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-            <Medal className="size-4 text-amber-500" aria-hidden />
+            <Medal className="size-4 text-warning" aria-hidden />
             Ranking da instituição
           </h2>
 
@@ -184,7 +184,7 @@ export default async function AchievementsPage({
                         {entry.name}
                         {entry.isCurrentUser ? ' (você)' : ''}
                       </p>
-                      <p className="truncate text-[11px] text-muted-foreground">
+                      <p className="truncate text-xs text-muted-foreground">
                         {entry.title} · {entry.cardsCollected} carta(s)
                       </p>
                     </div>

@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 10 concluídas · **770 testes** unitários/integração · **42 testes E2E**
+> **Estado:** FASES 1 a 11B concluídas · **775 testes** unitários/integração · **42 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 
 ---
@@ -42,6 +42,7 @@ avaliação por pares e gamificação.
 | **Painel administrativo** | Eventos, salas, programação, trilhas, cartas, missões e certificados pela interface, com trilha de auditoria |
 | **Sorteios** | Sorteio por evento, dia ou atividade, elegível apenas por **presença real**, com amostragem criptográfica, hash auditável e revelação animada |
 | **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
+| **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
 
 ---
 
@@ -331,7 +332,7 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 770 testes (26 arquivos) — unit + integração com banco real
+npm test                  # 775 testes (27 arquivos) — unit + integração com banco real
 npm run test:e2e          # 42 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
@@ -371,9 +372,11 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-09-diretorio-e-superadmin.md`](docs/fase-09-diretorio-e-superadmin.md) | Escopo `PLATFORM`, SuperAdmin, provisionamento atômico, suspensão com corte imediato de tráfego, métricas consolidadas e diretório público de instituições | ADR-050 … 059 |
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
+| [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
+| [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **63 decisões** registradas até aqui.
+> são **70 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -426,7 +429,7 @@ prisma/
 ├── scripts/           RLS, verificação de contrato, prova de isolamento
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              603 testes de regra pura (domínio, sem banco)
+├── unit/              608 testes de regra pura (domínio, sem banco)
 ├── integration/       167 testes com banco e storage reais
 └── e2e/               42 testes Playwright contra o container
 ```
@@ -523,4 +526,7 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 **Próximos passos sugeridos:** fechar as dívidas acima por prioridade de risco
 (rate limit em Redis e PKCS#7 primeiro), adicionar observabilidade (OpenTelemetry,
 métricas de fila) e preparar o deploy com segredos gerenciados por cofre.
+
+
+
 

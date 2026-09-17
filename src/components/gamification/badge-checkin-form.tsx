@@ -102,7 +102,7 @@ export function BadgeCheckinForm({
         <p
           role={state.ok ? 'status' : 'alert'}
           data-testid="badge-feedback"
-          className={`text-sm ${state.ok ? 'text-green-700' : 'text-destructive'}`}
+          className={`text-sm ${state.ok ? 'text-success-strong' : 'text-destructive'}`}
         >
           {state.message}
         </p>

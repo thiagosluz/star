@@ -51,12 +51,12 @@ export function RegistrationForm({
         <p className="flex items-center gap-2 font-medium" data-testid="registration-status">
           {alreadyRegistered === 'CONFIRMED' ? (
             <>
-              <CheckCircle2 className="size-4 text-green-600" aria-hidden />
+              <CheckCircle2 className="size-4 text-success-strong" aria-hidden />
               Inscrição confirmada
             </>
           ) : (
             <>
-              <Clock className="size-4 text-amber-600" aria-hidden />
+              <Clock className="size-4 text-warning-strong" aria-hidden />
               Você está na lista de espera
             </>
           )}
@@ -75,7 +75,7 @@ export function RegistrationForm({
     return (
       <div className="ef-card space-y-2 p-5" data-testid="registration-success">
         <p className="flex items-center gap-2 font-medium">
-          <CheckCircle2 className="size-4 text-green-600" aria-hidden />
+          <CheckCircle2 className="size-4 text-success-strong" aria-hidden />
           {state.code === 'CONFIRMED' ? 'Inscrição confirmada!' : 'Você entrou na lista de espera'}
         </p>
         <p className="text-sm opacity-70">{state.message}</p>

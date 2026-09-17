@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Building2, Search } from 'lucide-react';
 
 import { ProvisionTenantForm } from '@/components/platform/platform-forms';
+import { Badge, buttonClasses } from '@/components/ui';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { getTenantSummaries } from '@/lib/platform/tenant-service';
 import { TENANT_STATUSES, TENANT_STATUS_LABELS, type TenantStatus } from '@/domain/platform/platform-rules';
@@ -26,11 +27,19 @@ import { TENANT_STATUSES, TENANT_STATUS_LABELS, type TenantStatus } from '@/doma
  *  agir.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-const STATUS_CLASS: Record<TenantStatus, string> = {
-  PENDING: 'border-amber-500/40 bg-amber-500/10 text-amber-700',
-  ACTIVE: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700',
-  SUSPENDED: 'border-destructive/40 bg-destructive/10 text-destructive',
-  ARCHIVED: 'border-border bg-muted text-muted-foreground',
+/**
+ * Estado da instituição → tom do chip do sistema.
+ *
+ * Antes esta lista carregava classes cruas (`border-success/40 bg-success-soft
+ * text-success-strong`) — quatro cores do Tailwind escolhidas à mão, que não
+ * pertenciam a paleta nenhuma e mudavam de tom a cada tela. O tom agora vem do
+ * primitivo `Badge`, que tem o par contraste/fundo definido pelo DESIGN.md.
+ */
+const STATUS_TONE: Record<TenantStatus, 'success' | 'warning' | 'danger' | 'neutral'> = {
+  PENDING: 'warning',
+  ACTIVE: 'success',
+  SUSPENDED: 'danger',
+  ARCHIVED: 'neutral',
 };
 
 export default async function PlatformTenantsPage({
@@ -88,7 +97,7 @@ export default async function PlatformTenantsPage({
             <button
               type="submit"
               data-testid="tenant-search-submit"
-              className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+              className={buttonClasses({ variant: 'outline', size: 'sm' })}
             >
               Buscar
             </button>
@@ -157,20 +166,18 @@ export default async function PlatformTenantsPage({
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate font-medium text-foreground">{tenant.name}</span>
-                          <span className="block font-mono text-[11px] text-muted-foreground">
+                          <span className="block code-data text-muted-foreground">
                             /{tenant.slug}
                           </span>
                         </span>
                       </Link>
                     </td>
                     <td className="px-3 py-3">
-                      <span
-                        className={`inline-block rounded-full border px-2 py-0.5 text-[11px] ${STATUS_CLASS[tenant.status]}`}
-                      >
+                      <Badge tone={STATUS_TONE[tenant.status]} withDot>
                         {TENANT_STATUS_LABELS[tenant.status]}
-                      </span>
+                      </Badge>
                     </td>
-                    <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{tenant.plan}</td>
+                    <td className="px-3 py-3 code-data text-muted-foreground">{tenant.plan}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{tenant.eventCount}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{tenant.memberCount}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{tenant.certificateCount}</td>

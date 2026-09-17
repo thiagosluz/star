@@ -90,8 +90,8 @@ export default async function AdminEventsPage({
               <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm font-medium">{event.title}</p>
-                  <p className="font-mono text-[11px] text-muted-foreground">/t/{tenantSlug}/eventos/{event.slug}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="font-mono text-xs text-muted-foreground">/t/{tenantSlug}/eventos/{event.slug}</p>
+                  <p className="text-xs text-muted-foreground">
                     {event.startsAt.toLocaleDateString('pt-BR')} · {event.status} ·{' '}
                     {event.activityCount} atividade(s) · {event.trackCount} trilha(s) ·{' '}
                     {event.roomCount} sala(s) · {event.registrationCount} inscrição(ões)

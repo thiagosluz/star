@@ -70,7 +70,7 @@ export default async function RafflesPage({
           </Link>
         </nav>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Trophy className="size-6 text-amber-500" aria-hidden />
+          <Trophy className="size-6 text-warning" aria-hidden />
           Sorteios
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -80,7 +80,7 @@ export default async function RafflesPage({
       </header>
 
       {activities.length === 0 ? (
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm text-amber-700">
+        <p className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm text-warning-strong">
           Este evento ainda não tem atividades cadastradas. O sorteio por atividade exige ao menos uma —
           e o sorteio por dia depende das datas das atividades.
         </p>

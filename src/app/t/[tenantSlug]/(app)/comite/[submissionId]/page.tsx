@@ -82,8 +82,8 @@ export default async function ChairSubmissionPage({
           <span
             className={`rounded border px-2 py-0.5 text-xs ${
               panel.quorum.satisfied
-                ? 'border-green-500/40 text-green-600'
-                : 'border-amber-500/40 text-amber-600'
+                ? 'border-success/40 text-success-strong'
+                : 'border-warning/40 text-warning-strong'
             }`}
             data-testid="panel-quorum"
           >
@@ -116,7 +116,7 @@ export default async function ChairSubmissionPage({
               {board.assigned.map((assignment) => (
                 <li
                   key={assignment.reviewerId}
-                  className="flex items-center justify-between rounded-lg border border-green-500/30 bg-card p-3 text-sm"
+                  className="flex items-center justify-between rounded-lg border border-success/30 bg-card p-3 text-sm"
                 >
                   <span>{assignment.reviewerName}</span>
                   <span className="text-xs text-muted-foreground">{assignment.status}</span>
@@ -150,9 +150,9 @@ export default async function ChairSubmissionPage({
                       <span
                         className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${
                           reviewer.band === 'EXCELLENT'
-                            ? 'border-green-500/40 text-green-600'
+                            ? 'border-success/40 text-success-strong'
                             : reviewer.band === 'GOOD'
-                              ? 'border-blue-500/40 text-blue-600'
+                              ? 'border-secondary/50 text-secondary-strong'
                               : 'border-border text-muted-foreground'
                         }`}
                         data-testid="affinity-band"
@@ -166,7 +166,7 @@ export default async function ChairSubmissionPage({
                         </span>
                       ) : null}
                       {!reviewer.available ? (
-                        <span className="text-xs text-amber-600">indisponível</span>
+                        <span className="text-xs text-warning-strong">indisponível</span>
                       ) : null}
                     </div>
 
@@ -270,12 +270,12 @@ export default async function ChairSubmissionPage({
                 ) : null}
 
                 {review.confidentialComments ? (
-                  <div className="space-y-1 rounded border border-amber-500/30 bg-amber-500/5 p-3">
-                    <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                  <div className="space-y-1 rounded border border-warning/30 bg-warning-soft p-3">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-warning-strong">
                       <ShieldCheck className="size-3.5" aria-hidden />
                       Confidencial ao comitê
                     </p>
-                    <p className="whitespace-pre-line text-sm text-amber-800">
+                    <p className="whitespace-pre-line text-sm text-warning-strong">
                       {review.confidentialComments}
                     </p>
                   </div>

@@ -55,10 +55,10 @@ export function DecisionForm({
   if (state?.ok) {
     return (
       <div
-        className="space-y-2 rounded-lg border border-green-500/40 bg-card p-5"
+        className="space-y-2 rounded-lg border border-success/40 bg-card p-5"
         data-testid="decision-recorded"
       >
-        <p className="font-medium text-green-600">{state.message}</p>
+        <p className="font-medium text-success-strong">{state.message}</p>
         <p className="text-xs text-muted-foreground">
           A decisão é definitiva para o autor e fica registrada para auditoria.
         </p>
@@ -100,13 +100,13 @@ export function DecisionForm({
 
         {consensus.requiresDiscussion ? (
           <div
-            className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3"
+            className="space-y-1 rounded-md border border-warning/40 bg-warning-soft p-3"
             data-testid="consensus-divergence"
           >
-            <p className="text-xs font-medium text-amber-700">
+            <p className="text-xs font-medium text-warning-strong">
               Os pareceres divergem — discuta antes de decidir
             </p>
-            <ul className="ml-4 list-disc text-xs text-amber-700">
+            <ul className="ml-4 list-disc text-xs text-warning-strong">
               {consensus.discussionReasons.map((reason) => (
                 <li key={reason}>{reason}</li>
               ))}
@@ -128,7 +128,7 @@ export function DecisionForm({
       {/* ── Quórum ────────────────────────────────────────────────────────── */}
       <p
         className={`flex items-center gap-2 text-xs ${
-          quorumSatisfied ? 'text-green-600' : 'text-amber-600'
+          quorumSatisfied ? 'text-success-strong' : 'text-warning-strong'
         }`}
         data-testid="quorum-message"
       >
@@ -179,9 +179,9 @@ export function DecisionForm({
       </div>
 
       {!quorumSatisfied ? (
-        <label className="flex items-start gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+        <label className="flex items-start gap-2.5 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs">
           <input type="checkbox" name="overrideQuorum" className="mt-0.5" />
-          <span className="text-amber-700">
+          <span className="text-warning-strong">
             Decidir mesmo sem o quórum completo. A justificativa acima é obrigatória e
             ficará registrada na auditoria.
           </span>

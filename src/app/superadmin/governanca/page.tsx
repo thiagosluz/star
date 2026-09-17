@@ -68,13 +68,13 @@ export default async function PlatformGovernancePage() {
                   <span className="block truncate text-xs text-muted-foreground">{admin.email}</span>
                 </span>
 
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   desde {admin.grantedAt.toISOString().slice(0, 10)}
                   {admin.reason ? ` · ${admin.reason}` : ''}
                 </span>
 
                 {admin.userId === operator.userId ? (
-                  <span className="text-[11px] uppercase text-muted-foreground">você</span>
+                  <span className="text-xs uppercase text-muted-foreground">você</span>
                 ) : (
                   <RevokeSuperAdminButton userId={admin.userId} />
                 )}
@@ -95,12 +95,12 @@ export default async function PlatformGovernancePage() {
           <ul className="mt-3 divide-y divide-border" data-testid="governance-audit">
             {permissionAudit.map((entry) => (
               <li key={entry.id} className="flex flex-wrap items-baseline gap-x-3 py-3 text-sm">
-                <span className="font-mono text-[11px] uppercase text-muted-foreground">
+                <span className="font-mono text-xs uppercase text-muted-foreground">
                   {entry.action}
                 </span>
                 <span className="text-foreground">{entry.entityType}</span>
                 <span className="text-xs text-muted-foreground">{entry.actorName ?? 'sistema'}</span>
-                <span className="ml-auto text-[11px] text-muted-foreground">
+                <span className="ml-auto text-xs text-muted-foreground">
                   {entry.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
                 </span>
               </li>

@@ -60,7 +60,7 @@ export function ReviewForm({
   if (alreadySubmitted) {
     return (
       <p
-        className="flex items-center gap-2 rounded-lg border border-border bg-card p-5 text-sm text-green-600"
+        className="flex items-center gap-2 rounded-lg border border-border bg-card p-5 text-sm text-success-strong"
         data-testid="review-already-submitted"
       >
         <CheckCircle2 className="size-4" aria-hidden />

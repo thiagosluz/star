@@ -103,7 +103,7 @@ export default async function SubmissionDetailPage({
             {STATUS_LABEL[submission.status] ?? submission.status}
           </span>
           {submission.requiresBlindReview ? (
-            <span className="rounded border border-amber-500/40 px-2 py-0.5 text-xs text-amber-600">
+            <span className="rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong">
               Revisão cega
             </span>
           ) : null}
@@ -235,7 +235,7 @@ export default async function SubmissionDetailPage({
               {blockers.map((blocker) => (
                 <li
                   key={blocker}
-                  className="flex items-start gap-2 text-sm text-amber-600"
+                  className="flex items-start gap-2 text-sm text-warning-strong"
                 >
                   <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
                   {blocker}
@@ -243,7 +243,7 @@ export default async function SubmissionDetailPage({
               ))}
             </ul>
           ) : (
-            <p className="flex items-center gap-2 text-sm text-green-600">
+            <p className="flex items-center gap-2 text-sm text-success-strong">
               <CheckCircle2 className="size-4" aria-hidden />
               Tudo pronto para o envio.
             </p>

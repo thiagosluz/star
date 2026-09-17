@@ -122,7 +122,7 @@ function TaskCard({
 
           {task.isBlind ? (
             <span
-              className="inline-flex items-center gap-1 rounded border border-amber-500/40 px-2 py-0.5 text-xs text-amber-600"
+              className="inline-flex items-center gap-1 rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong"
               data-testid="blind-badge"
             >
               <EyeOff className="size-3" aria-hidden />
@@ -131,7 +131,7 @@ function TaskCard({
           ) : null}
 
           {task.hasReview ? (
-            <span className="inline-flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs text-green-600">
+            <span className="inline-flex items-center gap-1 rounded border border-success/40 px-2 py-0.5 text-xs text-success-strong">
               <CheckCircle2 className="size-3" aria-hidden />
               Parecer enviado
             </span>

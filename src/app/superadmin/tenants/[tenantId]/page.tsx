@@ -158,12 +158,12 @@ export default async function PlatformTenantDetailPage({
 
                 <span className="flex flex-wrap gap-1">
                   {member.roles.length === 0 ? (
-                    <span className="text-[11px] text-muted-foreground">sem papel vigente</span>
+                    <span className="text-xs text-muted-foreground">sem papel vigente</span>
                   ) : (
                     member.roles.map((role) => (
                       <span
                         key={`${role.role}-${role.scope}`}
-                        className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[10px] text-foreground"
+                        className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-xs text-foreground"
                       >
                         {role.role}
                       </span>
@@ -171,7 +171,7 @@ export default async function PlatformTenantDetailPage({
                   )}
                 </span>
 
-                <span className="text-[11px] uppercase text-muted-foreground">
+                <span className="text-xs uppercase text-muted-foreground">
                   {member.membershipStatus}
                 </span>
               </li>
@@ -191,12 +191,12 @@ export default async function PlatformTenantDetailPage({
           <ul className="mt-3 divide-y divide-border" data-testid="tenant-audit">
             {audit.map((entry) => (
               <li key={entry.id} className="flex flex-wrap items-baseline gap-x-3 py-3 text-sm">
-                <span className="font-mono text-[11px] uppercase text-muted-foreground">
+                <span className="font-mono text-xs uppercase text-muted-foreground">
                   {entry.action}
                 </span>
                 <span className="text-foreground">{entry.entityType}</span>
                 <span className="text-xs text-muted-foreground">{entry.actorName ?? 'sistema'}</span>
-                <span className="ml-auto text-[11px] text-muted-foreground">
+                <span className="ml-auto text-xs text-muted-foreground">
                   {entry.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
                 </span>
               </li>

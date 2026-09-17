@@ -104,7 +104,7 @@ function QueueRow({
           {entry.activityTitle ? ` · ${entry.activityTitle}` : ' · evento'}
         </p>
         {entry.checkedInAtLabel ? (
-          <p className="flex items-center gap-1 text-[11px] text-green-700">
+          <p className="flex items-center gap-1 text-xs text-success-strong">
             <ShieldCheck className="size-3" aria-hidden />
             Entrada registrada às {entry.checkedInAtLabel}
           </p>
@@ -122,7 +122,7 @@ function QueueRow({
       {state ? (
         <p
           role={state.ok ? 'status' : 'alert'}
-          className={`w-full text-xs ${state.ok ? 'text-green-700' : 'text-destructive'}`}
+          className={`w-full text-xs ${state.ok ? 'text-success-strong' : 'text-destructive'}`}
           data-testid={`checkin-feedback-${entry.registrationId}`}
         >
           {state.ok ? (

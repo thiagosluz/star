@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 10 (cada uma documentada em docs/fase-NN-*.md)
-Testes ................. 770 (Vitest: unit + integração) + 42 (Playwright E2E)
-ADRs ................... 63 (numeração GLOBAL e sequencial — a próxima é ADR-064)
+Fases concluídas ........ 1 a 11B (docs/fase-NN-*.md)
+Testes ................. 775 (Vitest: unit + integração) + 42 (Playwright E2E)
+ADRs ................... 70 (numeração GLOBAL e sequencial — a próxima é ADR-071)
 Permissões ............. 54 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 31 sob RLS + FORCE
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 770+ testes passando
+npm test              # esperado: 775+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -138,6 +138,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 15 | `unstable_cache` **serializa** o valor: uma `Date` pode voltar como string | Cacheie números/strings (ex.: `getTime()`) e converta na leitura — `getTime()` em string estoura só em produção |
 | 16 | Diagnóstico de depuração deixado na interface: a página pública exibia `cap=… mem=… can=…` para qualquer visitante | Estado interno vai para atributos `data-*`, nunca para texto visível; o teste E2E lê atributo com `evaluate`, não `innerText` |
 | 17 | Dois cenários E2E com o mesmo `label` colidem no slug da instituição (`tenants_slug_key`) | Rótulo ÚNICO por cenário (`publica-inscricao`, não `publica`) |
+| 18 | Cor e tamanho escritos à mão em componente (`text-gray-500`, `#4F46E5`, `text-[13px]`) sobrevivem a qualquer revisão e apodrecem o visual | **Antes de qualquer tela nova:** leia `docs/design-system.md`, importe de `@/components/ui` e rode `npx vitest run tests/unit/design-system-guard.test.ts` — a trava reprova paleta crua, hexadecimal e tamanho arbitrário |
 
 ---
 
@@ -255,7 +256,9 @@ tests/{unit,integration,e2e}
 | 8 | Motor de sorteios por presença real | ✅ |
 | 9 | Diretório público de organizações e governança global (SuperAdmin) | ✅ |
 | 10 | Inscrição pública e vínculo automático de participante | ✅ |
-| 11+ | *a definir pelo humano* | ⏳ |
+| 11A | Identidade visual, primitivos de UI e shell de navegação | ✅ |
+| 11B | Propagação do design a todas as telas e quitação da dívida (catraca zerada) | ✅ |
+| 12+ | *a definir pelo humano* | ⏳ |
 
 **Dívidas mapeadas** (candidatas naturais às próximas fases, por risco):
 rate limit em Redis · assinatura assimétrica (PKCS#7/CMS) · observabilidade
@@ -267,10 +270,12 @@ antivírus nos arquivos de submissão.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md` e o documento da **última fase** (`docs/fase-10-*.md`).
+1. Ler `README.md`, `docs/design-system.md` e o documento da **última fase** (`docs/fase-11b-*.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →
    testes → documentação) e **aguardar** a definição/requisitos dela.
 4. Implementar, verificar, documentar e **parar** em `Aguardando APROVADO: AVANÇAR`.
+
+
 

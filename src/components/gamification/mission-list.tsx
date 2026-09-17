@@ -93,7 +93,7 @@ function MissionRow({
           {mission.description ? (
             <p className="text-xs text-muted-foreground">{mission.description}</p>
           ) : null}
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             {mission.kindLabel} · {mission.triggerLabel}
           </p>
         </div>
@@ -104,7 +104,7 @@ function MissionRow({
           </span>
 
           {mission.xpReward > 0 ? (
-            <span className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium">
+            <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium">
               +{mission.xpReward} XP
             </span>
           ) : null}
@@ -117,7 +117,7 @@ function MissionRow({
             </form>
           ) : (
             <span
-              className="text-[11px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
               data-testid={`mission-status-${mission.taskDefinitionId}`}
             >
               {mission.statusLabel}
@@ -130,9 +130,9 @@ function MissionRow({
         <div
           className={`h-full rounded-full transition-[width] duration-500 ${
             mission.status === 'CLAIMED'
-              ? 'bg-green-600'
+              ? 'bg-success'
               : mission.claimable
-                ? 'bg-amber-400'
+                ? 'bg-warning'
                 : 'bg-primary'
           }`}
           style={{ width: `${percent}%` }}
@@ -143,7 +143,7 @@ function MissionRow({
         <p
           role={state.ok ? undefined : 'alert'}
           className={`flex items-center gap-1.5 text-xs ${
-            state.ok ? 'text-green-600' : 'text-destructive'
+            state.ok ? 'text-success-strong' : 'text-destructive'
           }`}
           data-testid={`mission-feedback-${mission.taskDefinitionId}`}
         >

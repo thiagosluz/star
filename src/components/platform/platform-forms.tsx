@@ -43,7 +43,7 @@ function Feedback({ state, testId }: { state: PlatformActionState | null; testId
       role="status"
       className={`mt-4 rounded-lg border p-3 text-sm ${
         state.ok
-          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
+          ? 'border-success/40 bg-success-soft text-success-strong'
           : 'border-destructive/40 bg-destructive/10 text-destructive'
       }`}
     >
@@ -165,7 +165,7 @@ export function ProvisionTenantForm() {
             data-testid="provision-slug"
             className={inputClass}
           />
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             Vira o endereço: /t/{values.slug || 'identificador'}. Nomes de sistema são reservados.
           </p>
         </div>
@@ -188,7 +188,7 @@ export function ProvisionTenantForm() {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             Quotas do plano: {plan.maxEvents ?? 'ilimitados'} eventos ·{' '}
             {plan.maxMembers ?? 'ilimitados'} membros
           </p>
@@ -563,7 +563,7 @@ export function RevokeSuperAdminButton({ userId }: { userId: string }) {
         icon={<Ban className="size-4" aria-hidden />}
       />
       {state && !state.ok ? (
-        <span className="max-w-[16rem] text-right text-[11px] text-destructive">{state.message}</span>
+        <span className="max-w-[16rem] text-right text-xs text-destructive">{state.message}</span>
       ) : null}
     </form>
   );

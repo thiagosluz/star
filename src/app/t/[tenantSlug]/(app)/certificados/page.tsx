@@ -129,18 +129,18 @@ export default async function CertificatesPage({
                         ? ` · ${certificate.workloadLabel} de carga horária`
                         : ''}
                     </p>
-                    <p className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                    <p className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
                       <QrCode className="size-3" aria-hidden />
                       {certificate.validationCode}
                     </p>
                   </div>
 
                   <span
-                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                       certificate.revokedAt
                         ? 'border-destructive/50 text-destructive'
                         : certificate.status === 'ISSUED'
-                          ? 'border-green-600/40 text-green-700'
+                          ? 'border-success/40 text-success-strong'
                           : 'border-border text-muted-foreground'
                     }`}
                   >
@@ -174,7 +174,7 @@ export default async function CertificatesPage({
                   </Link>
 
                   {certificate.contentHash ? (
-                    <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
                       <ShieldCheck className="size-3" aria-hidden />
                       {certificate.contentHash.slice(0, 16)}…
                     </span>

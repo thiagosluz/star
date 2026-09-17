@@ -21,20 +21,29 @@ import { Palette, Lock, Sparkles } from 'lucide-react';
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+/**
+ * Anel e brilho por raridade (FASE 11B).
+ *
+ * Usa os tokens de RARIDADE (`tier-*`), e não os de estado (`warning`, `secondary`).
+ * A migração mecânica da 11B tinha levado prata/azul e âmbar para os tokens de
+ * estado — o que faria uma carta LENDÁRIA parecer um aviso do sistema. Raridade é
+ * mérito do participante; estado é condição operacional, e o DESIGN.md reserva
+ * gradiente e brilho para o primeiro.
+ */
 const RARITY_RING: Record<CardRarity, string> = {
-  COMMON: 'ring-slate-400/40',
-  RARE: 'ring-blue-500/50',
-  EPIC: 'ring-violet-500/60',
-  LEGENDARY: 'ring-amber-400/70',
-  MYTHIC: 'ring-pink-500/70',
+  COMMON: 'ring-tier-common/40',
+  RARE: 'ring-tier-rare/50',
+  EPIC: 'ring-tier-epic/60',
+  LEGENDARY: 'ring-tier-legendary/70',
+  MYTHIC: 'ring-tier-mythic/70',
 };
 
 const RARITY_GLOW: Record<CardRarity, string> = {
-  COMMON: 'shadow-slate-900/10',
-  RARE: 'shadow-blue-500/20',
-  EPIC: 'shadow-violet-500/30',
-  LEGENDARY: 'shadow-amber-400/40',
-  MYTHIC: 'shadow-pink-500/40',
+  COMMON: 'shadow-black/10',
+  RARE: 'shadow-tier-rare/20',
+  EPIC: 'shadow-tier-epic/30',
+  LEGENDARY: 'shadow-tier-legendary/40',
+  MYTHIC: 'shadow-tier-mythic/40',
 };
 
 const ANIMATION_CLASS: Record<string, string> = {
@@ -76,7 +85,7 @@ export function CardVisual({
 }: CardVisualProps) {
   const dimensions =
     size === 'sm'
-      ? 'w-32 h-44 text-[10px]'
+      ? 'w-32 h-44 text-xs'
       : size === 'lg'
         ? 'w-64 h-88 text-sm'
         : 'w-48 h-64 text-xs';
@@ -113,12 +122,12 @@ export function CardVisual({
 
       <div className="relative flex h-full flex-col justify-between p-3">
         <header className="flex items-start justify-between gap-2">
-          <span className="rounded-full bg-black/25 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide backdrop-blur-sm">
+          <span className="rounded-full bg-black/25 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide backdrop-blur-sm">
             {RARITY_LABELS[rarity]}
           </span>
           {isFoil ? (
             <span
-              className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-semibold uppercase backdrop-blur-sm"
+              className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-xs font-semibold uppercase backdrop-blur-sm"
               title="Variante holográfica"
             >
               <Sparkles className="size-3" aria-hidden />
@@ -130,7 +139,7 @@ export function CardVisual({
         <div className="space-y-1">
           <h3 className="text-balance text-sm font-semibold leading-tight drop-shadow-sm">{name}</h3>
 
-          <div className="flex items-center gap-2 text-[10px] opacity-90">
+          <div className="flex items-center gap-2 text-xs opacity-90">
             {locked ? (
               <span className="inline-flex items-center gap-1" title={lockedReason ?? undefined}>
                 <Lock className="size-3" aria-hidden />
@@ -144,7 +153,7 @@ export function CardVisual({
       </div>
 
       {locked && lockedReason ? (
-        <figcaption className="absolute inset-x-0 bottom-0 bg-black/70 p-2 text-[10px] leading-tight">
+        <figcaption className="absolute inset-x-0 bottom-0 bg-black/70 p-2 text-xs leading-tight">
           {lockedReason}
         </figcaption>
       ) : null}
@@ -161,7 +170,7 @@ export function EmptyCardSlot({ rarity }: { rarity: CardRarity }) {
     >
       <div className="flex flex-col items-center gap-1 text-muted-foreground">
         <Palette className="size-5" aria-hidden />
-        <span className="text-[10px] uppercase tracking-wide">{RARITY_LABELS[rarity]}</span>
+        <span className="text-xs uppercase tracking-wide">{RARITY_LABELS[rarity]}</span>
       </div>
     </div>
   );

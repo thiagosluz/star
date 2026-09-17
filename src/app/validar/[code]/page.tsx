@@ -8,10 +8,10 @@ export const metadata = { title: 'Validação de certificado' };
 export const dynamic = 'force-dynamic';
 
 const STATUS_STYLE: Record<string, { border: string; text: string; icon: typeof BadgeCheck }> = {
-  VALID: { border: 'border-green-600/40', text: 'text-green-700', icon: BadgeCheck },
+  VALID: { border: 'border-success/40', text: 'text-success-strong', icon: BadgeCheck },
   REVOKED: { border: 'border-destructive/50', text: 'text-destructive', icon: Ban },
-  EXPIRED: { border: 'border-amber-500/50', text: 'text-amber-700', icon: AlertTriangle },
-  NOT_ISSUED: { border: 'border-amber-500/50', text: 'text-amber-700', icon: AlertTriangle },
+  EXPIRED: { border: 'border-warning/50', text: 'text-warning-strong', icon: AlertTriangle },
+  NOT_ISSUED: { border: 'border-warning/50', text: 'text-warning-strong', icon: AlertTriangle },
   NOT_FOUND: { border: 'border-destructive/50', text: 'text-destructive', icon: XCircle },
 };
 
@@ -94,7 +94,7 @@ export default async function ValidateCertificatePage({
 
             <dl className="grid gap-4 sm:grid-cols-2">
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
                   Participante
                 </dt>
                 <dd className="text-sm font-medium" data-testid="certificate-recipient">
@@ -103,19 +103,19 @@ export default async function ValidateCertificatePage({
               </div>
 
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
                   Instituição
                 </dt>
                 <dd className="text-sm font-medium">{certificate.tenantName || '—'}</dd>
               </div>
 
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Evento</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Evento</dt>
                 <dd className="text-sm font-medium">{certificate.eventTitle || '—'}</dd>
               </div>
 
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
                   Carga horária
                 </dt>
                 <dd className="text-sm font-medium" data-testid="certificate-workload">
@@ -124,12 +124,12 @@ export default async function ValidateCertificatePage({
               </div>
 
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Tipo</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Tipo</dt>
                 <dd className="text-sm font-medium">{CERTIFICATE_KIND_LABELS[certificate.kind]}</dd>
               </div>
 
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Emissão</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Emissão</dt>
                 <dd className="text-sm font-medium">
                   {certificate.issuedAt
                     ? certificate.issuedAt.toLocaleDateString('pt-BR')
@@ -171,7 +171,7 @@ export default async function ValidateCertificatePage({
 
             <p
               className={`flex items-center gap-2 text-sm ${
-                certificate.signatureValid ? 'text-green-700' : 'text-destructive'
+                certificate.signatureValid ? 'text-success-strong' : 'text-destructive'
               }`}
               data-testid="signature-status"
             >
@@ -181,7 +181,7 @@ export default async function ValidateCertificatePage({
                 : 'A assinatura NÃO confere: o conteúdo pode ter sido alterado.'}
             </p>
 
-            <p className="break-all font-mono text-[11px] text-muted-foreground">
+            <p className="break-all font-mono text-xs text-muted-foreground">
               SHA-256: {certificate.contentHash}
             </p>
 
@@ -190,7 +190,7 @@ export default async function ValidateCertificatePage({
               {certificate.validationCode}
             </p>
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Validado {certificate.validationCount} vez(es). Cada consulta é registrada.
             </p>
           </section>

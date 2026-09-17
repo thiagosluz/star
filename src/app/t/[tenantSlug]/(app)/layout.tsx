@@ -3,11 +3,13 @@ import { redirect } from 'next/navigation';
 import { getRequestContext, loadPrincipal } from '@/lib/auth/session';
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
-import { TenantHeader } from '@/components/tenancy/tenant-header';
+import { AccountBlock } from '@/components/shell/account-block';
+import { AppShell } from '@/components/shell/app-shell';
+import { buildTenantNav } from '@/components/shell/tenant-nav';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Layout de instituição — `/t/[tenantSlug]/*`
+ *  Layout de instituição — `/t/[tenantSlug]/*` (FASE 11A: shell com barra lateral)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  ESTE É O PONTO DE AUTORIZAÇÃO REAL
@@ -22,7 +24,7 @@ import { TenantHeader } from '@/components/tenancy/tenant-header';
  *    2. Existe sessão autenticada?
  *    3. O usuário tem vínculo ATIVO com esta instituição?
  *    4. O contexto ativo corresponde ao slug da URL?
- *    5. O `Principal` é carregado sob RLS para uso nas páginas filhas.
+ *    5. O `Principal` é carregado sob RLS — e é ele que filtra a navegação.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export default async function TenantLayout({
@@ -94,20 +96,25 @@ export default async function TenantLayout({
   );
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <TenantHeader
-        tenant={{
-          slug: tenant.slug,
-          name: tenant.name,
-          logoUrl: tenant.logoUrl,
-          plan: tenant.plan,
-        }}
-        user={{ name: context.user.name, email: context.user.email }}
-        roles={membership.roles}
-        memberships={context.memberships}
-        principal={principal}
-      />
-      <div className="flex-1">{children}</div>
-    </div>
+    <AppShell
+      brand={{ label: 'EventFlow', tagline: 'Gestão de eventos' }}
+      context={{
+        name: tenant.name,
+        detail: `${membership.roles.length > 0 ? membership.roles.join(' · ') : 'Sem papel'} · ${tenant.plan}`,
+        logoUrl: tenant.logoUrl,
+        href: '/selecionar-instituicao',
+        testId: 'active-tenant',
+      }}
+      navGroups={buildTenantNav({ tenantSlug, principal })}
+      account={
+        <AccountBlock
+          user={{ name: context.user.name, email: context.user.email }}
+          memberships={context.memberships}
+          currentSlug={tenantSlug}
+        />
+      }
+    >
+      {children}
+    </AppShell>
   );
 }

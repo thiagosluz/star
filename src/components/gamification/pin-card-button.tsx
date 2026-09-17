@@ -14,7 +14,7 @@ function Button({ isPinned }: { isPinned: boolean }) {
       type="submit"
       disabled={pending}
       data-testid={isPinned ? 'unpin-card' : 'pin-card'}
-      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] font-medium transition hover:bg-muted disabled:opacity-60"
+      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium transition hover:bg-muted disabled:opacity-60"
     >
       {isPinned ? <PinOff className="size-3" aria-hidden /> : <Pin className="size-3" aria-hidden />}
       {pending ? '…' : isPinned ? 'Remover destaque' : 'Destacar'}
@@ -51,7 +51,7 @@ export function PinCardButton({
       </form>
 
       {state && !state.ok ? (
-        <p role="alert" className="text-[10px] text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {state.message}
         </p>
       ) : null}

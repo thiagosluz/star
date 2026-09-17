@@ -49,7 +49,7 @@ export function AssignReviewerButton({
 
   if (state?.ok) {
     return (
-      <span className="shrink-0 text-xs text-green-600" data-testid="assigned-ok">
+      <span className="shrink-0 text-xs text-success-strong" data-testid="assigned-ok">
         atribuído
       </span>
     );
@@ -70,7 +70,7 @@ export function AssignReviewerButton({
         />
 
         {conflictBlocked ? (
-          <label className="flex items-start gap-1.5 text-[11px] text-amber-700">
+          <label className="flex items-start gap-1.5 text-xs text-warning-strong">
             <input type="checkbox" name="overrideUncertainConflict" className="mt-0.5" />
             <span>
               Autorizar conflito incerto
@@ -84,7 +84,7 @@ export function AssignReviewerButton({
       {state && !state.ok ? (
         <p
           role="alert"
-          className="max-w-72 text-[11px] text-destructive"
+          className="max-w-72 text-xs text-destructive"
           data-testid="assign-error"
         >
           <span className="flex items-start gap-1">

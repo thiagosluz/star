@@ -120,12 +120,12 @@ function WinnerReveal({ winners }: { winners: readonly WinnerEntry[] }) {
           data-revealed={index < revealed ? 'true' : 'false'}
           className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-all duration-500 ${
             index < revealed
-              ? 'border-amber-400/60 bg-amber-400/10 opacity-100'
+              ? 'border-warning/60 bg-warning-soft opacity-100'
               : 'border-border bg-card opacity-20 blur-[2px]'
           }`}
         >
           <span className="flex min-w-0 items-center gap-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-400/20 font-mono text-sm font-semibold text-amber-700">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/20 font-mono text-sm font-semibold text-warning-strong">
               {winner.position}º
             </span>
             <span className="min-w-0">
@@ -133,7 +133,7 @@ function WinnerReveal({ winners }: { winners: readonly WinnerEntry[] }) {
                 {index < revealed ? winner.userName : 'Revelando…'}
               </span>
               {index < revealed ? (
-                <span className="block text-[11px] text-muted-foreground">
+                <span className="block text-xs text-muted-foreground">
                   {winner.minutes} min de presença comprovada
                 </span>
               ) : null}
@@ -141,7 +141,7 @@ function WinnerReveal({ winners }: { winners: readonly WinnerEntry[] }) {
           </span>
 
           {index < revealed ? (
-            <Trophy className="size-4 shrink-0 text-amber-500" aria-hidden />
+            <Trophy className="size-4 shrink-0 text-warning" aria-hidden />
           ) : null}
         </li>
       ))}
@@ -309,7 +309,7 @@ export function RaffleConsole({
               aria-label="Piso de minutos assistidos"
               className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
             />
-            <span className="block text-[11px] font-normal text-muted-foreground">
+            <span className="block text-xs font-normal text-muted-foreground">
               0 = basta ter presença registrada (quem compareceu sem check-out conta)
             </span>
           </label>
@@ -339,7 +339,7 @@ export function RaffleConsole({
           />
           <span>
             <span className="font-medium">Permitir quem já ganhou neste evento</span>
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-xs text-muted-foreground">
               Desmarcado, quem já venceu qualquer sorteio deste evento sai do páreo automaticamente.
             </span>
           </span>
@@ -398,7 +398,7 @@ export function RaffleConsole({
                 {eligible.map((entry) => (
                   <li key={entry.userId} className="flex items-center justify-between gap-2 rounded border border-border px-2 py-1">
                     <span className="flex items-center gap-1.5 truncate">
-                      <UserCheck className="size-3 text-green-600" aria-hidden />
+                      <UserCheck className="size-3 text-success-strong" aria-hidden />
                       {entry.userName}
                     </span>
                     <span className="font-mono text-muted-foreground">{entry.minutes} min</span>
@@ -431,7 +431,7 @@ export function RaffleConsole({
           role={drawState.ok ? 'status' : 'alert'}
           data-testid="raffle-result"
           className={`space-y-3 rounded-lg border p-4 ${
-            drawState.ok ? 'border-amber-400/60 bg-amber-400/5' : 'border-destructive/40'
+            drawState.ok ? 'border-warning/60 bg-warning-soft' : 'border-destructive/40'
           }`}
         >
           <p className={`flex items-center gap-2 text-sm font-medium ${drawState.ok ? '' : 'text-destructive'}`}>
@@ -440,7 +440,7 @@ export function RaffleConsole({
           </p>
 
           {drawState.ok && typeof drawState.data?.resultHash === 'string' ? (
-            <p className="break-all font-mono text-[10px] text-muted-foreground">
+            <p className="break-all font-mono text-xs text-muted-foreground">
               Hash da apuração: {String(drawState.data.resultHash)}
             </p>
           ) : null}

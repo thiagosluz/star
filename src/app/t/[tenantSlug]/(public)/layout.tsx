@@ -1,7 +1,9 @@
 import { notFound, redirect } from 'next/navigation';
 
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
-import { isValidSlug } from '@/domain/tenancy/resolution';
+import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
+import { getAuthenticatedUser } from '@/lib/auth/session';
+import { PublicFooter, PublicHeader } from '@/components/shell/account-block';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -66,5 +68,32 @@ export default async function PublicTenantLayout({
     notFound();
   }
 
-  return <div className="flex min-h-screen flex-col">{children}</div>;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  MOLDURA PÚBLICA (FASE 11A)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A vitrine da instituição ganha o MESMO cabeçalho e rodapé do sistema, com a
+   *  identidade da instituição (logo e nome). Antes, cada página pública começava
+   *  do zero: para ir da atividade para a programação só existia o link "←" que a
+   *  própria página desenhava, e quem chegava por link compartilhado não tinha
+   *  como descobrir o resto.
+   *
+   *  O visitante anônimo vê "Entrar"; quem já está autenticado vê "Minha área" —
+   *  a diferença é decidida no servidor e não muda o que a página pública expõe.
+   */
+  const user = await getAuthenticatedUser();
+  const here = tenantPath(tenantSlug, '/eventos');
+
+  return (
+    <div className="flex min-h-screen flex-col bg-surface">
+      <PublicHeader
+        tenant={{ slug: lookup.tenant.slug, name: lookup.tenant.name, logoUrl: lookup.tenant.logoUrl }}
+        isAuthenticated={Boolean(user)}
+        loginHref={`/login?redirectTo=${encodeURIComponent(here)}`}
+        accountHref={tenantPath(tenantSlug, '/dashboard')}
+      />
+      <div className="flex-1">{children}</div>
+      <PublicFooter />
+    </div>
+  );
 }

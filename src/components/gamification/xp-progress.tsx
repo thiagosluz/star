@@ -62,18 +62,18 @@ export function XpProgressPanel({
 
         <dl className="grid grid-cols-3 gap-4 text-center">
           <div>
-            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Ofensiva</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Ofensiva</dt>
             <dd className="flex items-center justify-center gap-1 text-lg font-semibold">
-              <Flame className="size-4 text-orange-500" aria-hidden />
+              <Flame className="size-4 text-warning" aria-hidden />
               {currentStreak}
             </dd>
           </div>
           <div>
-            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Ranking</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Ranking</dt>
             <dd className="text-lg font-semibold">{rank ? `${rank}º` : '—'}</dd>
           </div>
           <div>
-            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Cartas</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Cartas</dt>
             <dd className="text-lg font-semibold">{cardsCollected}</dd>
           </div>
         </dl>
@@ -111,7 +111,7 @@ export function XpProgressPanel({
         */}
         {progress.prestigeLevel > 0 ? (
           <div className="space-y-1 pt-1">
-            <div className="flex items-baseline justify-between text-[11px] text-muted-foreground">
+            <div className="flex items-baseline justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Sparkles className="size-3" aria-hidden />
                 Ciclo de prestígio {progress.prestigeLevel}/10
@@ -120,7 +120,7 @@ export function XpProgressPanel({
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-amber-400"
+                className="h-full rounded-full bg-warning"
                 style={{ width: `${Math.round(progress.cycleRatio * 100)}%` }}
               />
             </div>

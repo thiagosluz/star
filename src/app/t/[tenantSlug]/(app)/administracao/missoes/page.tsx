@@ -88,7 +88,7 @@ export default async function AdminMissionsPage({
               return (
                 <li key={mission.id} className="space-y-0.5 p-4 text-sm">
                   <p className="font-medium">{mission.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {TASK_KIND_LABELS[mission.kind as keyof typeof TASK_KIND_LABELS] ?? mission.kind} ·{' '}
                     {XP_SOURCE_LABELS[mission.trigger as keyof typeof XP_SOURCE_LABELS] ?? mission.trigger} · meta{' '}
                     {target.count}
@@ -96,7 +96,7 @@ export default async function AdminMissionsPage({
                     {target.minutes ? ` com ${target.minutes} min` : ''} · +{mission.xpReward} XP
                     {mission.rewardCardSlug ? ` + carta ${mission.rewardCardSlug}` : ''}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {mission.completions} conclusão(ões) · {mission.claims} resgate(s) ·{' '}
                     {mission.isActive ? 'ativa' : 'inativa'} · {mission.isVisible ? 'visível' : 'oculta'}
                   </p>

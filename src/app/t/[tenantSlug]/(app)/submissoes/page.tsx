@@ -23,10 +23,10 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_STYLE: Record<string, string> = {
   DRAFT: 'border-border text-muted-foreground',
-  SUBMITTED: 'border-blue-500/40 text-blue-600',
-  UNDER_REVIEW: 'border-amber-500/40 text-amber-600',
-  REVISION_REQUESTED: 'border-amber-500/40 text-amber-600',
-  ACCEPTED: 'border-green-500/40 text-green-600',
+  SUBMITTED: 'border-secondary/50 text-secondary-strong',
+  UNDER_REVIEW: 'border-warning/40 text-warning-strong',
+  REVISION_REQUESTED: 'border-warning/40 text-warning-strong',
+  ACCEPTED: 'border-success/40 text-success-strong',
   REJECTED: 'border-destructive/40 text-destructive',
 };
 

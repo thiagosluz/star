@@ -209,7 +209,7 @@ export default async function AdminEventDetailPage({
               {event.activities.map((activity) => (
                 <li key={activity.id} className="space-y-0.5 p-3 text-sm">
                   <p className="font-medium">{activity.title}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {activity.type} · {activity.startsAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
                     {activity.workloadMinutes} min · {activity.roomName ?? 'sem sala'} ·{' '}
                     {activity.capacity ?? 'sem limite'} vaga(s)
@@ -261,7 +261,7 @@ export default async function AdminEventDetailPage({
               {event.tracks.map((track) => (
                 <li key={track.id} className="space-y-0.5 p-3 text-sm">
                   <p className="font-medium">{track.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {track.requiredReviews} parecer(es) · aceite ≥ {track.acceptanceThreshold} · rejeição &lt;{' '}
                     {track.rejectThreshold} · {track.submissionCount} submissão(ões) ·{' '}
                     {track.isActive ? 'ativa' : 'inativa'}
@@ -293,7 +293,7 @@ export default async function AdminEventDetailPage({
             </div>
 
             <fieldset className="space-y-2 rounded-lg border border-border p-3">
-              <legend className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <legend className="px-1 text-xs uppercase tracking-wide text-muted-foreground">
                 Rubrica (opcional — vazio usa a rubrica padrão)
               </legend>
 

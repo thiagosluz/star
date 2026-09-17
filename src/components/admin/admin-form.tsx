@@ -5,6 +5,30 @@ import { useFormStatus } from 'react-dom';
 import { AlertCircle, CheckCircle2, Loader2, Save } from 'lucide-react';
 
 import type { AdminActionState } from '@/app/actions/admin-actions';
+import { Checkbox, Input, Select } from '@/components/ui';
+
+/**
+ * Moldura do campo do painel: rótulo envolvente + dica.
+ *
+ * Sem `htmlFor`/`id` de propósito — ver a nota em `Field`.
+ */
+function AdminFieldShell({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-1.5 text-sm font-medium text-foreground">
+      <span>{label}</span>
+      {children}
+      {hint ? <span className="block text-xs font-normal text-muted-foreground">{hint}</span> : null}
+    </label>
+  );
+}
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -65,7 +89,7 @@ export function AdminForm({
         <div
           role={state.ok ? 'status' : 'alert'}
           data-testid={`${testId}-feedback`}
-          className={`space-y-1 text-sm ${state.ok ? 'text-green-700' : 'text-destructive'}`}
+          className={`space-y-1 text-sm ${state.ok ? 'text-success-strong' : 'text-destructive'}`}
         >
           <p className="flex items-center gap-1.5">
             {state.ok ? (
@@ -89,7 +113,32 @@ export function AdminForm({
   );
 }
 
-/** Campo de texto com rótulo, usado nas páginas do painel. */
+/**
+ * Campo de texto do painel — agora sobre os primitivos do SISTEMA (FASE 11B).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A ASSINATURA FOI MANTIDA, E POR QUE NÃO HÁ `id`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Estes três componentes existiam desde a FASE 7 com marcação e classes próprias
+ *  (`rounded-md border bg-background px-3 py-2`), enquanto a FASE 11A criou o
+ *  `Field` do sistema. Eram dois "campos" no mesmo produto: alturas diferentes,
+ *  foco diferente e nenhum `aria-describedby`.
+ *
+ *  A unificação poderia reescrever as cinco páginas do painel… ou fazer o
+ *  componente antigo USAR os controles do sistema. A segunda opção entrega o mesmo
+ *  resultado visual e de acessibilidade sem tocar em telas já testadas.
+ *
+ *  A diferença para o `Field` do sistema é uma só: **aqui o rótulo é envolvente e
+ *  não há `htmlFor`/`id`**. Motivo concreto: o painel tem vários formulários na
+ *  MESMA página (criar sala, criar atividade, criar trilha) e eles repetem nomes de
+ *  campo como `capacity`. Com `id={name}`, o documento ficaria com ids duplicados e
+ *  o `for` poderia apontar para o controle de OUTRO formulário — foi assim que o
+ *  E2E da jornada da FASE 7 quebrou (`getByLabel('Capacidade')` dentro do formulário
+ *  de sala não encontrava o controle). Rótulo envolvente nomeia o controle sem
+ *  depender de identificador único.
+ *
+ *  Para telas NOVAS, use `Field`/`fieldAria` do sistema (ids únicos por página).
+ */
 export function Field({
   label,
   name,
@@ -114,22 +163,19 @@ export function Field({
   step?: number | string;
 }) {
   return (
-    <label className="block space-y-1 text-xs font-medium">
-      {label}
-      <input
-        type={type}
+    <AdminFieldShell label={label} hint={hint}>
+      <Input
         name={name}
+        aria-label={label}
+        type={type}
         defaultValue={defaultValue ?? undefined}
         required={required}
         placeholder={placeholder}
         min={min}
         max={max}
         step={step}
-        aria-label={label}
-        className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
       />
-      {hint ? <span className="block text-[11px] font-normal text-muted-foreground">{hint}</span> : null}
-    </label>
+    </AdminFieldShell>
   );
 }
 
@@ -148,22 +194,15 @@ export function SelectField({
   hint?: string;
 }) {
   return (
-    <label className="block space-y-1 text-xs font-medium">
-      {label}
-      <select
-        name={name}
-        defaultValue={defaultValue ?? undefined}
-        aria-label={label}
-        className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
-      >
+    <AdminFieldShell label={label} hint={hint}>
+      <Select name={name} aria-label={label} defaultValue={defaultValue ?? undefined}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
-      {hint ? <span className="block text-[11px] font-normal text-muted-foreground">{hint}</span> : null}
-    </label>
+      </Select>
+    </AdminFieldShell>
   );
 }
 
@@ -180,11 +219,11 @@ export function CheckboxField({
   hint?: string;
 }) {
   return (
-    <label className="flex items-start gap-2 text-xs">
-      <input type="checkbox" name={name} defaultChecked={defaultChecked} className="mt-0.5 size-3.5" />
-      <span>
-        <span className="font-medium">{label}</span>
-        {hint ? <span className="block text-[11px] text-muted-foreground">{hint}</span> : null}
+    <label className="flex items-start gap-2.5 text-sm">
+      <Checkbox name={name} defaultChecked={defaultChecked} className="mt-0.5" />
+      <span className="min-w-0">
+        <span className="font-medium text-foreground">{label}</span>
+        {hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}
       </span>
     </label>
   );

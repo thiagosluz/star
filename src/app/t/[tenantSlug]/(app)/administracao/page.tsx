@@ -8,16 +8,38 @@ import { getRequestContext } from '@/lib/auth/session';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminOverview } from '@/lib/admin/catalog-service';
 import { listAuditLog } from '@/lib/admin/audit';
+import {
+  Badge,
+  Card,
+  CardContent,
+  EmptyState,
+  PageHeader,
+  SectionHeading,
+  StatCard,
+} from '@/components/ui';
 
 export const metadata = { title: 'Administração' };
 export const dynamic = 'force-dynamic';
 
 /**
- * Painel administrativo — porta de entrada.
+ * Painel administrativo — porta de entrada (FASE 11A: identidade visual).
  *
  * Mostra os números da instituição e a TRILHA DE AUDITORIA. A trilha fica na tela
  * inicial de propósito: quem administra precisa ver, sem procurar, que toda
  * alteração fica registrada com autor e horário.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE ESTA TELA DEMONSTRA DO SISTEMA DE DESIGN
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  É a tela-exemplo do padrão para qualquer módulo novo: `PageHeader` com trilha
+ *  de navegação, indicadores com `StatCard`, áreas de gestão em grade de cartões,
+ *  lista com `SectionHeading` e estado vazio com `EmptyState`. Nenhuma classe de
+ *  cor ou tamanho de fonte é escrita aqui — tudo vem dos primitivos.
+ *
+ *  Os `data-testid` (`admin-stats`, `admin-areas`, `audit-log`, `stat-*`) foram
+ *  preservados: os testes E2E das FASES 7 e 9 dependem deles, e mudar aparência
+ *  não é motivo para mudar contrato de teste.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 export default async function AdminHomePage({
   params,
@@ -82,99 +104,120 @@ export default async function AdminHomePage({
     },
   ].filter((area) => can(principal, area.permission, { scope: 'TENANT' }));
 
-  const stats = [
-    { label: 'Eventos publicados', value: overview.publishedEvents },
-    { label: 'Inscrições confirmadas', value: overview.registrations },
-    { label: 'Presenças', value: overview.attendees },
-    { label: 'Submissões', value: overview.submissions },
-  ];
-
   return (
-    <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Settings2 className="size-6 text-primary" aria-hidden />
-          Administração
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Toda alteração feita aqui é registrada na trilha de auditoria com autor e horário.
-        </p>
-      </header>
+    <div className="space-y-8">
+      <PageHeader
+        title="Administração"
+        description="Toda alteração feita aqui é registrada na trilha de auditoria com autor e horário."
+        breadcrumbs={[{ label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') }, { label: 'Administração' }]}
+        badge={<Badge tone="primary">{tenantName}</Badge>}
+      />
 
-      <section className="grid gap-4 sm:grid-cols-4" data-testid="admin-stats">
-        {stats.map((stat) => (
-          <div key={stat.label} className="rounded-xl border border-border bg-card p-4">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{stat.label}</p>
-            <p className="text-2xl font-semibold" data-testid={`stat-${stat.label}`}>
-              {stat.value}
-            </p>
-          </div>
-        ))}
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="admin-stats">
+        <StatCard
+          label="Eventos publicados"
+          value={overview.publishedEvents}
+          data-testid="stat-Eventos publicados"
+          icon={<CalendarCog className="size-4" aria-hidden />}
+          tone="primary"
+        />
+        <StatCard
+          label="Inscrições confirmadas"
+          value={overview.registrations}
+          data-testid="stat-Inscrições confirmadas"
+        />
+        <StatCard
+          label="Presenças"
+          value={overview.attendees}
+          data-testid="stat-Presenças"
+          tone="success"
+        />
+        <StatCard
+          label="Submissões"
+          value={overview.submissions}
+          data-testid="stat-Submissões"
+        />
       </section>
 
-      <section className="space-y-3" aria-labelledby="areas">
-        <h2 id="areas" className="text-lg font-semibold tracking-tight">
-          Áreas de gestão
-        </h2>
+      <section className="space-y-4" aria-labelledby="areas">
+        <SectionHeading
+          title="Áreas de gestão"
+          description="O que existe na instituição hoje, com os atalhos para cada módulo."
+        />
 
-        <ul className="grid gap-4 sm:grid-cols-2" data-testid="admin-areas">
-          {areas.map((area) => (
-            <li key={area.href}>
-              <Link
-                href={tenantPath(tenantSlug, area.href)}
-                className="flex h-full gap-3 rounded-xl border border-border bg-card p-4 transition hover:border-primary/50"
-              >
-                <area.icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
-                <span className="space-y-1">
-                  <span className="block text-sm font-medium">{area.label}</span>
-                  <span className="block text-xs text-muted-foreground">{area.description}</span>
-                  <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">
-                    {area.metric}
-                  </span>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="space-y-3" aria-labelledby="trilha">
-        <h2 id="trilha" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-          <History className="size-4" aria-hidden />
-          Trilha de auditoria
-        </h2>
-
-        {audit.length === 0 ? (
-          <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-            Nenhuma alteração registrada ainda.
-          </p>
+        {areas.length === 0 ? (
+          <EmptyState
+            icon={Settings2}
+            title="Nenhuma área disponível para o seu perfil"
+            description="Seu papel atual não inclui gestão. Fale com a organização se isso não estiver correto."
+          />
         ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border bg-card" data-testid="audit-log">
-            {audit.map((entry) => {
-              const fields = Object.keys(entry.changes);
-
-              return (
-                <li key={entry.id} className="space-y-0.5 p-3">
-                  <p className="flex flex-wrap items-baseline gap-2 text-sm">
-                    <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
-                      {entry.action}
-                    </span>
-                    <span className="font-medium">{entry.entityType}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {entry.actorName ?? 'sistema'} ·{' '}
-                      {entry.createdAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                    </span>
-                  </p>
-                  {fields.length > 0 ? (
-                    <p className="text-[11px] text-muted-foreground">campos: {fields.join(', ')}</p>
-                  ) : null}
-                </li>
-              );
-            })}
+          <ul className="grid gap-4 sm:grid-cols-2" data-testid="admin-areas">
+            {areas.map((area) => (
+              <li key={area.href}>
+                <Link href={tenantPath(tenantSlug, area.href)} className="block h-full">
+                  <Card className="h-full transition-colors hover:border-primary/50">
+                    <CardContent className="flex gap-3">
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-soft text-brand">
+                        <area.icon className="size-5" aria-hidden />
+                      </span>
+                      <span className="min-w-0 space-y-1">
+                        <span className="block text-sm font-medium text-foreground">{area.label}</span>
+                        <span className="block text-xs text-muted-foreground">{area.description}</span>
+                        <span className="label-caps block pt-1">{area.metric}</span>
+                      </span>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </li>
+            ))}
           </ul>
         )}
       </section>
-    </main>
+
+      <section className="space-y-4" aria-labelledby="trilha">
+        <SectionHeading
+          title="Trilha de auditoria"
+          description="Últimas alterações registradas nesta instituição."
+        />
+
+        {audit.length === 0 ? (
+          <EmptyState
+            icon={History}
+            title="Nenhuma alteração registrada ainda"
+            description="Assim que alguém criar ou editar um evento, a entrada aparece aqui com autor e horário."
+          />
+        ) : (
+          <Card className="overflow-hidden">
+            <ul className="divide-y divide-border" data-testid="audit-log">
+              {audit.map((entry) => {
+                const fields = Object.keys(entry.changes);
+
+                return (
+                  <li key={entry.id} className="space-y-1 px-5 py-4">
+                    <p className="flex flex-wrap items-baseline gap-2 text-sm">
+                      <Badge tone="neutral" size="sm">
+                        {entry.action}
+                      </Badge>
+                      <span className="font-medium text-foreground">{entry.entityType}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {entry.actorName ?? 'sistema'} ·{' '}
+                        {entry.createdAt.toLocaleString('pt-BR', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                    </p>
+                    {fields.length > 0 ? (
+                      <p className="text-xs text-muted-foreground">campos: {fields.join(', ')}</p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
+      </section>
+    </div>
   );
 }

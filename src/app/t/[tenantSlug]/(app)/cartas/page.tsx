@@ -57,7 +57,7 @@ export default async function AlbumPage({
     <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
       <header className="space-y-1.5">
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Layers className="size-6 text-violet-500" aria-hidden />
+          <Layers className="size-6 text-tier-epic" aria-hidden />
           Meu álbum de cartas
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -71,7 +71,7 @@ export default async function AlbumPage({
         data-testid="album-summary"
       >
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Progresso</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Progresso</p>
           <p className="text-2xl font-semibold" data-testid="album-completion">
             {Math.round(summary.completionRatio * 100)}%
           </p>
@@ -80,21 +80,21 @@ export default async function AlbumPage({
           </p>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Foils</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Foils</p>
           <p className="text-2xl font-semibold">{summary.foils}</p>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Duplicatas</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Duplicatas</p>
           <p className="text-2xl font-semibold">{summary.duplicates}</p>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Destacadas</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Destacadas</p>
           <p className="text-2xl font-semibold">{summary.pinned}/3</p>
         </div>
       </section>
 
       {hiddenSecrets > 0 ? (
-        <p className="flex items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-500/5 p-3 text-sm text-violet-700">
+        <p className="flex items-center gap-2 rounded-lg border border-tier-epic bg-primary-soft p-3 text-sm text-tier-epic">
           <Sparkles className="size-4" aria-hidden />
           Existem {hiddenSecrets} carta(s) secretas que você ainda não descobriu. Elas não aparecem
           aqui até serem conquistadas.
@@ -170,7 +170,7 @@ export default async function AlbumPage({
                 ) : (
                   <li key={card.templateId} className="space-y-1">
                     <EmptyCardSlot rarity={card.rarity} />
-                    <p className="w-32 text-[10px] leading-tight text-muted-foreground">
+                    <p className="w-32 text-xs leading-tight text-muted-foreground">
                       {card.isActive
                         ? `Nível ${card.levelRequired} · ${card.trigger.toLowerCase().replace(/_/g, ' ')}`
                         : 'Indisponível nesta edição'}

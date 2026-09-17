@@ -112,7 +112,7 @@ export function IssueBatchPanel({
         <p
           role={state.ok ? 'status' : 'alert'}
           data-testid="issue-feedback"
-          className={`text-sm ${state.ok ? 'text-green-700' : 'text-destructive'}`}
+          className={`text-sm ${state.ok ? 'text-success-strong' : 'text-destructive'}`}
         >
           {state.message}
         </p>
@@ -162,7 +162,7 @@ export function RevokeCertificateForm({
         </button>
 
         {state ? (
-          <p className={state.ok ? 'text-green-700' : 'text-destructive'}>{state.message}</p>
+          <p className={state.ok ? 'text-success-strong' : 'text-destructive'}>{state.message}</p>
         ) : null}
       </form>
     </details>
