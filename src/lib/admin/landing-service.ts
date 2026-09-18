@@ -75,7 +75,9 @@ export interface EditableEventPage {
   isPublished: boolean;
   /** Data/hora agendada para entrar no ar (FASE 23, item E13). */
   publishAt: Date | null;
-  /** Estado derivado de `isPublished` + `publishAt` + agora. */
+  /** Data/hora agendada para sair do ar (FASE 24, item E16). */
+  unpublishAt: Date | null;
+  /** Estado derivado de `isPublished` + datas + agora. */
   publicationState: PublicationState;
   metaTitle: string | null;
   metaDescription: string | null;
@@ -96,6 +98,15 @@ export interface EditableLanding {
   logoUrl: string | null;
   /** Página que o editor manipula (a primeira, `isHome`). `null` = ainda não existe. */
   page: EditableEventPage | null;
+  /**
+   * Fuso do EVENTO (FASE 24, item E17).
+   *
+   * É o fuso em que o organizador digita as datas de agendamento — o mesmo que a
+   * página pública anuncia no rodapé. Antes, a data era interpretada no fuso do
+   * servidor (UTC em produção), e a página entrava no ar três horas antes sem
+   * nenhum aviso.
+   */
+  eventTimezone: string;
   /** Tema do EVENTO, já resolvido — é ele que a página pública usa. */
   theme: Record<string, unknown>;
   themeIsValid: boolean;
@@ -121,6 +132,7 @@ export async function getLandingForEdit(
         title: true,
         slug: true,
         theme: true,
+        timezone: true,
         coverImageUrl: true,
         logoUrl: true,
         pages: {
@@ -133,6 +145,7 @@ export async function getLandingForEdit(
             title: true,
             isPublished: true,
             publishAt: true,
+            unpublishAt: true,
             metaTitle: true,
             metaDescription: true,
             blocks: {
@@ -175,6 +188,7 @@ export async function getLandingForEdit(
       eventId: event.id,
       eventTitle: event.title,
       eventSlug: event.slug,
+      eventTimezone: event.timezone,
       coverImageUrl: event.coverImageUrl,
       logoUrl: event.logoUrl,
       theme: theme as unknown as Record<string, unknown>,
@@ -187,8 +201,9 @@ export async function getLandingForEdit(
             title: page.title,
             isPublished: page.isPublished,
             publishAt: page.publishAt,
+            unpublishAt: page.unpublishAt,
             publicationState: resolvePublicationState(
-              { isPublished: page.isPublished, publishAt: page.publishAt },
+              { isPublished: page.isPublished, publishAt: page.publishAt, unpublishAt: page.unpublishAt },
               new Date(),
             ),
             metaTitle: page.metaTitle,
@@ -312,6 +327,13 @@ export interface PageSettingsInput {
    */
   publishAt?: Date | null;
   /**
+   * Data/hora para SAIR do ar sozinha (FASE 24, item E16).
+   *
+   * Sem ela, uma campanha com prazo exigia alguém despublicando no dia — e uma
+   * promoção vencida publicada é pior do que uma promoção atrasada.
+   */
+  unpublishAt?: Date | null;
+  /**
    * Tema do EVENTO (tokens visuais). Vazio preserva o que já existe.
    *
    * O editor grava no evento, e não em `EventPage.theme`: a página pública resolve
@@ -328,9 +350,9 @@ export interface PageSettingsInput {
  * garante que nenhum caminho de escrita grave um tema que a página pública vá
  * recusar depois e substituir em silêncio pelo padrão.
  *
- * A publicação passa por `planPublication`, que decide entre rascunho, agendada e
- * publicada — e LIMPA a data ao despublicar (ver o comentário na função: sem isso a
- * página voltaria ao ar sozinha).
+ * A publicação passa por `planPublication`, que decide entre rascunho, agendada,
+ * publicada e janela encerrada — LIMPA as datas ao despublicar (sem isso a página
+ * voltaria ao ar sozinha) e valida a janela (término depois do início).
  */
 export async function savePageSettings(
   input: PageSettingsInput,
@@ -346,10 +368,28 @@ export async function savePageSettings(
       };
     }
 
+    /**
+     * O fuso vem do EVENTO (item E17): é nele que o organizador digita a data e é
+     * ele que a página pública anuncia. A leitura é uma consulta a mais, feita
+     * apenas quando há data para validar ou mensagem para escrever.
+     */
+    const event = await withTenant(input.tenantId, (tx) =>
+      tx.event.findFirst({
+        where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
+        select: { timezone: true },
+      }),
+    );
+
+    if (!event) {
+      return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
+    }
+
     const plan = planPublication({
       publishNow: input.isPublished,
       publishAt: input.publishAt ?? null,
+      unpublishAt: input.unpublishAt ?? null,
       now: new Date(),
+      timeZone: event.timezone,
     });
 
     if (!plan.ok) {
@@ -367,6 +407,7 @@ export async function savePageSettings(
           metaDescription: true,
           isPublished: true,
           publishAt: true,
+          unpublishAt: true,
         },
       });
 
@@ -384,6 +425,7 @@ export async function savePageSettings(
         metaDescription: input.metaDescription?.trim() || null,
         isPublished: plan.isPublished,
         publishAt: plan.publishAt,
+        unpublishAt: plan.unpublishAt,
       };
 
       await tx.eventPage.update({ where: { id: page.id }, data });
@@ -399,7 +441,8 @@ export async function savePageSettings(
            * Publicar e despublicar são registrados com o nome do campo, e não como
            * "página alterada": é a informação que responde "quem tirou a página do
            * ar", que é a pergunta que alguém faz. O agendamento entra junto, porque
-           * "quem marcou esta data" é a mesma pergunta.
+           * "quem marcou esta data" é a mesma pergunta — e a data de término é o
+           * que explica uma página que "sumiu sozinha".
            */
           changes: diffFields(page, data, [
             'title',
@@ -407,6 +450,7 @@ export async function savePageSettings(
             'metaDescription',
             'isPublished',
             'publishAt',
+            'unpublishAt',
           ]),
         },
         tx,
@@ -875,3 +919,4 @@ function toFailure<T>(
   console.error(`[landing] falha em ${operation}: ${errorMessage(error)}`);
   return { ok: false as const, code: 'INTERNAL' as const, message: fallbackMessage };
 }
+

@@ -57,12 +57,20 @@ export function BlockContentFields({
   type,
   values,
   tierOptions,
+  libraryOptions = [],
   uploadContext,
 }: {
   type: PageBlockType;
   values: BlockContentValues;
   /** Cotas disponíveis, para o filtro do bloco de patrocinadores. */
   tierOptions: { value: string; label: string }[];
+  /**
+   * Imagens já enviadas pela instituição (FASE 24, item E14).
+   *
+   * Alimenta o seletor "usar do acervo" de cada linha da galeria. Sem ele, a
+   * biblioteca seria uma tela que só serve para copiar URL à mão.
+   */
+  libraryOptions?: { value: string; label: string }[];
   /**
    * Contexto de upload (FASE 23, item E10). Presente apenas quando a tela tem como
    * enviar imagem — o componente continua funcionando sem ele, e aí a galeria aceita
@@ -285,6 +293,35 @@ export function BlockContentFields({
                 ) : null}
 
                 <div className="min-w-0 flex-1 space-y-2">
+                  {libraryOptions.length > 0 ? (
+                    /*
+                      Seletor de REUSO: escolher preenche o campo de URL e volta para
+                      o texto de ajuda. É um atalho, não um segundo vínculo — a URL
+                      continua sendo o dado gravado, e a validação do bloco continua
+                      aceitando imagem externa.
+                    */
+                    <select
+                      aria-label={`Usar imagem do acervo na imagem ${index + 1}`}
+                      data-testid={`gallery-library-${index}`}
+                      value=""
+                      onChange={(event) => {
+                        const url = event.target.value;
+                        if (!url) return;
+                        setGallery((current) =>
+                          current.map((row, i) => (i === index ? { ...row, url } : row)),
+                        );
+                      }}
+                      className="h-9 w-full rounded-sm border border-border bg-card px-3 text-sm text-foreground"
+                    >
+                      <option value="">Usar imagem do acervo…</option>
+                      {libraryOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+
                   <Input
                     name="galleryUrl"
                     value={image.url}

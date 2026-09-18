@@ -4,11 +4,12 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 14, 16, 17 e 23 concluídas (F15 pendente: Comunicação) · **1117 testes** unitários/integração · **64 testes E2E**
+> **Estado:** FASES 1 a 14, 16, 17, 23 e 24 concluídas (F15 pendente: Comunicação) · **1157 testes** unitários/integração · **69 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe) e
-> **página pública editável** pela instituição, com patrocínio e autoria
+> **página pública editável** pela instituição, com patrocínio, autoria, **biblioteca de
+> mídia** com reaproveitamento e **janela de exibição** agendada no fuso do evento
 
 ---
 
@@ -52,6 +53,7 @@ avaliação por pares e gamificação.
 | **Página pública e patrocínio** | A instituição **monta a própria vitrine**: página que nasce como rascunho e só vai ao ar quando publicada, 12 tipos de bloco com conteúdo validado por tipo no domínio (destaque, texto, agenda, palestrantes, trilhas, patrocinadores, perguntas frequentes, galeria, contagem, local, chamada de inscrição e HTML exibido como texto), ordem ajustável, blocos ocultáveis, composição sugerida, **tema visual** (cores, tipografia, densidade, cabeçalho e animação) e **capa e logotipo por upload** direto ao storage — com allowlist de tipo e verificação da assinatura real do arquivo (SVG recusado por poder conter script). **Patrocínio** com cotas, ordem de exibição, limite de vagas aplicado na transação e documento fiscal mascarado |
 | **Autoria de trabalho** | Coautores editáveis antes do envio, com **ordem de crédito** (a ordem da tela é a ordem de citação), autor correspondente único, ORCID validado e vínculo automático de conta dentro da instituição — o nome de quem tem conta vem do perfil |
 | **Operação do conteúdo** | **Pré-visualização** do rascunho antes de publicar (o mesmo componente da página pública, em rota autenticada com selo de estado), **publicação agendada** que entra no ar sozinha na data marcada, **histórico de versões** com restauração (20 por página, sem gravar versão idêntica), **imagem enviada direto do computador** também para a galeria, e **cópia de patrocinador** de outra edição com cota casada pela categoria e cadastro oculto |
+| **Mídia e agendamento** | **Biblioteca de mídia** da instituição (`media_assets`, com RLS): todo envio registra autor, tamanho, tipo, checksum e finalidade, a **mesma imagem** é reaproveitada em vez de duplicar o objeto e a exclusão **confere o uso** antes de apagar — recusando com a lista de onde a imagem aparece. **Janela de exibição**: a página entra no ar e **sai sozinha** na data de término (decidido na leitura, sem agendador), com estado próprio para "configurada, publicada e fora do prazo". As datas são digitadas e lidas no **fuso do evento** (o mesmo do rodapé da página), com conversão correta em horário de verão. O patrocinador **copiado** de outra edição guarda a origem e pode ser **sincronizado** — propagando só os dados da empresa e preservando cota, contrato e vigência |
 
 ---
 
@@ -177,7 +179,10 @@ Página pública .. 5 blocos publicados no congresso (texto, trilhas, perguntas
                   frequentes, chamada de inscrição e patrocinadores), tema próprio
                   e 1 cota (Ouro) com 2 patrocinadores
 Conteúdo ........ 11 versões no histórico da página do congresso (restauráveis no
-                  editor) e a página do simpósio AGENDADA para daqui a 7 dias
+                  editor) e a página do simpósio com JANELA completa — entra no ar
+                  em 7 dias e sai sozinha em 21 (datas no fuso America/Bahia)
+Mídia ........... acervo da instituição com as imagens de capa, logotipos e galeria
+                  registradas (autor, tamanho, checksum e uso por imagem)
 ```
 
 Os **códigos de validação** dos certificados são aleatórios a cada execução e são
@@ -359,8 +364,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1117 testes (46 arquivos) — unit + integração com banco real
-npm run test:e2e          # 64 testes E2E contra o container de produção
+npm test                  # 1157 testes (48 arquivos) — unit + integração com banco real
+npm run test:e2e          # 69 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -405,7 +410,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 41 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 40 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/fase-24-midia-e-agendamento.md`](docs/fase-24-midia-e-agendamento.md) | Mídia e agendamento: **biblioteca de mídia** (tabela `media_assets` com RLS, reaproveitamento por checksum e exclusão que **confere o uso**), **sincronia** do patrocinador copiado a partir da origem, **janela de exibição** (`unpublishAt` decidido na leitura) e a data agendada interpretada no **fuso do evento** | ADR-107 … 112 |
 | [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
 | [`docs/fase-17-pagina-publica-e-patrocinio.md`](docs/fase-17-pagina-publica-e-patrocinio.md) | Página pública montada pelo organizador: editor de blocos validados por tipo, tema visual, capa e logotipo por upload direto ao storage, cadastro de cotas e patrocinadores com limite de vagas e documento fiscal mascarado, e edição de coautores com ordem de crédito — tudo sem uma única migração | ADR-092 … 099 |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
@@ -415,7 +421,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **106 decisões** registradas até aqui.
+> são **112 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -468,9 +474,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              831 testes de regra pura e de formato (sem banco)
-├── integration/       286 testes com banco, Redis e storage reais
-└── e2e/               64 testes Playwright contra o container
+├── unit/              851 testes de regra pura e de formato (sem banco)
+├── integration/       306 testes com banco, Redis e storage reais
+└── e2e/               69 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -563,21 +569,22 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 1. **Assinatura de certificado é HMAC (simétrica).** Permite à instituição validar os
    próprios documentos; validação offline por terceiros que não confiam na instituição
    exigiria PKCS#7/CMS com X.509 (o campo `signatureAlg` já está preparado).
-2. **Mídia do evento não tem biblioteca própria (FASE 23).** O bucket de assets é a
-   biblioteca: não há registro do arquivo, reuso nem exclusão (dívida E14) — uma imagem
-   enviada e não usada fica no bucket sem referência. O patrocinador copiado entre eventos
-   é uma **cópia**, não um vínculo: corrigir o site em uma edição não corrige as outras
-   (E15). A página entra no ar sozinha na data agendada, mas **não sai** sozinha (E16), e o
-   fuso do agendamento vem do navegador — a tela mostra a data gravada para conferência
-   (E17). `EventPage.theme` (tema por página) segue reservado e sem uso: o tema é do evento,
-   para não existirem duas fontes de verdade para a mesma cor.
+2. **Mídia: o acervo cresce sem miniatura nem busca (FASE 24).** A biblioteca de mídia
+   resolveu o essencial — registro, reaproveitamento por checksum e exclusão que confere o
+   uso — mas a lista carrega a **imagem inteira** para desenhar um quadrado pequeno (E18) e
+   traz as 200 mais recentes **sem filtro** por tipo, evento ou uso (E19). A sincronia do
+   patrocinador copiado é **por patrocinador** (E20): uma instituição com muitas edições
+   sincroniza uma cópia por vez. `EventPage.theme` (tema por página) segue reservado e sem
+   uso: o tema é do evento, para não existirem duas fontes de verdade para a mesma cor.
 3. **Ciclo de vida do membro é parcial (FASE 14).** A plataforma **vincula** uma pessoa
    que já tem conta (com a quota aplicada); **remover** membro, trocar papel, e
    **convidar** quem ainda não tem conta pela própria instituição continuam sem tela
    (dívidas C5 e D2 — a segunda vai na fase de Comunicação, porque convite precisa de
    e-mail e de prova de posse do endereço).
 4. **A quota de armazenamento não é aplicada (dívida C4).** `maxStorageBytes` vem do
-   plano, é editável e aparece na tela — mas nada bloqueia upload por ela ainda.
+   plano, é editável e aparece na tela — mas nada bloqueia upload por ela ainda. Desde a
+   FASE 24 o acervo **mede** o que a instituição ocupa (soma em bytes na tela da biblioteca);
+   medir e impor são decisões diferentes, e a segunda ficou com a F21.
 5. **Paginação** nas listagens administrativas é por limite de consulta.
 6. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
    não é registrada (exceto o contador de validação pública).
@@ -608,18 +615,28 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     entra na trilha de auditoria** — e não há como removê-lo pela tela (exige SQL): apagar
     dado fiscal é ato deliberado, não efeito colateral de salvar um formulário.
 16. **Restaurar uma versão da página não devolve o estado de publicação (FASE 23).** O
-    conteúdo volta; `isPublished` e `publishAt` ficam como estão — um "desfazer" que
-    publicasse ou tirasse a página do ar seria uma surpresa cara. O histórico guarda as 20
-    versões mais recentes por página (dívida E12, resolvida, com teto declarado).
+    conteúdo volta; `isPublished`, `publishAt` e `unpublishAt` ficam como estão — um
+    "desfazer" que publicasse ou tirasse a página do ar seria uma surpresa cara. O histórico
+    guarda as 20 versões mais recentes por página (dívida E12, resolvida, com teto declarado).
+17. **A exclusão de mídia procura o uso por URL, não por chave estrangeira (FASE 24).** O
+    conteúdo do bloco aceita imagem externa, então a referência é a URL: o serviço varre
+    capa, logotipos e blocos antes de apagar e **recusa** quando encontra — mais caro que um
+    `ON DELETE`, e é o que responde a pergunta do organizador. URIs que não sejam `http(s)`
+    escritas à mão em campo livre não entram na varredura. A deduplicação é por **checksum
+    exato**: reencodar a mesma foto gera um segundo objeto.
+18. **A página sai do ar pela data, mas o visitante que já está na tela não é avisado
+    (FASE 24).** A decisão é tomada na leitura (sem agendador): quem recarregar depois do
+    término recebe 404, e quem já carregou continua lendo o que estava lá. A rota pública é
+    `force-dynamic` (sem cache), então não existe janela de conteúdo obsoleto servido.
 
 ---
 
 **Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — comunicação
 (e-mail transacional, que destrava o convite pela instituição e as notificações, F15),
 PKCS#7 e antivírus para uso institucional (F18) — e depois o ciclo de vida do membro com
-a quota de armazenamento (F21), a operação de palco dos sorteios (F22) e o restante de
-mídia e agendamento da página pública (F24: biblioteca de mídia, vínculo de patrocinador
-entre eventos, janela de exibição e fuso do agendamento).
+a quota de armazenamento (F21, que agora já tem a medição pronta), a operação de palco dos
+sorteios (F22) e o segundo grau do acervo de mídia (F25: miniaturas, busca e sincronia em
+lote).
 O levantamento atualizado está em [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
 
 

@@ -42,6 +42,7 @@ import {
   saveSponsor,
   saveSponsorTier,
   setSponsorActive,
+  syncSponsorFromSource,
 } from '@/lib/admin/sponsor-service';
 
 export interface SponsorActionState {
@@ -486,6 +487,60 @@ export async function copySponsorAction(
       ? `"${result.sourceName}" copiado para este evento, na mesma cota. Ele entra OCULTO: revise o contrato e exiba quando estiver fechado.`
       : `"${result.sourceName}" copiado para este evento SEM cota (a cota de origem não existe aqui). Ele entra OCULTO: escolha a cota e exiba quando estiver fechado.`,
     data: { sponsorId: result.sponsorId, slug: result.slug, tierMatched: result.tierMatched },
+  };
+}
+
+/**
+ * Sincroniza a cópia com o cadastro de origem (FASE 24, item E15).
+ *
+ * Traz nome, descrição, site, logotipo e contato da edição de origem. NÃO toca em
+ * cota, valor do contrato, vigência nem exibição: isso é de cada evento.
+ */
+export async function syncSponsorAction(
+  _prev: SponsorActionState | null,
+  formData: FormData,
+): Promise<SponsorActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      sponsorId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      sponsorId: formData.get('sponsorId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const context = await guard(parsed.data.tenantSlug);
+  if (!context.ok) return context.state;
+
+  const result = await syncSponsorFromSource({
+    tenantId: context.tenantId,
+    actorId: context.userId,
+    sponsorId: parsed.data.sponsorId,
+  });
+
+  if (!result.ok) return result;
+
+  revalidateSponsors(parsed.data.tenantSlug, parsed.data.eventId);
+
+  if (result.empty) {
+    return {
+      ok: true,
+      message: `Nada a sincronizar: os dados já são os de "${result.sourceName}".`,
+      data: { changedFields: [] },
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Dados atualizados a partir de "${result.sourceName}": ${result.changedFields.join(', ')}. Cota, contrato e exibição não foram tocados.`,
+    data: { changedFields: result.changedFields },
   };
 }
 

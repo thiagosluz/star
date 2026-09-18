@@ -38,6 +38,7 @@ import {
   UPLOAD_URL_TTL_SECONDS,
 } from '@/lib/storage/s3-client';
 import { isSha256Hex, verifyStoredObject } from '@/domain/review/submission-rules';
+import { registerAsset } from '@/lib/admin/media-asset-service';
 import {
   canonicalExtension,
   validateImageUpload,
@@ -254,24 +255,66 @@ export async function confirmAssetUpload(
 
     /**
      * ─────────────────────────────────────────────────────────────────────────────
-     *  DESTINO SEM COLUNA: A URL VOLTA PARA O FORMULÁRIO (FASE 23, item E10)
+     *  TODO ENVIO ENTRA NA BIBLIOTECA (FASE 24, item E14)
      * ─────────────────────────────────────────────────────────────────────────────
-     *  Capa, logotipo e logotipo de patrocinador têm COLUNA onde a URL é gravada.
-     *  A imagem de galeria, não: ela vive dentro do `content` do bloco, que só é
-     *  gravado quando o organizador salva o bloco. Aqui a URL é devolvida e o
-     *  vínculo acontece depois, pela validação do conteúdo do bloco — que já aceita
-     *  apenas URL http(s) (`safeUrlSchema`).
+     *  O registro acontece ANTES do destino: a capa, o logotipo do patrocinador e a
+     *  imagem da galeria passam a existir no acervo da instituição, com autor,
+     *  tamanho e checksum. Sem isso, a biblioteca seria uma tela sobre arquivos que
+     *  ela não conhece.
      *
-     *  A consequência disso está declarada como dívida: uma imagem enviada e não
-     *  usada fica no bucket sem referência (não há tabela de mídia nesta fase).
+     *  `registerAsset` procura o mesmo checksum e REAPROVEITA o registro quando o
+     *  arquivo já existe: subir a mesma foto para a capa e para a galeria deixa de
+     *  criar dois objetos iguais no bucket.
+     *
+     *  Para `GALLERY` nada é gravado em coluna: a URL volta para o formulário e o
+     *  vínculo acontece quando o bloco é salvo (a validação do conteúdo do bloco
+     *  aceita apenas URL http(s)).
      */
     if (input.target === 'GALLERY') {
-      return { ok: true, url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
+      const registered = await withTenant(input.tenantId, (tx) =>
+        registerAsset(tx, {
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          actorId: input.actorId,
+          target: input.target,
+          bucket: input.bucket,
+          objectKey: input.objectKey,
+          url,
+          fileName: input.fileName,
+          mimeType: realMime,
+          sizeBytes: input.sizeBytes,
+          checksum: input.checksum,
+        }),
+      );
+
+      return { ok: true, url: registered.url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
     }
 
     const written = await withTenant(input.tenantId, async (tx) => {
+      /**
+       * O registro no acervo vem primeiro, na MESMA transação do vínculo: se a
+       * gravação da coluna falhar, não fica um registro de imagem que ninguém
+       * usa — e se o registro falhar, a coluna não aponta para um objeto que a
+       * biblioteca não conhece.
+       */
+      const registered = await registerAsset(tx, {
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        actorId: input.actorId,
+        target: input.target,
+        bucket: input.bucket,
+        objectKey: input.objectKey,
+        url,
+        fileName: input.fileName,
+        mimeType: realMime,
+        sizeBytes: input.sizeBytes,
+        checksum: input.checksum,
+      });
+
+      const finalUrl = registered.url;
+
       if (input.target === 'SPONSOR_LOGO') {
-        return writeSponsorLogo(tx, input, url);
+        return writeSponsorLogo(tx, input, finalUrl);
       }
 
       const column = input.target === 'COVER' ? 'coverImageUrl' : 'logoUrl';
@@ -285,7 +328,7 @@ export async function confirmAssetUpload(
 
       await tx.event.update({
         where: { id: before.id },
-        data: input.target === 'COVER' ? { coverImageUrl: url } : { logoUrl: url },
+        data: input.target === 'COVER' ? { coverImageUrl: finalUrl } : { logoUrl: finalUrl },
       });
 
       await recordAudit(
@@ -298,21 +341,21 @@ export async function confirmAssetUpload(
           changes: {
             [column]: {
               from: input.target === 'COVER' ? before.coverImageUrl : before.logoUrl,
-              to: url,
+              to: finalUrl,
             },
           },
         },
         tx,
       );
 
-      return { ok: true as const };
+      return { ok: true as const, url: finalUrl };
     });
 
     if (!written.ok) {
       return { ok: false, code: 'NOT_FOUND', message: 'Evento ou patrocinador não encontrado.' };
     }
 
-    return { ok: true, url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
+    return { ok: true, url: written.url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
   } catch (error) {
     console.error(`[asset] falha ao confirmar upload: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível confirmar a imagem enviada.' };
@@ -323,7 +366,7 @@ async function writeSponsorLogo(
   tx: TxClient,
   input: ConfirmAssetInput,
   url: string,
-): Promise<{ ok: true } | { ok: false; reason: 'NOT_FOUND' }> {
+): Promise<{ ok: true; url: string } | { ok: false; reason: 'NOT_FOUND' }> {
   if (!input.sponsorId) {
     return { ok: false, reason: 'NOT_FOUND' };
   }
@@ -349,7 +392,7 @@ async function writeSponsorLogo(
     tx,
   );
 
-  return { ok: true };
+  return { ok: true, url };
 }
 
 /**

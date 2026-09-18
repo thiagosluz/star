@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getLandingForEdit } from '@/lib/admin/landing-service';
 import { listPageVersions } from '@/lib/admin/page-version-service';
+import { listMediaLibrary } from '@/lib/admin/media-asset-service';
 import { listSponsorBoard } from '@/lib/admin/sponsor-service';
 import {
   BLOCK_LABELS,
@@ -15,6 +16,7 @@ import {
   PUBLICATION_STATE_LABELS,
   type PageBlockType,
 } from '@/domain/events/landing-page';
+import { formatZonedDateTime, instantToZonedWallTime } from '@/domain/events/scheduling-rules';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { LandingThemeFields } from '@/components/admin/landing-theme-fields';
@@ -42,11 +44,10 @@ const BLOCK_OPTIONS = (Object.keys(BLOCK_LABELS) as PageBlockType[]).map((type) 
   label: BLOCK_LABELS[type],
 }));
 
-/** `Date` → valor de `<input type="datetime-local">` (hora local do processo). */
-function toLocalInput(date: Date | null): string {
+/** `Date` → valor de `<input type="datetime-local">`, NO FUSO DO EVENTO (E17). */
+function toLocalInput(date: Date | null, timeZone: string): string {
   if (!date) return '';
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  return instantToZonedWallTime(date, timeZone);
 }
 
 /**
@@ -85,15 +86,30 @@ export default async function EventLandingPageEditor({
   const landing = await getLandingForEdit(tenantId, eventId);
   if (!landing) notFound();
 
-  const [board, history] = await Promise.all([
+  const [board, history, library] = await Promise.all([
     listSponsorBoard(tenantId, eventId),
     listPageVersions(tenantId, eventId),
+    listMediaLibrary(tenantId),
   ]);
 
   const tierOptions = (board?.tiers ?? []).map((tier) => ({
     value: tier.id,
     label: `${tier.name} (${tier.sponsorCount} patrocinador(es))`,
   }));
+
+  /**
+   * Imagens do acervo para REUSO no bloco de galeria (FASE 24).
+   *
+   * A lista alimenta um seletor por linha: sem ela, reaproveitar uma imagem exigia
+   * abrir a biblioteca, copiar a URL e voltar.
+   */
+  const libraryOptions = library.assets
+    .filter((asset) => asset.mimeType.startsWith('image/'))
+    .slice(0, 50)
+    .map((asset) => ({
+      value: asset.url,
+      label: asset.eventTitle ? `${asset.fileName} · ${asset.eventTitle}` : asset.fileName,
+    }));
 
   const page = landing.page;
 
@@ -143,6 +159,13 @@ export default async function EventLandingPageEditor({
           >
             Patrocinadores →
           </Link>
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina/midia`)}
+            className="underline underline-offset-4"
+            data-testid="media-link"
+          >
+            Biblioteca de mídia ({library.assets.length}) →
+          </Link>
         </p>
       </header>
 
@@ -177,6 +200,12 @@ export default async function EventLandingPageEditor({
               <AdminForm action={savePageSettingsAction} submitLabel="Salvar página" testId="save-page">
                 <input type="hidden" name="tenantSlug" value={tenantSlug} />
                 <input type="hidden" name="eventId" value={eventId} />
+                {/*
+                  O fuso do EVENTO viaja com o formulário (FASE 24, item E17): é o
+                  fuso em que as datas foram DIGITADAS e mostradas. Lido no servidor,
+                  seria o fuso do processo — e a conversão gravaria outra hora.
+                */}
+                <input type="hidden" name="eventTimezone" value={landing.eventTimezone} />
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Título da página" name="title" required defaultValue={page.title} />
@@ -205,9 +234,36 @@ export default async function EventLandingPageEditor({
                   label="Agendar para entrar no ar"
                   name="publishAt"
                   type="datetime-local"
-                  defaultValue={toLocalInput(page.publishAt)}
-                  hint="Preencha esta data OU marque “publicar agora” — as duas juntas são recusadas. Para despublicar, apague a data e desmarque a caixa."
+                  defaultValue={toLocalInput(page.publishAt, landing.eventTimezone)}
+                  hint={`No fuso do evento (${landing.eventTimezone}). Preencha esta data OU marque “publicar agora” — as duas juntas são recusadas.`}
                 />
+
+                {/*
+                  Janela de exibição (FASE 24, item E16): a página SAI do ar sozinha.
+                  Sem isso, uma campanha com prazo exigia alguém despublicando no dia
+                  — e promoção vencida publicada é pior do que promoção atrasada.
+                */}
+                <Field
+                  label="Sair do ar em"
+                  name="unpublishAt"
+                  type="datetime-local"
+                  defaultValue={toLocalInput(page.unpublishAt, landing.eventTimezone)}
+                  hint="Opcional. A página sai do ar sozinha nesta data, sem perder a configuração — você pode publicar de novo depois."
+                />
+
+                {page.publishAt || page.unpublishAt ? (
+                  <p className="text-xs text-muted-foreground" data-testid="publication-window">
+                    Janela de exibição:{' '}
+                    {page.publishAt
+                      ? `entra em ${formatZonedDateTime(page.publishAt, landing.eventTimezone)}`
+                      : 'entra imediatamente'}
+                    {page.unpublishAt
+                      ? ` e sai em ${formatZonedDateTime(page.unpublishAt, landing.eventTimezone)}`
+                      : ' (sem data de saída)'}
+                    {' · '}
+                    {landing.eventTimezone}
+                  </p>
+                ) : null}
 
                 <LandingThemeFields
                   theme={{
@@ -386,6 +442,7 @@ export default async function EventLandingPageEditor({
                               type={block.type}
                               values={values}
                               tierOptions={tierOptions}
+                              libraryOptions={libraryOptions}
                               uploadContext={{
                                 tenantSlug,
                                 eventId,

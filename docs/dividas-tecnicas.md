@@ -7,8 +7,8 @@
 >
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
-> **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6) e a
-> **FASE 23** (E9–E13).
+> **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
+> **FASE 23** (E9–E13) e a **FASE 24** (E14–E17).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -66,6 +66,10 @@
 | **E11 — Reaproveitar patrocinador entre eventos** | FASE 17 (novo) | **FASE 23** — `listSponsorCandidates` + `copySponsorToEvent`: cópia com cota casada pela CHAVE, cadastro oculto e sem valor de contrato, duplicidade recusada |
 | **E12 — Histórico de versões da página** | FASE 17 (novo) | **FASE 23** — tabela `event_page_versions` com snapshot, checksum, motivo e autor; restauração por substituição total, 20 versões por página, deduplicação por checksum |
 | **E13 — Publicação agendada** | FASE 17 (novo) | **FASE 23** — `EventPage.publishAt` decidido na LEITURA (`publishAt <= now`), sem agendador; despublicar limpa a data |
+| **E14 — Biblioteca de mídia** | FASE 23 (novo) | **FASE 24** — tabela `media_assets` com RLS: todo envio (capa, logotipos, galeria) passa a registrar autor, tamanho, checksum e finalidade; mesma imagem é reaproveitada e a exclusão **confere o uso** antes de apagar |
+| **E15 — Patrocinador copiado não acompanhava a origem** | FASE 23 (novo) | **FASE 24** — `sponsors.sourceSponsorId` + `planSponsorSync`: sincronizar propaga só os dados da empresa (nome, descrição, site, logotipo, contato, documento), preservando cota, contrato, vigência e exibição |
+| **E16 — Sem `unpublishAt`** | FASE 23 (novo) | **FASE 24** — `EventPage.unpublishAt` na MESMA condição de leitura; janela invertida e término vencido são recusados, e o estado `WINDOW_CLOSED` explica a página fora do ar |
+| **E17 — Fuso do agendamento vinha do navegador** | FASE 23 (novo) | **FASE 24** — a data digitada é interpretada no **fuso do EVENTO** (`zonedWallTimeToInstant`, duas passagens, correto em horário de verão), com o fuso viajando em campo oculto e nomeado na mensagem de sucesso |
 
 ---
 
@@ -74,20 +78,20 @@
 | Tema | Itens abertos | Dos quais rápidos (P) | Risco se ficar como está |
 |---|---|---|---|
 | A. Segurança e conformidade | 4 | 0 | Alto — arquivos sem varredura; assinatura de certificado ainda simétrica |
-| B. Confiabilidade e operação | 5 | 1 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
-| C. Quotas e billing | 2 | 1 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
-| D. Comunicação e comunidade | 6 | 1 | Alto para adoção — não há um único e-mail; convite é manual |
-| E. Jornada do participante | 8 | 3 | Médio — atrito e listas sem paginação; a mídia do evento não tem biblioteca própria |
-| F. Gamificação | 5 | 2 | Baixo — mecânicas já existem sem gatilho automático |
-| G. Sorteios | 6 | 2 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
-| H. Design e acessibilidade | 4 | 2 | Baixo — aparência consistente; composição heterogênea |
+| B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
+| C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
+| D. Comunicação e comunidade | 6 | 3¹ | Alto para adoção — não há um único e-mail; convite é manual |
+| E. Jornada do participante | 7 | 2 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca |
+| F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
+| G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
+| H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **41** | **12** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23, mais o que cada uma declarou de novo) |
+| **Total** | **40** | **12** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+8+5+6+4+1 = 41), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+6+7+5+6+4+1 = 40), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13, a FASE 17 acrescentou
-> E9–E13 e a FASE 23 acrescentou E14–E17).
+> E9–E13, a FASE 23 acrescentou E14–E17 e a FASE 24 acrescentou E18–E20).
 >
 > **Correção de contagem (FASE 23):** o total anterior dizia 46 com o tema E valendo 13,
 > mas a tabela de E tinha NOVE linhas (E1, E2, E7, E8, E9–E13) — o número foi escrito a
@@ -95,6 +99,13 @@
 > quitados nesta, a tabela de E ficou com oito itens e o consolidado voltou a 41. O rodapé
 > anterior já registrava esse mesmo tipo de erro ("dizia 40 enquanto a soma dava 44"); a
 > regra continua sendo **contar as linhas**, não somar de cabeça.
+>
+> **Correção de contagem (FASE 24):** a coluna "rápidos (P)" foi **recontada a partir da
+> coluna "Esforço"** de cada tabela, porque a distribuição por tema não batia com as linhas
+> (dizia B=1, C=1, F=2 e H=2, quando as tabelas têm B=3, C=0, F=0 e H=1). O total por acaso
+> já era 12 e continua 12 — o que estava errado era onde os itens estavam. A marca **¹**
+> em D lembra que os três itens rápidos de comunicação (D3, D5, D6) são rápidos **só depois
+> de D1**, que é esforço G: a F15 continua sendo a fase grande que destrava as outras.
 
 ---
 
@@ -150,10 +161,9 @@
 | E2 | **Paginação das listagens públicas** | F3, F4, F7 | Eventos e submissões carregam tudo (limite 100–200); só o diretório pagina | Degrada na casa dos milhares | M | Sim |
 | E7 | **Validação de certificados em lote** | F6 | Serviço existe; falta a tela que confere uma lista de códigos | Contratação verifica um por um | P | Sim |
 | E8 | **Exportação de certificados em ZIP** | F6 | Nada no código (`zip|archiver|jszip` = 0) | Organizador baixa um a um | M | Sim |
-| E14 | **Biblioteca de mídia (tabela de arquivos)** | FASE 23 (novo) | O bucket é a biblioteca: não há registro do arquivo, reuso nem exclusão; o alvo `GALLERY` devolve a URL ao formulário | Imagem enviada e não usada fica sem referência; a mesma foto duas vezes ocupa dois objetos | P | Sim |
-| E15 | **Patrocinador copiado não acompanha a origem** | FASE 23 (novo) | A cópia é uma CÓPIA (ADR-105), não um vínculo N:N entre evento e patrocinador | Corrigir o site de um patrocinador em uma edição não corrige as outras | M | Decorrente |
-| E16 | **Sem `unpublishAt` (janela de exibição)** | FASE 23 (novo) | A página entra no ar sozinha, mas não sai; encerrar exige ação manual | Campanha com data de término exige alguém despublicando no dia | P | Sim |
-| E17 | **Fuso do agendamento vem do navegador** | FASE 23 (novo) | O `FormData` de `<input type="datetime-local">` não traz o fuso; a data é lida na hora local do PROCESSO (UTC em produção) — a tela mostra a data gravada para conferência | Agendamento pode sair deslocado em algumas horas para quem não está em UTC | M | Sim |
+| E18 | **Miniaturas no acervo de mídia** | FASE 24 (novo) | A lista do acervo carrega a imagem INTEIRA para desenhar um quadrado pequeno; falta gerar (ou servir) uma miniatura | Acervo com 20 fotos de 3 MB baixa dezenas de MB só para abrir a tela | M | Sim |
+| E19 | **Busca e filtro no acervo de mídia** | FASE 24 (novo) | A listagem traz as 200 mais recentes, sem filtro por tipo, evento ou "em uso" (a tela mostra o uso, não filtra por ele) | Acervo grande exige rolar e comparar a olho | P | Sim |
+| E20 | **Sincronizar todas as cópias de uma vez** | FASE 24 (novo) | A sincronia é por patrocinador (ADR-111); falta aplicar a mesma origem a todas as cópias de uma vez | Instituição com muitas edições sincroniza uma cópia por vez | M | Sim |
 
 ### F. Gamificação
 
@@ -210,7 +220,8 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | **F21 — Ciclo de vida do membro e storage** | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | Fecha o que a FASE 14 declarou em aberto: a plataforma vincula, mas ninguém remove pela interface; a quota de storage é registrada e não aplicada |
 | **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
 | ~~**F23 — Conteúdo e mídia**~~ | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | **Concluída como FASE 23** — `docs/fase-23-conteudo-e-midia.md`. A página pública virou componente compartilhado, e o histórico exigiu a primeira tabela nova desde a FASE 16 |
-| **F24 — Mídia e agendamento** | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | O que a FASE 23 declarou em aberto: são consequências diretas das decisões que ela tomou (cópia em vez de vínculo, bucket como biblioteca, leitura em vez de agendador) |
+| ~~**F24 — Mídia e agendamento**~~ | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | **Concluída como FASE 24** — `docs/fase-24-midia-e-agendamento.md`. O bucket deixou de ser a biblioteca: a imagem passou a ter registro, com reaproveitamento por checksum e exclusão que confere o uso |
+| **F25 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (storage) ou num mutirão de meio dia |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -263,6 +274,17 @@ eventos, o histórico de versões com restauração e a publicação agendada. O
 novas da fase (E14–E17) — todas consequências diretas das decisões tomadas ali: cópia em vez
 de vínculo entre evento e patrocinador, bucket como biblioteca de mídia e visibilidade
 decidida na leitura (sem agendador).
+
+### Fase de mídia e agendamento executada na FASE 24 (concluído)
+
+Os quatro itens que a FASE 23 declarou em aberto (E14–E17) foram implementados na FASE 24: a
+biblioteca de mídia com reaproveitamento e exclusão consciente do uso, a sincronia do
+patrocinador copiado, a janela de exibição (entrada **e** saída) e a interpretação da data
+agendada no fuso do evento. O registro está em
+[`docs/fase-24-midia-e-agendamento.md`](fase-24-midia-e-agendamento.md), que declara as
+dívidas novas da fase (E18–E20) e a fronteira que ela **não** cruzou de propósito: o acervo
+mede o armazenamento, mas a quota do plano continua sem ser aplicada — decisão de produto
+que pertence à F21 junto com o resto do ciclo de vida do membro (dívida C4).
 
 ---
 

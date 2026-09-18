@@ -20,6 +20,8 @@
  */
 import { z } from 'zod';
 
+import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cores
 // ───────────────────────────────────────────────────────────────────────────────
@@ -591,13 +593,17 @@ export function summarizeBlockContent(type: PageBlockType, content: unknown): st
  * `SCHEDULED` é um estado PRÓPRIO, e não "publicada com data": a diferença aparece
  * na tela (o organizador precisa ver que ainda falta chegar a hora) e na leitura
  * pública (a consulta considera a data).
+ *
+ * `WINDOW_CLOSED` (FASE 24) é o fim da janela: a página continua configurada e
+ * publicada, mas a data de término já passou e ela saiu do ar sozinha.
  */
-export type PublicationState = 'DRAFT' | 'SCHEDULED' | 'PUBLISHED';
+export type PublicationState = 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'WINDOW_CLOSED';
 
 export const PUBLICATION_STATE_LABELS: Record<PublicationState, string> = {
   DRAFT: 'Rascunho — não aparece para visitantes',
   SCHEDULED: 'Agendada — entra no ar sozinha na data',
   PUBLISHED: 'Publicada — os visitantes estão vendo',
+  WINDOW_CLOSED: 'Fora do ar pela data de término — a página saiu sozinha',
 };
 
 export interface PublicationPlanInput {
@@ -605,7 +611,15 @@ export interface PublicationPlanInput {
   publishNow: boolean;
   /** Data/hora escolhida para entrar no ar (opcional). */
   publishAt: Date | null;
+  /** Data/hora escolhida para sair do ar (opcional) — FASE 24. */
+  unpublishAt?: Date | null;
   now: Date;
+  /**
+   * Fuso usado nas mensagens (o do evento). Não afeta a decisão — as datas já
+   * chegam como instantes — mas é o que faz a mensagem dizer a hora que o
+   * organizador digitou.
+   */
+  timeZone?: string;
 }
 
 export type PublicationPlan =
@@ -616,6 +630,8 @@ export type PublicationPlan =
       isPublished: boolean;
       /** O que deve ser GRAVADO em `publishAt`. */
       publishAt: Date | null;
+      /** O que deve ser GRAVADO em `unpublishAt`. */
+      unpublishAt: Date | null;
       message: string;
     }
   | { ok: false; message: string };
@@ -624,21 +640,28 @@ export type PublicationPlan =
  * Decide o que gravar a partir do que o organizador pediu.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- *  AS TRÊS REGRAS, E O DEFEITO QUE CADA UMA EVITA
+ *  AS CINCO REGRAS, E O DEFEITO QUE CADA UMA EVITA
  * ─────────────────────────────────────────────────────────────────────────────
  *  1. **Publicar agora e agendar ao mesmo tempo é recusado.** Os dois pedidos são
  *     incompatíveis e o sistema não deve escolher por conta própria qual deles vale.
- *  2. **Despublicar LIMPA a data.** Sem isto, a condição de visibilidade
+ *  2. **Despublicar LIMPA as datas.** Sem isto, a condição de visibilidade
  *     (`isPublished || publishAt <= now`) republicaria a página no instante
  *     seguinte: o organizador tira do ar e ela volta sozinha, porque a data
  *     agendada já passou. É o defeito mais fácil de escrever e o mais difícil de
  *     entender depois.
- *  3. **Data no passado é publicação imediata.** Uma data que já passou não agenda
- *     nada; tratá-la como erro faria o organizador redigitar, tratá-la como
- *     "agendada no passado" deixaria a página fora do ar para sempre.
+ *  3. **Data de entrada no passado é publicação imediata.** Uma data que já passou
+ *     não agenda nada; tratá-la como erro faria o organizador redigitar, tratá-la
+ *     como "agendada no passado" deixaria a página fora do ar para sempre.
+ *  4. **Término antes do início é recusado** (FASE 24). Uma janela invertida nunca
+ *     existiria no ar, e o organizador concluiria que o agendamento "não funciona".
+ *  5. **Término já vencido é recusado ao publicar** (FASE 24). Aceitar gravaria uma
+ *     página "publicada" que nunca aparece — o pior estado possível: a tela diz
+ *     uma coisa e o site faz outra.
  */
 export function planPublication(input: PublicationPlanInput): PublicationPlan {
   const scheduled = input.publishAt;
+  const ends = input.unpublishAt ?? null;
+  const zone = input.timeZone ?? 'UTC';
 
   if (input.publishNow && scheduled && scheduled.getTime() > input.now.getTime()) {
     return {
@@ -647,23 +670,47 @@ export function planPublication(input: PublicationPlanInput): PublicationPlan {
     };
   }
 
+  if (ends) {
+    /**
+     * O início efetivo é o que SERÁ gravado: agora (publicação imediata) ou a data
+     * agendada. Comparar com `now` sempre estaria errado para uma página agendada
+     * que começa no futuro.
+     */
+    const effectiveStart =
+      scheduled && scheduled.getTime() > input.now.getTime() ? scheduled : input.now;
+
+    if (ends.getTime() <= effectiveStart.getTime()) {
+      return {
+        ok: false,
+        message:
+          scheduled && scheduled.getTime() > input.now.getTime()
+            ? 'A data de término precisa ser depois da data de entrada no ar.'
+            : 'A data de término precisa estar no futuro para a página entrar no ar.',
+      };
+    }
+  }
+
   if (scheduled && scheduled.getTime() > input.now.getTime()) {
+    const until = ends ? ` e sai do ar em ${formatDateTime(ends, zone)}` : '';
     return {
       ok: true,
       state: 'SCHEDULED',
       isPublished: false,
       publishAt: scheduled,
-      message: `A página entra no ar em ${formatDateTime(scheduled)} e não precisa de ninguém clicando.`,
+      unpublishAt: ends,
+      message: `A página entra no ar em ${formatDateTime(scheduled, zone)}${until} — sem ninguém clicando.`,
     };
   }
 
   if (input.publishNow || scheduled) {
+    const until = ends ? ` Sai do ar em ${formatDateTime(ends, zone)}.` : '';
     return {
       ok: true,
       state: 'PUBLISHED',
       isPublished: true,
       publishAt: null,
-      message: 'Página publicada — já visível para os visitantes.',
+      unpublishAt: ends,
+      message: `Página publicada — já visível para os visitantes.${until}`,
     };
   }
 
@@ -671,7 +718,9 @@ export function planPublication(input: PublicationPlanInput): PublicationPlan {
     ok: true,
     state: 'DRAFT',
     isPublished: false,
+    // Despublicar limpa as DUAS datas (regra 2).
     publishAt: null,
+    unpublishAt: null,
     message: 'Página salva como rascunho (não aparece para visitantes).',
   };
 }
@@ -679,26 +728,24 @@ export function planPublication(input: PublicationPlanInput): PublicationPlan {
 /**
  * A página está no ar neste instante?
  *
- * A consulta pública aplica a mesma regra no banco (`OR: [isPublished,
- * publishAt <= now]`); esta função existe para a TELA e para a pré-visualização, que
- * precisam explicar o estado sem repetir `if`s espalhados.
+ * A consulta pública aplica a mesma regra no banco (`isPublished || publishAt <=
+ * now`, dentro da janela); esta função existe para a TELA e para a
+ * pré-visualização, que precisam explicar o estado sem repetir `if`s espalhados.
  */
 export function resolvePublicationState(
-  page: { isPublished: boolean; publishAt: Date | null },
+  page: { isPublished: boolean; publishAt: Date | null; unpublishAt?: Date | null },
   now: Date,
 ): PublicationState {
-  if (page.isPublished) return 'PUBLISHED';
-  if (page.publishAt && page.publishAt.getTime() <= now.getTime()) return 'PUBLISHED';
+  const ended = page.unpublishAt ? page.unpublishAt.getTime() <= now.getTime() : false;
+  const started = page.isPublished || (page.publishAt ? page.publishAt.getTime() <= now.getTime() : false);
+
+  if (started) return ended ? 'WINDOW_CLOSED' : 'PUBLISHED';
   if (page.publishAt) return 'SCHEDULED';
   return 'DRAFT';
 }
 
-function formatDateTime(date: Date): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-    timeZone: 'UTC',
-  }).format(date);
+function formatDateTime(date: Date, timeZone: string): string {
+  return formatZonedDateTime(date, timeZone);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

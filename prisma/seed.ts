@@ -1224,6 +1224,7 @@ async function main() {
     }
 
     const agendadaPara = days(7);
+    const saiDoArEm = days(21);
     const agendamento = await savePageSettings({
       tenantId: fiocruzId,
       eventId: simposioFiocruz,
@@ -1232,10 +1233,18 @@ async function main() {
       metaDescription: 'Pesquisa em saúde coletiva: mesas-redondas e apresentação de trabalhos.',
       isPublished: false,
       publishAt: agendadaPara,
+      /**
+       * Janela de exibição completa (FASE 24, item E16): a página entra no ar sozinha
+       * e sai sozinha. É o estado que mais precisa de demonstração — sem uma data de
+       * término visível, ninguém descobre que o recurso existe.
+       */
+      unpublishAt: saiDoArEm,
     });
 
     agendamentoDemo = agendamento.ok
-      ? `${agendamento.publication} para ${agendadaPara.toISOString().slice(0, 16).replace('T', ' ')} UTC`
+      ? `${agendamento.publication} de ${agendadaPara.toISOString().slice(0, 10)} a ${saiDoArEm
+          .toISOString()
+          .slice(0, 10)}`
       : `falhou: ${agendamento.message}`;
   }
 
@@ -1295,6 +1304,10 @@ async function main() {
   console.log(`    ${versoesDemo} versão(ões) no histórico da página do congresso (restauráveis no editor)`);
   console.log(`    Pré-visualização do rascunho: .../eventos/<id>/pagina/previa`);
   console.log(`    Página do simpósio: ${agendamentoDemo}`);
+  console.log(`\n  Biblioteca de mídia (FASE 24):`);
+  console.log(`    .../administracao/eventos/<id>/pagina/midia  (acervo da instituição)`);
+  console.log(`    Capa, logotipos e imagens de galeria entram no acervo automaticamente;`);
+  console.log(`    o mesmo arquivo enviado duas vezes é reaproveitado (mesmo checksum).`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

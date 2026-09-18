@@ -396,3 +396,75 @@ function normalizeName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Sincronizar uma cópia com a origem (FASE 24, item E15)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Campos que são da EMPRESA e podem ser sincronizados da origem.
+ *
+ * O que fica de fora, e por quê:
+ *   • `tierId` — a cota é do evento (o Ouro de uma edição pode não existir na outra);
+ *   • valor e vigência do contrato — renegociados a cada edição;
+ *   • `isActive`, `displayOrder` — decisão de exibição de cada evento.
+ *
+ * Sincronizar só o que é da empresa mantém a promessa do modelo: a cópia é um
+ * cadastro independente COM um vínculo, e não uma referência compartilhada.
+ */
+export const SPONSOR_SYNC_FIELDS = [
+  'name',
+  'description',
+  'websiteUrl',
+  'logoUrl',
+  'contactName',
+  'contactEmail',
+  'contactPhone',
+  'taxId',
+] as const;
+
+export interface SponsorSyncSource {
+  name: string;
+  description: string | null;
+  websiteUrl: string | null;
+  logoUrl: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  taxId: string | null;
+}
+
+export interface SponsorSyncPlan {
+  /** Campos que mudariam, com o valor de antes e o de depois. */
+  changes: Record<string, { from: string | null; to: string | null }>;
+  /** Nada a fazer? (a tela evita uma viagem ao servidor sem efeito) */
+  isEmpty: boolean;
+}
+
+/**
+ * Compara a origem com a cópia e devolve o que mudaria.
+ *
+ * A comparação é campo a campo porque a ação precisa dizer O QUE vai mudar antes de
+ * mudar — sincronizar é sobrescrever o cadastro do evento, e o organizador tem
+ * direito de saber que o telefone de contato vai ser trocado pelo da origem.
+ */
+export function planSponsorSync(
+  source: SponsorSyncSource,
+  target: SponsorSyncSource,
+): SponsorSyncPlan {
+  const changes: Record<string, { from: string | null; to: string | null }> = {};
+
+  for (const field of SPONSOR_SYNC_FIELDS) {
+    const from = normalizeSyncValue(target[field]);
+    const to = normalizeSyncValue(source[field]);
+
+    if (from !== to) changes[field] = { from, to };
+  }
+
+  return { changes, isEmpty: Object.keys(changes).length === 0 };
+}
+
+/** Texto vazio e ausente são a mesma coisa aqui (o formulário devolve string vazia). */
+function normalizeSyncValue(value: string | null | undefined): string | null {
+  const text = (value ?? '').trim();
+  return text.length > 0 ? text : null;
+}

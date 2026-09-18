@@ -205,6 +205,8 @@ export interface PublicEventDetail extends PublicEventSummary {
     isPublished: boolean;
     /** Data agendada para entrar no ar — `null` quando não há agendamento. */
     publishAt: Date | null;
+    /** Data agendada para SAIR do ar (janela de exibição, FASE 24). */
+    unpublishAt: Date | null;
     metaTitle: string | null;
     metaDescription: string | null;
     blocks: {
@@ -369,17 +371,34 @@ async function loadEventDetail(
         },
         pages: {
           /**
-           * Página do evento: publicada AGORA ou agendada para já.
+           * Página do evento: DENTRO DA JANELA e já publicada.
            *
-           * `publishAt <= now` é o que faz a publicação agendada existir sem job. A
-           * pré-visualização pede a página de qualquer forma (`includeUnpublishedPage`),
-           * porque o rascunho é justamente o que ela mostra.
+           * ─────────────────────────────────────────────────────────────────────
+           *  A JANELA É DECIDIDA NA LEITURA (FASES 23 e 24)
+           * ─────────────────────────────────────────────────────────────────────
+           *  Entrar no ar (`publishAt <= now`) e sair do ar (`unpublishAt > now`)
+           *  são comparados com o relógio do banco, sem agendador — a plataforma não
+           *  tem scheduler, e um job que não roda falharia em silêncio justamente no
+           *  dia que importa. Uma promoção vencida publicada é pior do que uma
+           *  promoção atrasada.
+           *
+           *  As três condições, em português:
+           *    (1) publicada por decisão explícita OU com data de entrada vencida;
+           *    (2) sem data de entrada futura (agendada ainda não aparece);
+           *    (3) sem data de término vencida.
+           *
+           *  A pré-visualização ignora tudo isso (`includeUnpublishedPage`), porque
+           *  é justamente o estado atual que ela mostra.
            */
           where: options.includeUnpublishedPage
             ? { deletedAt: null }
             : {
                 deletedAt: null,
-                OR: [{ isPublished: true }, { publishAt: { lte: now } }],
+                AND: [
+                  { OR: [{ isPublished: true }, { publishAt: { lte: now } }] },
+                  { OR: [{ publishAt: null }, { publishAt: { lte: now } }] },
+                  { OR: [{ unpublishAt: null }, { unpublishAt: { gt: now } }] },
+                ],
               },
           orderBy: [{ isHome: 'desc' }, { displayOrder: 'asc' }],
           take: 1,
@@ -388,6 +407,7 @@ async function loadEventDetail(
             title: true,
             isPublished: true,
             publishAt: true,
+            unpublishAt: true,
             metaTitle: true,
             metaDescription: true,
             blocks: {
@@ -500,6 +520,7 @@ async function loadEventDetail(
           title: page.title,
           isPublished: page.isPublished,
           publishAt: page.publishAt,
+          unpublishAt: page.unpublishAt,
           metaTitle: page.metaTitle,
           metaDescription: page.metaDescription,
           blocks: page.blocks,
@@ -584,3 +605,4 @@ export async function getPublicActivity(
     activity,
   };
 }
+

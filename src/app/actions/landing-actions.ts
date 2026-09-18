@@ -42,6 +42,8 @@ import {
 } from '@/lib/admin/landing-service';
 import { confirmAssetUpload, requestAssetUpload } from '@/lib/admin/asset-service';
 import { restorePageVersion } from '@/lib/admin/page-version-service';
+import { deleteMediaAsset } from '@/lib/admin/media-asset-service';
+import { isValidTimeZone, zonedWallTimeToInstant } from '@/domain/events/scheduling-rules';
 
 export interface LandingActionState {
   ok: boolean;
@@ -201,30 +203,51 @@ const pageSettingsSchema = z.object({
   isPublished: z.coerce.boolean().default(false),
   /** `datetime-local` — vazio significa "sem agendamento". */
   publishAt: z.string().trim().max(32).optional(),
+  /** `datetime-local` — vazio significa "sem data de término" (FASE 24). */
+  unpublishAt: z.string().trim().max(32).optional(),
+  /**
+   * Fuso do EVENTO, enviado em campo oculto (FASE 24, item E17).
+   *
+   * É o fuso em que a data digitada deve ser interpretada. Vem do formulário (e não
+   * de uma consulta) porque é ele que a tela mostrou ao organizador: usar outro
+   * valor aqui gravaria uma hora diferente da que ele viu.
+   */
+  eventTimezone: z.string().trim().max(64).optional(),
   theme: themeSchema,
 });
 
 /**
- * Converte `<input type="datetime-local">` em data.
+ * Converte `<input type="datetime-local">` em instante, NO FUSO DO EVENTO.
  *
- * O valor chega como `AAAA-MM-DDTHH:MM`, na hora LOCAL do navegador — que é como o
- * organizador pensa ("seis da tarde"). `new Date(...)` na string sem fuso usa a hora
- * local do PROCESSO, e em produção o processo está em UTC: o agendamento sairia três
- * horas deslocado e o sintoma ("a página entrou no ar mais cedo") não apontaria para
- * cá.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O DEFEITO QUE ESTA FUNÇÃO CORRIGE (item E17)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 23 o valor era lido com `new Date(texto)`, que interpreta a hora de
+ *  parede no fuso do PROCESSO — UTC em produção. O organizador digitava "seis da
+ *  tarde" e a página entrava no ar às três da tarde, três horas antes, sem erro e
+ *  sem nada na tela explicando por quê.
  *
- * Não há como receber o fuso do navegador por `FormData`, então a decisão é
- * documentada e visível: a tela mostra a data/hora escolhida de volta depois de
- * salvar, para o organizador conferir o que foi gravado. (A alternativa — enviar o
- * fuso em campo oculto — depende de JavaScript no cliente, que este formulário não
- * usa.)
+ *  Agora a hora de parede é convertida a partir do fuso do evento. Sem fuso válido
+ *  no formulário (JavaScript desabilitado, valor adulterado), caímos em UTC e a
+ *  mensagem de sucesso diz qual fuso foi usado — o organizador confere o que foi
+ *  gravado em vez de descobrir depois.
  */
-function toScheduledDate(value: FormDataEntryValue | null): Date | undefined {
+function toScheduledDate(
+  value: FormDataEntryValue | null,
+  timeZone: string,
+): { ok: true; date: Date | undefined } | { ok: false; message: string } {
   const text = nullable(value);
-  if (!text) return undefined;
+  if (!text) return { ok: true, date: undefined };
 
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  const date = zonedWallTimeToInstant(text, timeZone);
+  if (!date) {
+    return {
+      ok: false,
+      message: `A data "${text}" não é válida (use o formato do campo, ex.: 2026-12-01T18:00).`,
+    };
+  }
+
+  return { ok: true, date };
 }
 
 /**
@@ -254,6 +277,8 @@ export async function savePageSettingsAction(
     metaDescription: nullable(formData.get('metaDescription')) ?? undefined,
     isPublished: formData.get('isPublished') === 'on',
     publishAt: nullable(formData.get('publishAt')) ?? undefined,
+    unpublishAt: nullable(formData.get('unpublishAt')) ?? undefined,
+    eventTimezone: nullable(formData.get('eventTimezone')) ?? undefined,
     theme: {
       ...colors,
       colorMode: formData.get('colorMode') || 'light',
@@ -277,6 +302,20 @@ export async function savePageSettingsAction(
   const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
+  /**
+   * O fuso informado é validado antes de qualquer uso. Um fuso inválido no campo
+   * oculto (formulário adulterado, evento antigo sem fuso) NÃO pode virar data
+   * errada em silêncio: caímos em UTC e a mensagem dirá isso.
+   */
+  const requestedZone = parsed.data.eventTimezone ?? '';
+  const timeZone = isValidTimeZone(requestedZone) ? requestedZone : 'UTC';
+
+  const publishAt = toScheduledDate(formData.get('publishAt'), timeZone);
+  if (!publishAt.ok) return { ok: false, code: 'INVALID_INPUT', message: publishAt.message };
+
+  const unpublishAt = toScheduledDate(formData.get('unpublishAt'), timeZone);
+  if (!unpublishAt.ok) return { ok: false, code: 'INVALID_INPUT', message: unpublishAt.message };
+
   const result = await savePageSettings({
     tenantId: context.tenantId,
     eventId: parsed.data.eventId,
@@ -285,7 +324,8 @@ export async function savePageSettingsAction(
     metaTitle: parsed.data.metaTitle ?? null,
     metaDescription: parsed.data.metaDescription ?? null,
     isPublished: parsed.data.isPublished,
-    publishAt: toScheduledDate(formData.get('publishAt')) ?? null,
+    publishAt: publishAt.date ?? null,
+    unpublishAt: unpublishAt.date ?? null,
     theme: parsed.data.theme,
   });
 
@@ -296,10 +336,17 @@ export async function savePageSettingsAction(
   /**
    * A mensagem vem do DOMÍNIO (`planPublication`), e não daqui: é ele que sabe se a
    * página ficou publicada, agendada ou rascunho — e a explicação de cada caso (por
-   * que a data foi limpa, quando a página entra no ar) precisa ser a mesma em todos
-   * os caminhos que salvam a página.
+   * que as datas foram limpas, quando a página entra e sai do ar) precisa ser a
+   * mesma em todos os caminhos que salvam a página.
+   *
+   * O fuso entra na mensagem porque é a única forma de o organizador CONFERIR a
+   * conversão: "01/12 18:00" só significa algo se ele souber em que fuso foi lido.
    */
-  return { ok: true, message: result.message, data: { publication: result.publication } };
+  return {
+    ok: true,
+    message: `${result.message} (horário em ${timeZone}.)`,
+    data: { publication: result.publication, timeZone },
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -583,6 +630,52 @@ export async function restorePageVersionAction(
     message: `Versão restaurada (${result.blockCount} bloco(s)). O estado de publicação não mudou.`,
     data: { pageId: result.pageId, blockCount: result.blockCount },
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Biblioteca de mídia (FASE 24, item E14)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Remove uma imagem do acervo.
+ *
+ * A permissão é `page:manage` porque o acervo é o material da página. E o serviço
+ * RECUSA quando a imagem está em uso — apagar uma imagem publicada deixaria a página
+ * com um ícone quebrado, e o organizador não saberia por quê.
+ */
+export async function deleteMediaAssetAction(
+  _prev: LandingActionState | null,
+  formData: FormData,
+): Promise<LandingActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      assetId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      assetId: formData.get('assetId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  if (!context.ok) return context.state;
+
+  const result = await deleteMediaAsset({
+    tenantId: context.tenantId,
+    actorId: context.userId,
+    assetId: parsed.data.assetId,
+  });
+
+  if (!result.ok) return result;
+
+  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+
+  return { ok: true, message: 'Imagem removida do acervo.' };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

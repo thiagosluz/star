@@ -71,6 +71,12 @@ export interface PageSnapshot {
   isPublished: boolean;
   /** ISO 8601 ou `null`. `Date` não sobrevive ao `Json` do banco de forma estável. */
   publishAt: string | null;
+  /**
+   * Fim da janela de exibição (FASE 24). Entra no snapshot para o histórico poder
+   * dizer quando a página saiu do ar — e para o checksum distinguir duas versões
+   * que só diferem na data de término.
+   */
+  unpublishAt: string | null;
   blocks: SnapshotBlock[];
 }
 
@@ -126,6 +132,7 @@ export interface SnapshotSummary {
   types: PageBlockType[];
   isPublished: boolean;
   publishAt: string | null;
+  unpublishAt: string | null;
 }
 
 /**
@@ -155,6 +162,7 @@ export function summarizeSnapshot(snapshot: unknown): SnapshotSummary {
     types,
     isPublished: source.isPublished === true,
     publishAt: typeof source.publishAt === 'string' ? source.publishAt : null,
+    unpublishAt: typeof source.unpublishAt === 'string' ? source.unpublishAt : null,
   };
 }
 

@@ -33,6 +33,7 @@ import {
   isAlreadySponsored,
   maskTaxId,
   nextSlugCandidate,
+  planSponsorSync,
   planSponsorCopy,
   slugifySponsorName,
   sortSponsorsForDisplay,
@@ -81,6 +82,9 @@ export interface SponsorRow {
   logoUrl: string | null;
   websiteUrl: string | null;
   description: string | null;
+  /** Cadastro de origem, quando esta cópia veio de outra edição (FASE 24). */
+  sourceSponsorId: string | null;
+  sourceName: string | null;
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
@@ -154,6 +158,8 @@ export async function listSponsorBoard(
           contractEnd: true,
           displayOrder: true,
           isActive: true,
+          sourceSponsorId: true,
+          source: { select: { name: true } },
           tier: { select: { name: true, rank: true } },
         },
       }),
@@ -219,6 +225,8 @@ export async function listSponsorBoard(
         contractStateLabel: CONTRACT_STATE_LABELS[state],
         displayOrder: raw.displayOrder,
         isActive: raw.isActive,
+        sourceSponsorId: raw.sourceSponsorId,
+        sourceName: raw.source?.name ?? null,
       };
     });
 
@@ -939,6 +947,13 @@ export async function copySponsorToEvent(input: CopySponsorInput): Promise<
           contactEmail: plan.contactEmail,
           contactPhone: plan.contactPhone,
           taxId: plan.taxId,
+          /**
+           * Vínculo com a ORIGEM (FASE 24, item E15): a cópia continua sendo um
+           * cadastro independente — cota, valor e vigência são do evento —, mas passa
+           * a saber de onde veio, o que permite SINCRONIZAR os dados da empresa
+           * quando o site ou o logotipo mudarem na origem.
+           */
+          sourceSponsorId: source.id,
           // Valor do contrato NÃO é copiado: cada edição tem o seu.
           contractValueCents: null,
           displayOrder: plan.displayOrder,
@@ -977,6 +992,178 @@ export async function copySponsorToEvent(input: CopySponsorInput): Promise<
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Sincronizar uma cópia com a origem (FASE 24, item E15)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface SponsorSyncInput {
+  tenantId: string;
+  actorId: string;
+  sponsorId: string;
+}
+
+/**
+ * Reaplica na cópia os dados que são da EMPRESA, trazendo-os da origem.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE SINCRONIZAR, E NÃO COMPARTILHAR
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Compartilhar a linha (uma tabela de vínculo) faria o histórico de uma edição
+ *  mudar quando a outra fosse editada — e contrato, valor e vigência são de cada
+ *  edição. Sincronizar é explícito: o organizador decide quando propagar, vê o que
+ *  vai mudar, e nada muda sozinho.
+ *
+ *  A origem é lida SEMPRE do banco (nunca do formulário): quem sincroniza não
+ *  escolhe para onde os dados vão, só que eles venham de onde o cadastro diz.
+ */
+export async function syncSponsorFromSource(
+  input: SponsorSyncInput,
+): Promise<
+  SponsorResult<{
+    sponsorId: string;
+    sourceName: string;
+    changedFields: readonly string[];
+    empty: boolean;
+  }>
+> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const sponsor = await tx.sponsor.findFirst({
+        where: { id: input.sponsorId, tenantId: input.tenantId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          websiteUrl: true,
+          logoUrl: true,
+          contactName: true,
+          contactEmail: true,
+          contactPhone: true,
+          taxId: true,
+          sourceSponsorId: true,
+        },
+      });
+
+      if (!sponsor) {
+        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Patrocinador não encontrado.' };
+      }
+
+      if (!sponsor.sourceSponsorId) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message: 'Este patrocinador não foi copiado de outra edição.',
+        };
+      }
+
+      const source = await tx.sponsor.findFirst({
+        where: { id: sponsor.sourceSponsorId, tenantId: input.tenantId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          websiteUrl: true,
+          logoUrl: true,
+          contactName: true,
+          contactEmail: true,
+          contactPhone: true,
+          taxId: true,
+        },
+      });
+
+      /**
+       * Origem removida ou de outra instituição: o vínculo é DESSFEITO e a resposta
+       * explica. Manter um vínculo pendurado faria a tela oferecer um botão que
+       * nunca funciona.
+       */
+      if (!source) {
+        await tx.sponsor.update({
+          where: { id: sponsor.id },
+          data: { sourceSponsorId: null },
+        });
+
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message:
+            'O cadastro de origem não existe mais (removido ou de outra instituição). O vínculo foi desfeito.',
+        };
+      }
+
+      const plan = planSponsorSync(
+        {
+          name: source.name,
+          description: source.description,
+          websiteUrl: source.websiteUrl,
+          logoUrl: source.logoUrl,
+          contactName: source.contactName,
+          contactEmail: source.contactEmail,
+          contactPhone: source.contactPhone,
+          taxId: source.taxId,
+        },
+        {
+          name: sponsor.name,
+          description: sponsor.description,
+          websiteUrl: sponsor.websiteUrl,
+          logoUrl: sponsor.logoUrl,
+          contactName: sponsor.contactName,
+          contactEmail: sponsor.contactEmail,
+          contactPhone: sponsor.contactPhone,
+          taxId: sponsor.taxId,
+        },
+      );
+
+      if (plan.isEmpty) {
+        return {
+          ok: true as const,
+          sponsorId: sponsor.id,
+          sourceName: source.name,
+          changedFields: [],
+          empty: true,
+        };
+      }
+
+      await tx.sponsor.update({
+        where: { id: sponsor.id },
+        data: {
+          name: source.name,
+          description: source.description,
+          websiteUrl: source.websiteUrl,
+          logoUrl: source.logoUrl,
+          contactName: source.contactName,
+          contactEmail: source.contactEmail,
+          contactPhone: source.contactPhone,
+          ...(source.taxId ? { taxId: source.taxId } : {}),
+        },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'sponsor',
+          entityId: sponsor.id,
+          changes: {
+            ...plan.changes,
+            syncedFrom: { from: null, to: source.id },
+          },
+        },
+        tx,
+      );
+
+      return {
+        ok: true as const,
+        sponsorId: sponsor.id,
+        sourceName: source.name,
+        changedFields: Object.keys(plan.changes),
+        empty: false,
+      };
+    });
+  } catch (error) {
+    return toFailure('syncSponsorFromSource', error, 'Não foi possível sincronizar o patrocinador.');
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Falhas
 // ───────────────────────────────────────────────────────────────────────────────
 function toFailure<T>(
@@ -1005,3 +1192,4 @@ function toFailure<T>(
   console.error(`[sponsor] falha em ${operation}: ${errorMessage(error)}`);
   return { ok: false as const, code: 'INTERNAL' as const, message: fallbackMessage };
 }
+

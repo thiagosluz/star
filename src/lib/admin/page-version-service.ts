@@ -53,6 +53,7 @@ interface PageRowForSnapshot {
   metaDescription: string | null;
   isPublished: boolean;
   publishAt: Date | null;
+  unpublishAt: Date | null;
   blocks: {
     id: string;
     type: string;
@@ -77,6 +78,7 @@ function toSnapshot(page: PageRowForSnapshot): PageSnapshot {
     metaDescription: page.metaDescription,
     isPublished: page.isPublished,
     publishAt: page.publishAt?.toISOString() ?? null,
+    unpublishAt: page.unpublishAt?.toISOString() ?? null,
     blocks: [...page.blocks]
       .sort((a, b) => {
         if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
@@ -131,6 +133,7 @@ export async function appendVersion(
       metaDescription: true,
       isPublished: true,
       publishAt: true,
+      unpublishAt: true,
       blocks: SNAPSHOT_BLOCK_SELECT,
     },
   });
@@ -228,6 +231,7 @@ export async function listPageVersions(
         metaDescription: true,
         isPublished: true,
         publishAt: true,
+        unpublishAt: true,
         blocks: SNAPSHOT_BLOCK_SELECT,
         versions: {
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -395,3 +399,4 @@ export async function restorePageVersion(input: {
     };
   }
 }
+

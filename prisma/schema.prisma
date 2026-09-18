@@ -536,6 +536,7 @@ model Tenant {
   eventPages        EventPage[]
   eventPageVersions EventPageVersion[]
   pageBlocks        PageBlock[]
+  mediaAssets       MediaAsset[]
   sponsorTiers      SponsorTier[]
   sponsors          Sponsor[]
   registrations     Registration[]
@@ -640,6 +641,8 @@ model User {
   rafflePrizesDelivered RaffleWinner[] @relation("RafflePrizeDeliveredBy")
   /// Versões de página pública que esta pessoa gravou — FASE 23.
   eventPageVersions EventPageVersion[] @relation("EventPageVersionCreatedBy")
+  /// Imagens que esta pessoa enviou — FASE 24.
+  mediaAssetsUploaded MediaAsset[] @relation("MediaAssetUploadedBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -894,6 +897,7 @@ model Event {
   userCards       UserCard[]
   xpTransactions  XpTransaction[]
   raffles         Raffle[]
+  mediaAssets     MediaAsset[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -1066,6 +1070,13 @@ model EventPage {
   /// ninguém perceber no dia. Assim, o banco é a fonte da verdade do horário.
   publishAt DateTime? @db.Timestamptz(6)
 
+  /// Data/hora em que a página SAI do ar sozinha (FASE 24).
+  ///
+  /// Fecha a janela de exibição pelo mesmo mecanismo da entrada: decidido na
+  /// leitura, no relógio do banco. Sem isso, uma campanha com data de término
+  /// exigia alguém despublicando no dia.
+  unpublishAt DateTime? @db.Timestamptz(6)
+
   /// SEO
   metaTitle       String? @db.VarChar(200)
   metaDescription String? @db.VarChar(320)
@@ -1089,6 +1100,57 @@ model EventPage {
   @@index([tenantId, eventId, isPublished])
   @@index([tenantId, eventId, publishAt])
   @@map("event_pages")
+}
+
+/// Imagem enviada pela instituição e servida pelo bucket público (FASE 24).
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE A TABELA EXISTE, SE O ARQUIVO JÁ ESTAVA NO BUCKET
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Até a FASE 23 o bucket ERA a biblioteca: a URL era gravada na coluna do evento
+///  (capa, logotipo) ou no `content` do bloco (galeria), e ninguém sabia o que
+///  havia sido enviado, por quem, quanto pesava nem o que era usado onde. O efeito
+///  prático: imagem enviada e não usada virava lixo pago e invisível, e apagar um
+///  arquivo em uso era impossível de decidir.
+///
+///  Aqui o arquivo passa a ter REGISTRO. A URL continua sendo a referência (o
+///  conteúdo do bloco aceita imagens externas também), então a exclusão precisa
+///  conferir o USO antes — ver `media-asset-service.ts`.
+model MediaAsset {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  /// Evento em que a imagem foi enviada. Nulo = acervo da instituição.
+  eventId  String? @db.Uuid
+
+  bucket    String @db.VarChar(120)
+  /// Chave do objeto no bucket (única por instituição).
+  objectKey String @db.VarChar(1024)
+  /// URL pública — é ela que a página renderiza.
+  url       String @db.VarChar(1024)
+
+  fileName  String @db.VarChar(300)
+  mimeType  String @db.VarChar(120)
+  sizeBytes Int
+  /// SHA-256 do conteúdo: permite detectar o MESMO arquivo enviado duas vezes.
+  checksum  String @db.Char(64)
+
+  /// Finalidade do envio (`COVER`, `LOGO`, `SPONSOR_LOGO`, `GALLERY`).
+  target String @db.VarChar(32)
+
+  uploadedById String? @db.Uuid
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event      Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  uploadedBy User?     @relation("MediaAssetUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, objectKey])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, eventId])
+  @@index([tenantId, checksum])
+  @@map("media_assets")
 }
 
 /// Fotografia do conteúdo da página num instante (FASE 23, item E12).
@@ -1213,6 +1275,15 @@ model Sponsor {
   contractStart      DateTime? @db.Timestamptz(6)
   contractEnd        DateTime? @db.Timestamptz(6)
 
+  /// Cadastro de ORIGEM, quando este foi copiado de outra edição (FASE 24).
+  ///
+  /// A cópia da FASE 23 criava um cadastro independente, e corrigir o site na
+  /// edição de origem não alcançava as demais. O vínculo NÃO transforma a cópia em
+  /// referência — cada edição tem contrato e valor próprios —, mas permite
+  /// SINCRONIZAR os dados que são da empresa: nome, descrição, site, logotipo e
+  /// contato.
+  sourceSponsorId String? @db.Uuid
+
   displayOrder Int  @default(0)
   metadata     Json @default("{}")
 
@@ -1223,10 +1294,15 @@ model Sponsor {
   tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   tier   SponsorTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
+  /// Cadastro do qual este foi copiado.
+  source Sponsor?     @relation("SponsorCopiedFrom", fields: [sourceSponsorId], references: [id], onDelete: SetNull)
+  /// Cópias geradas a partir deste cadastro.
+  copies Sponsor[]    @relation("SponsorCopiedFrom")
 
   @@unique([tenantId, slug])
   @@index([tenantId, eventId, isActive])
   @@index([tierId])
+  @@index([sourceSponsorId])
   @@map("sponsors")
 }
 
@@ -2140,3 +2216,4 @@ model AuditLog {
   @@index([userId, createdAt])
   @@map("audit_logs")
 }
+

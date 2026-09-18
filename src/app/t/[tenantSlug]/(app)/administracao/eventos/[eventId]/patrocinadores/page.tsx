@@ -26,6 +26,7 @@ import {
   saveSponsorAction,
   saveTierAction,
   setSponsorActiveAction,
+  syncSponsorAction,
 } from '@/app/actions/sponsor-actions';
 
 export const metadata = { title: 'Patrocinadores do evento' };
@@ -321,6 +322,16 @@ export default async function EventSponsorsPage({
                           Documento {sponsor.taxIdMasked}
                         </p>
                       ) : null}
+                      {/*
+                        Vínculo com a edição de origem (FASE 24, item E15): a cópia
+                        continua sendo um cadastro do evento, mas agora sabe de onde
+                        veio e pode ser sincronizada com um clique.
+                      */}
+                      {sponsor.sourceSponsorId ? (
+                        <p className="text-xs text-muted-foreground" data-testid={`sponsor-source-${sponsor.id}`}>
+                          Copiado de {sponsor.sourceName ?? 'outra edição'}
+                        </p>
+                      ) : null}
                       {sponsor.websiteUrl ? (
                         <a
                           href={sponsor.websiteUrl}
@@ -335,6 +346,18 @@ export default async function EventSponsorsPage({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1">
+                    {sponsor.sourceSponsorId ? (
+                      <InlineActionForm
+                        action={syncSponsorAction}
+                        submitLabel="Sincronizar"
+                        testId={`sync-sponsor-${sponsor.id}`}
+                      >
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="sponsorId" value={sponsor.id} />
+                      </InlineActionForm>
+                    ) : null}
+
                     <InlineActionForm
                       action={setSponsorActiveAction}
                       submitLabel={sponsor.isActive ? 'Ocultar' : 'Exibir'}

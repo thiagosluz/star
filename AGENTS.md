@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 14, 16, 17 e 23 (F15 pendente: Comunicação)
-Testes ................. 1117 (Vitest: unit + integração) + 64 (Playwright E2E)
-ADRs ................... 106 (numeração GLOBAL e sequencial — a próxima é ADR-107)
+Fases concluídas ........ 1 a 14, 16, 17, 23 e 24 (F15 pendente: Comunicação)
+Testes ................. 1157 (Vitest: unit + integração) + 69 (Playwright E2E)
+ADRs ................... 112 (numeração GLOBAL e sequencial — a próxima é ADR-113)
 Permissões ............. 54 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 32 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 33 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1117+ testes passando
+npm test              # esperado: 1157+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 64+ testes passando
+npm run test:e2e      # esperado: 69+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -162,6 +162,9 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 34 | `setInputFiles` num input de arquivo ESCONDIDO cujo `onChange` depende de um clique anterior (índice da linha) não dispara nada | Reproduza o fluxo real: `page.waitForEvent('filechooser')` + clique no botão + `chooser.setFiles(...)`. Definir o arquivo direto pula o estado que o clique monta |
 | 35 | Editar uma migração **depois de aplicada** quebra `prisma migrate dev` ("modified after it was applied") mesmo com o banco correto — o ledger guarda o checksum do conteúdo original | Nunca edite migração aplicada: corrija com migração nova. Para um banco de desenvolvimento fora de sincronia, `migrate deploy` aplica o que falta e `prisma migrate reset --force` reaplica a cadeia inteira, realinhando o ledger (e provando que ela funciona do zero) |
 | 36 | Estado derivado de dois campos (`isPublished` + `publishAt`) precisa de uma regra que LIMPE o segundo | Se "despublicar" só desmarca o primeiro, o segundo (data já vencida) republica no instante seguinte. Encode a transição numa função pura com teste — e faça a tela dizer que a data foi limpa |
+| 37 | A armadilha 34 tem um GÊMEO: assumir que todo input de arquivo é escondido. O `AssetUploader` tem o `<input type="file">` **visível** (escolhe e depois envia), então `waitForEvent('filechooser')` **nunca** dispara e o teste morre no timeout de 60 s | Antes de escrever o E2E de upload, olhe o componente: input visível → `setInputFiles` direto no input; input escondido acionado por clique → `filechooser`. Não existe "o jeito certo" único, e o erro aparece longe da causa |
+| 38 | `new Date('2027-03-10T18:00')` de um `<input type="datetime-local">` **usa o fuso do PROCESSO** (UTC no container): a data gravada sai deslocada em horas, sem erro nenhum, e o teste que só compara "existe uma data" passa | Converta explicitamente no fuso da ENTIDADE (aqui, `Event.timezone`) com `zonedWallTimeToInstant`, em **duas passagens** — o deslocamento depende do instante, que depende do deslocamento, e é isso que faz o horário de verão funcionar. Faça o caminho de volta e o teste conferir o INSTANTE gravado |
+| 39 | Referência por **URL** não tem chave estrangeira: o banco não sabe que uma imagem está em uso, então `DELETE` do registro + do objeto deixa a página pública com ícone quebrado e nenhum erro no log | Se a referência é uma URL (campo livre, conteúdo de bloco, coluna sem FK), a exclusão precisa **procurar o uso** antes — e recusar explicando ONDE. Varra por listagem (uso calculado uma vez) e extraia as URLs do conteúdo em vez de varrer bloco a bloco |
 
 ---
 
@@ -299,6 +302,38 @@ CHAVE, sem valor de contrato e nascendo oculta (ADR-105).
 O alvo `GALLERY` do upload **não grava URL no banco**: ele devolve o endereço ao
 formulário, e o vínculo acontece na validação do conteúdo do bloco (ADR-104).
 
+### Biblioteca de mídia e agendamento (FASE 24)
+
+A imagem deixou de existir só como URL no bucket: **todo envio** (capa, logotipo de
+patrocinador e galeria) registra uma linha em `media_assets`, com autor, tamanho, tipo,
+checksum, finalidade e o evento de origem (`eventId` é só procedência — o acervo é da
+**instituição**). A tela do acervo mostra onde cada imagem é usada, copia a URL e recusa
+excluir o que está em uso.
+
+```
+Acervo ................. /t/<slug>/administracao/eventos/<eventId>/pagina/midia (page:manage)
+Janela de exibição ..... editor da página → "Agendar para entrar no ar" + "Sair do ar em"
+Sincronizar cópia ...... patrocinadores → "Sincronizar" (só em cadastro copiado)
+```
+
+Quatro regras que quebram fácil: **a referência é a URL, não uma chave estrangeira**
+(o conteúdo do bloco aceita imagem externa), então a exclusão **procura o uso** em vez de
+confiar no banco e recusa dizendo onde a imagem aparece (ADR-108 / armadilha 39);
+**mesmo checksum + tamanho + tipo reaproveita o registro** e apaga o objeto recém-enviado
+(ADR-107) — reencodar a mesma foto gera outro objeto, e isso é esperado; **a janela de
+exibição é decidida na LEITURA** com `isPublished OR publishAt <= now` **E**
+`publishAt` futuro **E** `unpublishAt` futuro, sem agendador, com término antes do início
+ou já vencido **recusado** e o estado `WINDOW_CLOSED` explicando a página fora do ar
+(ADR-109); e **a data do agendamento é interpretada no fuso do EVENTO**, não no do
+processo (UTC no container) nem no do navegador — o fuso viaja em campo oculto, a
+conversão é em duas passagens (horário de verão) e a mensagem de sucesso diz qual fuso foi
+usado (ADR-110 / armadilha 38).
+
+Sincronizar cópia é **explícito e limitado** (`SPONSOR_SYNC_FIELDS`): nome, descrição,
+site, logotipo, contato e documento — nunca cota, valor de contrato, vigência, ordem ou
+exibição (ADR-111). O acervo **mede** o armazenamento (`sumMediaBytes`), mas **não aplica**
+a quota do plano: impor o limite é decisão de produto da F21 (ADR-112 / dívida C4).
+
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e
@@ -336,8 +371,10 @@ Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, 4 atividades, 1 trilha co
 rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, 2 certificados
 emitidos (códigos impressos no fim do seed), **1 sorteio apurado**, **1 página pública
 publicada** (5 blocos, tema próprio, 1 cota com 2 patrocinadores), **11 versões no
-histórico** dessa página e a página do simpósio **agendada** para daqui a 7 dias.
-Percursos em `README.md` §6.
+histórico** dessa página, a página do simpósio com **janela completa de exibição**
+(entra no ar em 7 dias, sai em 21 — datas no fuso `America/Bahia` do evento) e o
+**acervo de mídia** da instituição com as imagens de capa, logotipos e galeria
+registradas. Percursos em `README.md` §6.
 
 ---
 
@@ -414,21 +451,23 @@ tests/{unit,integration,e2e}
 | 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
 | 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
 | 23 | Conteúdo e mídia (E9–E13: pré-visualização do rascunho pelo mesmo componente da página pública, upload de imagem na galeria, cópia de patrocinador entre eventos, histórico de versões com restauração, publicação agendada decidida na leitura) | ✅ |
+| 24 | Mídia e agendamento (E14–E17: biblioteca de mídia com reaproveitamento por checksum e exclusão que confere o uso, sincronia do patrocinador copiado, janela de exibição com `unpublishAt`, data agendada no fuso do evento) | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
-> identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17 e a FASE 23
-> foram entregues antes da F15 — o humano escolheu o tema pelo nome dele. A tabela acima
-> segue a ordem cronológica; a numeração é a do tema.
+> identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23 e a
+> FASE 24 foram entregues antes da F15 — o humano escolheu o tema pelo nome dele. A tabela
+> acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**41 itens abertos**, soma das
-tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17 e 23
+**Dívidas técnicas:** o levantamento consolidado (**40 itens abertos**, soma das
+tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17, 23 e 24
 quitaram, mais o que cada uma declarou de novo; verificado no código, com esforço e
 fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
 ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
 (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
 de segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco ·
-~~F23 Conteúdo e mídia~~ (entregue) · F24 Mídia e agendamento) está em
+~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
+F25 Acervo de mídia: miniaturas, busca e sincronia em lote) está em
 **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
@@ -437,7 +476,7 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-23-*.md` — a F15 segue pendente).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-24-midia-e-agendamento.md` — a F15 segue pendente).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →
