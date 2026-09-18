@@ -213,11 +213,31 @@ export interface PublicEventDetail extends PublicEventSummary {
     }[];
   } | null;
   activities: PublicActivitySummary[];
+  /**
+   * Trilhas ATIVAS da chamada de trabalhos.
+   *
+   * Existem aqui desde a FASE 17 para o bloco `TRACKS` da landing page: a página
+   * precisa mostrar o que será aceito, e a contagem de submissões é o sinal de que
+   * a chamada está viva. Nada de dado sensível — nome, descrição e cor.
+   */
+  tracks: {
+    id: string;
+    slug: string;
+    name: string;
+    description: string | null;
+    color: string | null;
+    submissionCount: number;
+  }[];
   sponsors: {
     id: string;
     name: string;
     logoUrl: string | null;
     websiteUrl: string | null;
+    /**
+     * Cota do patrocinador. O `tierId` é o que permite o bloco `SPONSORS` mostrar
+     * apenas uma cota (ex.: só os Diamantes) quando o organizador escolhe isso.
+     */
+    tierId: string | null;
     tierName: string | null;
     tierKey: string | null;
     displayOrder: number;
@@ -329,8 +349,21 @@ export async function getPublicEvent(
             name: true,
             logoUrl: true,
             websiteUrl: true,
+            tierId: true,
             displayOrder: true,
             tier: { select: { name: true, key: true, rank: true } },
+          },
+        },
+        tracks: {
+          where: { isActive: true, deletedAt: null },
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            description: true,
+            color: true,
+            _count: { select: { submissions: true } },
           },
         },
       },
@@ -355,10 +388,20 @@ export async function getPublicEvent(
       name: sponsor.name,
       logoUrl: sponsor.logoUrl,
       websiteUrl: sponsor.websiteUrl,
+      tierId: sponsor.tierId,
       tierName: sponsor.tier?.name ?? null,
       tierKey: sponsor.tier?.key ?? null,
       displayOrder: sponsor.displayOrder,
     }));
+
+  const tracks = event.tracks.map((track) => ({
+    id: track.id,
+    slug: track.slug,
+    name: track.name,
+    description: track.description,
+    color: track.color,
+    submissionCount: track._count.submissions,
+  }));
 
   return {
     id: event.id,
@@ -424,6 +467,7 @@ export async function getPublicEvent(
       ),
     })),
     sponsors,
+    tracks,
   };
 }
 

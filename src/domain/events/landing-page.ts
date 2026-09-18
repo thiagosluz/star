@@ -274,6 +274,315 @@ export const BLOCK_LABELS: Record<PageBlockType, string> = {
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Editor da página: conteúdo dos blocos (FASE 17, item E3)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * A FASE 3 definiu o CONTRATO do tema e deixou `content` como `Json` livre,
+ * validado pela camada de aplicação. A FASE 17 é quem escreve esse conteúdo, então
+ * é aqui que o contrato passa a existir de verdade — um schema por tipo de bloco.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE VALIDAR NO DOMÍNIO, E NÃO NO FORMULÁRIO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O conteúdo gravado é renderizado na página PÚBLICA do evento. Um `content`
+ *  inválido não é um detalhe cosmético: ele é publicado. Validar só na tela
+ *  deixaria a porta aberta para qualquer outro caminho de escrita (script,
+ *  Server Action chamada diretamente, dado importado).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  AS DUAS FAMÍLIAS DE CAMPO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  • TEXTO (`labelSchema`, `textSchema`) — sai do React escapado, então o risco é
+ *    só tamanho; o limite existe para o bloco não virar um dump que quebra o
+ *    layout.
+ *  • URL (`safeUrlSchema`) — vira `src`/`href` na página pública. É por isso que a
+ *    allowlist de protocolo (http/https) vive no domínio, e não no formulário.
+ */
+
+/** Teto de blocos por página: uma página com 200 blocos não é uma landing page. */
+export const MAX_PAGE_BLOCKS = 30;
+export const MAX_FAQ_ITEMS = 30;
+export const MAX_GALLERY_IMAGES = 24;
+export const MAX_BLOCK_TEXT_LENGTH = 8000;
+
+/** Passo entre blocos: deixa espaço para inserir no meio sem renumerar tudo. */
+export const BLOCK_ORDER_STEP = 10;
+
+const labelSchema = z.string().trim().max(200);
+const textSchema = z.string().trim().max(MAX_BLOCK_TEXT_LENGTH);
+
+const faqItemSchema = z.object({
+  question: z.string().trim().min(1).max(300),
+  answer: z.string().trim().min(1).max(2000),
+});
+
+const galleryItemSchema = z.object({
+  url: safeUrlSchema,
+  caption: labelSchema.optional(),
+});
+
+/**
+ * Conteúdo aceito por cada tipo de bloco.
+ *
+ * Blocos que extraem os dados do próprio evento (agenda, local, trilhas,
+ * palestrantes) aceitam só um título opcional: o corpo deles é o dado real, não
+ * texto livre — o organizador não deve poder escrever uma agenda que não existe.
+ *
+ * Listas aceitam VAZIO de propósito: um bloco recém-criado ainda não tem itens, e
+ * exigir o primeiro item transformaria "adicionar bloco" em erro de validação. O
+ * item, quando existe, é estrito.
+ */
+export const blockContentSchemas: Record<PageBlockType, z.ZodType> = {
+  HERO: z.object({
+    headline: labelSchema.optional(),
+    subheadline: labelSchema.optional(),
+    ctaLabel: labelSchema.optional(),
+    ctaUrl: safeUrlSchema.optional(),
+  }),
+  RICH_TEXT: z.object({ title: labelSchema.optional(), body: textSchema.default('') }),
+  SCHEDULE: z.object({ title: labelSchema.optional() }),
+  SPEAKERS: z.object({ title: labelSchema.optional() }),
+  SPONSORS: z.object({
+    title: labelSchema.optional(),
+    /** Filtra por cota: o bloco mostra só os patrocinadores daquela cota. */
+    tierId: z.string().uuid().optional(),
+  }),
+  FAQ: z.object({
+    title: labelSchema.optional(),
+    items: z.array(faqItemSchema).max(MAX_FAQ_ITEMS).default([]),
+  }),
+  GALLERY: z.object({
+    title: labelSchema.optional(),
+    images: z.array(galleryItemSchema).max(MAX_GALLERY_IMAGES).default([]),
+  }),
+  COUNTDOWN: z.object({ title: labelSchema.optional(), label: labelSchema.optional() }),
+  VENUE_MAP: z.object({ title: labelSchema.optional() }),
+  REGISTRATION_CTA: z.object({
+    title: labelSchema.optional(),
+    description: z.string().trim().max(600).optional(),
+    ctaLabel: labelSchema.optional(),
+  }),
+  TRACKS: z.object({ title: labelSchema.optional() }),
+  CUSTOM_HTML: z.object({
+    title: labelSchema.optional(),
+    /** Renderizado como TEXTO — ver `SANDBOXED_BLOCK_TYPES`. */
+    html: z.string().trim().max(4000).default(''),
+  }),
+};
+
+/** Explicação de cada bloco para o seletor do editor (pt-BR, para quem opera). */
+export const BLOCK_DESCRIPTIONS: Record<PageBlockType, string> = {
+  HERO: 'Cabeçalho de destaque. A página do evento já abre com um cabeçalho montado a partir dos dados do evento.',
+  RICH_TEXT: 'Texto livre sobre o evento. Aceita parágrafos; HTML não é interpretado.',
+  SCHEDULE: 'Agenda com as atividades cadastradas, com link direto para a inscrição.',
+  SPEAKERS: 'Palestrantes das atividades, sem repetir nomes.',
+  SPONSORS: 'Logotipos dos patrocinadores, agrupados por cota.',
+  FAQ: 'Perguntas frequentes em pares pergunta/resposta.',
+  GALLERY: 'Galeria de imagens por URL (edições anteriores, local, divulgação).',
+  COUNTDOWN: 'Contagem regressiva até o início do evento.',
+  VENUE_MAP: 'Local, endereço e link da transmissão online.',
+  REGISTRATION_CTA: 'Chamada para ação de inscrição.',
+  TRACKS: 'Trilhas temáticas da chamada de trabalhos.',
+  CUSTOM_HTML: 'Bloco de código exibido como TEXTO, por segurança. HTML não é interpretado.',
+};
+
+/**
+ * Tipos que o editor oferece mas a página NÃO desenha com conteúdo próprio.
+ *
+ * Existe para a tela poder dizer a verdade: oferecer um bloco que não aparece é
+ * um formulário que mente. Hoje só o `HERO`, porque o cabeçalho do evento já
+ * cumpre esse papel — e este é o motivo pelo qual ele não tem renderizador.
+ */
+export const BLOCK_WITHOUT_RENDERER: ReadonlySet<PageBlockType> = new Set<PageBlockType>([
+  'HERO',
+]);
+
+/** Conteúdo inicial de um bloco novo: válido e vazio (o renderizador o ignora). */
+export const DEFAULT_BLOCK_CONTENT: Record<PageBlockType, unknown> = {
+  HERO: {},
+  RICH_TEXT: { title: 'Sobre o evento', body: '' },
+  SCHEDULE: {},
+  SPEAKERS: {},
+  SPONSORS: {},
+  FAQ: { items: [] },
+  GALLERY: { images: [] },
+  COUNTDOWN: {},
+  VENUE_MAP: {},
+  REGISTRATION_CTA: {},
+  TRACKS: {},
+  CUSTOM_HTML: { html: '' },
+};
+
+export type BlockContentValidation =
+  | { ok: true; content: Record<string, unknown> }
+  | { ok: false; errors: readonly string[] };
+
+/**
+ * Normaliza e valida o conteúdo de um bloco.
+ *
+ * A normalização acontece ANTES da validação, e não é generosidade: o formulário
+ * de perguntas frequentes envia todas as linhas que existem na tela, inclusive as
+ * que o organizador deixou em branco ao clicar em "adicionar". Descartar linhas
+ * totalmente vazias é o que separa "não preenchi esta" de "preenchi pela metade" —
+ * a segunda continua sendo erro, com a linha identificada.
+ */
+export function validateBlockContent(type: PageBlockType, raw: unknown): BlockContentValidation {
+  const schema = blockContentSchemas[type];
+
+  const normalized = dropBlankListRows(type, raw ?? {});
+  const parsed = schema.safeParse(normalized);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      errors: parsed.error.issues.map((issue) => {
+        const path = issue.path.join('.');
+        return path ? `${path}: ${issue.message}` : issue.message;
+      }),
+    };
+  }
+
+  return { ok: true, content: parsed.data as Record<string, unknown> };
+}
+
+/** Remove itens de lista sem nenhum campo preenchido (ver `validateBlockContent`). */
+function dropBlankListRows(type: PageBlockType, raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+
+  const source = raw as Record<string, unknown>;
+  const listKey = type === 'FAQ' ? 'items' : type === 'GALLERY' ? 'images' : null;
+  if (!listKey) return source;
+
+  const list = source[listKey];
+  if (!Array.isArray(list)) return source;
+
+  const kept = list.filter((entry) => {
+    if (typeof entry !== 'object' || entry === null) return false;
+    return Object.values(entry as Record<string, unknown>).some(
+      (value) => typeof value === 'string' && value.trim().length > 0,
+    );
+  });
+
+  return { ...source, [listKey]: kept };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Ordem dos blocos
+// ───────────────────────────────────────────────────────────────────────────────
+export interface OrderedBlockRef {
+  id: string;
+  displayOrder: number;
+}
+
+/**
+ * Ordem canônica dos blocos, com o MESMO critério da renderização
+ * (`displayOrder`, desempate estável por id).
+ *
+ * A tela usa esta função para numerar a lista; se ela divergisse de
+ * `selectRenderableBlocks`, o editor mostraria uma ordem e a página renderizaria
+ * outra — o tipo de defeito que só aparece depois de publicar.
+ */
+export function orderBlockIds(blocks: readonly OrderedBlockRef[]): string[] {
+  return [...blocks]
+    .sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return a.id.localeCompare(b.id);
+    })
+    .map((block) => block.id);
+}
+
+/**
+ * Move um bloco uma posição para cima ou para baixo.
+ *
+ * A lista resultante é a ORDEM COMPLETA — não uma troca de dois valores de
+ * `displayOrder`. Motivo: subir um bloco sobre outro que tem a mesma ordem (dado
+ * antigo, com empate) não muda nada visível, e o organizador clica de novo
+ * achando que a tela travou. Reescrever a ordem inteira é idempotente e sempre
+ * visível.
+ */
+export function moveBlockId(
+  order: readonly string[],
+  blockId: string,
+  direction: 'up' | 'down',
+): string[] {
+  const current = [...order];
+  const index = current.indexOf(blockId);
+  if (index < 0) return current;
+
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= current.length) return current;
+
+  const [moved] = current.splice(index, 1);
+  if (moved === undefined) return current;
+
+  current.splice(target, 0, moved);
+  return current;
+}
+
+/** Converte uma ordem em `displayOrder` — de `BLOCK_ORDER_STEP` em `BLOCK_ORDER_STEP`. */
+export function assignDisplayOrder(
+  order: readonly string[],
+): { id: string; displayOrder: number }[] {
+  return order.map((id, index) => ({ id, displayOrder: index * BLOCK_ORDER_STEP }));
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Resumo do bloco para a lista do editor
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Uma linha explicando o que o bloco tem — sem abrir cada um para conferir.
+ *
+ * Um bloco vazio é dito explicitamente: ele existe na configuração e NÃO aparece
+ * na página (o renderizador descarta conteúdo vazio), e descobrir isso olhando a
+ * página publicada é tarde.
+ */
+export function summarizeBlockContent(type: PageBlockType, content: unknown): string {
+  const source =
+    typeof content === 'object' && content !== null && !Array.isArray(content)
+      ? (content as Record<string, unknown>)
+      : {};
+
+  const title = typeof source.title === 'string' ? source.title.trim() : '';
+
+  switch (type) {
+    case 'RICH_TEXT': {
+      const body = typeof source.body === 'string' ? source.body.trim() : '';
+      return body.length > 0 ? `${body.length} caractere(s) de texto` : 'vazio — não aparece na página';
+    }
+    case 'FAQ': {
+      const count = Array.isArray(source.items) ? source.items.length : 0;
+      return count > 0 ? `${count} pergunta(s)` : 'nenhuma pergunta ainda';
+    }
+    case 'GALLERY': {
+      const count = Array.isArray(source.images) ? source.images.length : 0;
+      return count > 0 ? `${count} imagem(ns)` : 'nenhuma imagem ainda';
+    }
+    case 'CUSTOM_HTML': {
+      const html = typeof source.html === 'string' ? source.html.trim() : '';
+      return html.length > 0 ? 'exibido como texto (HTML não é interpretado)' : 'vazio — não aparece na página';
+    }
+    case 'VENUE_MAP':
+      return title || 'Local e transmissão do evento';
+    case 'SCHEDULE':
+      return title || 'Agenda das atividades cadastradas';
+    case 'SPEAKERS':
+      return title || 'Palestrantes das atividades';
+    case 'TRACKS':
+      return title || 'Trilhas da chamada de trabalhos';
+    case 'SPONSORS':
+      return title || 'Patrocinadores por cota';
+    case 'COUNTDOWN':
+      return title || 'Contagem regressiva para o início';
+    case 'REGISTRATION_CTA':
+      return title || 'Chamada para inscrição';
+    case 'HERO':
+      return 'o cabeçalho do evento já cumpre este papel';
+    default:
+      return title || 'sem configuração';
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  SEO
 // ───────────────────────────────────────────────────────────────────────────────
 export interface EventSeoInput {

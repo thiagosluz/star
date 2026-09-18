@@ -7,7 +7,7 @@
 >
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
-> **FASE 14** (C1, C3, I4) e a **FASE 16** (G1–G7 + F1).
+> **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1) e a **FASE 17** (E3, E4, E5, E6).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -56,6 +56,10 @@
 | **I4 — Lista de membros poluída por participantes** | F10 | **FASE 14** — `MembershipKind` (equipe × público), backfill, contadores separados e tela de equipe |
 | **G1–G7 — Sorteios de ponta a ponta** | F8 | **FASE 16** — suplentes, entrega do prêmio, peso por minutos, commit-reveal, resultado público com nome mascarado, paginação do histórico e prévia ao vivo do credenciamento |
 | **F1 — Gatilhos `REVIEWER_TOP` e `EVENT_ATTENDANCE_FULL`** | F5 | **FASE 16** — presença total concedida no check-out que fecha a última atividade e revisor destaque premiado por ranking com piso |
+| **E3 — Editor visual da landing page** | F7 | **FASE 17** — `landing-service` + editor em `/administracao/eventos/<id>/pagina`, com conteúdo validado por tipo no domínio, ordem reescrita, publicação explícita e composição sugerida |
+| **E4 — Upload de imagem de capa** | F3, F7 | **FASE 17** — upload direto ao bucket público de assets, com allowlist de tipo e verificação da assinatura real do arquivo (`image-rules`) |
+| **E5 — Cadastro de patrocinadores pela UI** | F7 | **FASE 17** — cotas e patrocinadores em `/administracao/eventos/<id>/patrocinadores`, com limite de vagas na transação, logotipo por upload, contrato e documento fiscal mascarado |
+| **E6 — Edição de coautores pela UI** | F4, F7 | **FASE 17** — editor de autoria na tela da submissão, com ordem de crédito reindexada, autor correspondente único, vínculo de conta preservado e edição restrita ao estado editável |
 
 ---
 
@@ -67,18 +71,18 @@
 | B. Confiabilidade e operação | 5 | 1 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 1 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
 | D. Comunicação e comunidade | 6 | 1 | Alto para adoção — não há um único e-mail; convite é manual |
-| E. Jornada do participante | 8 | 3 | Médio — atrito e listas sem paginação |
+| E. Jornada do participante | 13 | 8 | Médio — atrito e listas sem paginação; o editor de página não tem prévia nem biblioteca de mídia |
 | F. Gamificação | 5 | 2 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 2 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 2 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **41** | **12** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16, mais o que cada uma declarou de novo) |
+| **Total** | **46** | **17** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+8+5+6+4+1 = 41), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+6+13+5+6+4+1 = 46), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
-> B6–B9, a FASE 14 acrescentou C4–C5 e a FASE 16 acrescentou G8–G13). A versão anterior
-> deste rodapé dizia "40" enquanto a soma das tabelas dava 44 — a conta que vale é a das
-> tabelas.
+> B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13 e a FASE 17 acrescentou
+> E9–E13). A versão anterior deste rodapé dizia "40" enquanto a soma das tabelas dava 44 —
+> a conta que vale é a das tabelas.
 
 ---
 
@@ -132,12 +136,13 @@
 |---|---|---|---|---|---|---|
 | E1 | **Fila de espera com prazo de confirmação** | F3 | Hoje o promovido é confirmado automaticamente; falta prazo (ex.: 48 h) e promoção do próximo | Vaga fica presa com quem não responde | M | Decorrente |
 | E2 | **Paginação das listagens públicas** | F3, F4, F7 | Eventos e submissões carregam tudo (limite 100–200); só o diretório pagina | Degrada na casa dos milhares | M | Sim |
-| E3 | **Editor visual da landing page** | F7 | `PageBlock`, `themeSchema` e `resolveTheme` prontos desde a F3; falta a UI de composição | Instituição não monta a própria página | G | Sim |
-| E4 | **Upload de imagem de capa** | F3, F7 | `coverImageUrl` existe e é renderizado; falta a tela de upload (storage pronto desde a F4) | Página pública sem imagem própria | P | Sim |
-| E5 | **Cadastro de patrocinadores pela UI** | F7 | `SponsorTier`/`Sponsor` existem e a landing renderiza; `SPONSOR_MANAGE` não tem tela | Bloco de patrocínio inalcançável | M | Sim |
-| E6 | **Edição de coautores pela UI** | F4, F7 | `SubmissionAuthor` é criado no envio; ordem/coautores não são editáveis | Correção exige suporte | M | Sim |
 | E7 | **Validação de certificados em lote** | F6 | Serviço existe; falta a tela que confere uma lista de códigos | Contratação verifica um por um | P | Sim |
 | E8 | **Exportação de certificados em ZIP** | F6 | Nada no código (`zip|archiver|jszip` = 0) | Organizador baixa um a um | M | Sim |
+| E9 | **Pré-visualização da página antes de publicar** | FASE 17 (novo) | O editor monta o rascunho, mas só a publicação o mostra renderizado (`isPublished` filtra a leitura pública desde a F3) | O organizador publica para conferir e despublica — janela em que a versão incompleta fica no ar | M | Sim |
+| E10 | **Upload de imagem dentro do bloco de galeria** | FASE 17 (novo) | O upload entregue cobre capa, logotipo do evento e do patrocinador; `GALLERY` aceita apenas URL http(s) | A instituição precisa hospedar as fotos em outro serviço antes de montar a galeria | P | Sim |
+| E11 | **Reaproveitar patrocinador entre eventos pela tela** | FASE 17 (novo) | O `slug` é único por instituição, mas o cadastro nasce preso a um evento e não há tela de "vincular existente" | Cadastrar o mesmo patrocinador em duas edições exige redigitar os dados (criando um segundo registro) | M | Sim |
+| E12 | **Histórico de versões da página** | FASE 17 (novo) | A trilha registra a mudança com resumo do conteúdo; não existe como voltar a uma versão anterior | Um bloco sobrescrito por engano só volta se alguém tiver guardado o texto | M | Decorrente |
+| E13 | **Publicação agendada da página** | FASE 17 (novo) | Publicar é agora/rascunho; não há data-alvo | Campanha com data marcada exige alguém clicar no dia | P | Sim |
 
 ### F. Gamificação
 
@@ -187,12 +192,13 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | ~~**Quotas e planos**~~ | `maxMembers` aplicado, edição de plano pela UI, distinção participante × membro | C1, C3, I4 | **Concluída como FASE 14** — `docs/fase-14-quotas-e-planos.md` |
 | **F15 — Comunicação** | E-mail transacional + as notificações que dependem dele + convite de membros pela instituição + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | É o maior bloqueio de adoção: sem e-mail, convite é manual e metade das fases futuras fica travada. Destrava A5 e D3–D6 de uma vez — e fecha a lacuna que a FASE 14 deixou explícita (convidar de dentro da instituição) |
 | ~~**F16 — Sorteios de ponta a ponta**~~ | Suplentes, entrega de prêmio, pesos, commit-reveal, exibição pública, prévia ao vivo | G1–G7 + F1 | **Concluída como FASE 16** — `docs/fase-16-sorteios-de-ponta-a-ponta.md`. Entregue antes da F15 por decisão do humano: o tema estava maduro e não dependia de e-mail |
-| **F17 — Landing page e patrocínio** | Editor visual, upload de capa, patrocinadores, coautores | E3, E4, E5, E6 | Habilita a instituição a montar a própria vitrine — o maior item de produto ainda ausente |
+| ~~**F17 — Landing page e patrocínio**~~ | Editor visual, upload de capa, patrocinadores, coautores | E3, E4, E5, E6 | **Concluída como FASE 17** — `docs/fase-17-pagina-publica-e-patrocinio.md`. A fase não precisou de migração: o modelo da F3/F4 já previa tudo |
 | **F18 — Segurança de documentos** | Assinatura assimétrica, antivírus, auditoria de leitura, ZIP, validação em lote | A2, A3, A4, E7, E8 | Documento assinado e arquivo varrido: pré-requisito para uso institucional sério |
 | **F19 — Gamificação avançada** | Trocas/crafting, níveis de carta, temporadas, ranking por evento, antifraude de proximidade | F2–F6 | Mecânicas novas; depende de dados reais de uso para calibrar economia |
 | **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições, política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele |
 | **F21 — Ciclo de vida do membro e storage** | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | Fecha o que a FASE 14 declarou em aberto: a plataforma vincula, mas ninguém remove pela interface; a quota de storage é registrada e não aplicada |
 | **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
+| **F23 — Conteúdo e mídia** | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | Fecha o que a FASE 17 declarou em aberto. A prévia é o item de maior valor: hoje se publica para conferir |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -225,6 +231,16 @@ dependia de e-mail e fechava a promessa que a FASE 8 deixou em aberto (o prêmio
 entregue, o resultado não era público e dois gatilhos de carta nunca disparavam). O
 registro está em [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](fase-16-sorteios-de-ponta-a-ponta.md),
 que declara as dívidas novas da fase (G8–G13, na seção G acima).
+
+### Fase de página pública e patrocínio executada na FASE 17 (concluído)
+
+Os quatro itens de **conteúdo do evento** (E3, E4, E5, E6) foram implementados na FASE 17: a
+instituição monta a própria página pública, envia capa e logotipos, cadastra quem patrocina
+e corrige a autoria do trabalho. O registro está em
+[`docs/fase-17-pagina-publica-e-patrocinio.md`](fase-17-pagina-publica-e-patrocinio.md), que
+declara as dívidas novas da fase (E9–E13, na seção E acima) e o motivo pelo qual a fase
+**não teve migração**: `EventPage`, `PageBlock`, `SponsorTier`, `Sponsor` e
+`SubmissionAuthor` já existiam desde as FASES 3 e 4, desenhados e sem uso.
 
 ---
 

@@ -141,6 +141,25 @@ export default async function AdminEventDetailPage({
           >
             Sorteios →
           </Link>
+          {/*
+            Página pública e patrocínio (FASE 17): a vitrine do evento tem editor
+            próprio, e o patrocínio é dado comercial — telas separadas porque
+            exigem permissões diferentes (`page:manage` × `sponsor:manage`).
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/pagina`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="landing-link"
+          >
+            Página pública →
+          </Link>
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/patrocinadores`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="sponsors-link"
+          >
+            Patrocinadores →
+          </Link>
         </p>
       </header>
 

@@ -19,17 +19,20 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { z } from 'zod';
+import { revalidatePath } from 'next/cache';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
+import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   confirmUpload,
   createSubmission,
   requestUpload,
   submitSubmission,
 } from '@/lib/review/submission-service';
+import { saveSubmissionAuthors } from '@/lib/review/author-service';
 import {
   assignReviewer,
   recordDecision,
@@ -429,6 +432,91 @@ export async function submitSubmissionAction(
       ...(reward && reward.xpAwarded > 0 ? { xpAwarded: reward.xpAwarded } : {}),
       ...(reward && reward.cards.length > 0 ? { cards: reward.cards } : {}),
     },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Autoria (coautores) — FASE 17, item E6
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Salva a lista de autores de uma submissão.
+ *
+ * Os campos chegam como LISTAS PARALELAS (`authorName`, `authorEmail`, …), e a
+ * ordem delas É a ordem de crédito. Não é um formato elegante — é o que um
+ * formulário HTML com linhas repetidas consegue enviar sem serializar JSON, e o
+ * domínio (`normalizeAuthors`) reindexa a ordem de qualquer forma.
+ *
+ * A permissão é `submission:update:own` COM posse: o serviço confere, além disso,
+ * que quem edita é o autor que submeteu — um coautor com conta não reescreve a
+ * ordem de crédito dos outros.
+ */
+export async function saveSubmissionAuthorsAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      submissionId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      submissionId: formData.get('submissionId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const context = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
+    requiresOwnership: true,
+  });
+
+  if (!context.ok) return context.state;
+
+  const names = formData.getAll('authorName').map((entry) => String(entry));
+  const emails = formData.getAll('authorEmail').map((entry) => String(entry));
+  const institutions = formData.getAll('authorInstitution').map((entry) => String(entry));
+  const orcids = formData.getAll('authorOrcid').map((entry) => String(entry));
+  const userIds = formData.getAll('authorUserId').map((entry) => String(entry));
+  /** Índice da linha marcada como correspondente (um radio por linha). */
+  const corresponding = String(formData.get('authorCorresponding') ?? '0');
+
+  const authors = names.map((name, index) => ({
+    name: name.trim(),
+    ...(emails[index]?.trim() ? { email: emails[index].trim() } : {}),
+    ...(institutions[index]?.trim() ? { institution: institutions[index].trim() } : {}),
+    ...(orcids[index]?.trim() ? { orcidId: orcids[index].trim() } : {}),
+    ...(userIds[index]?.trim() ? { userId: userIds[index].trim() } : {}),
+    isCorresponding: corresponding === String(index),
+  }));
+
+  const result = await saveSubmissionAuthors({
+    tenantId: context.tenantId,
+    submissionId: parsed.data.submissionId,
+    actorId: context.userId,
+    authors,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  const submissionPath = tenantPath(
+    parsed.data.tenantSlug,
+    `/submissoes/${parsed.data.submissionId}`,
+  );
+  revalidatePath(submissionPath);
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/submissoes'));
+
+  return {
+    ok: true,
+    message: result.changed
+      ? `Autoria atualizada: ${result.count} autor(es).`
+      : 'Nenhuma alteração na autoria.',
+    data: { count: result.count, changed: result.changed },
   };
 }
 

@@ -7,11 +7,18 @@ import {
   getSubmission,
   resolveRubric,
 } from '@/lib/review/submission-service';
+import { getSubmissionAuthors } from '@/lib/review/author-service';
 import { isEditableByAuthor, type SubmissionStatus } from '@/domain/review/submission-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { confirmUploadAction, requestUploadAction, submitSubmissionAction } from '@/app/actions/review-actions';
+import {
+  confirmUploadAction,
+  requestUploadAction,
+  saveSubmissionAuthorsAction,
+  submitSubmissionAction,
+} from '@/app/actions/review-actions';
 import { SubmissionUploader, type UploadKind } from '@/components/review/submission-uploader';
 import { SubmitSubmissionButton } from '@/components/review/submit-submission-button';
+import { AuthorEditor } from '@/components/review/author-editor';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +66,19 @@ export default async function SubmissionDetailPage({
 
   const rubric = await resolveRubric(tenantId, submission.trackId);
   const editable = isEditableByAuthor(submission.status as SubmissionStatus);
+
+  /**
+   * Autoria (FASE 17, item E6).
+   *
+   * Lida por um serviço próprio — e não de `submission.authors` — porque o vínculo
+   * de conta precisa vir junto: sem ele, editar a lista derrubaria o acesso do
+   * coautor ao próprio crédito.
+   */
+  const authorsView = await getSubmissionAuthors({
+    tenantId,
+    submissionId,
+    userId: context.user.id,
+  });
 
   const currentByKind = new Map(
     submission.files
@@ -164,6 +184,24 @@ export default async function SubmissionDetailPage({
           </ul>
         ) : null}
       </section>
+
+      {/* ── Autoria (FASE 17, item E6) ────────────────────────────────────── */}
+      {authorsView ? (
+        <AuthorEditor
+          tenantSlug={tenantSlug}
+          submissionId={submissionId}
+          authors={authorsView.authors.map((author) => ({
+            userId: author.userId,
+            name: author.name,
+            email: author.email,
+            institution: author.institution,
+            orcidId: author.orcidId,
+            isCorresponding: author.isCorresponding,
+          }))}
+          action={saveSubmissionAuthorsAction}
+          editable={authorsView.editable}
+        />
+      ) : null}
 
       {/* ── Artefatos ─────────────────────────────────────────────────────── */}
       <section className="space-y-3">

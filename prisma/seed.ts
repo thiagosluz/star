@@ -37,6 +37,14 @@ import {
   requestCertificate,
 } from '../src/lib/certificates/certificate-service';
 import { createRaffle, drawRaffle } from '../src/lib/raffles/raffle-service';
+import {
+  addPageBlock,
+  ensureHomePage,
+  savePageSettings,
+  updatePageBlock,
+} from '../src/lib/admin/landing-service';
+import { saveSponsor, saveSponsorTier } from '../src/lib/admin/sponsor-service';
+import type { PageBlockType } from '../src/domain/events/landing-page';
 
 const connectionString = process.env.MIGRATE_DATABASE_URL;
 if (!connectionString) {
@@ -1026,6 +1034,156 @@ async function main() {
 
   console.log(`  ✓ sorteio: ${sorteioRealizado}`);
 
+  // ── Página pública e patrocínio (FASE 17) ──────────────────────────────────
+  /**
+   * Executado pelos SERVIÇOS REAIS, e não por `prisma.eventPage.create`.
+   *
+   * É o que garante que o dado de demonstração nasça do mesmo caminho que a tela
+   * usa: se a criação da página publicada só funcionasse por escrita direta, o
+   * seed estaria demonstrando um sistema que não existe.
+   */
+  const pagina = await ensureHomePage({
+    tenantId: ufbaId,
+    eventId: congressoUfba,
+    actorId: ana,
+  });
+
+  let blocosDemo = 0;
+  let patrocinioDemo = 'não configurado';
+
+  if (pagina.ok) {
+    const blocos: { type: PageBlockType; content: Record<string, unknown> }[] = [
+      {
+        type: 'RICH_TEXT',
+        content: {
+          title: 'Sobre o congresso',
+          body:
+            'O Congresso de Tecnologia e Educação reúne pesquisadores, docentes e estudantes para ' +
+            'discutir o uso de tecnologia na sala de aula.\n\n' +
+            'A programação inclui palestras, minicursos e sessões de pôsteres, com certificação ' +
+            'para todas as atividades.',
+        },
+      },
+      {
+        type: 'TRACKS',
+        content: { title: 'Trilhas da chamada de trabalhos' },
+      },
+      {
+        type: 'FAQ',
+        content: {
+          title: 'Perguntas frequentes',
+          items: [
+            {
+              question: 'Preciso me inscrever em cada atividade?',
+              answer: 'Sim. As vagas são por atividade e podem esgotar.',
+            },
+            {
+              question: 'O certificado é emitido automaticamente?',
+              answer:
+                'Sim, após o credenciamento na atividade. Ele fica disponível na área do participante.',
+            },
+          ],
+        },
+      },
+      {
+        type: 'REGISTRATION_CTA',
+        content: {
+          title: 'Garanta sua vaga',
+          description: 'As inscrições estão abertas e as vagas são limitadas por atividade.',
+        },
+      },
+      { type: 'SPONSORS', content: {} },
+    ];
+
+    for (const bloco of blocos) {
+      const criado = await addPageBlock({
+        tenantId: ufbaId,
+        eventId: congressoUfba,
+        actorId: ana,
+        type: bloco.type,
+      });
+
+      if (criado.ok) {
+        // O conteúdo é gravado pelo MESMO caminho da tela (validação por tipo).
+        const atualizado = await updatePageBlock({
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          actorId: ana,
+          blockId: criado.blockId,
+          content: bloco.content,
+        });
+        if (atualizado.ok) blocosDemo += 1;
+      }
+    }
+
+    // Publicar é ato explícito: a página nasce rascunho (ver landing-service).
+    await savePageSettings({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      actorId: ana,
+      title: 'Congresso de Tecnologia e Educação',
+      metaTitle: 'Congresso de Tecnologia e Educação 2026 — UFBA',
+      metaDescription:
+        'Três dias de palestras, minicursos e apresentações sobre tecnologia na educação.',
+      isPublished: true,
+      theme: {
+        primaryColor: '#1d4ed8',
+        radius: 14,
+        fontFamily: 'inter',
+        heroStyle: 'gradient',
+        spacing: 'normal',
+        animation: 'fade',
+        colorMode: 'light',
+      },
+    });
+
+    const cota = await saveSponsorTier({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      actorId: ana,
+      key: 'GOLD',
+      name: 'Ouro',
+      description: 'Cota com logo em destaque na página e estande no evento.',
+      color: '#f59e0b',
+      rank: 10,
+      priceCents: 1_500_000,
+      currency: 'BRL',
+      maxSponsors: 3,
+      benefits: ['Logo na página pública', 'Estande de 9 m²', 'Duas inscrições cortesia'],
+    });
+
+    if (cota.ok) {
+      for (const patrocinador of [
+        { name: 'Instituto de Tecnologia Aberta', websiteUrl: 'https://example.org/ita' },
+        { name: 'Editora Ciência Viva', websiteUrl: 'https://example.org/ciencia-viva' },
+      ]) {
+        await saveSponsor({
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          actorId: ana,
+          name: patrocinador.name,
+          description: 'Patrocinador de demonstração.',
+          websiteUrl: patrocinador.websiteUrl,
+          logoUrl: null,
+          tierId: cota.tierId,
+          contactName: null,
+          contactEmail: null,
+          contactPhone: null,
+          taxId: null,
+          contractValueCents: 1_500_000,
+          contractStart: days(-30),
+          contractEnd: days(120),
+          displayOrder: 0,
+          isActive: true,
+        });
+      }
+
+      patrocinioDemo = '1 cota (Ouro) e 2 patrocinadores';
+    }
+  }
+
+  console.log(`  ✓ página pública: ${blocosDemo} bloco(s) publicados · patrocínio: ${patrocinioDemo}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1063,6 +1221,10 @@ async function main() {
   console.log(`\n  Sorteios (FASE 8):`);
   console.log(`    ${sorteioRealizado}`);
   console.log(`    /t/ufba-demo/administracao/eventos/<id>/sorteios`);
+  console.log(`\n  Página pública e patrocínio (FASE 17):`);
+  console.log(`    ${blocosDemo} bloco(s) e ${patrocinioDemo} publicados em /t/ufba-demo/eventos/congresso-2026`);
+  console.log(`    Editor: /t/ufba-demo/administracao/eventos/<id>/pagina`);
+  console.log(`    Patrocínio: /t/ufba-demo/administracao/eventos/<id>/patrocinadores`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

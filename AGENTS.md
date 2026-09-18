@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 14 e 16 (F15 pendente: Comunicação)
-Testes ................. 921 (Vitest: unit + integração) + 55 (Playwright E2E)
-ADRs ................... 91 (numeração GLOBAL e sequencial — a próxima é ADR-092)
+Fases concluídas ........ 1 a 14, 16 e 17 (F15 pendente: Comunicação)
+Testes ................. 1060 (Vitest: unit + integração) + 59 (Playwright E2E)
+ADRs ................... 99 (numeração GLOBAL e sequencial — a próxima é ADR-100)
 Permissões ............. 54 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 31 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 921+ testes passando
+npm test              # esperado: 1060+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 55+ testes passando
+npm run test:e2e      # esperado: 59+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -154,6 +154,10 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 26 | **Um teste E2E que falha reinicia o worker**: `beforeAll` roda DE NOVO e recria o fixture, então o teste seguinte opera numa instituição vazia e falha por um motivo que não é o dele | Corrija o PRIMEIRO teste que falhou (o resto é cascata) e confirme com um log temporário do estado do banco (`count` = 0 vs `count` global > 0) antes de suspeitar do código de produção |
 | 27 | Ao mudar o **conteúdo assinado** por hash (payload de auditoria, documento canônico), toda verificação antiga passa a acusar adulteração | Versione o payload (`resultVersion`/`validationVersion`), grave a versão junto do hash e reconstrua na versão certa — teste de integração que remonta o payload deve ler a versão do BANCO |
 | 28 | Parâmetro com nome ambíguo (`winnerId` para uma LINHA enquanto a tela manda o id da PESSOA) produz `NOT_FOUND` silencioso | Nomeie pelo que a coluna É (`positionId`) e deixe o teste de integração cruzar o que a UI envia com o que o serviço procura |
+| 29 | Assertiva de E2E do tipo "o último bloco do tipo X está visível" passa apontando para o elemento ANTIGO quando já existe um do mesmo tipo na tela — o teste edita o item errado e a falha só aparece 60 s depois, num locator que parece correto | Ao adicionar um item novo numa lista que já tem itens do mesmo tipo, espere pela CONTAGEM (`toHaveCount(anterior + 1)`) antes de usar `.last()`. Visibilidade não prova que o item novo existe |
+| 30 | `<input type="color">` **não tem estado vazio**: um campo não preenchido envia `#000000` | Para cor OPCIONAL, use campo de texto com amostra; vazio significa "usar o token do sistema". O seletor nativo só serve quando a cor é obrigatória |
+| 31 | Trocar a ordem de duas linhas num índice único (`(submissionId, authorOrder)`) viola a restrição **no meio** da operação — o PostgreSQL verifica a unicidade a cada `UPDATE` | Substitua o conjunto inteiro na mesma transação (`deleteMany` + `createMany`) em vez de atualizar linha a linha; e preserve os vínculos que seriam perdidos na recriação |
+| 32 | Campo opcional de formulário chega como STRING VAZIA, não como ausente: `z.email()` recusa `'  '`, e `?? null` APAGA o valor gravado quando a tela mostra o dado mascarado | Trate vazio como ausente na entrada (`optionalText`) e defina a semântica da escrita: `undefined` = preservar o valor atual, `''` = limpar |
 
 ---
 
@@ -240,6 +244,32 @@ páreo). Os gatilhos de carta de marco (`EVENT_ATTENDANCE_FULL` e `REVIEWER_TOP`
 concedidos por `src/lib/gamification/achievement-service.ts`, com checagem explícita de
 idempotência — `grantCardForTrigger` sozinho AUMENTARIA as cópias da carta.
 
+### Página pública e patrocínio (FASE 17)
+
+A instituição monta a própria vitrine. A página (`EventPage`) **nasce como rascunho** e só
+vai ao ar quando publicada — a leitura pública já filtrava `isPublished` desde a FASE 3.
+Cada bloco (`PageBlock`) tem o conteúdo validado **por tipo** no domínio
+(`blockContentSchemas`), a ordem é **reescrita** ao mover (0, 10, 20…, para o empate não
+virar no-op) e o editor **avisa** quando o bloco está vazio ou quando o tipo não tem
+renderizador (só o `HERO`, porque o cabeçalho do evento já cumpre o papel).
+
+```
+Editor ................. /t/<slug>/administracao/eventos/<eventId>/pagina      (page:manage)
+Patrocínio ............. /t/<slug>/administracao/eventos/<eventId>/patrocinadores (sponsor:manage)
+Autoria ................ /t/<slug>/submissoes/<submissionId> → seção "Autoria"
+```
+
+Três regras que quebram fácil: **imagem é validada pela assinatura real do arquivo** (SVG é
+recusado porque pode conter script, e o tipo GRAVADO é o detectado, não o declarado);
+**`maxSponsors` é aplicado dentro da transação** (é cláusula de contrato, não layout) e
+`taxId` ausente **preserva** o documento já gravado (a tela só mostra a máscara, então
+`?? null` apagaria o CNPJ); e **autoria é substituída por inteiro** (`deleteMany` +
+`createMany`) porque o índice único `(submissionId, authorOrder)` seria violado ao trocar
+duas posições linha a linha — com o vínculo de conta preservado por e-mail.
+
+O tema é do **evento**, em um único lugar (`Event.theme`); `EventPage.theme` segue
+reservado e sem uso, para não existirem duas fontes de verdade para a mesma cor.
+
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e
@@ -275,7 +305,8 @@ do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **lega
 
 Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, 4 atividades, 1 trilha com
 rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, 2 certificados
-emitidos (códigos impressos no fim do seed) e **1 sorteio apurado**. Percursos em
+emitidos (códigos impressos no fim do seed), **1 sorteio apurado** e **1 página pública
+publicada** (5 blocos, tema próprio, 1 cota com 2 patrocinadores). Percursos em
 `README.md` §6.
 
 ---
@@ -351,21 +382,22 @@ tests/{unit,integration,e2e}
 | 14 | Quotas e planos (C1, C3, I4: quota de membros aplicada, plano e quotas editáveis pela UI, membro × participante no modelo e nas listas) | ✅ |
 | 15 | Comunicação (D1–D6, A5: e-mail transacional, notificações, convite de membros, verificação de e-mail) | ⏳ |
 | 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
-| 17+ | *a definir pelo humano* | ⏳ |
+| 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
+| 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
-> identifica o tema, não a ordem de entrega. Por isso a FASE 16 foi entregue antes da
-> F15 — o humano escolheu o tema pelo nome dele. A tabela acima segue a ordem
-> cronológica; a numeração é a do tema.
+> identifica o tema, não a ordem de entrega. Por isso a FASE 16 e a FASE 17 foram
+> entregues antes da F15 — o humano escolheu o tema pelo nome dele. A tabela acima segue
+> a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**41 itens abertos**, soma das
-tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14 e 16
+**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**, soma das
+tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16 e 17
 quitaram, mais o que cada uma declarou de novo; verificado no código, com esforço e
 fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
-~~F16 Sorteios de ponta a ponta~~ (entregue) · F17 Landing page e patrocínio ·
-F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade de
-segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco)
-está em **`docs/dividas-tecnicas.md`**.
+~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
+(entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
+de segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco ·
+F23 Conteúdo e mídia) está em **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
 
@@ -373,7 +405,7 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-16-*.md` — a F15 segue pendente).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-17-*.md` — a F15 segue pendente).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

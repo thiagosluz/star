@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import {
+  ArrowRight,
   CalendarDays,
   Clock,
   MapPin,
@@ -225,14 +226,28 @@ export function ActivityCard({
 
 function SponsorsBlock({
   sponsors,
+  content,
 }: {
   sponsors: PublicEventDetail['sponsors'];
+  content: unknown;
 }) {
-  if (sponsors.length === 0) return null;
+  /**
+   * Filtro por cota, opcional (FASE 17).
+   *
+   * Sem filtro, o bloco mostra TODOS os patrocinadores do evento. Com
+   * `content.tierId`, mostra só aquela cota — é o que permite uma página com uma
+   * faixa "Patrocínio Diamante" no topo e o bloco completo no rodapé.
+   */
+  const tierId = readString(content, 'tierId');
+  const visible = tierId ? sponsors.filter((sponsor) => sponsor.tierId === tierId) : sponsors;
+
+  if (visible.length === 0) return null;
+
+  const title = readString(content, 'title');
 
   // Agrupa por cota preservando a ordem de rank vinda do repositório.
   const byTier = new Map<string, PublicEventDetail['sponsors']>();
-  for (const sponsor of sponsors) {
+  for (const sponsor of visible) {
     const key = sponsor.tierName ?? 'Patrocinadores';
     const list = byTier.get(key) ?? [];
     list.push(sponsor);
@@ -241,7 +256,7 @@ function SponsorsBlock({
 
   return (
     <Section id="patrocinadores">
-      <SectionHeading eyebrow="Apoio" title="Patrocinadores" />
+      <SectionHeading eyebrow="Apoio" title={title ?? 'Patrocinadores'} />
       <div className="space-y-[calc(1.5rem*var(--ef-spacing-scale,1))]">
         {[...byTier.entries()].map(([tier, list]) => (
           <div key={tier} className="space-y-3">
@@ -450,6 +465,158 @@ function VenueBlock({ event }: { event: PublicEventDetail }) {
   );
 }
 
+/**
+ * Palestrantes — derivados das ATIVIDADES (FASE 17).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE NÃO HÁ CADASTRO DE PALESTRANTE AQUI
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A atividade já guarda seus palestrantes (`ActivitySpeaker`), e é lá que a
+ *  instituição os cadastra. Um segundo cadastro para a landing page criaria duas
+ *  listas da mesma pessoa — e a divergência entre elas apareceria justamente na
+ *  página pública. Este bloco LÊ o que existe; não inventa uma fonte nova.
+ *
+ *  Sem repetição: quem fala em três atividades aparece uma vez.
+ */
+function SpeakersBlock({
+  activities,
+  content,
+}: {
+  activities: PublicActivitySummary[];
+  content: unknown;
+}) {
+  const seen = new Set<string>();
+  const speakers: { name: string; titles: string[] }[] = [];
+
+  for (const activity of activities) {
+    for (const name of activity.speakerNames) {
+      const key = name.toLowerCase();
+      const existing = speakers.find((entry) => entry.name.toLowerCase() === key);
+      if (existing) {
+        if (!existing.titles.includes(activity.title)) existing.titles.push(activity.title);
+        continue;
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      speakers.push({ name, titles: [activity.title] });
+    }
+  }
+
+  if (speakers.length === 0) return null;
+
+  const title = readString(content, 'title');
+
+  return (
+    <Section id="palestrantes">
+      <SectionHeading eyebrow="Quem conduz" title={title ?? 'Palestrantes'} />
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {speakers.map((speaker) => (
+          <li key={speaker.name} className="ef-card flex items-start gap-3 p-4">
+            <Mic className="mt-0.5 size-4 shrink-0 opacity-60" aria-hidden />
+            <div className="min-w-0">
+              <p className="font-medium">{speaker.name}</p>
+              <p className="text-xs opacity-70">{speaker.titles.join(' · ')}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/**
+ * Trilhas temáticas da chamada de trabalhos (FASE 17).
+ *
+ * A contagem de submissões aparece porque é o único sinal público de que a chamada
+ * está viva — e é o que um autor procura antes de escrever.
+ */
+function TracksBlock({
+  tracks,
+  content,
+}: {
+  tracks: PublicEventDetail['tracks'];
+  content: unknown;
+}) {
+  if (tracks.length === 0) return null;
+
+  const title = readString(content, 'title');
+
+  return (
+    <Section id="trilhas">
+      <SectionHeading
+        eyebrow="Chamada de trabalhos"
+        title={title ?? 'Trilhas temáticas'}
+        description="Submeta seu trabalho na trilha correspondente ao tema."
+      />
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {tracks.map((track) => (
+          <li key={track.id} className="ef-card space-y-1.5 p-4">
+            <p className="flex items-center gap-2 font-medium">
+              {track.color ? (
+                <span
+                  aria-hidden
+                  className="inline-block size-3 shrink-0 rounded-full"
+                  style={{ backgroundColor: track.color }}
+                />
+              ) : null}
+              {track.name}
+            </p>
+            {track.description ? (
+              <p className="text-sm opacity-70">{track.description}</p>
+            ) : null}
+            <p className="text-xs opacity-60">
+              {track.submissionCount} {track.submissionCount === 1 ? 'trabalho' : 'trabalhos'} submetido(s)
+            </p>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/**
+ * Chamada para ação de inscrição (FASE 17).
+ *
+ * O texto é do organizador; o BOTÃO é da plataforma. Deixar o organizador informar
+ * a URL de destino permitiria publicar uma página que leva a um formulário de
+ * terceiros — e a inscrição sairia do sistema, com vaga, presença e certificado
+ * deixando de existir. O destino é sempre a programação do evento.
+ */
+function RegistrationCtaBlock({
+  content,
+  hasActivities,
+}: {
+  content: unknown;
+  hasActivities: boolean;
+}) {
+  const title = readString(content, 'title') ?? 'Garanta sua vaga';
+  const description = readString(content, 'description');
+  const ctaLabel = readString(content, 'ctaLabel') ?? 'Ver programação e inscrever-se';
+
+  return (
+    <Section id="inscricao">
+      <div className="ef-card flex flex-wrap items-center justify-between gap-4 p-6">
+        <div className="min-w-0 space-y-1">
+          <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+          {description ? (
+            <p className="text-sm opacity-80">{description}</p>
+          ) : (
+            <p className="text-sm opacity-80">
+              As vagas são por atividade e podem esgotar.
+            </p>
+          )}
+        </div>
+        {hasActivities ? (
+          <a href="#programacao" className="ef-button shrink-0">
+            {ctaLabel}
+            <ArrowRight className="size-4" aria-hidden />
+          </a>
+        ) : null}
+      </div>
+    </Section>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Dispatcher
 // ───────────────────────────────────────────────────────────────────────────────
@@ -485,7 +652,7 @@ export function BlockRenderer({
         />
       );
     case 'SPONSORS':
-      return <SponsorsBlock sponsors={event.sponsors} />;
+      return <SponsorsBlock sponsors={event.sponsors} content={content} />;
     case 'FAQ':
       return <FaqBlock content={content} />;
     case 'GALLERY':
@@ -494,17 +661,24 @@ export function BlockRenderer({
       return <CountdownBlock content={content} startsAt={event.startsAt} now={now} />;
     case 'VENUE_MAP':
       return <VenueBlock event={event} />;
+    case 'SPEAKERS':
+      return <SpeakersBlock activities={event.activities} content={content} />;
+    case 'TRACKS':
+      return <TracksBlock tracks={event.tracks} content={content} />;
+    case 'REGISTRATION_CTA':
+      return (
+        <RegistrationCtaBlock
+          content={content}
+          hasActivities={event.activities.length > 0}
+        />
+      );
     case 'CUSTOM_HTML':
       return <CustomHtmlBlock content={content} />;
 
-    // Tipos que dependem de dados de outras fases (trilhas, palestrantes) ou que
-    // já são representados pelo hero. Retornar `null` em vez de quebrar a página
-    // permite que um evento antigo continue renderizando após a remoção de um
-    // tipo de bloco.
+    // `HERO` é o único tipo sem renderizador próprio: o cabeçalho da página já é
+    // montado a partir dos dados do evento (título, período, local, vagas). O
+    // editor avisa isso — ver `BLOCK_WITHOUT_RENDERER` no domínio.
     case 'HERO':
-    case 'SPEAKERS':
-    case 'TRACKS':
-    case 'REGISTRATION_CTA':
     default:
       return null;
   }
