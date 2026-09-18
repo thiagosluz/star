@@ -184,6 +184,14 @@ export interface PublicActivitySummary {
   remainingSeats: number | null;
   checkInEnabled: boolean;
   isFeatured: boolean;
+  /**
+   * A atividade exige inscrição individual? (revisão da FASE 3)
+   *
+   * `false` = ABERTA: a página não oferece formulário, e a pessoa entra nela pela
+   * inscrição no evento. A tela precisa do dado para não prometer uma inscrição que
+   * o servidor recusa.
+   */
+  requiresRegistration: boolean;
   tags: string[];
   /** Nomes para exibição em texto (compatibilidade com a agenda). */
   speakerNames: string[];
@@ -425,6 +433,8 @@ async function loadEventDetail(
             waitlistCount: true,
             checkInEnabled: true,
             isFeatured: true,
+            /** `false` = aberta: quem se inscreveu no evento entra automaticamente. */
+            requiresRegistration: true,
             tags: true,
             room: { select: { name: true } },
             speakers: {
@@ -647,6 +657,7 @@ async function loadEventDetail(
       remainingSeats: remainingSeats(activity.capacity, activity.confirmedCount),
       checkInEnabled: activity.checkInEnabled,
       isFeatured: activity.isFeatured,
+      requiresRegistration: activity.requiresRegistration,
       tags: activity.tags,
       speakerNames: names,
       speakers: speakerRefs,

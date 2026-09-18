@@ -38,6 +38,7 @@ import {
   type ActivityStatus,
   type EventStatus,
 } from '@/domain/events/event-rules';
+import { acceptsAutoEnrollment } from '@/domain/events/activity-rules';
 import {
   PUBLIC_REGISTRATION_ROLE,
   evaluateParticipantLink,
@@ -73,6 +74,8 @@ export type RegistrationErrorCode =
   | 'ALREADY_WAITLISTED'
   | 'ACTIVITY_CANCELED'
   | 'ACTIVITY_NOT_OPEN'
+  /** Atividade aberta a todos os inscritos: a inscrição é a do EVENTO. */
+  | 'ACTIVITY_OPEN'
   /** A instituição suspendeu ou removeu o vínculo desta pessoa. */
   | 'MEMBERSHIP_BLOCKED'
   | 'INVALID_TRANSITION'
@@ -238,6 +241,7 @@ async function attemptRegistration(
             startsAt: true,
             endsAt: true,
             eventId: true,
+            requiresRegistration: true,
           },
         });
 
@@ -245,6 +249,23 @@ async function attemptRegistration(
           throw new RegistrationError(
             'ACTIVITY_NOT_FOUND',
             'Atividade não encontrada.',
+          );
+        }
+
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  ATIVIDADE ABERTA NÃO TEM INSCRIÇÃO PRÓPRIA (revisão da FASE 3)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  Quem quer participar de uma atividade aberta se inscreve no EVENTO — e a
+         *  inscrição no evento já a inscreveu nela. Aceitar um segundo caminho
+         *  criaria duas portas para o mesmo lugar: uma delas sem controle de lotação
+         *  e sem a inscrição do evento, que é justamente o que dá acesso à
+         *  programação. A recusa diz para onde ir.
+         */
+        if (!activity.requiresRegistration) {
+          throw new RegistrationError(
+            'ACTIVITY_OPEN',
+            'Esta atividade é aberta a todos os inscritos no evento — não há inscrição individual. Inscreva-se no evento para participar.',
           );
         }
 
@@ -702,6 +723,433 @@ async function reserveEventSeat(tx: TxClient, eventId: string): Promise<boolean>
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Inscrição no EVENTO (revisão da FASE 3)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface RegisterForEventInput {
+  tenantId: string;
+  eventSlug: string;
+  userId: string;
+  consentImage?: boolean;
+  consentData?: boolean;
+  accessibilityNotes?: string | null;
+  formResponses?: Record<string, unknown>;
+  /** Ignora a checagem de janela (credenciamento presencial). */
+  ignoreWindow?: boolean;
+}
+
+export type RegisterForEventOutcome =
+  | {
+      ok: true;
+      registrationId: string;
+      /** Quantas atividades abertas receberam a inscrição automaticamente. */
+      enrolledActivities: number;
+      titles: readonly string[];
+      linkedAsParticipant: boolean;
+    }
+  | { ok: false; code: RegistrationErrorCode; message: string };
+
+/**
+ * Inscreve a pessoa no EVENTO.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  DUAS COISAS ACONTECEM AQUI, E A ORDEM DELAS IMPORTA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  1. A **inscrição do evento** nasce: uma linha de `registrations` com
+ *     `activityId` NULO, que é o crachá da pessoa no evento (consentimentos,
+ *     acessibilidade, credenciamento). Ela reserva vaga na LOTAÇÃO DO EVENTO, com
+ *     o mesmo UPDATE condicional atômico das atividades — a vaga do evento não é
+ *     a soma das atividades, e por isso tem predicado próprio.
+ *
+ *  2. Em seguida, a pessoa é inscrita **automaticamente** em cada atividade ABERTA
+ *     (`requiresRegistration = false`) que ainda não a tenha: a linha nasce com
+ *     `origin = EVENT_AUTO`, para o sistema saber que ela veio daqui — é o que
+ *     permite cancelar a inscrição do evento levando junto só o que ela criou.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE MATERIALIZAR A LINHA, EM VEZ DE DEDUZIR "TODOS PODEM ENTRAR"
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Deduzir seria menos dado — e obrigaria TODA leitura a saber que uma atividade
+ *  aberta tem, como público, os inscritos do evento: a lista de presença, o
+ *  credenciamento, a apuração de carga horária, o certificado e a exportação. Uma
+ *  regra a mais repetida em cada consulta é uma regra a mais para esquecer em uma
+ *  delas. Materializando, a atividade aberta tem inscritos de verdade, e o resto do
+ *  sistema não precisa saber que ela é diferente.
+ */
+export async function registerForEvent(
+  input: RegisterForEventInput,
+): Promise<RegisterForEventOutcome> {
+  const MAX_ATTEMPTS = 4;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const outcome = await attemptEventRegistration(input);
+
+    if (outcome.ok || !isTransientFailure(outcome.code)) return outcome;
+
+    const backoff = Math.min(15 * 2 ** attempt, 200);
+    await new Promise((resolve) => setTimeout(resolve, backoff + Math.random() * backoff));
+  }
+
+  return {
+    ok: false,
+    code: 'INTERNAL',
+    message: 'Muita gente tentando se inscrever ao mesmo tempo. Tente novamente em instantes.',
+  };
+}
+
+async function attemptEventRegistration(
+  input: RegisterForEventInput,
+): Promise<RegisterForEventOutcome> {
+  const { tenantId, eventSlug, userId } = input;
+
+  try {
+    return await withTenant(
+      tenantId,
+      async (tx) => {
+        const event = await tx.event.findFirst({
+          where: { slug: eventSlug, deletedAt: null },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            startsAt: true,
+            endsAt: true,
+            capacity: true,
+            confirmedCount: true,
+            registrationOpensAt: true,
+            registrationClosesAt: true,
+            settings: true,
+          },
+        });
+
+        if (!event) {
+          throw new RegistrationError('EVENT_NOT_FOUND', 'Evento não encontrado.');
+        }
+
+        if (!input.ignoreWindow) {
+          const window = evaluateRegistrationWindow({
+            now: new Date(),
+            eventStartsAt: event.startsAt,
+            eventEndsAt: event.endsAt,
+            eventStatus: event.status as EventStatus,
+            registrationOpensAt: event.registrationOpensAt,
+            registrationClosesAt: event.registrationClosesAt,
+          });
+
+          if (!window.open) {
+            throw new RegistrationError('WINDOW_CLOSED', window.message);
+          }
+        }
+
+        const linkDecision = await decideParticipantLink(tx, {
+          tenantId,
+          userId,
+          eventIsPublic: isOpenToPublicEvent({
+            eventStatus: event.status,
+            settings: event.settings,
+          }),
+        });
+
+        if (linkDecision.action === 'BLOCKED') {
+          throw new RegistrationError(
+            'MEMBERSHIP_BLOCKED',
+            linkDecision.message ?? 'Inscrição não permitida para esta conta.',
+          );
+        }
+
+        const existing = await tx.registration.findFirst({
+          where: { eventId: event.id, activityId: null, userId, deletedAt: null },
+          select: { id: true, status: true },
+        });
+
+        if (existing && existing.status !== 'CANCELED') {
+          throw new RegistrationError('DUPLICATE', 'Você já está inscrito neste evento.');
+        }
+
+        const reserved = await reserveEventSeat(tx, event.id);
+
+        if (!reserved) {
+          throw new RegistrationError('FULL', 'A lotação total do evento foi atingida.');
+        }
+
+        const registration = await tx.registration.create({
+          data: {
+            tenantId,
+            eventId: event.id,
+            activityId: null,
+            userId,
+            origin: 'INDIVIDUAL',
+            status: 'CONFIRMED',
+            consentImage: input.consentImage ?? false,
+            consentData: input.consentData ?? false,
+            consentAt: new Date(),
+            accessibilityNotes: input.accessibilityNotes ?? null,
+            formResponses: (input.formResponses ?? {}) as object,
+          },
+          select: { id: true },
+        });
+
+        const enrolled = await enrollEventRegistrationInOpenActivities(tx, {
+          tenantId,
+          eventId: event.id,
+          userId,
+          registrationId: registration.id,
+          consentImage: input.consentImage ?? false,
+          consentData: input.consentData ?? false,
+          accessibilityNotes: input.accessibilityNotes ?? null,
+        });
+
+        const linkedAsParticipant = await applyParticipantLink(tx, {
+          tenantId,
+          userId,
+          decision: linkDecision,
+        });
+
+        await recordAudit(
+          {
+            tenantId,
+            userId,
+            action: 'CREATE',
+            entityType: 'registration',
+            entityId: registration.id,
+            changes: {
+              evento: { from: null, to: event.title },
+              tipo: { from: null, to: 'inscrição no evento' },
+              atividadesAutomaticas: {
+                from: null,
+                to: enrolled.titles.join(', ') || 'nenhuma atividade aberta',
+              },
+            },
+          },
+          tx,
+        );
+
+        return {
+          ok: true as const,
+          registrationId: registration.id,
+          enrolledActivities: enrolled.titles.length,
+          titles: enrolled.titles,
+          linkedAsParticipant,
+        };
+      },
+      { timeout: 20_000 },
+    );
+  } catch (error) {
+    return toEventOutcome(error);
+  }
+}
+
+/**
+ * Inscreve UMA pessoa (já inscrita no evento) em todas as atividades abertas.
+ *
+ * É a peça que roda em dois momentos diferentes, de propósito:
+ *   • no ato da inscrição no evento;
+ *   • quando a instituição CRIA uma atividade aberta ou a torna aberta depois —
+ *     sem esta segunda hora, quem já estava no evento ficaria de fora de uma
+ *     atividade publicada mais tarde, e a promessa "aberta a todos os inscritos"
+ *     seria falsa para os primeiros.
+ *
+ * `skipExisting` é a regra de ouro: quem JÁ tem inscrição viva na atividade (por
+ * escolha própria, inclusive) não ganha uma segunda linha — o índice único parcial
+ * recusaria, e a mensagem que chega ao organizador seria um erro de banco.
+ */
+async function enrollEventRegistrationInOpenActivities(
+  tx: TxClient,
+  input: {
+    tenantId: string;
+    eventId: string;
+    userId: string;
+    registrationId: string;
+    consentImage: boolean;
+    consentData: boolean;
+    accessibilityNotes: string | null;
+  },
+): Promise<{ titles: string[] }> {
+  const activities = await tx.activity.findMany({
+    where: { eventId: input.eventId, deletedAt: null, requiresRegistration: false },
+    select: { id: true, title: true, status: true },
+  });
+
+  const targets = activities.filter((activity) =>
+    acceptsAutoEnrollment({
+      requiresRegistration: false,
+      status: activity.status as ActivityStatus,
+    }),
+  );
+
+  if (targets.length === 0) return { titles: [] };
+
+  const existing = await tx.registration.findMany({
+    where: {
+      activityId: { in: targets.map((activity) => activity.id) },
+      userId: input.userId,
+      deletedAt: null,
+      status: { in: ['PENDING', 'CONFIRMED', 'WAITLISTED', 'ATTENDED'] },
+    },
+    select: { activityId: true },
+  });
+
+  const alreadyEnrolled = new Set(existing.map((row) => row.activityId));
+  const titles: string[] = [];
+
+  for (const activity of targets) {
+    if (alreadyEnrolled.has(activity.id)) continue;
+
+    await tx.registration.create({
+      data: {
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        activityId: activity.id,
+        userId: input.userId,
+        origin: 'EVENT_AUTO',
+        status: 'CONFIRMED',
+        consentImage: input.consentImage,
+        consentData: input.consentData,
+        consentAt: new Date(),
+        accessibilityNotes: input.accessibilityNotes,
+      },
+    });
+
+    /**
+     * O contador da atividade acompanha, mesmo sem controle de vaga: ele é o que
+     * a lista de presença e o painel mostram. Atividade ABERTA não tem predicado de
+     * capacidade — quem está no evento entra.
+     */
+    await tx.$executeRaw`
+      UPDATE activities
+         SET "confirmedCount" = "confirmedCount" + 1
+       WHERE id = ${activity.id}::uuid
+    `;
+
+    titles.push(activity.title);
+  }
+
+  return { titles };
+}
+
+/**
+ * Sincroniza as inscrições automáticas de UMA atividade aberta.
+ *
+ * Chamada quando a atividade nasce aberta ou passa a ser aberta: percorre as
+ * inscrições VIVAS do evento e inscreve quem ainda não está. Devolve quantas
+ * linhas criou — número que a tela da organização mostra, porque "atividade
+ * aberta" com 40 pessoas já inscritas no evento precisa dizer que 40 entraram.
+ */
+export async function syncOpenActivityEnrollments(input: {
+  tenantId: string;
+  eventId: string;
+  activityId: string;
+  actorId: string;
+}): Promise<number> {
+  return withTenant(input.tenantId, async (tx) => {
+    const activity = await tx.activity.findFirst({
+      where: { id: input.activityId, eventId: input.eventId, deletedAt: null },
+      select: { id: true, title: true, status: true, requiresRegistration: true },
+    });
+
+    if (
+      !activity ||
+      !acceptsAutoEnrollment({
+        requiresRegistration: activity.requiresRegistration,
+        status: activity.status as ActivityStatus,
+      })
+    ) {
+      return 0;
+    }
+
+    const eventRegistrations = await tx.registration.findMany({
+      where: {
+        eventId: input.eventId,
+        activityId: null,
+        deletedAt: null,
+        status: { in: ['PENDING', 'CONFIRMED', 'ATTENDED'] },
+      },
+      select: {
+        userId: true,
+        consentImage: true,
+        consentData: true,
+        accessibilityNotes: true,
+      },
+    });
+
+    if (eventRegistrations.length === 0) return 0;
+
+    const alreadyEnrolled = await tx.registration.findMany({
+      where: {
+        activityId: activity.id,
+        userId: { in: eventRegistrations.map((row) => row.userId) },
+        deletedAt: null,
+        status: { in: ['PENDING', 'CONFIRMED', 'WAITLISTED', 'ATTENDED'] },
+      },
+      select: { userId: true },
+    });
+
+    const enrolled = new Set(alreadyEnrolled.map((row) => row.userId));
+    let created = 0;
+
+    for (const registration of eventRegistrations) {
+      if (enrolled.has(registration.userId)) continue;
+
+      await tx.registration.create({
+        data: {
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          activityId: activity.id,
+          userId: registration.userId,
+          origin: 'EVENT_AUTO',
+          status: 'CONFIRMED',
+          consentImage: registration.consentImage,
+          consentData: registration.consentData,
+          consentAt: new Date(),
+          accessibilityNotes: registration.accessibilityNotes,
+        },
+      });
+
+      await tx.$executeRaw`
+        UPDATE activities
+           SET "confirmedCount" = "confirmedCount" + 1
+         WHERE id = ${activity.id}::uuid
+      `;
+
+      created += 1;
+    }
+
+    if (created > 0) {
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'activity',
+          entityId: activity.id,
+          changes: {
+            atividadeAberta: {
+              from: null,
+              to: `${created} inscrição(ões) do evento incluída(s) automaticamente`,
+            },
+          },
+        },
+        tx,
+      );
+    }
+
+    return created;
+  });
+}
+
+function toEventOutcome(error: unknown): RegisterForEventOutcome {
+  if (error instanceof RegistrationError) {
+    return { ok: false, code: error.code, message: error.message };
+  }
+
+  logUnexpected('registerForEvent', error);
+  return {
+    ok: false,
+    code: 'INTERNAL',
+    message: 'Não foi possível concluir a inscrição. Tente novamente.',
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Cancelamento
 // ───────────────────────────────────────────────────────────────────────────────
 export interface CancelInput {
@@ -790,6 +1238,49 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
         }
 
         if (!registration.activityId) {
+          /**
+           * ─────────────────────────────────────────────────────────────────────
+           *  CANCELAR A INSCRIÇÃO DO EVENTO LEVA JUNTO O QUE ELA CRIOU
+           *  ─────────────────────────────────────────────────────────────────────
+           *  As linhas `EVENT_AUTO` existem PORQUE a inscrição do evento existe.
+           *  Mantê-las depois do cancelamento deixaria a pessoa inscrita em
+           *  atividades que ela só conhecia pela inscrição do evento — e o
+           *  organizador veria presença de gente que já não está no evento.
+           *
+           *  O que NÃO é tocado: as inscrições que a própria pessoa escolheu
+           *  (`INDIVIDUAL`), inclusive num minicurso. Desfazer escolha alheia a
+           *  partir de outro pedido seria o tipo de efeito colateral que assusta
+           *  quem usa.
+           */
+          const automatic = await tx.registration.findMany({
+            where: {
+              eventId: registration.eventId,
+              userId,
+              activityId: { not: null },
+              origin: 'EVENT_AUTO',
+              deletedAt: null,
+              status: { in: ['PENDING', 'CONFIRMED', 'ATTENDED'] },
+            },
+            select: { id: true, activityId: true },
+          });
+
+          for (const row of automatic) {
+            await tx.registration.update({
+              where: { id: row.id },
+              data: {
+                status: 'CANCELED',
+                canceledAt: new Date(),
+                cancelReason: reason ?? 'Inscrição no evento cancelada',
+              },
+            });
+
+            await tx.$executeRaw`
+              UPDATE activities
+                 SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
+               WHERE id = ${row.activityId}::uuid
+            `;
+          }
+
           return { ok: true as const, promoted: null };
         }
 
@@ -894,6 +1385,10 @@ export interface MyRegistration {
   eventId: string;
   eventTitle: string;
   eventSlug: string;
+  /** `true` = a inscrição do EVENTO (sem atividade), não de uma atividade. */
+  isEventRegistration: boolean;
+  /** `true` = criada pela inscrição no evento (atividade aberta). */
+  isAutomatic: boolean;
 }
 
 /** Inscrições do usuário autenticado nesta instituição. */
@@ -912,6 +1407,7 @@ export async function listMyRegistrations(
         createdAt: true,
         activityId: true,
         eventId: true,
+        origin: true,
         activity: { select: { title: true, slug: true, startsAt: true } },
         event: { select: { title: true, slug: true } },
       },
@@ -923,14 +1419,38 @@ export async function listMyRegistrations(
     status: row.status as RegistrationStatus,
     waitlistPosition: row.waitlistPosition,
     createdAt: row.createdAt,
+    /**
+     * `activityId` vazio identifica a inscrição DO EVENTO (revisão da FASE 3): é
+     * ela que dá acesso às atividades abertas, e a tela a apresenta como
+     * "Inscrição no evento", não como uma atividade sem nome.
+     */
     activityId: row.activityId ?? '',
-    activityTitle: row.activity?.title ?? 'Atividade removida',
+    activityTitle: row.activity?.title ?? (row.activityId ? 'Atividade removida' : 'Inscrição no evento'),
     activitySlug: row.activity?.slug ?? '',
     activityStartsAt: row.activity?.startsAt ?? row.createdAt,
     eventId: row.eventId,
     eventTitle: row.event.title,
     eventSlug: row.event.slug,
+    isEventRegistration: row.activityId === null,
+    isAutomatic: row.origin === 'EVENT_AUTO',
   }));
+}
+
+/** Inscrição do usuário no EVENTO, se existir. */
+export async function findMyEventRegistration(
+  tenantId: string,
+  userId: string,
+  eventId: string,
+): Promise<{ id: string; status: RegistrationStatus } | null> {
+  const row = await withTenant(tenantId, (tx) =>
+    tx.registration.findFirst({
+      where: { userId, eventId, activityId: null, deletedAt: null },
+      select: { id: true, status: true },
+    }),
+  );
+
+  if (!row) return null;
+  return { id: row.id, status: row.status as RegistrationStatus };
 }
 
 /** Inscrição do usuário em UMA atividade, se existir. */

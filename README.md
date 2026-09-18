@@ -4,14 +4,15 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 14, 16, 17, 23, 24 e 25 concluídas (F15 pendente: Comunicação) · **1262 testes** unitários/integração · **77 testes E2E**
+> **Estado:** FASES 1 a 14, 16, 17, 23, 24 e 25 concluídas (F15 pendente: Comunicação) · **1283 testes** unitários/integração · **79 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe),
 > **página pública editável** pela instituição com patrocínio, autoria, **biblioteca de
-> mídia** com reaproveitamento, **janela de exibição** agendada no fuso do evento e
+> mídia** com reaproveitamento, **janela de exibição** agendada no fuso do evento,
 > **portal do palestrante** com convite (que aparece na área do próprio palestrante), materiais
-> e certificado
+> e certificado · **inscrição no EVENTO** que já inclui as atividades abertas, com
+> programação editável (rótulos em português)
 
 ---
 
@@ -39,8 +40,8 @@ avaliação por pares e gamificação.
 
 | Domínio | Capacidade |
 |---|---|
-| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 54 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
-| **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado) |
+| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 57 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
+| **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado). A inscrição pode ser **no evento** — e ela já inclui as atividades **abertas** (palestra, mesa-redonda), que não pedem inscrição própria e ignoram lotação — ou **por atividade** (minicurso, oficina), que continua com vaga e fila. A programação é **editável e excluível** pelo organizador (excluir só o cadastro nunca usado; com inscritos ou presença, a mensagem manda cancelar), e os tipos e situações aparecem **em português** |
 | **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê. O autor cria o rascunho e **cai direto na página da submissão** (anexar e enviar), **edita** título, resumo e palavras-chave enquanto ela não foi enviada — as regras do envio (resumo mínimo, 3 a 8 palavras-chave distintas) valem já na criação, com contagem em tempo real no campo — e pode **excluir os próprios rascunhos**: submissões enviadas são registro da avaliação e não se apagam |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
 | **Certificação** | PDF/SVG assinado (HMAC-SHA256), hash de integridade, QR Code e **validação pública sem login** |
@@ -168,7 +169,11 @@ npm run db:verify:pooling                  # prova que o contexto de tenant não
 ```text
 Eventos ......... 2 (Congresso de Tecnologia e Educação 2026 · Simpósio de Saúde Coletiva 2026)
 Salas ........... 2 no congresso (Auditório 300 lugares · Sala de Oficinas 40)
-Atividades ...... 4 (abertura, minicurso Rust com 30 vagas + lista de espera, mesa-redonda, palestra)
+Atividades ...... 4 (no congresso: abertura e minicurso Rust — 30 vagas + lista de
+                  espera — e mesa-redonda; no simpósio: palestra de epidemiologia).
+                  Abertura e a palestra do simpósio são ABERTAS a todos os inscritos
+                  do evento (sem inscrição individual); mesa-redonda e minicurso
+                  seguem com inscrição por atividade)
 Chamada ......... 1 trilha "Tecnologia Educacional": rubrica de 4 critérios (pesos 3/3/1/1),
                   2 pareceres exigidos, aceite ≥ 70, rejeição < 45, revisão cega
 Revisores ....... 2 perfis: Bruno declara a UFBA (gera conflito no painel do comitê)
@@ -206,6 +211,7 @@ Abra a URL em uma **janela anônima**: a validação pública funciona sem login
 ```text
 Painel público ..... /t/ufba-demo/eventos
 Landing do evento .. /t/ufba-demo/eventos/congresso-2026
+Inscrição no evento  /t/ufba-demo/eventos/congresso-2026/inscricao   (inclui as atividades abertas)
 Inscrição .......... /t/ufba-demo/eventos/congresso-2026/atividades/minicurso-rust
 Submissões ......... /t/ufba-demo/submissoes        (autor)
 Revisões ........... /t/ufba-demo/revisoes          (revisor)
@@ -369,8 +375,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1262 testes (51 arquivos) — unit + integração com banco real
-npm run test:e2e          # 74 testes E2E contra o container de produção
+npm test                  # 1283 testes (53 arquivos) — unit + integração com banco real
+npm run test:e2e          # 79 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -404,8 +410,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | Documento | Conteúdo | ADRs |
 |---|---|---|
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
-| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 10 papéis de instituição (54 permissões hoje, incluindo a de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
-| [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado | ADR-014 … 018 |
+| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 11 papéis (57 permissões hoje, incluindo as de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
+| [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado. A **revisão pós-entrega** (§19) entrega a **inscrição no evento** que materializa as atividades abertas (`EVENT_AUTO`), `requiresRegistration` como coluna com padrão derivado do tipo, **edição e exclusão** de atividade na programação e rótulos de tipo/situação em português | ADR-014 … 018 · 124 a 126 |
 | [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão. A **revisão pós-entrega** (§18) faz a criação do rascunho cair direto na página da submissão e entrega a **exclusão de rascunho** (nunca do que já foi enviado) | ADR-019 … 024 · 121 e 122 |
 | [`docs/fase-05-gamificacao.md`](docs/fase-05-gamificacao.md) | Motor de recompensas, XP idempotente, curva de níveis, prestígio, cartas, foil, missões, credenciamento | ADR-025 … 031 |
 | [`docs/fase-06-certificacao.md`](docs/fase-06-certificacao.md) | Elegibilidade, carga horária real, conteúdo canônico, assinatura HMAC, PDF/SVG, QR, fila BullMQ, validação pública | ADR-032 … 038 |
@@ -415,7 +421,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 40 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 49 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
 | [`docs/fase-25-portal-do-palestrante.md`](docs/fase-25-portal-do-palestrante.md) | Portal do palestrante: o palestrante passa a ser **pessoa da instituição** (`speaker_profiles`) com perfil e vínculo de conta por **convite hasheado**, **portal** com posse verificada no banco, **materiais** com visibilidade por visitante (401/403/404), **vitrine** com foto e bio, ficha individual e **certificado de palestrante** que exige evento encerrado e credenciamento. A **revisão pós-entrega** (§10) abriu as portas que faltavam: o menu voltou a mostrar os itens pessoais e o convite pendente virou entrada do portal | ADR-113 … 120 |
 | [`docs/fase-24-midia-e-agendamento.md`](docs/fase-24-midia-e-agendamento.md) | Mídia e agendamento: **biblioteca de mídia** (tabela `media_assets` com RLS, reaproveitamento por checksum e exclusão que **confere o uso**), **sincronia** do patrocinador copiado a partir da origem, **janela de exibição** (`unpublishAt` decidido na leitura) e a data agendada interpretada no **fuso do evento** | ADR-107 … 112 |
 | [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
@@ -482,7 +488,7 @@ prisma/
 tests/
 ├── unit/              897 testes de regra pura e de formato (sem banco)
 ├── integration/       344 testes com banco, Redis e storage reais
-└── e2e/               74 testes Playwright contra o container
+└── e2e/               79 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -665,6 +671,12 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     resumo, palavras-chave e idioma são editáveis enquanto a submissão não foi enviada; trocar
     a TRILHA mudaria a rubrica de avaliação, o requisito de versão cega e a fila de revisores —
     é decisão do comitê. Quem escolheu a trilha errada exclui o rascunho e cria outro.
+26. **O evento lotado não tem lista de espera (FASE 3, revisão — dívida E33).** A fila FIFO
+    existe por ATIVIDADE (com vaga e promoção automática). A inscrição **no evento** — criada
+    na revisão — consome a lotação do evento e, quando ela acaba, **recusa** com "a lotação
+    total do evento foi atingida": não há fila de espera no nível do evento nem promoção
+    quando uma vaga abre. Quem não coube simplesmente não entra, e a organização não vê a
+    demanda represada.
 
 ---
 

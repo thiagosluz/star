@@ -615,4 +615,154 @@ Avaliação por Pares (Peer Review), com upload no MinIO/S3, versão cega,
 atribuição por afinidade, regras anti-conflito de interesse e testes de
 integridade de arquivos.
 
+---
+
+## 19. Revisão pós-entrega — inscrição no EVENTO e atividades abertas
+
+> **Natureza:** revisão do MESMO tema (F3), a partir do uso real. **Uma migração**
+> (`20260920120000_event_registration_and_open_activities`). Nenhuma permissão nova.
+> **ADRs:** 124 a 126 · **Testes novos:** 12 unitários + 9 de integração + 2 E2E.
+
+### 19.1 O que o uso revelou
+
+Três queixas, com a tela na mão:
+
+- *"hoje estamos cadastrando atividade por atividade. Precisa ter um cadastro no evento geral, e
+  algumas atividades não terão inscrições individuais, sendo automaticamente cadastrado todos os
+  participantes do evento."*
+- *"precisa ter também uma opção para excluir ou editar atividades."*
+- *"aproveite para ver: o tipo da atividade está em inglês — `LECTURE`, `ROUND_TABLE`… é para
+  ficar em português do Brasil."*
+
+| # | Relato | Causa raiz | Correção |
+|---|---|---|---|
+| 1 | Só havia inscrição POR ATIVIDADE | O modelo nasceu assim na F3: `Registration.activityId` sempre preenchido, e nenhum conceito de "atividade aberta". Inscrever-se numa palestra de abertura exigia uma linha de inscrição sem sentido (ninguém controla o público de uma palestra) | Inscrição **do evento** (`activityId` nulo, com o crachá), coluna `Activity.requiresRegistration` e inscrição AUTOMÁTICA (`origin = EVENT_AUTO`) nas atividades abertas |
+| 2 | Não havia como editar nem excluir atividade | `saveActivity` já aceitava `activityId` (edição existia no serviço), mas nenhuma tela a usava; exclusão não existia | Formulário de edição por atividade na lista da programação e exclusão lógica, com o diálogo do sistema |
+| 3 | O painel mostrava `LECTURE`, `ROUND_TABLE` | O mapa de tradução existia em QUATRO arquivos de tela — e faltava justamente na lista que o organizador mais lê | Um mapa só, no domínio (`ACTIVITY_TYPE_LABELS`), com `Record<ActivityType, string>` (tipo novo sem rótulo não compila) e um teste que exige rótulo para todo valor do enum |
+
+### 19.2 Decisões
+
+#### ADR-124 — A inscrição no evento MATERIALIZA as atividades abertas
+
+**Contexto.** Duas leituras eram possíveis para "quem se inscreve no evento entra nas atividades
+abertas": (a) **deduzir** na leitura — a pessoa está no evento, logo pode entrar; (b)
+**materializar** — criar a linha de inscrição em cada atividade aberta.
+
+**Decisão.** Materializar. A inscrição no evento cria uma linha `EVENT_AUTO` em cada atividade
+aberta (`requiresRegistration = false`, exceto cancelada), e a linha do evento é a que carrega o
+crachá.
+
+**Alternativas descartadas.** A dedução economiza linhas — e obriga TODA leitura a saber que uma
+atividade aberta tem, como público, os inscritos do evento: lista de presença, credenciamento,
+apuração de carga horária, certificado, exportação. Uma regra a mais repetida em cada consulta é
+uma regra a mais para esquecer em uma delas. Materializando, a atividade aberta tem inscritos de
+verdade e o resto do sistema — inclusive o credenciamento, que já existia — não precisa saber que
+ela é diferente. O custo (linhas duplicadas de consentimento) é aceito e visível: `origin` diz de
+onde cada linha veio.
+
+**Consequências.** A atividade aberta publicada DEPOIS precisa alcançar quem já estava no evento —
+é o que `syncOpenActivityEnrollments` faz ao criar/tornar aberta uma atividade (fora da transação
+de escrita, porque abre a própria — armadilha 41). E cancelar a inscrição do evento cancela as
+linhas `EVENT_AUTO` que ele criou, **preservando** as escolhas individuais.
+
+#### ADR-125 — O tipo define o PADRÃO de inscrição individual; a instituição decide
+
+**Contexto.** O relato pede que palestras e mesas-redondas não tenham inscrição individual e que
+minicursos continuem tendo.
+
+**Decisão.** `Activity.requiresRegistration` é uma COLUNA (a decisão é da instituição), com padrão
+derivado do tipo por `defaultRequiresRegistration`: a lista é a das atividades ABERTAS
+(`LECTURE`, `ROUND_TABLE`, `POSTER_SESSION`, `ORAL_PRESENTATION`, `CULTURAL`, `OTHER`), e um tipo
+desconhecido exige inscrição — o fail-closed evita liberar a entrada de todos numa atividade que
+talvez tenha turma contada.
+
+**Alternativas descartadas.** Decidir pelo tipo em tempo de execução (sem coluna) engessaria o
+caso legítimo da palestra com lugar limitado; derivar do tipo na LEITURA faria a mudança de tipo
+alterar retroativamente quem está inscrito.
+
+**Consequências.** Atividade aberta não aplica vagas nem lista de espera (o número na tela é
+informativo, e o contador continua sendo mantido porque é ele que a lista de presença mostra). A
+tela do organizador exibe o selo "Aberta a todos os inscritos" e a criação traz a caixa "Exige
+inscrição individual" marcada, com a explicação de quando desmarcar.
+
+#### ADR-126 — Excluir atividade é para o cadastro errado; cancelar é para a que tem gente
+
+**Contexto.** Pedido explícito de exclusão de atividades. `onDelete: Cascade` tornaria a operação
+trivial — e destruiria registro científico.
+
+**Decisão.** `canDeleteActivity` recusa quando há inscrição viva ou presença registrada, com a
+contagem na mensagem e o caminho alternativo ("cancele a atividade"). Sem ninguém, a exclusão é
+LÓGICA (`deletedAt`), com o fato na trilha; atividade excluída sai da programação do organizador.
+
+**Alternativas descartadas.** Cascata (apaga a presença que sustenta carga horária, XP e
+certificado); bloquear a exclusão sempre (obrigaria a cancelar um cadastro duplicado, poluindo a
+agenda).
+
+**Consequências.** Quem cadastrou errado corrige rápido; quem já tem público cancela — e cancelar
+já existia como estado. A edição ganhou duas travas: a lotação não pode ficar ABAIXO das
+inscrições ativas, e a mudança de horário continua passando pela checagem de sala e de janela do
+evento.
+
+### 19.3 Lições aprendidas (revisão)
+
+| # | Sintoma | Causa raiz | Correção |
+|---|---|---|---|
+| 18 | E2E: editar uma atividade recém-criada era recusado com "a atividade precisa acontecer dentro do período do evento" | A atividade foi criada no MESMO instante do início do evento (+30 dias); o `<input type="datetime-local">` tem precisão de MINUTO, então o valor devolvido pelo formulário caía segundos ANTES da abertura | A fixture marca a atividade para o dia seguinte (+31) — o arredondamento do campo deixa de importar. Diagnóstico no dado: a tela mostrava o horário certo, e a diferença era invisível |
+| 19 | E2E: `/signup` do segundo usuário não tinha formulário e o teste morria esperando "Nome completo" | `/signup` com sessão ativa REDIRECIONA (a pessoa já está dentro) — a tela de cadastro não existe para quem está logado | A segunda pessoa nasce pela API de cadastro (`/api/auth/sign-up/email`), como nas outras specs; a tela de cadastro tem cenário próprio e não é o que aquele teste mede |
+| 20 | A lista de atividades do organizador continuava mostrando atividade EXCLUÍDA | `getAdminEvent` não filtrava `deletedAt` nas atividades (a exclusão lógica preserva o dado, mas ele não pode continuar na tela) | `where: { deletedAt: null }` no select — e o teste de integração prende os dois lados: some da lista do organizador E continua no banco |
+
+### 19.4 Evidência de verificação
+
+```text
+npm run lint                 → 0 erros, 0 warnings
+npm run typecheck            → 0 erros
+npm test                     → 53 arquivos, 1283 testes passando (+21 nesta revisão)
+npm run build                → ✓ Compiled successfully
+npm run test:e2e             → 79 passed
+npm run db:migrate:status    → 18 migrations found · Database schema is up to date!
+npm run db:verify            → Contrato íntegro. (RLS + FORCE, policy em toda tabela)
+npm run db:verify:isolation  → 9/9 verificações passaram.
+npm run db:partitions        → audit_logs_2026_09/10/11 já existem (3.979 linhas)
+rota nova no container       → GET /t/ufba-demo/eventos/congresso-2026/inscricao = 200
+
+E2E dos caminhos novos (contra o container de produção):
+✓ a inscrição no evento entra nas atividades abertas e deixa os minicursos para escolha própria
+✓ o painel do evento mostra o tipo em português, edita e recusa excluir com inscritos
+
+Integração (banco real):
+✓ inscreve no evento E nas atividades abertas, deixando as de inscrição própria vazias
+✓ RECUSA a segunda inscrição no mesmo evento
+✓ quem JÁ tinha inscrição na atividade aberta não ganha uma segunda linha
+✓ RECUSA inscrição individual em atividade aberta, apontando o caminho
+✓ o evento respeita a própria lotação
+✓ cancela o que o evento criou e PRESERVA as escolhas individuais
+✓ sincroniza quem já estava no evento ao criar uma atividade aberta
+✓ RECUSA excluir atividade com inscritos, e exclui a que não tem ninguém
+✓ RECUSA reduzir a lotação abaixo das inscrições já ativas
+
+Unitários:
+✓ todo valor do enum tem rótulo em português (e nenhum é o próprio enum)
+✓ minicurso/oficina/maratona exigem inscrição; palestra/mesa-redonda nascem abertas
+✓ tipo desconhecido exige inscrição (fail-closed)
+✓ exclusão recusada com presença e com inscrição, com a contagem na mensagem
+```
+
+### 19.5 Checklist da revisão
+
+- [x] Inscrição no EVENTO (`activityId` nulo), com crachá e consentimentos próprios
+- [x] `Activity.requiresRegistration` + padrão por tipo, editável por atividade
+- [x] Inscrição automática nas atividades abertas, com `origin = EVENT_AUTO`
+- [x] Atividade aberta publicada depois alcança quem já estava no evento
+- [x] Cancelar a inscrição do evento cancela o que ela criou e preserva o resto
+- [x] Atividade aberta não aplica vagas/lista de espera; o evento aplica a lotação dele
+- [x] Editar atividade pela lista (mesmos campos da criação, com as travas de sala/janela/lotação)
+- [x] Excluir atividade recusado com inscritos/presença, com o motivo escrito
+- [x] Rótulos de tipo e situação em português, centralizados no domínio
+- [x] `Credenciamento` continua funcionando sem mudança (as linhas automáticas aparecem na fila)
+- [x] Testes: 12 unitários, 9 de integração, 2 E2E
+- [x] Bateria completa executada, com os números reais reportados na seção 19.4
+- [x] `AGENTS.md`, `docs/dividas-tecnicas.md` e `README.md` atualizados
+
+---
+
 Aguardando **"APROVADO: AVANÇAR"**.

@@ -242,7 +242,7 @@ test.describe('portal do palestrante', () => {
 
     // ── 1. A atividade nasce pela tela do evento ──────────────────────────────
     await page.goto(adminEventUrl());
-    await page.getByTestId('activities-section').locator('summary').click();
+    await page.getByTestId('activities-section').locator('summary').first().click();
 
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill(ACTIVITY_SLUG);

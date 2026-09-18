@@ -23,6 +23,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { withTenant } from '@/lib/db/tenant-client';
+import { canDeleteActivity, defaultRequiresRegistration } from '@/domain/events/activity-rules';
+import { syncOpenActivityEnrollments } from '@/lib/events/registration-service';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { resolveTheme } from '@/domain/events/landing-page';
@@ -329,8 +331,10 @@ export interface AdminEventDetail extends AdminEventRow {
     id: string;
     slug: string;
     title: string;
+    description: string | null;
     type: string;
     status: string;
+    modality: string;
     startsAt: Date;
     endsAt: Date;
     workloadMinutes: number;
@@ -338,6 +342,12 @@ export interface AdminEventDetail extends AdminEventRow {
     waitlistEnabled: boolean;
     roomId: string | null;
     roomName: string | null;
+    isFeatured: boolean;
+    checkInEnabled: boolean;
+    /** `false` = aberta a todos os inscritos no evento (revisão da FASE 3). */
+    requiresRegistration: boolean;
+    /** Inscrições vivas — o que a exclusão encontra pela frente. */
+    registrationCount: number;
   }[];
   tracks: {
     id: string;
@@ -381,20 +391,38 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
         settings: true,
         rooms: { orderBy: { name: 'asc' }, select: { id: true, name: true, capacity: true } },
         activities: {
+          // Excluída (`deletedAt`) sai da programação do organizador — a exclusão é
+          // lógica justamente para o dado sobreviver, mas não para continuar na tela.
+          where: { deletedAt: null },
           orderBy: { startsAt: 'asc' },
           select: {
             id: true,
             slug: true,
             title: true,
+            description: true,
             type: true,
             status: true,
+            modality: true,
             startsAt: true,
             endsAt: true,
             workloadMinutes: true,
             capacity: true,
             waitlistEnabled: true,
             roomId: true,
+            isFeatured: true,
+            checkInEnabled: true,
+            requiresRegistration: true,
             room: { select: { name: true } },
+            _count: {
+              select: {
+                registrations: {
+                  where: {
+                    deletedAt: null,
+                    status: { in: ['PENDING', 'CONFIRMED', 'WAITLISTED', 'ATTENDED'] },
+                  },
+                },
+              },
+            },
           },
         },
         tracks: {
@@ -450,8 +478,10 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       id: activity.id,
       slug: activity.slug,
       title: activity.title,
+      description: activity.description,
       type: activity.type,
       status: activity.status,
+      modality: activity.modality,
       startsAt: activity.startsAt,
       endsAt: activity.endsAt,
       workloadMinutes: activity.workloadMinutes,
@@ -459,6 +489,10 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       waitlistEnabled: activity.waitlistEnabled,
       roomId: activity.roomId,
       roomName: activity.room?.name ?? null,
+      isFeatured: activity.isFeatured,
+      checkInEnabled: activity.checkInEnabled,
+      requiresRegistration: activity.requiresRegistration,
+      registrationCount: activity._count.registrations,
     })),
     tracks: event.tracks.map((track) => ({
       id: track.id,
@@ -582,6 +616,12 @@ export interface ActivityInput {
   roomId?: string | null;
   isFeatured?: boolean;
   checkInEnabled?: boolean;
+  /**
+   * A atividade exige inscrição individual? Ausente = padrão do tipo
+   * (`defaultRequiresRegistration`). `false` = aberta: recebe automaticamente quem
+   * se inscreveu no evento e não aplica vagas/lista de espera.
+   */
+  requiresRegistration?: boolean;
 }
 
 /**
@@ -595,7 +635,9 @@ export interface ActivityInput {
  * formulário pode ter sido aberto antes de outra pessoa criar a atividade
  * conflitante — a janela entre abrir e salvar é exatamente onde o conflito nasce.
  */
-export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ activityId: string; created: boolean }>> {
+export async function saveActivity(input: ActivityInput): Promise<
+  AdminResult<{ activityId: string; created: boolean; autoEnrolled: number }>
+> {
   try {
     if (input.endsAt.getTime() <= input.startsAt.getTime()) {
       return {
@@ -605,7 +647,7 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
       };
     }
 
-    return await withTenant(input.tenantId, async (tx) => {
+    const saved = await withTenant(input.tenantId, async (tx) => {
       const event = await tx.event.findFirst({
         where: { id: input.eventId, deletedAt: null },
         select: { id: true, startsAt: true, endsAt: true },
@@ -623,7 +665,7 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
       if (input.startsAt.getTime() < event.startsAt.getTime() || input.endsAt.getTime() > event.endsAt.getTime()) {
         return {
           ok: false as const,
-          code: 'INVALID_INPUT',
+          code: 'INVALID_INPUT' as const,
           message: 'A atividade precisa acontecer dentro do período do evento.',
         };
       }
@@ -643,7 +685,7 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
         if (!fit.fits) {
           return {
             ok: false as const,
-            code: 'ROOM_TOO_SMALL',
+            code: 'ROOM_TOO_SMALL' as const,
             message:
               fit.message ??
               `A sala "${room.name}" comporta ${room.capacity} pessoas — menos que a lotação prevista.`,
@@ -679,7 +721,7 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
           const clashing = conflict.roomConflicts[0];
           return {
             ok: false as const,
-            code: 'ROOM_CONFLICT',
+            code: 'ROOM_CONFLICT' as const,
             message: `A sala "${room.name}" já está ocupada nesse horário${
               clashing?.title ? ` por "${clashing.title}"` : ''
             }.`,
@@ -702,6 +744,13 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
         roomId: input.roomId ?? null,
         isFeatured: input.isFeatured ?? false,
         checkInEnabled: input.checkInEnabled ?? true,
+        /**
+         * O padrão vem do TIPO quando a tela não decide (`defaultRequiresRegistration`):
+         * palestra e mesa-redonda nascem abertas, minicurso e oficina nascem com
+         * inscrição própria. É conveniência, não imposição — o valor explícito vence.
+         */
+        requiresRegistration:
+          input.requiresRegistration ?? defaultRequiresRegistration(input.type),
       };
 
       if (input.activityId) {
@@ -721,6 +770,27 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
 
         if (!before) {
           return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Atividade não encontrada.' };
+        }
+
+        /**
+         * Reduzir a lotação ABAIXO do que já está confirmado deixaria a atividade
+         * com mais inscritos do que lugares — e o contador denormalizado passaria a
+         * mentir para todos os cálculos de vaga. A recusa diz o número.
+         */
+        const confirmed = await tx.registration.count({
+          where: {
+            activityId: before.id,
+            deletedAt: null,
+            status: { in: ['PENDING', 'CONFIRMED', 'ATTENDED'] },
+          },
+        });
+
+        if (data.capacity !== null && data.capacity < confirmed) {
+          return {
+            ok: false as const,
+            code: 'INVALID_INPUT' as const,
+            message: `A lotação não pode ficar abaixo das ${confirmed} inscrição(ões) já ativas nesta atividade.`,
+          };
         }
 
         await tx.activity.update({ where: { id: before.id }, data });
@@ -745,7 +815,7 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
           tx,
         );
 
-        return { ok: true as const, activityId: before.id, created: false };
+        return { ok: true as const, activityId: before.id, created: false, openActivity: !data.requiresRegistration };
       }
 
       const id = randomUUID();
@@ -770,8 +840,39 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
         tx,
       );
 
-      return { ok: true as const, activityId: id, created: true };
+      return { ok: true as const, activityId: id, created: true, openActivity: !data.requiresRegistration };
     });
+
+    if (!saved.ok) return saved;
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A ATIVIDADE ABERTA PRECISA ALCANÇAR QUEM JÁ ESTAVA NO EVENTO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A inscrição automática é MATERIALIZADA no ato da inscrição no evento — e por
+     *  isso precisa de uma segunda hora: quando a atividade aberta nasce (ou passa a
+     *  ser aberta) DEPOIS de já haver gente inscrita no evento. Sem esta chamada,
+     *  "aberta a todos os inscritos" seria falso para os primeiros.
+     *
+     *  Fora da transação de propósito: `syncOpenActivityEnrollments` abre a própria
+     *  transação e, de dentro de outra ainda aberta, não enxergaria a atividade
+     *  recém-criada (armadilha 41).
+     */
+    const autoEnrolled = saved.openActivity
+      ? await syncOpenActivityEnrollments({
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          activityId: saved.activityId,
+          actorId: input.actorId,
+        })
+      : 0;
+
+    return {
+      ok: true as const,
+      activityId: saved.activityId,
+      created: saved.created,
+      autoEnrolled,
+    };
   } catch (error) {
     if (isUniqueViolation(error) && violatedIndexName(error)?.includes('slug')) {
       return {
@@ -783,6 +884,104 @@ export async function saveActivity(input: ActivityInput): Promise<AdminResult<{ 
 
     console.error(`[admin] falha ao salvar atividade: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a atividade.' };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Exclusão de atividade (revisão da FASE 3)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Exclui uma atividade que não chegou a existir na prática.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  EXCLUSÃO LÓGICA, E SÓ QUANDO NÃO HÁ GENTE ENVOLVIDA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A regra vive no domínio (`canDeleteActivity`) e recusa quando há inscrição viva
+ *  ou presença registrada — com a contagem na mensagem e o caminho alternativo
+ *  (cancelar). A exclusão lógica (`deletedAt`) tira a atividade da agenda e das
+ *  telas sem tocar em nada que a referencie; o fato vai para a trilha.
+ *
+ *  Cadastrou errado e ainda não publicou? Exclui. Já tem 40 inscritos? Cancela —
+ *  e todo mundo é avisado de que não acontece.
+ */
+export async function deleteActivity(input: {
+  tenantId: string;
+  actorId: string;
+  eventId: string;
+  activityId: string;
+}): Promise<AdminResult<{ title: string; registrations: number; attendances: number }>> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const activity = await tx.activity.findFirst({
+        where: { id: input.activityId, eventId: input.eventId, deletedAt: null },
+        select: { id: true, title: true, startsAt: true },
+      });
+
+      if (!activity) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Atividade não encontrada.',
+        };
+      }
+
+      const [liveRegistrations, attendances] = await Promise.all([
+        tx.registration.count({
+          where: {
+            activityId: activity.id,
+            deletedAt: null,
+            status: { in: ['PENDING', 'CONFIRMED', 'WAITLISTED', 'ATTENDED'] },
+          },
+        }),
+        tx.attendance.count({ where: { activityId: activity.id } }),
+      ]);
+
+      const verdict = canDeleteActivity({
+        title: activity.title,
+        liveRegistrations,
+        attendances,
+      });
+
+      if (!verdict.allowed) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message: verdict.message,
+          details: [verdict.reason],
+        };
+      }
+
+      await tx.activity.update({
+        where: { id: activity.id },
+        data: { deletedAt: new Date() },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'DELETE',
+          entityType: 'activity',
+          entityId: activity.id,
+          changes: {
+            titulo: { from: activity.title, to: null },
+            inicio: { from: activity.startsAt, to: null },
+            inscricoes: { from: 0, to: 0 },
+          },
+        },
+        tx,
+      );
+
+      return {
+        ok: true as const,
+        title: activity.title,
+        registrations: liveRegistrations,
+        attendances,
+      };
+    });
+  } catch (error) {
+    console.error(`[admin] falha ao excluir atividade: ${errorMessage(error)}`);
+    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível excluir a atividade.' };
   }
 }
 

@@ -218,10 +218,19 @@ export function EventLanding({
               {/* ── Chamada para ação ───────────────────────────────────── */}
               <div className="flex flex-wrap items-center gap-3 pt-2">
                 {window.open ? (
-                  <a href="#programacao" className="ef-button">
-                    Inscrever-se em uma atividade
+                  /**
+                   * A chamada principal é a inscrição no EVENTO (revisão da FASE 3):
+                   * ela é a porta de entrada — inclui as atividades abertas — e a
+                   * pessoa escolhe os minicursos depois, na programação.
+                   */
+                  <Link
+                    href={tenantPath(tenantSlug, `/eventos/${event.slug}/inscricao`)}
+                    className="ef-button"
+                    data-testid="event-registration-cta"
+                  >
+                    Inscrever-se no evento
                     <ArrowRight className="size-4" aria-hidden />
-                  </a>
+                  </Link>
                 ) : (
                   <span className="ef-badge">{window.message}</span>
                 )}

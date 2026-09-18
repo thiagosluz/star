@@ -25,6 +25,7 @@ import {
   evaluateRegistrationWindow,
   formatDuration,
 } from '@/domain/events/event-rules';
+import { activityTypeLabel } from '@/domain/events/activity-rules';
 import {
   publicRegistrationNotice,
   restrictedEventNotice,
@@ -45,18 +46,6 @@ import { listActivityMaterials, resolveActivityViewer } from '@/lib/speakers/mat
 import { loadActivityNotes } from '@/lib/speakers/speaker-service';
 
 export const dynamic = 'force-dynamic';
-
-const ACTIVITY_TYPE_LABEL: Record<string, string> = {
-  LECTURE: 'Palestra',
-  MINI_COURSE: 'Minicurso',
-  WORKSHOP: 'Workshop',
-  ROUND_TABLE: 'Mesa-redonda',
-  HACKATHON: 'Hackathon',
-  POSTER_SESSION: 'Sessão de pôsteres',
-  ORAL_PRESENTATION: 'Apresentação oral',
-  CULTURAL: 'Atividade cultural',
-  OTHER: 'Atividade',
-};
 
 export async function generateMetadata({
   params,
@@ -226,7 +215,7 @@ export default async function ActivityPage({
           <article className="space-y-5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="ef-badge">
-                {ACTIVITY_TYPE_LABEL[activity.type] ?? 'Atividade'}
+                {activityTypeLabel(activity.type)}
               </span>
               {activity.status === 'CANCELED' ? (
                 <span className="ef-badge text-destructive">Cancelada</span>
@@ -448,7 +437,36 @@ export default async function ActivityPage({
 
           {/* ── Painel de inscrição ──────────────────────────────────────── */}
           <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-            {activityClosed ? (
+            {/**
+              * ─── ATIVIDADE ABERTA (revisão da FASE 3) ────────────────────────────
+              *
+              *  Sem formulário: o público dela é o público do evento. A tela explica
+              *  como entrar e leva para a inscrição do evento — oferecer um botão de
+              *  inscrição aqui seria um caminho que o servidor recusa (e, pior, uma
+              *  segunda porta sem a inscrição que dá acesso à programação).
+              */}
+            {!activity.requiresRegistration && !activityClosed ? (
+              <div className="ef-card space-y-3 p-5" data-testid="activity-open-notice">
+                <p className="flex items-center gap-2 font-medium">
+                  <Users className="size-4" aria-hidden />
+                  Aberta a todos os inscritos no evento
+                </p>
+                <p className="text-sm opacity-70">
+                  Esta atividade não tem inscrição individual: quem se inscreveu no evento
+                  participa dela automaticamente.
+                  {activity.remainingSeats !== null
+                    ? ' O número de vagas é informativo.'
+                    : ''}
+                </p>
+                <Link
+                  href={tenantPath(tenantSlug, `/eventos/${eventSlug}/inscricao`)}
+                  className="ef-button w-full"
+                  data-testid="activity-event-registration-link"
+                >
+                  Inscrever-se no evento
+                </Link>
+              </div>
+            ) : activityClosed ? (
               <div className="ef-card space-y-2 p-5">
                 <p className="flex items-center gap-2 font-medium">
                   <AlertCircle className="size-4" aria-hidden />

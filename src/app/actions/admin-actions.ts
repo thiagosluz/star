@@ -29,6 +29,7 @@ import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
 import { DEFAULT_RUBRIC } from '@/domain/review/review-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, TASK_KINDS, XP_SOURCE_KINDS } from '@/domain/gamification/types';
 import {
+  deleteActivity,
   saveActivity,
   saveEvent,
   saveRoom,
@@ -349,13 +350,86 @@ export async function saveActivityAction(
     roomId: nullable(formData.get('roomId')),
     isFeatured: formData.get('isFeatured') === 'on',
     checkInEnabled: formData.get('checkInEnabled') !== 'off',
+    /**
+     * A caixa vem marcada por padrão (inscrição individual). O domínio aplica o
+     * padrão do tipo quando o valor não chega — assim um cliente que não conhece o
+     * campo (a API interna, um teste) continua criando atividade coerente.
+     */
+    requiresRegistration: formData.get('requiresRegistration') === 'on',
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+  // A programação pública e a página do evento mudam quando a atividade muda.
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  /**
+   * A atividade ABERTA alcança quem já estava inscrito no evento — e a mensagem
+   * diz quantos entraram: "aberta a todos" precisa dizer a quantos.
+   */
+  const automatic =
+    result.autoEnrolled > 0
+      ? ` ${result.autoEnrolled} inscrição(ões) do evento foram incluídas automaticamente.`
+      : '';
+
+  return {
+    ok: true,
+    message: `${result.created ? 'Atividade criada.' : 'Atividade atualizada.'}${automatic}`,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Exclusão de atividade (revisão da FASE 3)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Exclui uma atividade — recusando quando já há gente inscrita ou presença.
+ *
+ * A permissão é a mesma da criação (`activity:create`): quem monta a programação é
+ * quem corrige o cadastro. O serviço decide pelo domínio e a mensagem de recusa
+ * chega pronta, com a contagem e o caminho alternativo (cancelar).
+ */
+export async function deleteActivityAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      activityId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      activityId: formData.get('activityId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const auth = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.ACTIVITY_CREATE,
+  });
+  if (!auth.ok) return auth.state;
+
+  const result = await deleteActivity({
+    tenantId: auth.tenantId,
+    actorId: auth.userId,
+    eventId: parsed.data.eventId,
+    activityId: parsed.data.activityId,
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return result.ok
-    ? { ok: true, message: result.created ? 'Atividade criada.' : 'Atividade atualizada.' }
-    : { ok: false, code: result.code, message: result.message, details: result.details };
+    ? { ok: true, message: `Atividade “${result.title}” excluída.` }
+    : { ok: false, code: result.code, message: result.message };
 }
 
 export async function saveTrackAction(

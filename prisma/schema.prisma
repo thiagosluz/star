@@ -145,6 +145,20 @@ enum RegistrationStatus {
   NO_SHOW
 }
 
+/// De onde a linha de inscrição veio.
+///
+/// `INDIVIDUAL` — a pessoa escolheu aquela atividade (ou se inscreveu no evento).
+/// `EVENT_AUTO` — criada automaticamente porque a pessoa se inscreveu no EVENTO e a
+/// atividade é aberta a todos os inscritos (`Activity.requiresRegistration = false`).
+///
+/// A distinção não é cosmética: ela decide o que a tela mostra ("inscrito
+/// automaticamente"), o que o cancelamento da inscrição do evento leva junto (só as
+/// automáticas) e o que a exclusão de atividade encontra pela frente.
+enum RegistrationOrigin {
+  INDIVIDUAL
+  EVENT_AUTO
+}
+
 /// Como a presença foi comprovada — base de auditoria da carga horária.
 enum AttendanceSource {
   QR_CODE_CHECKIN
@@ -968,6 +982,16 @@ model Activity {
   capacity        Int?    @default(0)
   waitlistEnabled Boolean @default(false)
 
+  /// A atividade exige inscrição INDIVIDUAL?
+  ///
+  /// `true` (padrão) = comportamento histórico: cada participante se inscreve nela.
+  /// `false` = atividade ABERTA: quem se inscreve no evento entra automaticamente,
+  /// não há formulário por atividade e vagas/lista de espera não são aplicadas (o
+  /// público é o do evento). O padrão por tipo vem de
+  /// `defaultRequiresRegistration` (`src/domain/events/activity-rules.ts`), e a
+  /// decisão final é da instituição.
+  requiresRegistration Boolean @default(true)
+
   /// ─── Contadores denormalizados (reserva de vaga atômica) ──────────────────
   /// Fonte da verdade para ocupação. Ver `SEAT_AVAILABLE_PREDICATE` em
   /// src/domain/events/registration-rules.ts — o predicado de disponibilidade
@@ -1493,6 +1517,9 @@ model Registration {
   userId     String  @db.Uuid
 
   status RegistrationStatus @default(PENDING)
+
+  /// Como esta linha nasceu (ver `RegistrationOrigin`).
+  origin RegistrationOrigin @default(INDIVIDUAL)
 
   /// Posição na lista de espera quando `status = WAITLISTED`.
   waitlistPosition Int? @default(0)

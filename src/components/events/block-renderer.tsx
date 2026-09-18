@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 
 import { formatDuration } from '@/domain/events/event-rules';
+import { activityTypeLabel } from '@/domain/events/activity-rules';
 import {
   BLOCK_LABELS,
   SANDBOXED_BLOCK_TYPES,
@@ -112,18 +113,6 @@ function ActivitiesBlock({
   );
 }
 
-const ACTIVITY_TYPE_LABEL: Record<string, string> = {
-  LECTURE: 'Palestra',
-  MINI_COURSE: 'Minicurso',
-  WORKSHOP: 'Workshop',
-  ROUND_TABLE: 'Mesa-redonda',
-  HACKATHON: 'Hackathon',
-  POSTER_SESSION: 'Sessão de pôsteres',
-  ORAL_PRESENTATION: 'Apresentação oral',
-  CULTURAL: 'Atividade cultural',
-  OTHER: 'Atividade',
-};
-
 export function ActivityCard({
   activity,
   tenantSlug,
@@ -142,7 +131,7 @@ export function ActivityCard({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="ef-badge">{ACTIVITY_TYPE_LABEL[activity.type] ?? 'Atividade'}</span>
+            <span className="ef-badge">{activityTypeLabel(activity.type)}</span>
             {activity.isFeatured ? (
               <span className="ef-badge gap-1">
                 <Star className="size-3" aria-hidden />

@@ -9,9 +9,12 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { getReviewerRanking } from '@/lib/gamification/achievement-service';
+import { activityStatusLabel, activityTypeLabel } from '@/domain/events/activity-rules';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
+import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { ReviewerAwardPanel } from '@/components/reviews/reviewer-award';
 import {
+  deleteActivityAction,
   saveActivityAction,
   saveEventAction,
   saveRoomAction,
@@ -265,14 +268,142 @@ export default async function AdminEventDetailPage({
           {event.activities.length > 0 ? (
             <ul className="divide-y divide-border rounded-lg border border-border" data-testid="activity-list">
               {event.activities.map((activity) => (
-                <li key={activity.id} className="space-y-0.5 p-3 text-sm">
-                  <p className="font-medium">{activity.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {activity.type} · {activity.startsAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
-                    {activity.workloadMinutes} min · {activity.roomName ?? 'sem sala'} ·{' '}
-                    {activity.capacity ?? 'sem limite'} vaga(s)
-                    {activity.waitlistEnabled ? ' · lista de espera' : ''}
-                  </p>
+                <li key={activity.id} className="space-y-3 p-3 text-sm" data-testid={`activity-row-${activity.id}`}>
+                  <div className="space-y-0.5">
+                    <p className="flex flex-wrap items-center gap-2 font-medium">
+                      {activity.title}
+                      {/**
+                        * "Aberta" é a informação que muda o comportamento da inscrição —
+                        * o organizador precisa vê-la na lista, e não descobrir na tela de
+                        * edição. O rótulo do TIPO vem do domínio (português), nunca do
+                        * enum do banco.
+                        */}
+                      {!activity.requiresRegistration ? (
+                        <span
+                          className="rounded border border-secondary/50 px-1.5 py-0.5 text-xs text-secondary-strong"
+                          data-testid={`activity-open-${activity.id}`}
+                        >
+                          Aberta a todos os inscritos
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {activityTypeLabel(activity.type)} ·{' '}
+                      {activity.startsAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
+                      {activity.workloadMinutes} min · {activity.roomName ?? 'sem sala'} ·{' '}
+                      {activity.requiresRegistration
+                        ? `${activity.capacity ?? 'sem limite'} vaga(s)`
+                        : 'sem controle de vagas'}
+                      {activity.waitlistEnabled && activity.requiresRegistration ? ' · lista de espera' : ''} ·{' '}
+                      {activityStatusLabel(activity.status)} · {activity.registrationCount} inscrito(s)
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-start gap-3">
+                    {/* ── Editar: os mesmos campos da criação, preenchidos ─────── */}
+                    <details className="min-w-0 flex-1 rounded-lg border border-border p-2">
+                      <summary
+                        className="cursor-pointer text-xs font-medium"
+                        data-testid={`edit-activity-${activity.id}`}
+                      >
+                        Editar atividade
+                      </summary>
+
+                      <AdminForm
+                        action={saveActivityAction}
+                        submitLabel="Salvar atividade"
+                        testId={`activity-form-${activity.id}`}
+                        compact
+                      >
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={event.id} />
+                        <input type="hidden" name="activityId" value={activity.id} />
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Identificador" name="slug" required defaultValue={activity.slug} />
+                          <Field label="Título" name="title" required defaultValue={activity.title} />
+                          <SelectField label="Tipo" name="type" options={ACTIVITY_TYPES} defaultValue={activity.type} />
+                          <SelectField label="Situação" name="status" options={ACTIVITY_STATUS} defaultValue={activity.status} />
+                          <SelectField label="Modalidade" name="modality" options={MODALITY} defaultValue={activity.modality} />
+                          <SelectField label="Sala" name="roomId" options={roomOptions} defaultValue={activity.roomId ?? ''} />
+                          <Field
+                            label="Início"
+                            name="startsAt"
+                            type="datetime-local"
+                            required
+                            defaultValue={toLocalInput(activity.startsAt)}
+                          />
+                          <Field
+                            label="Término"
+                            name="endsAt"
+                            type="datetime-local"
+                            required
+                            defaultValue={toLocalInput(activity.endsAt)}
+                          />
+                          <Field
+                            label="Carga horária (min)"
+                            name="workloadMinutes"
+                            type="number"
+                            min={1}
+                            required
+                            defaultValue={activity.workloadMinutes}
+                          />
+                          <Field
+                            label="Vagas"
+                            name="capacity"
+                            type="number"
+                            min={0}
+                            defaultValue={activity.capacity ?? ''}
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap gap-4">
+                          <CheckboxField
+                            label="Exige inscrição individual"
+                            name="requiresRegistration"
+                            defaultChecked={activity.requiresRegistration}
+                          />
+                          <CheckboxField
+                            label="Habilitar lista de espera"
+                            name="waitlistEnabled"
+                            defaultChecked={activity.waitlistEnabled}
+                          />
+                          <CheckboxField
+                            label="Destacar na página"
+                            name="isFeatured"
+                            defaultChecked={activity.isFeatured}
+                          />
+                          <CheckboxField
+                            label="Habilitar credenciamento"
+                            name="checkInEnabled"
+                            defaultChecked={activity.checkInEnabled}
+                          />
+                        </div>
+                      </AdminForm>
+                    </details>
+
+                    {/**
+                      * Excluir recusa quando há gente inscrita ou presença — e diz o que
+                      * fazer no lugar (cancelar). O diálogo do sistema explica isso antes
+                      * do clique.
+                      */}
+                    <InlineActionForm
+                      action={deleteActivityAction}
+                      submitLabel="Excluir"
+                      variant="destructive"
+                      testId={`delete-activity-${activity.id}`}
+                      confirm={{
+                        title: `Excluir a atividade “${activity.title}”?`,
+                        description:
+                          'A atividade sai da programação. Só é possível excluir o que ainda não tem ninguém inscrito nem presença registrada — havendo, o sistema recusa e o caminho é CANCELAR a atividade, que preserva o histórico.',
+                        confirmLabel: 'Excluir atividade',
+                      }}
+                    >
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <input type="hidden" name="activityId" value={activity.id} />
+                    </InlineActionForm>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -298,10 +429,17 @@ export default async function AdminEventDetailPage({
             </div>
 
             <div className="flex flex-wrap gap-4">
+              <CheckboxField label="Exige inscrição individual" name="requiresRegistration" defaultChecked />
               <CheckboxField label="Habilitar lista de espera" name="waitlistEnabled" />
               <CheckboxField label="Destacar na página" name="isFeatured" />
               <CheckboxField label="Habilitar credenciamento" name="checkInEnabled" defaultChecked />
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              Desmarque <strong>“Exige inscrição individual”</strong> para atividades abertas (palestra,
+              mesa-redonda): quem se inscrever no evento entra nelas automaticamente, e vagas/lista de espera
+              não se aplicam. Minicursos e oficinas normalmente exigem inscrição própria.
+            </p>
           </AdminForm>
         </div>
       </details>

@@ -302,6 +302,13 @@ async function main() {
           roomId: salaPrincipal,
           capacity: null,
           workloadMinutes: 120,
+          /**
+           * Cerimônia de abertura é ABERTA (revisão da FASE 3): não há lista de
+           * inscritos própria — quem se inscreve no evento participa. O dado de
+           * demonstração precisa refletir o uso real, senão a tela nunca mostra o
+           * caminho novo.
+           */
+          requiresRegistration: false,
           isFeatured: true,
           tags: ['abertura', 'conferência'],
         },
@@ -727,6 +734,8 @@ async function main() {
         endsAt: new Date(days(60).getTime() + 2 * 3_600_000),
         capacity: 120,
         workloadMinutes: 120,
+        // Palestra também é aberta (revisão da FASE 3): sem inscrição individual.
+        requiresRegistration: false,
       },
     });
   });

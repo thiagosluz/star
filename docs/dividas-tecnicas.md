@@ -8,7 +8,8 @@
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
 > **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
-> **FASE 23** (E9–E13), a **FASE 24** (E14–E17) e a **FASE 25** (escopo próprio: E21–E24).
+> **FASE 23** (E9–E13), a **FASE 24** (E14–E17) e a **FASE 25** (escopo próprio: E21–E24), com as
+> **revisões pós-entrega** da FASE 25 (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -81,19 +82,19 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
 | D. Comunicação e comunidade | 6 | 3¹ | Alto para adoção — não há um único e-mail; convite é manual |
-| E. Jornada do participante | 15 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada e a trilha do rascunho só muda recriando |
+| E. Jornada do participante | 16 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando e o evento lotado não tem fila de espera |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **48** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **49** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+15+5+6+4+1 = 48), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+6+16+5+6+4+1 = 49), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13, a FASE 17 acrescentou
 > E9–E13, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
-> acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, e o E31 e o E32,
-> que a **revisão** da FASE 4 declarou).
+> acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, o E31 e o E32,
+> que a **revisão** da FASE 4 declarou, e o E33, que a **revisão** da FASE 3 declarou).
 >
 > **Nota de contagem (FASE 25):** a fase do portal do palestrante entregou um escopo que
 > **não vinha deste levantamento** (foi definido diretamente pelo humano: E21 perfil e
@@ -182,6 +183,7 @@
 | E30 | **O convite aberto pelo e-mail da conta se apoia em endereço não verificado** | FASE 25 (revisão, ADR-120) | Quem cria uma conta com o endereço que a organização cadastrou entra no portal e assume o perfil — o mesmo grau de confiança do aceite pelo painel, mas sem a prova de posse do endereço, que é a verificação de e-mail da F15 | Sem F15, um terceiro que consiga criar conta com o e-mail do convidado assume o perfil; a auditoria registra o aceite, e a organização pode desvincular | M | Sim |
 | E31 | **O autor não consegue RETIRAR uma submissão já enviada** | FASE 4 (revisão, ADR-122) | A máquina de estados tem `WITHDRAWN` (e o limite da trilha já o ignora na contagem), mas não existe serviço nem tela que o produza — só a comissão pode cancelar, e não há caminho de autor | Quem enviou por engano depende de um pedido manual à comissão, e o trabalho fica no páreo até alguém agir; a tela de exclusão manda falar com a comissão porque não pode oferecer o que não existe | M | Sim |
 | E32 | **A trilha do rascunho não pode ser trocada pela interface** | FASE 4 (revisão, ADR-123) | Título, resumo, palavras-chave e idioma são editáveis; a trilha ficou de fora porque trocá-la muda a rubrica de avaliação, o requisito de versão cega e a fila de revisores (decisão do comitê) | Quem escolheu a trilha errada precisa excluir o rascunho e recomeçar — a edição cobre o texto, não a classificação | P | Sim |
+| E33 | **Não há lista de espera no nível do EVENTO** | FASE 3 (revisão, ADR-124/125) | A fila existe por ATIVIDADE (com vaga e promoção automática); a inscrição no evento, criada nesta revisão, consome a lotação do evento e, quando ela acaba, **recusa** em vez de enfileirar — quem não coube não entra em fila nenhuma | Evento lotado perde o interessado: não há como saber quem esperava nem promover ninguém quando uma vaga abre; a organização só descobre a demanda por fora | M | Sim |
 
 ### F. Gamificação
 
@@ -242,7 +244,7 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | ~~**F25 — Portal do palestrante**~~ | Perfil do palestrante, convite e vínculo de conta, portal com posse, materiais com visibilidade, vitrine e certificado | E21–E24 (escopo definido pelo humano) | **Concluída como FASE 25** — `docs/fase-25-portal-do-palestrante.md`. O palestrante deixou de ser uma linha da atividade e passou a ser uma pessoa da instituição, com portal próprio |
 | **F26 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (storage) ou num mutirão de meio dia |
 | **F27 — Material e convite do palestrante** | Convite por e-mail, integridade forte no upload, foto por URL, convite em lote, colunas legadas | E25–E29 (+ E30) | O que a FASE 25 declarou em aberto (e a revisão dela, o E30). **E25, E28 e E30 dependem da F15** (sem provedor de e-mail não há envio, e sem verificação de e-mail a entrada pelo convite se apoia no endereço da conta); as demais são independentes e cabem em mutirão |
-| **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
+| **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo (atividade e evento), `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2, E33 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
 
@@ -338,6 +340,20 @@ registrada na **seção 18** do documento da fase, com os ADRs 121 a 123. Declar
 novas: o **E31** (retirar uma submissão enviada continua sem serviço e sem tela — e é por isso que
 a tela de exclusão manda falar com a comissão) e o **E32** (a trilha do rascunho só muda
 recriando, porque trocá-la mexeria na rubrica, no sigilo e na fila de revisores).
+
+### Revisão da FASE 3 executada depois da entrega (concluído)
+
+Veio de um pedido de uso: o cadastro era **atividade por atividade**, e faltava a inscrição no
+EVENTO — que já deve incluir quem entra nas atividades sem inscrição própria (palestra, mesa-redonda)
+—, além de **editar e excluir** atividade na programação e dos rótulos de tipo/situação em
+português (a tela mostrava `LECTURE`, `ROUND_TABLE`). A inscrição no evento **materializa** uma
+linha por atividade aberta (`origin = EVENT_AUTO`, ADR-124); `requiresRegistration` virou COLUNA
+cujo padrão deriva do tipo (`defaultRequiresRegistration`, com fail-closed para tipo desconhecido) e
+a atividade aberta não aplica vagas nem fila (ADR-125); a exclusão de atividade é **lógica** e
+recusada quando há inscrição viva ou presença — a mensagem manda cancelar (ADR-126). Está registrada
+na **seção 19** do documento da fase, com os ADRs 124 a 126. Declarou **uma** dívida nova, o
+**E33**: a fila de espera existe por atividade, mas a inscrição no evento — que consome a lotação do
+evento — **recusa** quando o evento lota, em vez de enfileirar.
 
 ---
 

@@ -6,6 +6,7 @@ import { CalendarDays, Clock, MapPin, Mic } from 'lucide-react';
 import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
 
 import { getPublicSpeaker, getTenantContext } from '@/lib/events/event-repository';
+import { activityTypeLabel } from '@/domain/events/activity-rules';
 import { formatDuration } from '@/domain/events/event-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { Section, ThemeScope } from '@/components/events/theme-scope';
@@ -29,18 +30,6 @@ import { SpeakerAvatar, SpeakerSocialLinks } from '@/components/events/speaker-g
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const dynamic = 'force-dynamic';
-
-const ACTIVITY_TYPE_LABEL: Record<string, string> = {
-  LECTURE: 'Palestra',
-  MINI_COURSE: 'Minicurso',
-  WORKSHOP: 'Workshop',
-  ROUND_TABLE: 'Mesa-redonda',
-  HACKATHON: 'Hackathon',
-  POSTER_SESSION: 'Sessão de pôsteres',
-  ORAL_PRESENTATION: 'Apresentação oral',
-  CULTURAL: 'Atividade cultural',
-  OTHER: 'Atividade',
-};
 
 export async function generateMetadata({
   params,
@@ -136,8 +125,8 @@ export default async function PublicSpeakerPage({
                 <li key={activity.id} className="ef-card space-y-2 p-5">
                   <p className="flex items-center gap-2 text-xs uppercase tracking-wide opacity-60">
                     <Mic className="size-3.5" aria-hidden />
-                    {role ?? ACTIVITY_TYPE_LABEL[activity.type] ?? 'Atividade'}
-                    {role ? ` · ${ACTIVITY_TYPE_LABEL[activity.type] ?? 'Atividade'}` : ''}
+                    {role ?? activityTypeLabel(activity.type)}
+                    {role ? ` · ${activityTypeLabel(activity.type)}` : ''}
                   </p>
 
                   <p className="font-medium">

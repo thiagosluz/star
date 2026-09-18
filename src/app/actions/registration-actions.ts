@@ -24,6 +24,7 @@ import { adminPrisma } from '@/lib/db/admin-client';
 import {
   cancelRegistration,
   registerForActivity,
+  registerForEvent,
   type RegistrationOutcome,
 } from '@/lib/events/registration-service';
 import { can, type Principal } from '@/domain/rbac/authorization';
@@ -249,6 +250,104 @@ export async function registerForActivityAction(
           ? 'Inscrição confirmada! Sua conta passou a ser participante desta instituição.'
           : 'Inscrição confirmada!'
         : `Você entrou na lista de espera (posição ${outcome.waitlistPosition}).`,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Inscrição no EVENTO (revisão da FASE 3)
+// ───────────────────────────────────────────────────────────────────────────────
+const registerForEventSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  eventSlug: z.string().trim().min(1).max(120),
+  consentImage: z.coerce.boolean().optional().default(false),
+  consentData: z.coerce.boolean().optional().default(false),
+  accessibilityNotes: z.string().trim().max(600).optional(),
+});
+
+/**
+ * Inscreve a pessoa no evento — e, com isso, em todas as atividades ABERTAS.
+ *
+ * A ação é a mesma porta da inscrição por atividade (o guarda de vínculo é
+ * compartilhado), mas o destino é o evento: quem se inscreve aqui passa a ver a
+ * programação liberada, e a mensagem diz o que aconteceu de automático — a pessoa
+ * precisa saber em que ela acabou de ser inscrita.
+ */
+export async function registerForEventAction(
+  _prev: RegistrationActionState | null,
+  formData: FormData,
+): Promise<RegistrationActionState> {
+  const parsed = registerForEventSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    eventSlug: formData.get('eventSlug'),
+    consentImage: formData.get('consentImage') === 'on',
+    consentData: formData.get('consentData') === 'on',
+    accessibilityNotes: (formData.get('accessibilityNotes') as string) || undefined,
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados do formulário inválidos.' };
+  }
+
+  const data = parsed.data;
+
+  const context = await guardSelfRegistration(data.tenantSlug);
+
+  if (!context.ok) {
+    if (context.reason === 'FORBIDDEN') {
+      return {
+        ok: false,
+        code: 'FORBIDDEN',
+        message:
+          'Seu perfil não tem permissão para se inscrever nesta instituição.',
+      };
+    }
+
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`),
+      )}`,
+    );
+  }
+
+  if (!data.consentData) {
+    return {
+      ok: false,
+      code: 'CONSENT_REQUIRED',
+      message: 'É necessário autorizar o tratamento dos seus dados para se inscrever.',
+    };
+  }
+
+  const outcome = await registerForEvent({
+    tenantId: context.tenantId,
+    eventSlug: data.eventSlug,
+    userId: context.userId,
+    consentImage: data.consentImage,
+    consentData: data.consentData,
+    accessibilityNotes: data.accessibilityNotes ?? null,
+  });
+
+  if (!outcome.ok) {
+    return { ok: false, code: outcome.code, message: outcome.message };
+  }
+
+  // A programação inteira muda de estado para esta pessoa: as atividades abertas
+  // passam a ter a inscrição dela, e a página do evento mostra o crachá.
+  revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
+  revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
+
+  const automatic =
+    outcome.enrolledActivities > 0
+      ? ` Você também foi inscrito automaticamente em ${outcome.enrolledActivities} atividade(s) aberta(s) a todos os participantes: ${outcome.titles.join(', ')}.`
+      : '';
+
+  return {
+    ok: true,
+    code: 'CONFIRMED',
+    message: `Inscrição no evento confirmada!${automatic}${
+      outcome.linkedAsParticipant
+        ? ' Sua conta passou a ser participante desta instituição.'
+        : ''
+    }`,
   };
 }
 

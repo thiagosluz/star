@@ -179,6 +179,9 @@ export async function createActivity(options: {
   workloadMinutes?: number;
   roomId?: string | null;
   startsAtOffsetDays?: number;
+  /** `false` = atividade ABERTA: entra pela inscrição no evento (revisão da FASE 3). */
+  requiresRegistration?: boolean;
+  type?: 'LECTURE' | 'MINI_COURSE' | 'WORKSHOP' | 'ROUND_TABLE';
 }) {
   const startsAt = new Date(Date.now() + (options.startsAtOffsetDays ?? 30) * 86_400_000);
 
@@ -193,7 +196,7 @@ export async function createActivity(options: {
         slug: options.slug,
         title: options.title,
         description: 'Atividade criada para os testes E2E.',
-        type: 'WORKSHOP',
+        type: options.type ?? 'WORKSHOP',
         status: options.status ?? 'SCHEDULED',
         modality: 'IN_PERSON',
         startsAt,
@@ -204,6 +207,7 @@ export async function createActivity(options: {
         confirmedCount: 0,
         waitlistCount: 0,
         roomId: options.roomId ?? null,
+        requiresRegistration: options.requiresRegistration ?? true,
       },
     });
   });

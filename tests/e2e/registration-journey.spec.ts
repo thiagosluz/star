@@ -183,6 +183,230 @@ async function scenario(options: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  INSCRIÇÃO NO EVENTO (revisão da FASE 3)
+ *
+ *  A jornada que faltava: uma inscrição só, no EVENTO, que já inclui as atividades
+ *  abertas (palestra, mesa-redonda) — e os minicursos continuam exigindo escolha
+ *  própria. O teste percorre o caminho pelo NAVEGADOR e confere o efeito no banco:
+ *  a linha do evento e a linha AUTOMÁTICA na atividade aberta.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+test.describe('inscrição no evento e atividades abertas', () => {
+  test('a inscrição no evento entra nas atividades abertas e deixa os minicursos para escolha própria', async ({
+    page,
+  }) => {
+    const tenant = await createTenant({ label: 'evento-geral', name: `Instituição Evento Geral ${RUN_ID}` });
+
+    const event = await createEvent({
+      tenantId: tenant.id,
+      slug: `congresso-geral-${RUN_ID}`,
+      title: `Congresso Geral ${RUN_ID}`,
+      status: 'REGISTRATION_OPEN',
+      capacity: null,
+    });
+
+    // Duas atividades: a palestra é ABERTA; o minicurso exige inscrição própria.
+    const palestra = await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `palestra-abertura-${RUN_ID}`,
+      title: `Palestra de abertura ${RUN_ID}`,
+      type: 'LECTURE',
+      requiresRegistration: false,
+      capacity: 150,
+      // Dia SEGUINTE ao início do evento: o campo de horário tem precisão de minuto,
+      // e a atividade no MESMO instante cairia segundos antes da abertura.
+      startsAtOffsetDays: 31,
+    });
+
+    const minicurso = await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `minicurso-pratica-${RUN_ID}`,
+      title: `Minicurso prático ${RUN_ID}`,
+      type: 'MINI_COURSE',
+      requiresRegistration: true,
+      capacity: 30,
+      startsAtOffsetDays: 31,
+    });
+
+    const user = await signUpThroughUi(page, 'Participante E2E');
+
+    // ── A landing leva à inscrição no EVENTO ──────────────────────────────────
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}`);
+    await expect(page.getByTestId('event-registration-cta')).toContainText(/inscrever-se no evento/i);
+    await page.getByTestId('event-registration-cta').click();
+
+    await page.waitForURL(new RegExp(`/eventos/${event.slug}/inscricao$`), { timeout: 30_000 });
+
+    /**
+     * A tela ANTES do clique diz o que a inscrição inclui e o que fica de fora —
+     * a diferença é a informação que o participante precisa para decidir.
+     */
+    await expect(page.getByTestId('open-activities-list')).toContainText(palestra.title);
+    await expect(page.getByTestId('individual-activities-list')).toContainText(minicurso.title);
+
+    await page.getByRole('checkbox', { name: /tratamento dos meus dados/i }).check();
+    await page.getByRole('button', { name: /confirmar inscrição no evento/i }).click();
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A ASSERÇÃO É O ESTADO DURÁVEL, NÃO A MENSAGEM TRANSITÓRIA
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A ação revalida o caminho, e a página passa a renderizar o estado "inscrição
+     *  ativa" no lugar do formulário — o cartão de sucesso do cliente sai de cena
+     *  junto. É o mesmo cuidado dos testes de emissão de certificado: o que se prende
+     *  é o que ficou gravado, e é aqui que a pessoa confere em que foi inscrita
+     *  automaticamente.
+     */
+    const active = page.getByTestId('event-registration-status');
+    await expect(active).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('enrolled-open-activities')).toContainText(palestra.title);
+
+    // ── Banco: linha do evento + linha automática na atividade aberta ─────────
+    const rows = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.registration.findMany({
+        where: { userId: user.id, eventId: event.id },
+        select: { activityId: true, origin: true, status: true },
+      });
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.activityId === null)?.status).toBe('CONFIRMED');
+    expect(rows.find((row) => row.activityId === palestra.id)?.origin).toBe('EVENT_AUTO');
+    // O minicurso NÃO entrou: quem quer, se inscreve nele.
+    expect(rows.some((row) => row.activityId === minicurso.id)).toBe(false);
+
+    // ── "Minhas inscrições" mostra as duas, com os marcadores ─────────────────
+    await page.goto(`/t/${tenant.slug}/minhas-inscricoes`);
+    await expect(page.getByTestId('registration-event-badge')).toBeVisible();
+    await expect(page.getByTestId('registration-automatic-badge')).toBeVisible();
+
+    // ── A atividade aberta não oferece formulário; o minicurso oferece ────────
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}/atividades/${palestra.slug}`);
+    await expect(page.getByTestId('activity-open-notice')).toBeVisible();
+    await expect(page.getByTestId('activity-event-registration-link')).toBeVisible();
+
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}/atividades/${minicurso.slug}`);
+    await expect(page.getByTestId('activity-open-notice')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /confirmar inscrição/i })).toBeVisible();
+  }, 120_000);
+
+  test('o painel do evento mostra o tipo em português, edita e recusa excluir com inscritos', async ({
+    page,
+  }) => {
+    const tenant = await createTenant({ label: 'painel-atividade', name: `Instituição Painel ${RUN_ID}` });
+
+    const event = await createEvent({
+      tenantId: tenant.id,
+      slug: `evento-painel-${RUN_ID}`,
+      title: `Evento Painel ${RUN_ID}`,
+      status: 'REGISTRATION_OPEN',
+      capacity: null,
+    });
+
+    /**
+     * A atividade nasce como PALESTRA e ABERTA — o caso do relato: o tipo aparecia
+     * como `LECTURE` na lista do organizador.
+     */
+    const palestra = await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `mesa-redonda-${RUN_ID}`,
+      title: `Mesa-redonda sobre inclusão ${RUN_ID}`,
+      type: 'ROUND_TABLE',
+      requiresRegistration: false,
+      startsAtOffsetDays: 31,
+    });
+
+    const admin = await signUpThroughUi(page, 'Admin do Painel E2E');
+    await linkUser({ tenantId: tenant.id, userId: admin.id });
+    await grantRole({ tenantId: tenant.id, userId: admin.id, role: 'ADMIN' });
+
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}`);
+    await page.getByTestId('activities-section').locator('summary').first().click();
+
+    const row = page.getByTestId(`activity-row-${palestra.id}`);
+    // Português, e não o enum do banco.
+    await expect(row).toContainText('Mesa-redonda');
+    await expect(row).not.toContainText('ROUND_TABLE');
+    await expect(page.getByTestId(`activity-open-${palestra.id}`)).toBeVisible();
+
+    // ── Editar: o título muda e a tela confirma ───────────────────────────────
+    await page.getByTestId(`edit-activity-${palestra.id}`).click();
+    const form = page.getByTestId(`activity-form-${palestra.id}`);
+    await form.getByLabel('Título').fill(`Mesa-redonda revisada ${RUN_ID}`);
+    await form.getByTestId('admin-submit').click();
+    await expect(page.getByTestId('activity-list')).toContainText(`Mesa-redonda revisada ${RUN_ID}`, {
+      timeout: 30_000,
+    });
+
+    // ── Uma pessoa se inscreve no evento: a atividade aberta passa a ter inscrito
+    /**
+     * A SEGUNDA PESSOA NASCE PELA API, E NÃO PELA TELA DE CADASTRO.
+     *
+     * `/signup` com sessão ativa redireciona (a pessoa já está dentro) e o formulário
+     * não existe — o teste morreria esperando um campo que nunca aparece. O cadastro
+     * pela API é o padrão das outras specs para criar mais de um usuário na mesma
+     * jornada; a tela de cadastro tem cenário próprio e não é o que este teste mede.
+     */
+    const participantEmail = uniqueEmail('insc-evento');
+    const signUp = await page.request.post('/api/auth/sign-up/email', {
+      headers: { origin: 'http://localhost:3000' },
+      data: { name: 'Participante do Evento E2E', email: participantEmail, password: PASSWORD },
+    });
+    expect(signUp.ok()).toBe(true);
+
+    const participant = await e2eDb.user.findUniqueOrThrow({
+      where: { email: participantEmail },
+      select: { id: true },
+    });
+
+    const outcome = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.registration.count({ where: { activityId: palestra.id, userId: participant.id } });
+    });
+    expect(outcome).toBe(0);
+
+    await page.request.post('/api/auth/sign-in/email', {
+      headers: { origin: 'http://localhost:3000' },
+      data: { email: participantEmail, password: PASSWORD },
+    });
+
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}/inscricao`);
+    await page.getByRole('checkbox', { name: /tratamento dos meus dados/i }).check();
+    await page.getByRole('button', { name: /confirmar inscrição no evento/i }).click();
+    await expect(page.getByTestId('event-registration-status')).toBeVisible({ timeout: 30_000 });
+
+    // ── Excluir: recusado, com o motivo e o caminho alternativo ───────────────
+    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await page.request.post('/api/auth/sign-in/email', {
+      headers: { origin: 'http://localhost:3000' },
+      data: { email: admin.email, password: PASSWORD },
+    });
+
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}`);
+    await page.getByTestId('activities-section').locator('summary').first().click();
+    await page.getByTestId(`delete-activity-${palestra.id}-open`).click();
+
+    const dialog = page.getByTestId(`delete-activity-${palestra.id}-confirm`);
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId(`delete-activity-${palestra.id}-confirm-confirm`).click();
+
+    await expect(page.getByTestId(`delete-activity-${palestra.id}-feedback`)).toContainText(
+      /cancele/i,
+      { timeout: 30_000 },
+    );
+
+    // A atividade continua na programação.
+    await expect(page.getByTestId(`activity-row-${palestra.id}`)).toBeVisible();
+  }, 180_000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 test.describe('landing page pública', () => {
   test('visitante anônimo vê a página do evento e pode navegar até a atividade', async ({
     page,

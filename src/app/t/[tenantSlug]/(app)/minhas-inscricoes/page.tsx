@@ -85,6 +85,30 @@ export default async function MyRegistrationsPage({
                       ? ` · ${registration.waitlistPosition}º`
                       : ''}
                   </span>
+
+                  {/**
+                    * A inscrição DO EVENTO é a que dá acesso à programação aberta —
+                    * ela precisa se distinguir das demais na lista. E a linha criada
+                    * automaticamente diz de onde veio: a pessoa não escolheu aquela
+                    * atividade, ela veio junto com o evento.
+                    */}
+                  {registration.isEventRegistration ? (
+                    <span
+                      className="rounded border border-secondary/50 px-2 py-0.5 text-xs text-secondary-strong"
+                      data-testid="registration-event-badge"
+                    >
+                      Inscrição no evento
+                    </span>
+                  ) : null}
+
+                  {registration.isAutomatic ? (
+                    <span
+                      className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                      data-testid="registration-automatic-badge"
+                    >
+                      Incluída pela inscrição no evento
+                    </span>
+                  ) : null}
                 </div>
 
                 <h2 className="font-medium">{registration.activityTitle}</h2>
@@ -93,35 +117,50 @@ export default async function MyRegistrationsPage({
                   {registration.eventTitle}
                 </p>
 
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <CalendarDays className="size-3.5" aria-hidden />
-                  {new Intl.DateTimeFormat('pt-BR', {
-                    day: '2-digit',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  }).format(registration.activityStartsAt)}
-                  <span className="ml-2 opacity-70">
-                    · inscrito em{' '}
+                {registration.isEventRegistration ? (
+                  <p className="text-xs text-muted-foreground">
+                    Vale para todas as atividades abertas a participantes.
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <CalendarDays className="size-3.5" aria-hidden />
                     {new Intl.DateTimeFormat('pt-BR', {
                       day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                    }).format(registration.createdAt)}
-                  </span>
-                </p>
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    }).format(registration.activityStartsAt)}
+                    <span className="ml-2 opacity-70">
+                      · inscrito em{' '}
+                      {new Intl.DateTimeFormat('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      }).format(registration.createdAt)}
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                <Link
-                  href={tenantPath(
-                    tenantSlug,
-                    `/eventos/${registration.eventSlug}/atividades/${registration.activitySlug}`,
-                  )}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
-                >
-                  Ver atividade
-                </Link>
+                {registration.isEventRegistration ? (
+                  <Link
+                    href={tenantPath(tenantSlug, `/eventos/${registration.eventSlug}`)}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+                  >
+                    Ver evento
+                  </Link>
+                ) : (
+                  <Link
+                    href={tenantPath(
+                      tenantSlug,
+                      `/eventos/${registration.eventSlug}/atividades/${registration.activitySlug}`,
+                    )}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+                  >
+                    Ver atividade
+                  </Link>
+                )}
 
                 {(registration.status === 'CONFIRMED' ||
                   registration.status === 'WAITLISTED') && (

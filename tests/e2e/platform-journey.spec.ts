@@ -151,7 +151,8 @@ test.describe('jornada completa da plataforma', () => {
 
     // ── 4. Cria atividade na sala ───────────────────────────────────────────
     const activitiesSection = page.getByTestId('activities-section');
-    await activitiesSection.locator('summary').click();
+    // `.first()`: cada atividade da lista tem o próprio `<summary>` ("Editar atividade").
+    await activitiesSection.locator('summary').first().click();
 
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill('abertura-plataforma');

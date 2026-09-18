@@ -17,8 +17,8 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 
 ```text
 Fases concluídas ........ 1 a 14, 16, 17, 23, 24 e 25 (F15 pendente: Comunicação)
-Testes ................. 1262 (Vitest: unit + integração) + 77 (Playwright E2E)
-ADRs ................... 123 (numeração GLOBAL e sequencial — a próxima é ADR-124)
+Testes ................. 1283 (Vitest: unit + integração) + 79 (Playwright E2E)
+ADRs ................... 126 (numeração GLOBAL e sequencial — a próxima é ADR-127)
 Permissões ............. 57 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 35 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1262+ testes passando
+npm test              # esperado: 1283+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 77+ testes passando
+npm run test:e2e      # esperado: 79+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -172,6 +172,8 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 44 | **Menu e página decidiam a mesma permissão com predicados diferentes.** O menu usava `can(permissão, { scope: 'TENANT' })` para TODO item — e `can()` recusa permissão `:own` sem `ownerId` (fail-closed, invariante nº 4). Resultado: o grupo "Minha participação" era descartado INTEIRO, para qualquer papel, e o palestrante não tinha porta para o próprio portal. Nenhum teste olhava o menu (o E2E navegava por URL direta) e o sintoma foi um relato de uso: "não achei a opção de mudar meus dados" — com o formulário existindo, completo, na tela | Item de menu com permissão `:own` é decidido por `holdsPermission` — o MESMO predicado de `requirePersonalPage` (a posse é conferida no dado, a cada leitura e escrita). Item institucional continua por `can()` no escopo da instituição, com `scopes` explícito no item cuja página aceita mais de um escopo (`Credenciamento` aceita `EVENT`). Menu e página têm de concordar nos DOIS sentidos: link que só redireciona e recurso inalcançável são o mesmo defeito — e recurso novo sem item de menu é a regra nº 1 de `docs/design-system.md` |
 | 45 | **O E2E se sincronizava pelo elemento que o fluxo MOSTRAVA** ("Rascunho criado"): quando a criação passou a redirecionar direto para a submissão, esse cartão deixou de existir, e a leitura seguinte do banco — feita logo depois do clique — rodou antes de a Server Action terminar e estourou com "No record was found for a query" | Em E2E, a sincronização vem de um elemento que o servidor só renderiza DEPOIS de gravar: espere pelo sinal da PÁGINA DE DESTINO (aqui, o aviso `draft-created` que depende de `?novo=1`) e só então consulte o banco — o clique resolve quando o navegador DISPARA a action, não quando ela termina |
 | 46 | **Regra obrigatória validada em UM único ponto do ciclo**: título, resumo, palavras-chave (3 a 8 distintas) e idioma eram checados SÓ no envio. O rascunho era salvo com uma palavra-chave, e o autor só descobria no fim — com "a submissão está incompleta" e sem ter onde corrigir (a tela de detalhe era só leitura). A dica do campo dizia a regra que ninguém aplicava | Toda regra que impede a CONCLUSÃO de um fluxo tem de valer em cada passo que a torna verdadeira: a criação passou a usar a MESMA função do envio (`validateSubmissionContent`), a edição também, e a lista gravada é a normalizada (`normalizeKeywords`) — a contagem da tela usa a função do domínio, não uma segunda cópia da regra |
+| 47 | **`<input type="datetime-local">` tem precisão de MINUTO**, e o formulário de edição de atividade devolveu "a atividade precisa acontecer dentro do período do evento" para uma atividade que estava claramente dentro dele: ela fora criada no MESMO instante do início do evento (+30 dias), com segundos e milissegundos, e o valor do campo (truncado para o minuto) caía ~30 s ANTES da abertura. A tela mostrava o horário certo — a diferença era invisível | Ao editar por formulário um registro cujo horário tem segundos, espere o arredondamento: em teste, crie o dado com folga (dia seguinte) ou compare o INSTANTE gravado, não o texto. É o mesmo cuidado da armadilha 38, do lado do formulário |
+| 48 | **`/signup` com sessão ativa redireciona** (a pessoa já está dentro) e a tela de cadastro não existe — o E2E que tentava criar o SEGUNDO usuário pela interface morria esperando o campo "Nome completo", com o sintoma parecendo problema de formulário | Para mais de um usuário na mesma jornada, cadastre pela API (`/api/auth/sign-up/email`) — padrão das outras specs — ou saia antes (`/api/auth/sign-out`, armadilha 9). A tela de cadastro tem cenário próprio e não é o que os testes de jornada medem |
 
 ---
 
@@ -488,7 +490,7 @@ tests/{unit,integration,e2e}
 |---|---|---|
 | 1 | Infraestrutura, modelagem, RLS | ✅ |
 | 2 | Autenticação, RBAC, multi-tenancy | ✅ |
-| 3 | Eventos, inscrições, landing pages | ✅ |
+| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ revisão pós-entrega**: **inscrição no EVENTO** que já inclui as atividades **abertas** (`requiresRegistration = false`, linhas `EVENT_AUTO`), **editar e excluir** atividade na programação (exclusão recusada com inscritos/presença) e rótulos de tipo/situação **em português** (ADR-124/125/126, §19 do doc) | ✅ |
 | 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: criar o rascunho cai direto na página da submissão, o rascunho **não nasce inválido** (a validação do envio vale na criação e na edição), o autor **edita** título/resumo/palavras-chave e pode **excluir rascunhos** (nunca o que já foi enviado) | ✅ |
 | 5 | Gamificação (XP, cartas, missões) | ✅ |
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
@@ -514,11 +516,12 @@ tests/{unit,integration,e2e}
 > FASE 24 e a FASE 25 foram entregues antes da F15 — o humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**48 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**49 itens abertos**, soma das
 tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17, 23 e 24
 quitaram, mais o que cada uma declarou de novo, incluindo os cinco itens que a FASE 25
-declarou, o que a revisão dela declarou (E30) e o que as duas rodadas da revisão da FASE 4
-declararam (E31 e E32); verificado no código, com esforço e
+declarou, o que a revisão dela declarou (E30), o que as duas rodadas da revisão da FASE 4
+declararam (E31 e E32) e o que a revisão da FASE 3 declarou (E33); verificado no código,
+com esforço e
 fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
 ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
 (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
