@@ -1,10 +1,11 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, Send } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
+import { KeywordsInput } from '@/components/review/keywords-input';
 
 const inputClass =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-ring/40';
@@ -57,6 +58,29 @@ export function CreateSubmissionForm({
 }) {
   const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  OS CAMPOS SÃO CONTROLADOS, E ISSO NÃO É ESTILO (revisão da FASE 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O React 19 **reseta o formulário** depois de uma action — inclusive quando ela
+   *  devolve ERRO. Com campos não controlados, o autor que digitava um resumo,
+   *  esquecia a terceira palavra-chave e via "revise os dados" perdia título e
+   *  resumo de uma vez: a correção custava reescrever tudo (armadilha 5, que até
+   *  aqui só tinha aparecido em formulário de dois passos).
+   *
+   *  O estado vive aqui; o servidor continua sendo a autoridade sobre as regras.
+   */
+  const [fields, setFields] = useState({
+    eventId: events[0]?.id ?? '',
+    title: '',
+    abstract: '',
+    language: 'pt-BR',
+    trackId: events[0]?.tracks[0]?.id ?? '',
+  });
+
+  const update = (patch: Partial<typeof fields>) =>
+    setFields((previous) => ({ ...previous, ...patch }));
+
   if (events.length === 0) {
     return (
       <p className="rounded-lg border border-border bg-card p-5 text-sm text-muted-foreground">
@@ -93,7 +117,14 @@ export function CreateSubmissionForm({
         <label htmlFor="eventId" className="text-sm font-medium">
           Evento
         </label>
-        <select id="eventId" name="eventId" required className={inputClass}>
+        <select
+          id="eventId"
+          name="eventId"
+          required
+          className={inputClass}
+          value={fields.eventId}
+          onChange={(event) => update({ eventId: event.target.value })}
+        >
           {events.map((event) => (
             <option key={event.id} value={event.id}>
               {event.title}
@@ -115,6 +146,8 @@ export function CreateSubmissionForm({
           maxLength={300}
           className={inputClass}
           placeholder="Título do trabalho"
+          value={fields.title}
+          onChange={(event) => update({ title: event.target.value })}
         />
       </div>
 
@@ -131,6 +164,8 @@ export function CreateSubmissionForm({
           rows={8}
           className={inputClass}
           placeholder="Resumo do trabalho (mínimo de 150 caracteres). Descreva objetivo, método e contribuição."
+          value={fields.abstract}
+          onChange={(event) => update({ abstract: event.target.value })}
         />
         <p className="text-xs text-muted-foreground">
           Mínimo de 150 caracteres. Um resumo curto impossibilita a avaliação de mérito.
@@ -141,25 +176,25 @@ export function CreateSubmissionForm({
         <label htmlFor="keywords" className="text-sm font-medium">
           Palavras-chave
         </label>
-        <input
-          id="keywords"
-          name="keywords"
-          type="text"
-          required
-          className={inputClass}
-          placeholder="aprendizado de máquina, saúde pública, epidemiologia"
-        />
-        <p className="text-xs text-muted-foreground">
-          De 3 a 8 palavras-chave, separadas por vírgula. Elas alimentam a sugestão de
-          revisores por afinidade.
-        </p>
+        {/*
+          O campo CONTA o que foi digitado (revisão da FASE 4): a regra era só uma
+          dica, e o rascunho nascia com uma palavra-chave para ser recusado no envio.
+          Quem valida continua sendo o servidor — aqui a mesma regra aparece cedo.
+        */}
+        <KeywordsInput />
       </div>
 
       <div className="space-y-1.5">
         <label htmlFor="language" className="text-sm font-medium">
           Idioma
         </label>
-        <select id="language" name="language" className={inputClass} defaultValue="pt-BR">
+        <select
+          id="language"
+          name="language"
+          className={inputClass}
+          value={fields.language}
+          onChange={(event) => update({ language: event.target.value })}
+        >
           <option value="pt-BR">Português</option>
           <option value="en">Inglês</option>
           <option value="es">Espanhol</option>
@@ -170,7 +205,14 @@ export function CreateSubmissionForm({
         <label htmlFor="trackId" className="text-sm font-medium">
           Trilha temática
         </label>
-        <select id="trackId" name="trackId" required className={inputClass}>
+        <select
+          id="trackId"
+          name="trackId"
+          required
+          className={inputClass}
+          value={fields.trackId}
+          onChange={(event) => update({ trackId: event.target.value })}
+        >
           {events.flatMap((event) =>
             event.tracks.map((track) => (
               <option key={track.id} value={track.id}>

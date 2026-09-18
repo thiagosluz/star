@@ -33,6 +33,7 @@ import {
   deleteSubmission,
   getFileDownloadUrl,
   submitSubmission,
+  updateSubmissionDraft,
 } from '../../src/lib/review/submission-service';
 import {
   assignReviewer,
@@ -903,6 +904,189 @@ describe('parecer e decisão', () => {
 
     expect(changeAgain.ok).toBe(false);
     if (!changeAgain.ok) expect(changeAgain.code).toBe('INVALID_TRANSITION');
+  }, 90_000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RASCUNHO: NÃO NASCE INVÁLIDO, E PODE SER EDITADO (revisão da FASE 4)
+ *
+ *  O autor salvava com uma palavra-chave (a regra só era checada no envio),
+ *  editava o conteúdo uma única vez — na criação — e descobria o problema no fim,
+ *  sem ter onde corrigir. Estes testes prendem as duas metades da correção: a
+ *  criação aplica a MESMA validação do envio, e a edição respeita posse e estado.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe('rascunho — validação na criação e edição do conteúdo', () => {
+  const draftContent = {
+    title: 'Modelos de aprendizado de máquina para triagem neonatal',
+    abstract:
+      'Este trabalho avalia modelos supervisionados aplicados à triagem neonatal a partir de dados de vigilância em saúde, comparando métricas de sensibilidade e especificidade em coortes reais de três regiões brasileiras.',
+    keywords: ['aprendizado de máquina', 'triagem neonatal', 'saúde pública'],
+  };
+
+  it('RECUSA criar rascunho com menos de 3 palavras-chave distintas', async () => {
+    const result = await createSubmission({
+      tenantId,
+      eventId,
+      trackId,
+      userId: authorId,
+      ...draftContent,
+      keywords: ['teste'],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_CONTENT');
+    // A mensagem diz O QUE corrigir, em vez de só recusar.
+    expect(result.details?.join(' ')).toMatch(/3 palavras-chave distintas/i);
+  });
+
+  it('RECUSA rascunho com uma palavra-chave repetida três vezes', async () => {
+    const result = await createSubmission({
+      tenantId,
+      eventId,
+      trackId,
+      userId: authorId,
+      ...draftContent,
+      keywords: ['teste', 'Teste', 'TESTE '],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_CONTENT');
+  });
+
+  it('grava a lista NORMALIZADA e permite editar o rascunho depois', async () => {
+    const created = await createSubmission({
+      tenantId,
+      eventId,
+      trackId,
+      userId: authorId,
+      ...draftContent,
+      // Quatro entradas, TRÊS distintas: a repetida (caixa e espaço diferentes) sai.
+      keywords: [' Saúde ', 'saúde', 'Dados abertos', 'Vigilância'],
+    });
+    if (!created.ok) throw new Error(created.message);
+
+    const stored = await withTenant(tenantId, (tx) =>
+      tx.submission.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { keywords: true, abstract: true, language: true },
+      }),
+    );
+
+    // Repetida (ignorando caixa e espaço) entra UMA vez — é a lista que a afinidade usa.
+    expect(stored.keywords).toEqual(['Saúde', 'Dados abertos', 'Vigilância']);
+
+    const updated = await updateSubmissionDraft({
+      tenantId,
+      submissionId: created.id,
+      userId: authorId,
+      title: 'Modelos de aprendizado de máquina para triagem neonatal — revisado',
+      abstract: `${draftContent.abstract} Revisão do autor depois da primeira leitura.`,
+      keywords: ['aprendizado de máquina', 'triagem neonatal', 'saúde pública'],
+      language: 'pt-BR',
+    });
+
+    expect(updated.ok, updated.ok ? 'ok' : updated.message).toBe(true);
+
+    const after = await withTenant(tenantId, (tx) =>
+      tx.submission.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { title: true, keywords: true, abstract: true },
+      }),
+    );
+
+    expect(after.title).toContain('revisado');
+    expect(after.keywords).toHaveLength(3);
+    expect(after.abstract).toContain('Revisão do autor');
+
+    // A trilha registra a alteração — com o FATO, e não o texto inteiro.
+    const audited = await withTenant(tenantId, (tx) =>
+      tx.auditLog.findFirst({
+        where: { tenantId, entityType: 'submission', entityId: created.id, action: 'UPDATE' },
+        select: { changes: true },
+      }),
+    );
+
+    expect(audited).not.toBeNull();
+    expect(JSON.stringify(audited?.changes)).toContain('palavrasChave');
+  }, 60_000);
+
+  it('RECUSA edição que deixaria o rascunho inválido', async () => {
+    const created = await createSubmission({
+      tenantId,
+      eventId,
+      trackId,
+      userId: authorId,
+      ...draftContent,
+    });
+    if (!created.ok) throw new Error(created.message);
+
+    const result = await updateSubmissionDraft({
+      tenantId,
+      submissionId: created.id,
+      userId: authorId,
+      title: draftContent.title,
+      abstract: draftContent.abstract,
+      keywords: ['uma só'],
+      language: 'pt-BR',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_CONTENT');
+  }, 60_000);
+
+  it('RECUSA editar a submissão de outra pessoa e a que já foi enviada', async () => {
+    const created = await createSubmission({
+      tenantId,
+      eventId,
+      trackId,
+      userId: authorId,
+      ...draftContent,
+    });
+    if (!created.ok) throw new Error(created.message);
+
+    const outraPessoa = await createUser('Editora Intrusa', `peer.intrusa.${RUN}@exemplo.test`);
+
+    const deTerceiro = await updateSubmissionDraft({
+      tenantId,
+      submissionId: created.id,
+      userId: outraPessoa,
+      title: draftContent.title,
+      abstract: draftContent.abstract,
+      keywords: [...draftContent.keywords],
+      language: 'pt-BR',
+    });
+
+    expect(deTerceiro.ok).toBe(false);
+    if (!deTerceiro.ok) expect(deTerceiro.code).toBe('FORBIDDEN');
+
+    // Depois do envio, o texto é registro: a edição para de ser permitida.
+    await uploadBlindPdf(created.id);
+    const sent = await submitSubmission({ tenantId, submissionId: created.id, userId: authorId });
+    expect(sent.ok).toBe(true);
+
+    const depoisDoEnvio = await updateSubmissionDraft({
+      tenantId,
+      submissionId: created.id,
+      userId: authorId,
+      title: 'Título trocado depois de enviar',
+      abstract: draftContent.abstract,
+      keywords: [...draftContent.keywords],
+      language: 'pt-BR',
+    });
+
+    expect(depoisDoEnvio.ok).toBe(false);
+    if (!depoisDoEnvio.ok) expect(depoisDoEnvio.code).toBe('NOT_EDITABLE');
+
+    const intact = await withTenant(tenantId, (tx) =>
+      tx.submission.findUniqueOrThrow({ where: { id: created.id }, select: { title: true } }),
+    );
+    expect(intact.title).toBe(draftContent.title);
   }, 90_000);
 });
 

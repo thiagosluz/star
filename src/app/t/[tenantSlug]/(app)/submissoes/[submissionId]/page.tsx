@@ -16,11 +16,13 @@ import {
   requestUploadAction,
   saveSubmissionAuthorsAction,
   submitSubmissionAction,
+  updateSubmissionDraftAction,
 } from '@/app/actions/review-actions';
 import { SubmissionUploader, type UploadKind } from '@/components/review/submission-uploader';
 import { SubmitSubmissionButton } from '@/components/review/submit-submission-button';
 import { AuthorEditor } from '@/components/review/author-editor';
 import { DeleteDraftButton } from '@/components/review/delete-draft-button';
+import { SubmissionDraftForm } from '@/components/review/submission-draft-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -204,25 +206,44 @@ export default async function SubmissionDetailPage({
         </section>
       ) : null}
 
-      {/* ── Resumo ────────────────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">Resumo</h2>
-        <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-          {submission.abstract}
-        </p>
-        {submission.keywords.length > 0 ? (
-          <ul className="flex flex-wrap gap-1.5">
-            {submission.keywords.map((keyword) => (
-              <li
-                key={keyword}
-                className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground"
-              >
-                {keyword}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
+      {/* ── Conteúdo: editável enquanto o autor pode editar ────────────────── */}
+      {editable ? (
+        /**
+         * O rascunho abre com os campos PRONTOS para ajuste (revisão da FASE 4).
+         * Antes, o resumo era só leitura: o autor não tinha onde corrigir uma
+         * palavra-chave — e era isso que fazia o envio falhar sem saída.
+         */
+        <SubmissionDraftForm
+          tenantSlug={tenantSlug}
+          submissionId={submissionId}
+          initial={{
+            title: submission.title,
+            abstract: submission.abstract,
+            keywords: submission.keywords,
+            language: submission.language,
+          }}
+          action={updateSubmissionDraftAction}
+        />
+      ) : (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium">Resumo</h2>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+            {submission.abstract}
+          </p>
+          {submission.keywords.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {submission.keywords.map((keyword) => (
+                <li
+                  key={keyword}
+                  className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                >
+                  {keyword}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      )}
 
       {/* ── Autoria (FASE 17, item E6) ────────────────────────────────────── */}
       {authorsView ? (

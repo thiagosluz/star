@@ -711,15 +711,21 @@ tela manda a pessoa falar com a comissão em vez de prometer um caminho inexiste
 ```text
 npm run lint                 → 0 erros, 0 warnings
 npm run typecheck            → 0 erros
-npm test                     → 51 arquivos, 1256 testes passando (+6 nesta revisão)
+npm test                     → 51 arquivos, 1262 testes passando (+12 nas duas rodadas)
 npm run build                → ✓ Compiled successfully
-npm run test:e2e             → 76 passed
+npm run test:e2e             → 77 passed
 
-E2E do caminho novo (contra o container de produção):
-✓ autor cria rascunho, anexa o PDF e envia para avaliação        (agora cai direto na submissão)
+E2E dos caminhos novos (contra o container de produção):
+✓ autor cria rascunho, anexa o PDF e envia para avaliação        (cai direto na submissão)
+✓ a criação trava sem 3 palavras-chave — e o rascunho pode ser corrigido depois
 ✓ o autor exclui um RASCUNHO pela lista — e o botão não existe para o que já foi enviado
 
 Integração (banco e storage reais):
+✓ RECUSA criar rascunho com menos de 3 palavras-chave distintas   (INVALID_CONTENT)
+✓ RECUSA rascunho com uma palavra-chave repetida três vezes
+✓ grava a lista NORMALIZADA e permite editar o rascunho depois    (com trilha de auditoria)
+✓ RECUSA edição que deixaria o rascunho inválido
+✓ RECUSA editar a submissão de outra pessoa (FORBIDDEN) e a já enviada (NOT_EDITABLE)
 ✓ o autor apaga o PRÓPRIO rascunho: sai a submissão, a autoria, o arquivo e o objeto
 ✓ RECUSA excluir a submissão de outra pessoa            (FORBIDDEN)
 ✓ RECUSA excluir submissão JÁ ENVIADA                   (NOT_EDITABLE, objeto intacto)
@@ -736,9 +742,70 @@ Integração (banco e storage reais):
 - [x] A exclusão leva autores e arquivos (cascade) e remove o objeto do bucket
 - [x] O fato fica na trilha de auditoria (protocolo, título, estado, arquivos)
 - [x] Nenhuma permissão nova: `submission:update:own` com posse
-- [x] Testes: 2 unitários, 4 de integração, 1 E2E (+ o E2E de criação atualizado)
+- [x] **O rascunho não nasce inválido**: criar aplica a MESMA validação do envio
+- [x] **O rascunho pode ser editado** (título, resumo, palavras-chave e idioma)
+- [x] O campo de palavras-chave CONTA o que foi digitado, com a regra do domínio
+- [x] O formulário preserva o que o autor escreveu quando a action recusa
+- [x] Testes: 3 unitários, 9 de integração, 2 E2E (+ o E2E de criação atualizado)
 - [x] Bateria completa executada, com os números reais reportados na seção 18.4
 - [x] `AGENTS.md`, `docs/dividas-tecnicas.md` e `README.md` atualizados
+
+### 18.6 Segunda rodada — o rascunho que não podia ser corrigido
+
+> **ADRs:** 123 · **Testes novos:** 1 unitário + 5 de integração + 1 E2E
+
+O relato seguinte veio do mesmo uso, e é o encadeamento direto do primeiro:
+
+> *"ao tentar submeter, deu esse erro 'A submissão está incompleta. Informe ao menos 3
+> palavras-chave distintas.' Só primeiro permitiu cadastrar apenas uma palavra e segundo não
+> dá opção de cadastrar novas. Tem que ter forma de editar o rascunho, modificando o resumo ou
+> palavras-chave, além de já colocar uma trava e não permitir salvar o rascunho sem as 3
+> palavras-chave, já que é obrigatório."*
+
+| # | Relato | Causa raiz | Correção |
+|---|---|---|---|
+| 3 | O rascunho podia ser salvo com UMA palavra-chave e o envio recusava no fim | A validação de conteúdo (`validateSubmissionContent`) rodava **só no envio**; a criação checava trilha e limite, e mais nada. A tela repetia a regra na dica, sem nunca aplicá-la | Criar aplica a MESMA função do envio (`INVALID_CONTENT` com as mensagens do domínio), a lista gravada é a normalizada (`normalizeKeywords`) e o campo CONTA o que foi digitado enquanto se escreve |
+| 4 | Não havia como corrigir o rascunho: o resumo era só leitura | O conteúdo era escrito uma única vez, na criação — o autor não tinha onde ajustar uma palavra-chave. A saída era excluir e recomeçar | `updateSubmissionDraft` (posse + estado + mesma validação) e o formulário de edição na página da submissão, para quem pode editar |
+
+#### ADR-123 — A regra de conteúdo vale na CRIAÇÃO, e o rascunho é editável
+
+**Contexto.** A validação de conteúdo nasceu para o ENVIO (faz sentido: é o momento em que o
+trabalho entra no processo). Mas o rascunho é o estado em que o autor escreve — e ele era
+aceito com qualquer conteúdo, para ser recusado no fim, com a única saída sendo apagar o
+rascunho e recomeçar. Uma regra que só existe no último passo não é uma trava: é uma
+armadilha.
+
+**Decisão.** (1) `createSubmission` valida o conteúdo com `validateSubmissionContent` — a
+mesma função que `evaluateSubmissionReadiness` usa — e grava a lista **normalizada** de
+palavras-chave; o código de erro é `INVALID_CONTENT` com as mensagens do domínio. (2)
+`updateSubmissionDraft` permite editar título, resumo, palavras-chave e idioma enquanto
+`isEditableByAuthor(status)`, com posse conferida no banco e a mesma validação. (3) A tela
+mostra a contagem de palavras-chave distintas em tempo real, usando `normalizeKeywords` — a
+função do domínio, não uma segunda regra.
+
+**Alternativas descartadas.** (a) Validar só no cliente — o servidor continuaria aceitando
+rascunho inválido por qualquer outro caminho; (b) manter a validação só no envio e apenas
+avisar melhor — não resolve o "onde corrijo"; (c) deixar o autor trocar a TRILHA no rascunho —
+mudaria a rubrica, o requisito de versão cega e a fila de revisores: é decisão do comitê, e
+por isso a trilha ficou fora do formulário de edição (dívida **E32**); (d) validar com um
+segundo conjunto de regras na tela — é como as duas versões divergem.
+
+**Consequências.** O rascunho nunca guarda algo que o envio vai recusar, e o autor corrige sem
+recomeçar. O estado `REVISION_REQUESTED` continua editável (o autor corrige e reenvia) mas não
+excluível — as duas perguntas são diferentes. Cada edição entra na trilha de auditoria com o
+**fato** (não o texto inteiro): título, trecho do resumo com o tamanho em caracteres,
+palavras-chave e idioma.
+
+#### Lições da segunda rodada
+
+| # | Sintoma | Causa raiz | Correção |
+|---|---|---|---|
+| 15 | O rascunho era aceito com uma palavra-chave e o envio recusava dias depois | A regra de conteúdo era aplicada em UM único ponto do ciclo (o envio); a criação e a edição não a conheciam | A criação passou a validar com a mesma função do envio, e a lista gravada é a normalizada |
+| 16 | **E2E**: depois de a criação falhar, a segunda tentativa não submetia — e o título e o resumo estavam EM BRANCO na tela | O React 19 **reseta o formulário** depois de uma action, inclusive quando ela devolve erro; com campos não controlados, a correção de uma palavra-chave custava reescrever tudo (armadilha 5, que só aparecia em formulário de dois passos) | Os dois formulários (criação e edição) passaram a ter campos **controlados** — e o E2E prende isso: o que o autor escreveu continua na tela depois da recusa |
+
+O item 16 é o mais instrutivo dos dois: o teste que eu escrevi para provar a trava expôs um
+defeito de **perda de trabalho** que a tela tinha desde a FASE 4 — quem errasse a terceira
+palavra-chave perdia título e resumo junto com o erro.
 
 ---
 

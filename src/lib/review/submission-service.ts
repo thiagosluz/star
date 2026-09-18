@@ -25,7 +25,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
-import { recordAudit } from '@/lib/admin/audit';
+import { diffFields, recordAudit } from '@/lib/admin/audit';
 import {
   BUCKETS,
   buildObjectKey,
@@ -40,7 +40,9 @@ import {
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
   isEditableByAuthor,
+  normalizeKeywords,
   requiresNewVersionForResubmission,
+  validateSubmissionContent,
   validateSubmissionFile,
   verifyStoredObject,
   type SubmissionFileKind,
@@ -61,6 +63,7 @@ export type SubmissionErrorCode =
   | 'NOT_FOUND'
   | 'NOT_EDITABLE'
   | 'INVALID_TRANSITION'
+  | 'INVALID_CONTENT'
   | 'FILE_INVALID'
   | 'INTEGRITY_FAILED'
   | 'UPLOAD_MISSING'
@@ -145,14 +148,39 @@ export interface CreateSubmissionResult {
  * Cria uma submissão em RASCUNHO.
  *
  * O rascunho é o estado natural de entrada: o autor precisa poder salvar e
- * voltar antes de enviar. A validação completa acontece no envio
- * (`submitSubmission`), não aqui — bloquear a criação impediria o trabalho
- * incremental, que é como submissões realmente são escritas.
+ * voltar antes de enviar. A validação de ARQUIVO e de AUTORES fica para o envio,
+ * porque são coisas que se resolvem depois.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O CONTEÚDO, PORÉM, É VALIDADO JÁ AQUI (revisão da FASE 4)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Título, resumo, palavras-chave e idioma eram checados SÓ no envio. O resultado
+ *  era um rascunho que nascia inválido: o autor salvava com uma palavra-chave, e
+ *  descobria no fim — com um "a submissão está incompleta" que não dizia onde
+ *  corrigir (e não havia onde: não existia edição do rascunho).
+ *
+ *  A regra é a MESMA função do envio (`validateSubmissionContent`): o que é
+ *  obrigatório para enviar passa a ser obrigatório para salvar.
  */
 export async function createSubmission(
   input: CreateSubmissionInput,
 ): Promise<Result<CreateSubmissionResult>> {
   try {
+    const content = validateSubmissionContent({
+      title: input.title,
+      abstract: input.abstract,
+      keywords: input.keywords,
+      language: input.language ?? 'pt-BR',
+    });
+
+    if (!content.valid) {
+      throw new SubmissionError(
+        'INVALID_CONTENT',
+        'Revise os dados da submissão.',
+        content.errors.map((error) => error.message),
+      );
+    }
+
     return await withTenant(input.tenantId, async (tx) => {
       const track = await tx.track.findFirst({
         where: { id: input.trackId, eventId: input.eventId, deletedAt: null },
@@ -200,7 +228,9 @@ export async function createSubmission(
           protocol,
           title: input.title.trim(),
           abstract: input.abstract.trim(),
-          keywords: [...input.keywords],
+          // A lista gravada é a NORMALIZADA (sem duplicatas): é ela que a validação
+          // contou e que a afinidade dos revisores vai usar.
+          keywords: normalizeKeywords(input.keywords),
           language: input.language ?? 'pt-BR',
           status: 'DRAFT',
           submittedById: input.userId,
@@ -660,6 +690,150 @@ export async function submitSubmission(
   } catch (error) {
     return toFailure('submitSubmission', error);
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Edição do rascunho
+// ───────────────────────────────────────────────────────────────────────────────
+export interface UpdateSubmissionDraftInput {
+  tenantId: string;
+  submissionId: string;
+  userId: string;
+  title: string;
+  abstract: string;
+  keywords: readonly string[];
+  language: string;
+}
+
+/**
+ * Edita o CONTEÚDO do rascunho (título, resumo, palavras-chave e idioma).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO FALTAVA, E POR QUE NÃO É UM "SALVAR QUALQUER COISA"
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O autor só conseguia escrever o conteúdo UMA vez, na criação: um resumo com
+ *  erro de digitação, uma palavra-chave a menos ou um título provisório ficavam
+ *  assim para sempre (a alternativa era excluir o rascunho e recomeçar). Editar é
+ *  parte de escrever — e é o que a fase sempre prometeu ao chamar o estado de
+ *  "rascunho".
+ *
+ *  A escrita respeita as três travas que já existiam:
+ *    • POSSE — o `submittedById` do banco decide, não o formulário;
+ *    • ESTADO — só enquanto o autor pode editar (`isEditableByAuthor`: rascunho ou
+ *      revisão solicitada). Depois de aceito ou rejeitado, o texto é registro;
+ *    • CONTEÚDO — as mesmas regras do envio (`validateSubmissionContent`), para o
+ *      rascunho não guardar algo que o envio vai recusar.
+ *
+ *  A TRILHA fica de fora de propósito: trocá-la mudaria a rubrica de avaliação, o
+ *  requisito de versão cega e a fila de revisores — é uma decisão do comitê, não
+ *  um ajuste de texto. Quem errou a trilha exclui o rascunho e cria outro.
+ */
+export async function updateSubmissionDraft(
+  input: UpdateSubmissionDraftInput,
+): Promise<Result<{ submissionId: string }>> {
+  try {
+    const content = validateSubmissionContent({
+      title: input.title,
+      abstract: input.abstract,
+      keywords: input.keywords,
+      language: input.language,
+    });
+
+    if (!content.valid) {
+      throw new SubmissionError(
+        'INVALID_CONTENT',
+        'Revise os dados da submissão.',
+        content.errors.map((error) => error.message),
+      );
+    }
+
+    const keywords = normalizeKeywords(input.keywords);
+
+    return await withTenant(input.tenantId, async (tx) => {
+      const submission = await tx.submission.findFirst({
+        where: { id: input.submissionId, deletedAt: null },
+        select: {
+          id: true,
+          title: true,
+          abstract: true,
+          keywords: true,
+          language: true,
+          status: true,
+          submittedById: true,
+        },
+      });
+
+      if (!submission) {
+        throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
+      }
+
+      if (submission.submittedById !== input.userId) {
+        throw new SubmissionError(
+          'FORBIDDEN',
+          'Apenas o autor correspondente pode editar esta submissão.',
+        );
+      }
+
+      if (!isEditableByAuthor(submission.status as SubmissionStatus)) {
+        throw new SubmissionError(
+          'NOT_EDITABLE',
+          'Esta submissão não está em um estado que permita edição.',
+        );
+      }
+
+      const data = {
+        title: input.title.trim(),
+        abstract: input.abstract.trim(),
+        keywords,
+        language: input.language,
+      };
+
+      await tx.submission.update({ where: { id: submission.id }, data });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          action: 'UPDATE',
+          entityType: 'submission',
+          entityId: submission.id,
+          changes: diffFields(
+            {
+              titulo: submission.title,
+              resumo: summarize(submission.abstract),
+              palavrasChave: submission.keywords.join(', '),
+              idioma: submission.language,
+            },
+            {
+              titulo: data.title,
+              resumo: summarize(data.abstract),
+              palavrasChave: keywords.join(', '),
+              idioma: data.language,
+            },
+            ['titulo', 'resumo', 'palavrasChave', 'idioma'],
+          ),
+        },
+        tx,
+      );
+
+      return { ok: true as const, submissionId: submission.id };
+    });
+  } catch (error) {
+    return toFailure('updateSubmissionDraft', error);
+  }
+}
+
+/**
+ * Resumo do texto para a trilha.
+ *
+ * A auditoria guarda o FATO da alteração, não o texto inteiro: um resumo de 5.000
+ * caracteres gravado a cada salvamento encheria a trilha de conteúdo duplicado e
+ * ainda exporia o trabalho do autor a quem lê auditoria. O tamanho em caracteres
+ * é o que diz "isto mudou de verdade".
+ */
+function summarize(text: string): string {
+  const trimmed = text.trim();
+  return `${trimmed.slice(0, 60)}${trimmed.length > 60 ? '…' : ''} (${trimmed.length} caracteres)`;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

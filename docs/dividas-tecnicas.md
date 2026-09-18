@@ -81,19 +81,19 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
 | D. Comunicação e comunidade | 6 | 3¹ | Alto para adoção — não há um único e-mail; convite é manual |
-| E. Jornada do participante | 14 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), e não há como retirar uma submissão já enviada |
+| E. Jornada do participante | 15 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada e a trilha do rascunho só muda recriando |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **47** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **48** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+14+5+6+4+1 = 47), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+6+15+5+6+4+1 = 48), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13, a FASE 17 acrescentou
 > E9–E13, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
-> acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, e o E31, que a
-> **revisão** da FASE 4 declarou).
+> acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, e o E31 e o E32,
+> que a **revisão** da FASE 4 declarou).
 >
 > **Nota de contagem (FASE 25):** a fase do portal do palestrante entregou um escopo que
 > **não vinha deste levantamento** (foi definido diretamente pelo humano: E21 perfil e
@@ -181,6 +181,7 @@
 | E29 | **`activity_speakers` mantém as colunas legadas duplicadas** | FASE 25 (novo) | Nome, e-mail, instituição e bio existem no perfil e no vínculo, sincronizados por dois caminhos de escrita (ADR-113) | Duas fontes do mesmo dado; a divergência exigiria um backfill | M | Sim |
 | E30 | **O convite aberto pelo e-mail da conta se apoia em endereço não verificado** | FASE 25 (revisão, ADR-120) | Quem cria uma conta com o endereço que a organização cadastrou entra no portal e assume o perfil — o mesmo grau de confiança do aceite pelo painel, mas sem a prova de posse do endereço, que é a verificação de e-mail da F15 | Sem F15, um terceiro que consiga criar conta com o e-mail do convidado assume o perfil; a auditoria registra o aceite, e a organização pode desvincular | M | Sim |
 | E31 | **O autor não consegue RETIRAR uma submissão já enviada** | FASE 4 (revisão, ADR-122) | A máquina de estados tem `WITHDRAWN` (e o limite da trilha já o ignora na contagem), mas não existe serviço nem tela que o produza — só a comissão pode cancelar, e não há caminho de autor | Quem enviou por engano depende de um pedido manual à comissão, e o trabalho fica no páreo até alguém agir; a tela de exclusão manda falar com a comissão porque não pode oferecer o que não existe | M | Sim |
+| E32 | **A trilha do rascunho não pode ser trocada pela interface** | FASE 4 (revisão, ADR-123) | Título, resumo, palavras-chave e idioma são editáveis; a trilha ficou de fora porque trocá-la muda a rubrica de avaliação, o requisito de versão cega e a fila de revisores (decisão do comitê) | Quem escolheu a trilha errada precisa excluir o rascunho e recomeçar — a edição cobre o texto, não a classificação | P | Sim |
 
 ### F. Gamificação
 
@@ -329,11 +330,14 @@ pelo convite se apoia em endereço que a F15 ainda não verifica).
 
 Também veio do uso: criar um rascunho parava numa tela de "Rascunho criado" e o autor tinha de
 voltar à lista para abrir a submissão e anexar o arquivo — e não havia como apagar um rascunho
-errado. A revisão faz a criação terminar **na própria submissão** (redirecionamento no servidor) e
-entrega a **exclusão do rascunho**, sempre restrita a `DRAFT` e com o fato na trilha de auditoria.
-Está registrada na **seção 18** do documento da fase, com os ADRs 121 e 122. Ela declarou **uma**
-dívida nova, o **E31**: retirar uma submissão já enviada continua sem serviço e sem tela — e é por
-isso que a tela de exclusão manda falar com a comissão em vez de prometer um caminho que não existe.
+errado. A revisão faz a criação terminar **na própria submissão** (redirecionamento no servidor),
+entrega a **exclusão do rascunho** (sempre restrita a `DRAFT`, com o fato na trilha de auditoria)
+e, na segunda rodada, faz a **validação do envio valer na criação e na edição** — o rascunho não
+nasce mais inválido, e o autor corrige título, resumo e palavras-chave sem recomeçar. Está
+registrada na **seção 18** do documento da fase, com os ADRs 121 a 123. Declarou **duas** dívidas
+novas: o **E31** (retirar uma submissão enviada continua sem serviço e sem tela — e é por isso que
+a tela de exclusão manda falar com a comissão) e o **E32** (a trilha do rascunho só muda
+recriando, porque trocá-la mexeria na rubrica, no sigilo e na fila de revisores).
 
 ---
 

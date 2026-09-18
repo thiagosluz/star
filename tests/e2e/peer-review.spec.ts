@@ -366,6 +366,106 @@ test.describe('submissão de trabalho', () => {
     expect(fileCount).toBe(0);
   }, 120_000);
 
+  test('a criação trava sem 3 palavras-chave — e o rascunho pode ser corrigido depois', async ({
+    page,
+  }) => {
+    const { tenant, event, track } = await scenario('trava');
+
+    await createUser(page, tenant.id, 'Autora Trava', 'PARTICIPANT');
+
+    const RESUMO =
+      'Este trabalho investiga modelos de aprendizado de máquina aplicados à triagem neonatal a partir de dados de vigilância em saúde, comparando sensibilidade e especificidade em coortes reais de três regiões brasileiras.';
+
+    await page.goto(`/t/${tenant.slug}/submissoes/nova`);
+
+    await page.getByLabel('Evento').selectOption(event.id);
+    await page.getByLabel('Título').fill('Triagem neonatal com aprendizado de máquina');
+    await page.getByLabel('Resumo').fill(RESUMO);
+    await page.getByLabel('Palavras-chave').fill('teste');
+    await page.getByLabel('Trilha temática').selectOption(track.id);
+
+    /**
+     * O CONTADOR DIZ O QUE FALTA ANTES DO ENVIO (revisão da FASE 4). A regra era
+     * uma dica escrita, e o rascunho nascia com uma palavra-chave para ser recusado
+     * só no envio — sem ter onde corrigir.
+     */
+    await expect(page.getByTestId('keywords-count')).toHaveAttribute('data-enough', 'false');
+    await expect(page.getByTestId('keywords-count')).toContainText('1 de 3');
+
+    await page.getByRole('button', { name: /criar rascunho/i }).click();
+
+    // A trava é do SERVIDOR: a tela mostra o motivo e NADA foi criado.
+    await expect(page.getByTestId('submission-error')).toContainText(
+      /3 palavras-chave distintas/i,
+      { timeout: 20_000 },
+    );
+
+    /**
+     * E o que o autor escreveu CONTINUA na tela. O React 19 reseta o formulário
+     * depois de uma action — inclusive quando ela devolve erro —, então sem campos
+     * controlados a correção de uma palavra-chave custaria reescrever título e
+     * resumo (armadilha 5).
+     */
+    await expect(page.getByLabel('Título')).toHaveValue(
+      'Triagem neonatal com aprendizado de máquina',
+    );
+    await expect(page.getByLabel('Resumo')).toHaveValue(RESUMO);
+
+    const drafted = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.submission.count({ where: { trackId: track.id } });
+    });
+    expect(drafted).toBe(0);
+
+    // ── Corrige as palavras-chave: o contador concorda e a criação passa ─────
+    await page
+      .getByLabel('Palavras-chave')
+      .fill('aprendizado de máquina, triagem neonatal, saúde pública');
+    await expect(page.getByTestId('keywords-count')).toHaveAttribute('data-enough', 'true');
+    await page.getByRole('button', { name: /criar rascunho/i }).click();
+
+    await expect(page.getByTestId('draft-created')).toBeVisible({ timeout: 30_000 });
+
+    const submission = await e2eDb.submission.findFirstOrThrow({
+      where: { trackId: track.id },
+      select: { id: true },
+    });
+
+    // ── Edita o rascunho: resumo e palavras-chave ──────────────────────────
+    const form = page.getByTestId('draft-form');
+    await expect(form).toBeVisible();
+
+    await form.getByLabel('Resumo').fill(`${RESUMO} Ajuste feito pelo próprio autor.`);
+    await form
+      .getByLabel('Palavras-chave')
+      .fill('aprendizado de máquina, triagem neonatal, saúde pública, epidemiologia');
+    await page.getByTestId('save-draft').click();
+
+    await expect(page.getByTestId('draft-form-ok')).toContainText(/atualizados/i, {
+      timeout: 30_000,
+    });
+
+    // ── O banco confirma a edição ───────────────────────────────────────────
+    const stored = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.submission.findUniqueOrThrow({
+        where: { id: submission.id },
+        select: { abstract: true, keywords: true },
+      });
+    });
+
+    expect(stored.abstract).toContain('Ajuste feito pelo próprio autor');
+    expect(stored.keywords).toHaveLength(4);
+
+    /**
+     * E o envio parou de reclamar do CONTEÚDO: o bloqueio que sobra é o arquivo —
+     * exatamente o que faltava para o autor seguir sem recomeçar a submissão.
+     */
+    const blockers = page.getByTestId('submit-blockers');
+    await expect(blockers).toContainText(/versão cega/i);
+    await expect(blockers).not.toContainText(/palavras-chave/i);
+  }, 120_000);
+
   test('o autor exclui um RASCUNHO pela lista — e o botão não existe para o que já foi enviado', async ({
     page,
   }) => {

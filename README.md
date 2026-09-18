@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 14, 16, 17, 23, 24 e 25 concluídas (F15 pendente: Comunicação) · **1256 testes** unitários/integração · **76 testes E2E**
+> **Estado:** FASES 1 a 14, 16, 17, 23, 24 e 25 concluídas (F15 pendente: Comunicação) · **1262 testes** unitários/integração · **77 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe),
@@ -41,7 +41,7 @@ avaliação por pares e gamificação.
 |---|---|
 | **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 54 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
 | **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado) |
-| **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê. O autor cria o rascunho e **cai direto na página da submissão** (anexar e enviar), e pode **excluir os próprios rascunhos** — submissões enviadas são registro da avaliação e não se apagam |
+| **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê. O autor cria o rascunho e **cai direto na página da submissão** (anexar e enviar), **edita** título, resumo e palavras-chave enquanto ela não foi enviada — as regras do envio (resumo mínimo, 3 a 8 palavras-chave distintas) valem já na criação, com contagem em tempo real no campo — e pode **excluir os próprios rascunhos**: submissões enviadas são registro da avaliação e não se apagam |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
 | **Certificação** | PDF/SVG assinado (HMAC-SHA256), hash de integridade, QR Code e **validação pública sem login** |
 | **Credenciamento** | Check-in/check-out com carga horária real, por busca ou por leitor de QR Code |
@@ -369,7 +369,7 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1256 testes (51 arquivos) — unit + integração com banco real
+npm test                  # 1262 testes (51 arquivos) — unit + integração com banco real
 npm run test:e2e          # 74 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
@@ -427,7 +427,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **122 decisões** registradas até aqui.
+> são **123 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -661,6 +661,10 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     da avaliação. O estado `WITHDRAWN` existe no domínio (e o limite da trilha já o ignora),
     mas ainda não há serviço nem tela que o produza — por isso a tela de exclusão manda falar
     com a comissão em vez de prometer um caminho que não existe.
+25. **A trilha do rascunho não muda pela interface (FASE 4, revisão — dívida E32).** Título,
+    resumo, palavras-chave e idioma são editáveis enquanto a submissão não foi enviada; trocar
+    a TRILHA mudaria a rubrica de avaliação, o requisito de versão cega e a fila de revisores —
+    é decisão do comitê. Quem escolheu a trilha errada exclui o rascunho e cria outro.
 
 ---
 

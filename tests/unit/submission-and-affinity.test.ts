@@ -31,6 +31,7 @@ import {
   isEditableByAuthor,
   isSha256Hex,
   isTerminalStatus,
+  normalizeKeywords,
   requiresNewVersionForResubmission,
   validateSubmissionContent,
   validateSubmissionFile,
@@ -603,6 +604,24 @@ describe('validateSubmissionContent()', () => {
       keywords: ['um', '', '   ', 'dois', 'tres'],
     });
     expect(result.valid).toBe(true);
+  });
+
+  /**
+   * A lista NORMALIZADA é a que vai para o banco (revisão da FASE 4).
+   *
+   * A contagem e a gravação usam a mesma função: sem isso, `teste, teste, teste`
+   * passaria como três na tela e viraria uma no índice de afinidade dos revisores.
+   */
+  it('normaliza a lista gravada — sem vazias, sem repetidas e sem espaços sobrando', () => {
+    expect(normalizeKeywords([' Saúde ', '', 'saúde', '   ', 'Dados', 'dados abertos'])).toEqual([
+      'Saúde',
+      'Dados',
+      'dados abertos',
+    ]);
+
+    expect(normalizeKeywords([])).toEqual([]);
+    // A primeira grafia é a que fica: quem digitou "Saúde" não vê "saúde" de volta.
+    expect(normalizeKeywords(['Saúde', 'SAÚDE'])).toEqual(['Saúde']);
   });
 
   it('rejeita idioma não suportado', () => {

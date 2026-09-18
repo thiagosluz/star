@@ -33,6 +33,7 @@ import {
   deleteSubmission,
   requestUpload,
   submitSubmission,
+  updateSubmissionDraft,
 } from '@/lib/review/submission-service';
 import { saveSubmissionAuthors } from '@/lib/review/author-service';
 import {
@@ -219,6 +220,92 @@ export async function createSubmissionAction(
    *  "rascunho criado" reaparece lá (`?novo=1`), onde a próxima ação acontece.
    */
   redirect(tenantPath(data.tenantSlug, `/submissoes/${result.id}?novo=1`));
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Edição do rascunho
+// ───────────────────────────────────────────────────────────────────────────────
+const updateDraftSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  submissionId: z.string().uuid(),
+  title: z.string().trim().min(1).max(300),
+  abstract: z.string().trim().min(1).max(5000),
+  keywords: z
+    .string()
+    .trim()
+    .transform((value) =>
+      value
+        .split(',')
+        .map((keyword) => keyword.trim())
+        .filter((keyword) => keyword.length > 0),
+    ),
+  language: z.enum(['pt-BR', 'en', 'es']),
+});
+
+/**
+ * Salva o conteúdo do rascunho (título, resumo, palavras-chave e idioma).
+ *
+ * As regras de tamanho e de quantidade NÃO moram aqui: este schema só garante que
+ * chegou texto, e o SERVIÇO aplica `validateSubmissionContent` — a mesma função
+ * que o envio usa. Duplicar a regra em dois lugares é como as duas versões
+ * divergem; a mensagem devolvida ao autor vem do domínio.
+ */
+export async function updateSubmissionDraftAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = updateDraftSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    submissionId: formData.get('submissionId'),
+    title: formData.get('title'),
+    abstract: formData.get('abstract'),
+    keywords: formData.get('keywords'),
+    language: formData.get('language') || 'pt-BR',
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Verifique os dados do formulário.',
+      details: parsed.error.issues.map((issue) => issue.message),
+    };
+  }
+
+  const context = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
+    requiresOwnership: true,
+  });
+
+  if (!context.ok) return context.state;
+
+  const result = await updateSubmissionDraft({
+    tenantId: context.tenantId,
+    submissionId: parsed.data.submissionId,
+    userId: context.userId,
+    title: parsed.data.title,
+    abstract: parsed.data.abstract,
+    keywords: parsed.data.keywords,
+    language: parsed.data.language,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  /**
+   * O aviso "pronto para enviar" é calculado NO SERVIDOR a partir do que está
+   * gravado; sem revalidar, a tela continuaria dizendo o que dizia antes de o autor
+   * corrigir as palavras-chave.
+   */
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/submissoes/${parsed.data.submissionId}`));
+
+  return {
+    ok: true,
+    message: 'Dados da submissão atualizados.',
+    data: { submissionId: result.submissionId },
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

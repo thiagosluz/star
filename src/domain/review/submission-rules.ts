@@ -303,11 +303,47 @@ export type ContentValidation =
 const SUPPORTED_LANGUAGES = new Set(['pt-BR', 'en', 'es']);
 
 /**
+ * Normaliza a lista de palavras-chave: sem vazias, sem duplicatas (ignorando caixa).
+ *
+ * É a MESMA lista que a validação conta e a que se grava. Duplicata que passa na
+ * contagem e fica no banco é pior do que parece: a afinidade dos revisores é
+ * calculada por interseção de termos, e `teste, teste, teste` viraria três
+ * palavras distintas na tela e UMA no índice — o autor veria "3 palavras-chave" e
+ * o sistema trabalharia com uma.
+ */
+export function normalizeKeywords(keywords: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const keyword of keywords) {
+    const trimmed = keyword.trim();
+    if (trimmed.length === 0) continue;
+
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    unique.push(trimmed);
+  }
+
+  return unique;
+}
+
+/**
  * Valida o conteúdo textual de uma submissão.
  *
  * O resumo mínimo de 150 caracteres não é burocracia: um resumo muito curto
  * torna impossível avaliar o trabalho, e o revisor acaba recusando por falta de
  * informação em vez de por mérito.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A MESMA REGRA VALE PARA O RASCUNHO (revisão da FASE 4)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Esta função nasceu para o ENVIO, e por isso o rascunho podia nascer inválido —
+ *  o autor preenchia uma palavra-chave, salvava, e só descobria o problema no fim,
+ *  com um "a submissão está incompleta" que não dizia o que corrigir nem oferecia
+ *  onde. Criar e editar usam agora as MESMAS regras: o que é obrigatório para
+ *  enviar é obrigatório para salvar.
  */
 export function validateSubmissionContent(input: {
   title: string;
@@ -347,17 +383,7 @@ export function validateSubmissionContent(input: {
     });
   }
 
-  // Normaliza palavras-chave: remove vazias e duplicatas (ignorando caixa).
-  const seen = new Set<string>();
-  const uniqueKeywords: string[] = [];
-  for (const keyword of input.keywords) {
-    const trimmed = keyword.trim();
-    if (trimmed.length === 0) continue;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    uniqueKeywords.push(trimmed);
-  }
+  const uniqueKeywords = normalizeKeywords(input.keywords);
 
   if (uniqueKeywords.length < MIN_KEYWORDS) {
     errors.push({

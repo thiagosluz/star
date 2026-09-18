@@ -17,8 +17,8 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 
 ```text
 Fases concluídas ........ 1 a 14, 16, 17, 23, 24 e 25 (F15 pendente: Comunicação)
-Testes ................. 1256 (Vitest: unit + integração) + 76 (Playwright E2E)
-ADRs ................... 122 (numeração GLOBAL e sequencial — a próxima é ADR-123)
+Testes ................. 1262 (Vitest: unit + integração) + 77 (Playwright E2E)
+ADRs ................... 123 (numeração GLOBAL e sequencial — a próxima é ADR-124)
 Permissões ............. 57 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 35 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1256+ testes passando
+npm test              # esperado: 1262+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 76+ testes passando
+npm run test:e2e      # esperado: 77+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -130,7 +130,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 2 | Tabela nova com `tenantId` nasce **sem policy** (fail-closed: a app não lê nada) | Rode `npm run db:rls` e depois `npm run db:verify` (o provisionamento descobre tabelas por introspecção desde a FASE 8) |
 | 3 | Build falho + Compose preserva o container antigo → rota nova responde 404 com processo "saudável" | Confirme a imagem recriada **e** o build bem-sucedido antes do E2E |
 | 4 | Arquivo `'use server'` exportando função não-async | `tsc` e ESLint **não** pegam; só o `next build` recusa ("Server Actions must be async functions") |
-| 5 | React 19 **reseta o formulário** depois de uma action | Se duas ações compartilham o formulário (conferir → executar), os campos precisam ser **controlados**, senão o segundo passo usa valores padrão |
+| 5 | React 19 **reseta o formulário** depois de uma action — **inclusive quando ela devolve ERRO** | Se duas ações compartilham o formulário (conferir → executar), ou se a action pode falhar com o autor no meio da digitação, os campos precisam ser **controlados**. Com campo não controlado, quem esquece a terceira palavra-chave e vê "revise os dados" perde título e resumo junto com o erro — o caso real da FASE 4: a correção custava reescrever tudo. Em E2E, `toHaveValue(...)` depois da recusa é o que prende isso |
 | 6 | `zod` valida objeto de forma **tudo-ou-nada** | Um campo inválido descarta os válidos: valide campo a campo quando quiser preservar o resto |
 | 7 | `unknown`/objeto simples não é aceito como JSON do Prisma | Faça o cast explícito (`as unknown as object`) ao gravar em colunas `Json` |
 | 8 | `lastIndexOf('xref')` acha o `xref` dentro de `startxref` | Em análise de formato, ancore a busca (`\nxref\n`) |
@@ -171,6 +171,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 43 | O `ConfirmDialog` montado SEMPRE (só escondendo o `<dialog>` fechado) quebra testes que já existiam: o elemento fechado segue no DOM com `aria-labelledby` apontando para o título ("Remover o bloco 'Texto'?") e `getByLabel('Texto')` passa a casar com DOIS elementos — `strict mode violation`, porque locator por nome acessível **não** filtra elemento invisível. E, ao corrigir para montar só quando aberto, o efeito que chama `showModal()` com lista de dependências VAZIA nunca roda: o `Modal` fica montado (devolve `null`), o efeito roda no primeiro render com `ref.current === null`, e o diálogo aparece sem o atributo `open` — invisível, sem erro no console e com a ação nunca chegando ao servidor | `Modal` devolve `null` quando fechado (o painel nasce junto com a abertura) e o efeito de `showModal()` **depende de `open`**, com `close()` no cleanup devolvendo o foco ao gatilho. Diagnóstico que separa os dois casos: o `outerHTML` do `<dialog>` no relatório do Playwright — sem `open` = o efeito não abriu |
 | 44 | **Menu e página decidiam a mesma permissão com predicados diferentes.** O menu usava `can(permissão, { scope: 'TENANT' })` para TODO item — e `can()` recusa permissão `:own` sem `ownerId` (fail-closed, invariante nº 4). Resultado: o grupo "Minha participação" era descartado INTEIRO, para qualquer papel, e o palestrante não tinha porta para o próprio portal. Nenhum teste olhava o menu (o E2E navegava por URL direta) e o sintoma foi um relato de uso: "não achei a opção de mudar meus dados" — com o formulário existindo, completo, na tela | Item de menu com permissão `:own` é decidido por `holdsPermission` — o MESMO predicado de `requirePersonalPage` (a posse é conferida no dado, a cada leitura e escrita). Item institucional continua por `can()` no escopo da instituição, com `scopes` explícito no item cuja página aceita mais de um escopo (`Credenciamento` aceita `EVENT`). Menu e página têm de concordar nos DOIS sentidos: link que só redireciona e recurso inalcançável são o mesmo defeito — e recurso novo sem item de menu é a regra nº 1 de `docs/design-system.md` |
 | 45 | **O E2E se sincronizava pelo elemento que o fluxo MOSTRAVA** ("Rascunho criado"): quando a criação passou a redirecionar direto para a submissão, esse cartão deixou de existir, e a leitura seguinte do banco — feita logo depois do clique — rodou antes de a Server Action terminar e estourou com "No record was found for a query" | Em E2E, a sincronização vem de um elemento que o servidor só renderiza DEPOIS de gravar: espere pelo sinal da PÁGINA DE DESTINO (aqui, o aviso `draft-created` que depende de `?novo=1`) e só então consulte o banco — o clique resolve quando o navegador DISPARA a action, não quando ela termina |
+| 46 | **Regra obrigatória validada em UM único ponto do ciclo**: título, resumo, palavras-chave (3 a 8 distintas) e idioma eram checados SÓ no envio. O rascunho era salvo com uma palavra-chave, e o autor só descobria no fim — com "a submissão está incompleta" e sem ter onde corrigir (a tela de detalhe era só leitura). A dica do campo dizia a regra que ninguém aplicava | Toda regra que impede a CONCLUSÃO de um fluxo tem de valer em cada passo que a torna verdadeira: a criação passou a usar a MESMA função do envio (`validateSubmissionContent`), a edição também, e a lista gravada é a normalizada (`normalizeKeywords`) — a contagem da tela usa a função do domínio, não uma segunda cópia da regra |
 
 ---
 
@@ -488,7 +489,7 @@ tests/{unit,integration,e2e}
 | 1 | Infraestrutura, modelagem, RLS | ✅ |
 | 2 | Autenticação, RBAC, multi-tenancy | ✅ |
 | 3 | Eventos, inscrições, landing pages | ✅ |
-| 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: criar o rascunho cai direto na página da submissão e o autor pode **excluir rascunhos** (nunca o que já foi enviado) | ✅ |
+| 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: criar o rascunho cai direto na página da submissão, o rascunho **não nasce inválido** (a validação do envio vale na criação e na edição), o autor **edita** título/resumo/palavras-chave e pode **excluir rascunhos** (nunca o que já foi enviado) | ✅ |
 | 5 | Gamificação (XP, cartas, missões) | ✅ |
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
 | 7 | Painel administrativo + E2E completo | ✅ |
@@ -513,11 +514,11 @@ tests/{unit,integration,e2e}
 > FASE 24 e a FASE 25 foram entregues antes da F15 — o humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**48 itens abertos**, soma das
 tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17, 23 e 24
 quitaram, mais o que cada uma declarou de novo, incluindo os cinco itens que a FASE 25
-declarou, o que a revisão dela declarou (E30) e o que a revisão da FASE 4 declarou (E31);
-verificado no código, com esforço e
+declarou, o que a revisão dela declarou (E30) e o que as duas rodadas da revisão da FASE 4
+declararam (E31 e E32); verificado no código, com esforço e
 fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
 ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
 (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
