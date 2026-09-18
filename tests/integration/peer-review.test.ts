@@ -25,10 +25,12 @@ import {
   BUCKETS,
   buildObjectKey,
   createUploadUrl,
+  inspectObject,
 } from '../../src/lib/storage/s3-client';
 import {
   confirmUpload,
   createSubmission,
+  deleteSubmission,
   getFileDownloadUrl,
   submitSubmission,
 } from '../../src/lib/review/submission-service';
@@ -902,4 +904,135 @@ describe('parecer e decisão', () => {
     expect(changeAgain.ok).toBe(false);
     if (!changeAgain.ok) expect(changeAgain.code).toBe('INVALID_TRANSITION');
   }, 90_000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  EXCLUSÃO DO RASCUNHO (revisão da FASE 4)
+ *
+ *  O autor escreve ao longo de dias e erra: um teste, um título provisório, uma
+ *  trilha trocada. Sem exclusão, esse lixo fica para sempre na lista dele. Mas o
+ *  rascunho é o ÚNICO estado em que apagar não destrói registro — e é isso que
+ *  estes testes prendem, incluindo o efeito no BUCKET (o objeto do PDF sai junto).
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe('exclusão do rascunho — só o autor, e só antes do envio', () => {
+  it('o autor apaga o PRÓPRIO rascunho: sai a submissão, a autoria, o arquivo e o objeto', async () => {
+    const submissionId = await createDraft();
+    const fileId = await uploadPdf(submissionId, 'BLIND_PDF');
+
+    const stored = await withTenant(tenantId, (tx) =>
+      tx.submissionFile.findUniqueOrThrow({
+        where: { id: fileId },
+        select: { bucket: true, storageKey: true },
+      }),
+    );
+
+    // Antes: o objeto existe mesmo no bucket.
+    await expect(inspectObject(stored.bucket, stored.storageKey)).resolves.toMatchObject({
+      exists: true,
+    });
+
+    const result = await deleteSubmission({ tenantId, submissionId, userId: authorId });
+    expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.protocol).toMatch(/^\d{4}-[A-Z2-9]{4}$/);
+    expect(result.removedFiles).toBe(1);
+
+    // ── Nada sobrou apontando para o rascunho ────────────────────────────────
+    const [submission, authors, files] = await withTenant(tenantId, (tx) =>
+      Promise.all([
+        tx.submission.findUnique({ where: { id: submissionId }, select: { id: true } }),
+        tx.submissionAuthor.count({ where: { submissionId } }),
+        tx.submissionFile.count({ where: { submissionId } }),
+      ]),
+    );
+
+    expect(submission).toBeNull();
+    // Autores e arquivos acompanham a submissão (cascade no schema).
+    expect(authors).toBe(0);
+    expect(files).toBe(0);
+
+    // ── O objeto também saiu do bucket ───────────────────────────────────────
+    await expect(inspectObject(stored.bucket, stored.storageKey)).resolves.toMatchObject({
+      exists: false,
+    });
+
+    /**
+     * E o FATO fica na trilha: é o que sobra de um rascunho apagado, e é o que
+     * responde "para onde foi a submissão 2026-ABCD?".
+     */
+    const audited = await withTenant(tenantId, (tx) =>
+      tx.auditLog.findFirst({
+        where: { tenantId, entityType: 'submission', entityId: submissionId, action: 'DELETE' },
+        select: { changes: true, userId: true },
+      }),
+    );
+
+    expect(audited).not.toBeNull();
+    expect(audited?.userId).toBe(authorId);
+    expect(JSON.stringify(audited?.changes)).toContain('protocolo');
+  }, 90_000);
+
+  it('RECUSA excluir a submissão de outra pessoa', async () => {
+    const submissionId = await createDraft();
+    const outraPessoa = await createUser('Outra Pessoa', `peer.outra.${RUN}@exemplo.test`);
+
+    const result = await deleteSubmission({
+      tenantId,
+      submissionId,
+      userId: outraPessoa,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('FORBIDDEN');
+
+    // A submissão continua exatamente onde estava.
+    const stillThere = await withTenant(tenantId, (tx) =>
+      tx.submission.findUnique({ where: { id: submissionId }, select: { id: true } }),
+    );
+    expect(stillThere).not.toBeNull();
+  }, 60_000);
+
+  it('RECUSA excluir submissão JÁ ENVIADA — ela é o registro da avaliação', async () => {
+    const submissionId = await createDraft();
+    const fileId = await uploadPdf(submissionId, 'BLIND_PDF');
+
+    const sent = await submitSubmission({ tenantId, submissionId, userId: authorId });
+    expect(sent.ok).toBe(true);
+
+    const result = await deleteSubmission({ tenantId, submissionId, userId: authorId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('NOT_EDITABLE');
+    // A mensagem diz o caminho alternativo, em vez de só negar.
+    expect(result.message).toMatch(/rascunho/i);
+
+    // Nada foi removido: nem a linha, nem o arquivo, nem o objeto.
+    const stored = await withTenant(tenantId, (tx) =>
+      tx.submissionFile.findUniqueOrThrow({
+        where: { id: fileId },
+        select: { bucket: true, storageKey: true },
+      }),
+    );
+    await expect(inspectObject(stored.bucket, stored.storageKey)).resolves.toMatchObject({
+      exists: true,
+    });
+  }, 90_000);
+
+  it('RECUSA excluir o que não existe', async () => {
+    const result = await deleteSubmission({
+      tenantId,
+      submissionId: randomUUID(),
+      userId: authorId,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('NOT_FOUND');
+  });
 });

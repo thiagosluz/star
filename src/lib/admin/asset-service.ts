@@ -266,11 +266,12 @@ export async function confirmAssetUpload(
      *  arquivo já existe: subir a mesma foto para a capa e para a galeria deixa de
      *  criar dois objetos iguais no bucket.
      *
-     *  Para `GALLERY` nada é gravado em coluna: a URL volta para o formulário e o
-     *  vínculo acontece quando o bloco é salvo (a validação do conteúdo do bloco
-     *  aceita apenas URL http(s)).
+     *  Para `GALLERY` e `SPEAKER_AVATAR` nada é gravado em coluna: a URL volta para o
+     *  formulário e o vínculo acontece quando o bloco (ou o perfil do palestrante) é
+     *  salvo. É o que permite a mesma esteira servir a três telas diferentes sem que
+     *  o serviço conheça as três.
      */
-    if (input.target === 'GALLERY') {
+    if (input.target === 'GALLERY' || input.target === 'SPEAKER_AVATAR') {
       const registered = await withTenant(input.tenantId, (tx) =>
         registerAsset(tx, {
           tenantId: input.tenantId,

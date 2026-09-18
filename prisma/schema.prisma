@@ -532,6 +532,9 @@ model Tenant {
   rooms             Room[]
   activities        Activity[]
   activitySpeakers  ActivitySpeaker[]
+  /// Palestrantes da instituição e seus materiais — FASE 25.
+  speakerProfiles   SpeakerProfile[]
+  speakerMaterials  SpeakerMaterial[]
   tracks            Track[]
   eventPages        EventPage[]
   eventPageVersions EventPageVersion[]
@@ -643,6 +646,13 @@ model User {
   eventPageVersions EventPageVersion[] @relation("EventPageVersionCreatedBy")
   /// Imagens que esta pessoa enviou — FASE 24.
   mediaAssetsUploaded MediaAsset[] @relation("MediaAssetUploadedBy")
+
+  /// Perfis de palestrante reivindicados por esta pessoa — FASE 25.
+  speakerProfiles SpeakerProfile[] @relation("SpeakerProfileUser")
+  /// Perfis de palestrante que esta pessoa cadastrou como organizadora — FASE 25.
+  speakerProfilesCreated SpeakerProfile[] @relation("SpeakerProfileCreatedBy")
+  /// Materiais de palestrante que esta pessoa enviou — FASE 25.
+  speakerMaterialsUploaded SpeakerMaterial[] @relation("SpeakerMaterialUploadedBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -1004,6 +1014,8 @@ model Activity {
   certificates    Certificate[]
   xpTransactions  XpTransaction[]
   raffles         Raffle[]
+  /// Materiais de apoio publicados pelos palestrantes desta atividade — FASE 25.
+  speakerMaterials SpeakerMaterial[]
 
   @@unique([eventId, slug])
   @@index([tenantId, eventId, status])
@@ -1014,18 +1026,48 @@ model Activity {
   @@map("activities")
 }
 
-/// Palestrante/convidado vinculado a uma atividade (relação N:N com metadados).
+/// Vínculo entre uma ATIVIDADE e o PERFIL de um palestrante (N:N com metadados).
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE O VÍNCULO NÃO GUARDA O PERFIL (FASE 25)
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Nome, biografia, foto e instituição viviam AQUI até a FASE 24. Isso funcionava
+///  enquanto o palestrante existia em uma única atividade — no momento em que ele
+///  passou a ser uma PESSOA com portal próprio (que edita a própria bio e recebe um
+///  certificado somando as atividades que ministrou), duas linhas do mesmo convidado
+///  passariam a divergir: ele corrige a bio em uma e a outra continua errada.
+///
+///  O que fica aqui é o que é DO PAR: o papel nesta atividade ("Keynote" na
+///  abertura, "Instrutor" no minicurso), a ordem na agenda, a carga horária
+///  atribuída e a contribuição de conteúdo (ementa, requisitos, bibliografia).
+///
+///  `guestName` e companhia permanecem para as linhas legadas e como último
+///  recurso de exibição: o nome canônico passou a ser `speakerProfile.name`.
 model ActivitySpeaker {
   id         String  @id @default(uuid(7)) @db.Uuid
   tenantId   String  @db.Uuid
   activityId String  @db.Uuid
   userId     String? @db.Uuid
 
-  /// Convidado externo sem conta na plataforma.
+  /// Perfil do palestrante (FASE 25). Nulo apenas em linha legada que a migração
+  /// não conseguiu associar — todo vínculo novo aponta para um perfil.
+  speakerProfileId String? @db.Uuid
+
+  /// Convidado externo sem conta na plataforma (legado: a identidade vive no perfil).
   guestName        String? @db.VarChar(160)
   guestEmail       String? @db.VarChar(255)
   guestInstitution String? @db.VarChar(200)
   guestBio         String? @db.Text
+
+  /// Papel NESTA atividade. Sobrepõe o rótulo padrão do perfil quando preenchido.
+  roleTitle String? @db.VarChar(120)
+
+  /// Contribuição de conteúdo do palestrante para esta atividade (FASE 25).
+  /// São PROPOSTAS atribuídas a quem as escreveu — a ementa oficial do evento
+  /// continua sendo `Activity.description`, que a instituição controla.
+  syllabus     String? @db.Text
+  requirements String? @db.Text
+  bibliography String? @db.Text
 
   isKeynote       Boolean @default(false)
   displayOrder    Int     @default(0)
@@ -1042,10 +1084,141 @@ model ActivitySpeaker {
   /// junto do vínculo — descoberto ao montar a agenda pública na FASE 3.
   user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  /// Perfil público do palestrante (FASE 25).
+  speakerProfile SpeakerProfile? @relation(fields: [speakerProfileId], references: [id], onDelete: SetNull)
+
   @@unique([activityId, userId])
   @@index([tenantId, activityId])
   @@index([userId])
+  @@index([tenantId, speakerProfileId])
   @@map("activity_speakers")
+}
+
+/// Palestrante da instituição — a PESSOA, não o vínculo com uma atividade (FASE 25).
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE ESTA TABELA EXISTE
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Um palestrante costuma falar em várias atividades e em várias edições do mesmo
+///  evento. Sem um registro próprio, cada vínculo repetia o nome, a bio e a foto, e
+///  o portal (onde ele edita o próprio perfil) não teria sobre o que escrever.
+///
+///  O perfil é da INSTITUIÇÃO (`tenantId` é a fronteira de RLS) e não do evento: a
+///  mesma pessoa volta na edição seguinte, e o vínculo com a conta (`userId`) é o que
+///  permite o acesso ao portal.
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  O CONVITE É GUARDADO COMO HASH
+/// ─────────────────────────────────────────────────────────────────────────────
+///  `inviteTokenHash` guarda o SHA-256 do token que a instituição entrega ao
+///  palestrante. O token em claro não é gravado — quem lê a tabela (backup, suporte,
+///  relatório) não consegue reivindicar o perfil de ninguém.
+model SpeakerProfile {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+
+  name        String  @db.VarChar(160)
+  /// E-mail de contato. É a chave do vínculo automático por e-mail no portal.
+  email       String? @db.VarChar(255)
+  institution String? @db.VarChar(200)
+  company     String? @db.VarChar(200)
+  /// Rótulo padrão do palestrante ("Keynote", "Instrutor"…). Cada vínculo pode
+  /// sobrepor com o papel daquela atividade.
+  roleTitle   String? @db.VarChar(120)
+  bio         String? @db.Text
+  avatarUrl   String? @db.VarChar(1024)
+  /// Redes e páginas: `{ linkedin?, github?, lattes?, website?, instagram?, youtube? }`.
+  /// Validado no domínio (`sanitizeSocialLinks`) — só http(s) de host conhecido.
+  socialLinks Json    @default("{}")
+
+  /// Conta vinculada. `null` enquanto o palestrante não reivindicou o perfil.
+  userId String? @db.Uuid
+
+  /// SHA-256 do token de reivindicação + validade. Ver `InviteHash` no domínio.
+  inviteTokenHash String?   @db.Char(64)
+  inviteExpiresAt DateTime? @db.Timestamptz(6)
+  inviteSentAt    DateTime? @db.Timestamptz(6)
+
+  /// O palestrante confirmou os próprios dados? Perfil não confirmado ainda é
+  /// exibido (a instituição o cadastrou), mas o portal o convida a revisar.
+  isConfirmed Boolean @default(false)
+  /// Aparece na vitrine pública? Falso esconde sem apagar — o palestrante pode
+  /// pedir para sair da página sem que a instituição perca o cadastro.
+  isPublic    Boolean @default(true)
+  /// Ordem na vitrine (menor primeiro). A ordem na AGENDA é do vínculo.
+  displayOrder Int    @default(0)
+
+  createdById String? @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+  deletedAt   DateTime? @db.Timestamptz(6)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?  @relation("SpeakerProfileUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy User?  @relation("SpeakerProfileCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  activityLinks ActivitySpeaker[]
+  materials     SpeakerMaterial[]
+
+  /// Um e-mail por instituição. Vários `null` convivem (o PostgreSQL trata NULL
+  /// como distinto), o que permite cadastrar convidado ainda sem e-mail.
+  @@unique([tenantId, email])
+  @@index([tenantId, userId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, displayOrder])
+  @@map("speaker_profiles")
+}
+
+/// Material de apoio de uma atividade, publicado pelo palestrante (FASE 25).
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  O ARQUIVO NÃO É PÚBLICO: A VISIBILIDADE É UMA DECISÃO POR MATERIAL
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Slides de aula podem ser abertos; uma apostila com dados de pacientes, não. O
+///  bucket de materiais NÃO é público (ao contrário do bucket de imagens) e todo
+///  download passa por URL assinada decidida na hora, com a visibilidade do material
+///  como regra: `PUBLIC` (qualquer visitante), `ATTENDEES_ONLY` (inscrito confirmado
+///  na atividade, o próprio palestrante e a equipe) ou `PRIVATE` (só o palestrante e
+///  a equipe).
+model SpeakerMaterial {
+  id                String @id @default(uuid(7)) @db.Uuid
+  tenantId          String @db.Uuid
+  activityId        String @db.Uuid
+  speakerProfileId  String @db.Uuid
+
+  title       String  @db.VarChar(200)
+  description String? @db.VarChar(600)
+  /// `SLIDES` | `HANDOUT` | `LINK` | `ARTICLE` | `OTHER` (ver domínio).
+  kind        String  @db.VarChar(32)
+  /// `PUBLIC` | `ATTENDEES_ONLY` | `PRIVATE`.
+  visibility  String  @db.VarChar(24) @default("PRIVATE")
+
+  /// Arquivo enviado (upload direto ao storage). Nulo quando é link externo.
+  storageBucket String? @db.VarChar(120)
+  storageKey    String? @db.VarChar(1024)
+  fileName      String? @db.VarChar(300)
+  mimeType      String? @db.VarChar(120)
+  sizeBytes     Int?
+  checksum      String? @db.Char(64)
+
+  /// Endereço público. Para link externo é o destino; para arquivo é a URL do objeto.
+  url String? @db.VarChar(1024)
+
+  displayOrder Int     @default(0)
+  uploadedById String? @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+  deletedAt    DateTime? @db.Timestamptz(6)
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activity       Activity       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  speakerProfile SpeakerProfile @relation(fields: [speakerProfileId], references: [id], onDelete: Cascade)
+  uploadedBy     User?          @relation("SpeakerMaterialUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, activityId, visibility])
+  @@index([tenantId, speakerProfileId])
+  @@index([deletedAt])
+  @@map("speaker_materials")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

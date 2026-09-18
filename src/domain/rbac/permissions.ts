@@ -106,6 +106,23 @@ export const PERMISSIONS = {
   SPONSOR_MANAGE: 'sponsor:manage',
   SPONSOR_READ: 'sponsor:read',
 
+  // ── Palestrantes (FASE 25) ──────────────────────────────────────────────────
+  /**
+   * Cadastro do palestrante pela instituição: criar o perfil, vinculá-lo a uma
+   * atividade, gerar convite e ler os materiais enviados por ele.
+   */
+  SPEAKER_MANAGE: 'speaker:manage',
+  /**
+   * O palestrante edita o PRÓPRIO perfil (bio, foto, instituição, redes).
+   *
+   * `:own` porque a posse é o que separa este portal de um cadastro aberto: a
+   * permissão sozinha não basta — `can()` exige o `ownerId`, e o serviço confirma
+   * que o perfil é da pessoa antes de escrever.
+   */
+  SPEAKER_PROFILE_UPDATE_OWN: 'speaker:profile:update:own',
+  /** O palestrante gerencia os materiais DAS ATIVIDADES que ministra. */
+  SPEAKER_MATERIAL_MANAGE_OWN: 'speaker:material:manage:own',
+
   // ── Conteúdo / Landing page ─────────────────────────────────────────────────
   PAGE_MANAGE: 'page:manage',
 
@@ -260,6 +277,13 @@ const ORGANIZER_PERMISSIONS: Permission[] = [
   PERMISSIONS.CERTIFICATE_REVOKE,
   PERMISSIONS.SPONSOR_MANAGE,
   PERMISSIONS.SPONSOR_READ,
+  /**
+   * `speaker:manage` — cadastrar palestrante é ato de organização do evento: a
+   * vitrine pública exibe quem a instituição convidou. O palestrante NÃO recebe
+   * esta permissão: ele edita o próprio perfil e os próprios materiais, e a posse
+   * é verificada em cada escrita.
+   */
+  PERMISSIONS.SPEAKER_MANAGE,
   PERMISSIONS.PAGE_MANAGE,
 ];
 
@@ -377,6 +401,13 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     PERMISSIONS.CARD_READ_OWN,
     PERMISSIONS.XP_READ_OWN,
     PERMISSIONS.SPONSOR_READ,
+    /**
+     * FASE 25 — o portal. As duas permissões são `:own` por desenho: habilitam o
+     * palestrante a editar o PRÓPRIO perfil e os materiais das atividades em que
+     * consta como ministrante, e não concedem acesso a palestrante nenhum.
+     */
+    PERMISSIONS.SPEAKER_PROFILE_UPDATE_OWN,
+    PERMISSIONS.SPEAKER_MATERIAL_MANAGE_OWN,
   ],
 
   // STAFF opera credenciamento no dia do evento.

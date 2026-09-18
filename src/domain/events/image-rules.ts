@@ -28,7 +28,7 @@
 // ───────────────────────────────────────────────────────────────────────────────
 //  Finalidades
 // ───────────────────────────────────────────────────────────────────────────────
-export const ASSET_TARGETS = ['COVER', 'LOGO', 'SPONSOR_LOGO', 'GALLERY'] as const;
+export const ASSET_TARGETS = ['COVER', 'LOGO', 'SPONSOR_LOGO', 'GALLERY', 'SPEAKER_AVATAR'] as const;
 export type AssetTarget = (typeof ASSET_TARGETS)[number];
 
 export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
@@ -36,6 +36,10 @@ export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
   LOGO: 'Logotipo do evento',
   SPONSOR_LOGO: 'Logotipo do patrocinador',
   GALLERY: 'Imagem da galeria',
+  // FASE 25: a foto do palestrante entra pela MESMA esteira da capa (allowlist de
+  // tipo, assinatura real, biblioteca de mídia). Um upload paralelo para o avatar
+  // divergiria justamente na verificação de assinatura, que é a parte de segurança.
+  SPEAKER_AVATAR: 'Foto do palestrante',
 };
 
 /**
@@ -51,6 +55,13 @@ export const MAX_IMAGE_BYTES: Record<AssetTarget, number> = {
   LOGO: 1 * 1024 * 1024,
   SPONSOR_LOGO: 1 * 1024 * 1024,
   GALLERY: 3 * 1024 * 1024,
+  /**
+   * Foto de palestrante: é retrato, e retrato quadrado de 2 MB é o teto generoso de
+   * uma foto de celular já reduzida. Ela aparece num avatar de 56 px na vitrine —
+   * aceitar 5 MB aqui seria publicar uma página pesada por uma imagem que ninguém vê
+   * em tamanho grande.
+   */
+  SPEAKER_AVATAR: 2 * 1024 * 1024,
 };
 
 export const IMAGE_MIME_TYPES = [

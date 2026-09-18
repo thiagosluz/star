@@ -24,6 +24,7 @@ import {
   MAX_KEYWORDS,
   MIN_ABSTRACT_LENGTH,
   MIN_TITLE_LENGTH,
+  canDeleteSubmission,
   canTransitionSubmission,
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
@@ -355,6 +356,35 @@ describe('máquina de estados da submissão', () => {
     for (const status of ['SUBMITTED', 'UNDER_REVIEW', 'ACCEPTED'] as const) {
       expect(fileReplacementCreatesVersion(status)).toBe(true);
     }
+  });
+
+  /**
+   * Excluir e editar são perguntas DIFERENTES (revisão da FASE 4).
+   *
+   * `REVISION_REQUESTED` é editável — o autor pode corrigir e reenviar — e ainda
+   * assim não pode ser excluída: a essa altura já existe uma versão enviada e um
+   * parecer que se refere a ela. Só o rascunho sai da história sem levar registro
+   * nenhum junto.
+   */
+  it('apenas o RASCUNHO pode ser excluído', () => {
+    expect(canDeleteSubmission('DRAFT')).toBe(true);
+
+    for (const status of [
+      'SUBMITTED',
+      'UNDER_REVIEW',
+      'REVISION_REQUESTED',
+      'ACCEPTED',
+      'REJECTED',
+      'WITHDRAWN',
+      'CANCELED',
+    ] as const) {
+      expect(canDeleteSubmission(status)).toBe(false);
+    }
+  });
+
+  it('o que é editável não é necessariamente excluível', () => {
+    expect(isEditableByAuthor('REVISION_REQUESTED')).toBe(true);
+    expect(canDeleteSubmission('REVISION_REQUESTED')).toBe(false);
   });
 });
 

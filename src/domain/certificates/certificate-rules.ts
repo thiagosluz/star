@@ -206,12 +206,31 @@ export interface EligibilityFacts {
   miniCourseCount: number;
   /** É palestrante de alguma atividade? */
   isSpeaker: boolean;
-  /** Carga horária atribuída ao palestrante (soma), em minutos. */
-  speakerWorkloadMinutes: number;
+  /**
+   * Carga horária do palestrante já apurada (FASE 25).
+   *
+   * `null` quando a pessoa não é palestrante. As atividades que contam são apenas
+   * as EFETIVAMENTE ministradas — ver `computeSpeakerWorkload` em
+   * `src/domain/speakers/speaker-rules.ts`: cancelada ou ainda não concluída não
+   * entra na soma, porque o certificado declara fato consumado.
+   */
+  speakerWorkload: WorkloadResult | null;
   /** Pareceres concluídos no evento. */
   completedReviews: number;
   /** Trabalhos aceitos no evento. */
   acceptedSubmissions: number;
+  /**
+   * O evento já terminou? (FASE 25)
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ESTE FATO EXISTE
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O certificado de PARTICIPAÇÃO pode ser pedido durante o evento — quem já
+   *  cumpriu a carga do minicurso tem direito a ele. O de PALESTRANTE, não: ele
+   *  atesta que a pessoa ministrou a atividade inteira, e durante o evento isso
+   *  ainda não é fato. Emitir antes seria atestar o futuro.
+   */
+  eventFinished: boolean;
 }
 
 export interface EligibilityVerdict {
@@ -283,11 +302,51 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
     }
 
     case 'SPEAKER': {
+      const speakerWorkload = facts.speakerWorkload ?? all;
+
       if (!facts.isSpeaker) {
-        return { eligible: false, reason: 'O participante não consta como palestrante.', workload: all };
+        return { eligible: false, reason: 'O participante não consta como palestrante.', workload: speakerWorkload };
       }
 
-      return { eligible: true, reason: 'Palestrante de atividade do evento.', workload: all };
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  TRÊS PORTAS, NESTA ORDEM (FASE 25)
+       * ─────────────────────────────────────────────────────────────────────────
+       *  Cada uma responde uma pergunta diferente, e a mensagem diz QUAL faltou —
+       *  "não elegível" sem motivo obrigaria o palestrante a abrir um chamado para
+       *  descobrir que o credenciamento dele não foi registrado no balcão.
+       */
+      if (!facts.eventFinished) {
+        return {
+          eligible: false,
+          reason: 'O certificado de palestrante é emitido após o término do evento.',
+          workload: speakerWorkload,
+        };
+      }
+
+      if (!facts.eventCheckedIn) {
+        return {
+          eligible: false,
+          reason:
+            'O credenciamento do palestrante no evento ainda não foi registrado. Procure a organização no local.',
+          workload: speakerWorkload,
+        };
+      }
+
+      if (speakerWorkload.countedActivities === 0) {
+        return {
+          eligible: false,
+          reason:
+            'Nenhuma atividade ministrada entrou na apuração (atividade cancelada ou ainda não concluída).',
+          workload: speakerWorkload,
+        };
+      }
+
+      return {
+        eligible: true,
+        reason: `Palestrante em ${speakerWorkload.countedActivities} atividade(s) do evento.`,
+        workload: speakerWorkload,
+      };
     }
 
     case 'REVIEWER': {
@@ -340,8 +399,7 @@ export function eligibleKindsFor(facts: Omit<EligibilityFacts, 'kind'>): Certifi
     if (kind === 'MERIT') return false;
     if (kind === 'ORGANIZER') return false; // exige papel, não fato
     return evaluateEligibility({ ...facts, kind }).eligible;
-  });
-}
+  });}
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Texto do certificado

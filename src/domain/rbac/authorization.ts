@@ -268,6 +268,41 @@ export function requirePermission(
 }
 
 /**
+ * O principal tem esta permissão em ALGUM escopo vigente?
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO NÃO SUBSTITUI `can()` (FASE 25)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `can()` responde "pode, NESTE alvo". Existe um caso em que não há UM alvo: a
+ *  porta de um painel PESSOAL — o palestrante que abre `/palestrante` e vê as
+ *  atividades que ministra. Ali o conjunto de alvos é definido pela POSSE (os
+ *  vínculos dele), não pelo escopo da concessão: o papel pode ter vindo no escopo
+ *  `ACTIVITY` (uma atividade específica) ou `EVENT`, e exigir `TENANT` recusaria
+ *  exatamente o padrão que a plataforma recomenda.
+ *
+ *  Esta função é a primeira peneira ("você é palestrante em algum lugar?"). Quem
+ *  passa por ela NÃO ganha acesso a nada: cada consulta do painel filtra por
+ *  `userId`, e cada ESCRITA chama `can()` com o alvo exato e o `ownerId` da linha.
+ *  Portal aberto por permissão ampla e dado filtrado por posse é a combinação que
+ *  mantém a regra verificável.
+ */
+export function holdsPermission(
+  principal: Principal | null | undefined,
+  permission: Permission,
+  now: Date = new Date(),
+): boolean {
+  if (!principal) return false;
+  if (!isMembershipOperational(principal)) return false;
+
+  for (const assignment of principal.assignments) {
+    if (!isAssignmentActive(assignment, now)) continue;
+    if (permissionsForRole(assignment.role).includes(permission)) return true;
+  }
+
+  return false;
+}
+
+/**
  * Verifica se o principal pertence ao tenant informado.
  *
  * Barreira barata que deve rodar ANTES de qualquer consulta: se o usuário não é

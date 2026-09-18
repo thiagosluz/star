@@ -44,6 +44,13 @@ import {
   updatePageBlock,
 } from '../src/lib/admin/landing-service';
 import { saveSponsor, saveSponsorTier } from '../src/lib/admin/sponsor-service';
+import {
+  attachSpeakerAccount,
+  linkSpeakerToActivity,
+  saveSpeakerProfile,
+} from '../src/lib/speakers/speaker-service';
+import { createMaterialLink } from '../src/lib/speakers/material-service';
+import { withTenant } from '../src/lib/db/tenant-client';
 import type { PageBlockType } from '../src/domain/events/landing-page';
 
 const connectionString = process.env.MIGRATE_DATABASE_URL;
@@ -1259,6 +1266,75 @@ async function main() {
 
   console.log(`  ✓ conteúdo e mídia: ${versoesDemo} versão(ões) no histórico · simpósio ${agendamentoDemo}`);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  PALESTRANTES (FASE 25)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O dado de demonstração nasce dos SERVIÇOS reais, como todo o resto do seed:
+   *  perfil cadastrado pela organização, vínculo com a atividade, aceite do convite
+   *  (que concede o papel e preenche o vínculo legado) e um material público.
+   *
+   *  Bruno é quem acumula papéis neste seed, e passou a ser também PALESTRANTE do
+   *  minicurso — o caso que a fase existe para atender: a mesma pessoa participa,
+   *  revisa e ministra, com o acesso vindo de ONDE ela atua.
+   */
+  const perfilPalestrante = await saveSpeakerProfile({
+    tenantId: ufbaId,
+    actorId: ana,
+    name: 'Bruno Souza',
+    email: 'bruno@example.test',
+    institution: 'Universidade Federal da Bahia',
+    roleTitle: 'Instrutor(a)',
+    bio: 'Professor de engenharia de software. Conduz o minicurso de Rust desde a primeira edição do congresso.',
+    socialLinks: { lattes: 'lattes.cnpq.br/1234567890', github: 'github.com/bruno-souza' },
+  });
+
+  let palestranteDemo = 'não configurado';
+
+  if (perfilPalestrante.ok) {
+    const vinculo = await linkSpeakerToActivity({
+      tenantId: ufbaId,
+      actorId: ana,
+      activityId: minicursoRustId,
+      speakerProfileId: perfilPalestrante.speakerProfileId,
+      roleTitle: 'Instrutor(a)',
+    });
+
+    if (vinculo.ok) {
+      await withTenant(ufbaId, (tx) =>
+        attachSpeakerAccount(tx, {
+          tenantId: ufbaId,
+          userId: bruno,
+          speakerProfileId: perfilPalestrante.speakerProfileId,
+          updateEmailTo: null,
+          actorId: ana,
+        }),
+      );
+
+      const material = await createMaterialLink({
+        tenantId: ufbaId,
+        actorId: bruno,
+        activityId: minicursoRustId,
+        speakerProfileId: perfilPalestrante.speakerProfileId,
+        title: 'Slides do minicurso de Rust',
+        description: 'Material de apoio publicado pelo próprio palestrante no portal.',
+        kind: 'SLIDES',
+        visibility: 'PUBLIC',
+        url: 'https://doc.rust-lang.org/book/',
+      });
+
+      palestranteDemo = material.ok
+        ? '1 palestrante com 1 material público no minicurso de Rust'
+        : `vínculo criado; material falhou: ${material.message}`;
+    } else {
+      palestranteDemo = `perfil criado; vínculo falhou: ${vinculo.message}`;
+    }
+  } else {
+    palestranteDemo = `falhou: ${perfilPalestrante.message}`;
+  }
+
+  console.log(`  ✓ palestrantes: ${palestranteDemo}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1308,6 +1384,10 @@ async function main() {
   console.log(`    .../administracao/eventos/<id>/pagina/midia  (acervo da instituição)`);
   console.log(`    Capa, logotipos e imagens de galeria entram no acervo automaticamente;`);
   console.log(`    o mesmo arquivo enviado duas vezes é reaproveitado (mesmo checksum).`);
+  console.log(`\n  Portal do palestrante (FASE 25):`);
+  console.log(`    http://localhost:3000/t/ufba-demo/palestrante     (bruno@example.test)`);
+  console.log(`    .../administracao/eventos/<id>/palestrantes       (cadastro e convite)`);
+  console.log(`    ${palestranteDemo}`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

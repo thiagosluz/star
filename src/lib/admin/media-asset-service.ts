@@ -117,7 +117,7 @@ export async function registerAsset(
 //  Uso: onde a URL aparece
 // ───────────────────────────────────────────────────────────────────────────────
 export interface AssetUsage {
-  kind: 'EVENT_COVER' | 'EVENT_LOGO' | 'SPONSOR_LOGO' | 'PAGE_BLOCK';
+  kind: 'EVENT_COVER' | 'EVENT_LOGO' | 'SPONSOR_LOGO' | 'PAGE_BLOCK' | 'SPEAKER_AVATAR';
   label: string;
 }
 
@@ -220,7 +220,7 @@ export async function listMediaLibrary(
  * exigiria conhecer todos os schemas aqui — a fonte da verdade deles é o domínio.
  */
 async function collectUsages(tx: TxClient, tenantId: string): Promise<Map<string, AssetUsage[]>> {
-  const [events, sponsors, pages] = await Promise.all([
+  const [events, sponsors, pages, speakers] = await Promise.all([
     tx.event.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, title: true, coverImageUrl: true, logoUrl: true },
@@ -236,6 +236,17 @@ async function collectUsages(tx: TxClient, tenantId: string): Promise<Map<string
         event: { select: { title: true } },
         blocks: { select: { type: true, content: true } },
       },
+    }),
+    /**
+     * Foto de palestrante (FASE 25).
+     *
+     * Entrou na varredura junto com o alvo `SPEAKER_AVATAR`: sem isto, a biblioteca
+     * ofereceria "excluir" para a foto que está na vitrine pública — e o visitante
+     * veria um avatar quebrado sem ninguém entender por quê.
+     */
+    tx.speakerProfile.findMany({
+      where: { tenantId, deletedAt: null, avatarUrl: { not: null } },
+      select: { name: true, avatarUrl: true },
     }),
   ]);
 
@@ -255,6 +266,10 @@ async function collectUsages(tx: TxClient, tenantId: string): Promise<Map<string
 
   for (const sponsor of sponsors) {
     add(sponsor.logoUrl, { kind: 'SPONSOR_LOGO', label: `Logotipo do patrocinador "${sponsor.name}"` });
+  }
+
+  for (const speaker of speakers) {
+    add(speaker.avatarUrl, { kind: 'SPEAKER_AVATAR', label: `Foto do palestrante "${speaker.name}"` });
   }
 
   for (const page of pages) {

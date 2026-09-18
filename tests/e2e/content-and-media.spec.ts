@@ -315,18 +315,23 @@ test.describe('conteúdo e mídia', () => {
 
     /**
      * ─────────────────────────────────────────────────────────────────────────────
-     *  O `confirm()` NATIVO PRECISA SER ACEITO — E O PADRÃO DO PLAYWRIGHT É RECUSAR
+     *  A CONFIRMAÇÃO AGORA É UM DIÁLOGO DO SISTEMA (revisão de UI)
      * ─────────────────────────────────────────────────────────────────────────────
-     *  O botão "Restaurar" pede confirmação com `window.confirm`, porque restaurar
-     *  substitui o conteúdo atual. O Playwright DISPENSA diálogos automaticamente
-     *  quando ninguém os trata, e um diálogo dispensado devolve `false` — o
-     *  formulário cancela a submissão e a ação nunca roda. Sem este handler, o teste
-     *  falha com "o conteúdo não voltou" e a causa fica invisível (nada no log do
-     *  servidor, porque nada chegou ao servidor).
+     *  O botão "Restaurar" abre o diálogo do produto — título, consequência escrita e um
+     *  botão que NOMEIA a ação. Antes era `window.confirm`, que o Playwright dispensa
+     *  automaticamente quando ninguém o trata (`false` = submissão cancelada, sem erro
+     *  no servidor porque nada chegava lá — armadilha 33).
+     *
+     *  Aqui o fluxo é o do usuário: abre, confere o texto e confirma.
      */
-    page.on('dialog', (dialog) => dialog.accept());
+    await restoreForm.getByTestId(`restore-${originalVersion!.id}-open`).click();
 
-    await restoreForm.getByTestId('inline-submit').click();
+    const restoreDialog = page.getByTestId(`restore-${originalVersion!.id}-confirm`);
+    await expect(restoreDialog).toBeVisible();
+    await expect(restoreDialog).toContainText('Restaurar esta versão?');
+    await expect(restoreDialog).toContainText('continua no histórico');
+
+    await restoreDialog.getByTestId(`restore-${originalVersion!.id}-confirm-confirm`).click();
 
     /**
      * ─────────────────────────────────────────────────────────────────────────────

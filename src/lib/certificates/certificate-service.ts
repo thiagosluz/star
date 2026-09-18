@@ -44,7 +44,9 @@ import {
   type EligibilityFacts,
   type ValidationVerdict,
   type WorkloadBreakdownEntry,
+  type WorkloadResult,
 } from '@/domain/certificates/certificate-rules';
+import { computeSpeakerWorkload } from '@/domain/speakers/speaker-rules';
 import { renderCertificatePdf, renderCertificateSvg } from '@/lib/certificates/renderer';
 import { getSigningConfig, isSigningConfigured, signContentHash, verifySignature } from '@/lib/certificates/signer';
 
@@ -89,9 +91,11 @@ export function validationUrlFor(code: string): string {
  */
 async function loadFacts(
   tx: TxClient,
-  input: { tenantId: string; eventId: string; userId: string },
+  input: { tenantId: string; eventId: string; userId: string; now?: Date },
 ): Promise<EligibilityFacts> {
-  const [attendances, registration, speaker, reviews, accepted, miniCourses] = await Promise.all([
+  const now = input.now ?? new Date();
+
+  const [attendances, registration, speaker, reviews, accepted, miniCourses, event] = await Promise.all([
     tx.attendance.findMany({
       where: { tenantId: input.tenantId, userId: input.userId, eventId: input.eventId },
       select: {
@@ -105,9 +109,22 @@ async function loadFacts(
       where: { tenantId: input.tenantId, userId: input.userId, eventId: input.eventId, deletedAt: null },
       select: { checkedInAt: true, status: true },
     }),
+    /**
+     * Vínculos de palestrante (FASE 25).
+     *
+     * A carga vem do vínculo quando declarada (dois palestrantes dividindo um
+     * minicurso de 4 h) e da atividade quando não. `status` e `endsAt` entram na
+     * consulta porque a apuração precisa saber se a atividade ACONTECEU.
+     */
     tx.activitySpeaker.findMany({
       where: { tenantId: input.tenantId, userId: input.userId, activity: { eventId: input.eventId } },
-      select: { workloadMinutes: true, activity: { select: { workloadMinutes: true } } },
+      select: {
+        activityId: true,
+        workloadMinutes: true,
+        activity: {
+          select: { title: true, workloadMinutes: true, status: true, startsAt: true, endsAt: true },
+        },
+      },
     }),
     tx.review.count({
       where: {
@@ -128,6 +145,10 @@ async function loadFacts(
     }),
     tx.activity.count({
       where: { tenantId: input.tenantId, eventId: input.eventId, type: 'MINI_COURSE', deletedAt: null },
+    }),
+    tx.event.findFirst({
+      where: { id: input.eventId, tenantId: input.tenantId },
+      select: { endsAt: true },
     }),
   ]);
 
@@ -150,12 +171,67 @@ async function loadFacts(
     eventCheckedIn: Boolean(registration?.checkedInAt),
     miniCourseCount: miniCourses,
     isSpeaker: speaker.length > 0,
-    speakerWorkloadMinutes: speaker.reduce(
-      (sum, entry) => sum + (entry.workloadMinutes ?? entry.activity?.workloadMinutes ?? 0),
-      0,
-    ),
+    speakerWorkload: speaker.length > 0 ? speakerWorkloadFrom(speaker, now) : null,
     completedReviews: reviews,
     acceptedSubmissions: accepted,
+    eventFinished: event ? event.endsAt.getTime() <= now.getTime() : false,
+  };
+}
+
+/**
+ * Converte os vínculos de palestrante na forma que a elegibilidade e o certificado
+ * consomem.
+ *
+ * O detalhamento é montado aqui, e não depois, porque o `workloadBreakdown` do
+ * certificado precisa registrar POR QUE uma atividade não entrou na soma (cancelada
+ * ou ainda não concluída) — a mesma razão que o certificado de presença já dá para
+ * a atividade sem carga cumprida.
+ */
+function speakerWorkloadFrom(
+  links: readonly {
+    activityId: string;
+    workloadMinutes: number | null;
+    activity: {
+      title: string;
+      workloadMinutes: number;
+      status: string;
+      startsAt: Date;
+      endsAt: Date;
+    } | null;
+  }[],
+  now: Date,
+): WorkloadResult {
+  const computed = computeSpeakerWorkload(
+    links.map((link) => ({
+      activityId: link.activityId,
+      activityTitle: link.activity?.title ?? 'Atividade',
+      activityStatus: link.activity?.status ?? 'DRAFT',
+      startsAt: link.activity?.startsAt ?? now,
+      endsAt: link.activity?.endsAt ?? now,
+      activityWorkloadMinutes: link.activity?.workloadMinutes ?? 0,
+      declaredWorkloadMinutes: link.workloadMinutes ?? null,
+    })),
+    now,
+  );
+
+  const entries: WorkloadBreakdownEntry[] = computed.entries.map((entry) => ({
+    activityId: entry.activityId,
+    title: entry.activityTitle,
+    type: null,
+    // Não há minutos medidos aqui: o palestrante recebe a CARGA da atividade, não o
+    // tempo de permanência dele na sala.
+    minutesAttended: entry.minutes,
+    workloadMinutes: entry.minutes,
+    countedMinutes: entry.minutes,
+    counted: entry.counted,
+    reason: entry.reason,
+  }));
+
+  return {
+    totalMinutes: computed.totalMinutes,
+    entries,
+    countedActivities: computed.countedActivities,
+    declaredMinutes: entries.reduce((sum, entry) => sum + entry.workloadMinutes, 0),
   };
 }
 
@@ -226,7 +302,7 @@ export async function requestCertificate(
         };
       }
 
-      const facts = await loadFacts(tx, input);
+      const facts = await loadFacts(tx, { ...input, now });
 
       const verdict = evaluateEligibility({
         ...facts,
@@ -255,17 +331,12 @@ export async function requestCertificate(
       /**
        * Carga horária:
        *   • MINI_COURSE → só os minicursos;
-       *   • SPEAKER     → carga atribuída ao palestrante, quando declarada;
+       *   • SPEAKER     → carga das atividades efetivamente ministradas (FASE 25);
        *   • demais      → tudo o que foi cumprido no evento.
        */
       const workload =
-        input.kind === 'SPEAKER' && facts.speakerWorkloadMinutes > 0
-          ? {
-              totalMinutes: facts.speakerWorkloadMinutes,
-              entries: verdict.workload.entries,
-              countedActivities: verdict.workload.countedActivities,
-              declaredMinutes: verdict.workload.declaredMinutes,
-            }
+        input.kind === 'SPEAKER' && facts.speakerWorkload
+          ? facts.speakerWorkload
           : verdict.workload;
 
       const text = buildCertificateText({

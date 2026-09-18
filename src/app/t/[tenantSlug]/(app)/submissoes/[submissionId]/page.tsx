@@ -8,10 +8,11 @@ import {
   resolveRubric,
 } from '@/lib/review/submission-service';
 import { getSubmissionAuthors } from '@/lib/review/author-service';
-import { isEditableByAuthor, type SubmissionStatus } from '@/domain/review/submission-rules';
+import { isEditableByAuthor, canDeleteSubmission, type SubmissionStatus } from '@/domain/review/submission-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   confirmUploadAction,
+  deleteDraftSubmissionAction,
   requestUploadAction,
   saveSubmissionAuthorsAction,
   submitSubmissionAction,
@@ -19,6 +20,7 @@ import {
 import { SubmissionUploader, type UploadKind } from '@/components/review/submission-uploader';
 import { SubmitSubmissionButton } from '@/components/review/submit-submission-button';
 import { AuthorEditor } from '@/components/review/author-editor';
+import { DeleteDraftButton } from '@/components/review/delete-draft-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,10 +43,13 @@ const STATUS_LABEL: Record<string, string> = {
  */
 export default async function SubmissionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string; submissionId: string }>;
+  searchParams: Promise<{ novo?: string }>;
 }) {
   const { tenantSlug, submissionId } = await params;
+  const { novo } = await searchParams;
 
   const context = await getRequestContext();
   if (!context) {
@@ -66,6 +71,11 @@ export default async function SubmissionDetailPage({
 
   const rubric = await resolveRubric(tenantId, submission.trackId);
   const editable = isEditableByAuthor(submission.status as SubmissionStatus);
+  /**
+   * Só o RASCUNHO pode ser excluído (revisão da FASE 4). A decisão é do domínio —
+   * depois do envio, a submissão é registro do que foi avaliado.
+   */
+  const deletable = canDeleteSubmission(submission.status as SubmissionStatus);
 
   /**
    * Autoria (FASE 17, item E6).
@@ -112,22 +122,51 @@ export default async function SubmissionDetailPage({
       </nav>
 
       <header className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
-            {submission.protocol}
-          </span>
-          <span
-            className="rounded border border-border px-2 py-0.5 text-xs"
-            data-testid="submission-status"
-          >
-            {STATUS_LABEL[submission.status] ?? submission.status}
-          </span>
-          {submission.requiresBlindReview ? (
-            <span className="rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong">
-              Revisão cega
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
+              {submission.protocol}
             </span>
+            <span
+              className="rounded border border-border px-2 py-0.5 text-xs"
+              data-testid="submission-status"
+            >
+              {STATUS_LABEL[submission.status] ?? submission.status}
+            </span>
+            {submission.requiresBlindReview ? (
+              <span className="rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong">
+                Revisão cega
+              </span>
+            ) : null}
+          </div>
+
+          {/* Excluir é ação sem volta, e só o rascunho a oferece. */}
+          {deletable ? (
+            <DeleteDraftButton
+              tenantSlug={tenantSlug}
+              submissionId={submissionId}
+              title={submission.title}
+              action={deleteDraftSubmissionAction}
+              testId="delete-draft"
+            />
           ) : null}
         </div>
+
+        {/*
+          ─── O AVISO QUE SUBSTITUI A PÁGINA INTERMEDIÁRIA (revisão da FASE 4) ───
+          A criação do rascunho agora cai AQUI, com `?novo=1`: em vez de uma tela
+          dizendo "rascunho criado" e devolvendo o autor à lista, a confirmação
+          aparece no lugar onde a submissão é completada.
+        */}
+        {novo ? (
+          <p
+            className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success-strong"
+            data-testid="draft-created"
+          >
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+            Rascunho criado. Anexe o arquivo e envie para avaliação quando estiver pronto.
+          </p>
+        ) : null}
 
         <h1 className="text-balance text-2xl font-semibold tracking-tight">
           {submission.title}

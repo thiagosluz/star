@@ -589,15 +589,19 @@ test.describe('cancelamento e promoção', () => {
       await expect(page.getByText(activity.title)).toBeVisible();
 
       /**
-       * O cancelamento pede confirmação via `window.confirm`. Registramos o
-       * handler com `page.on` (e não `once`): com `once`, se qualquer diálogo
-       * anterior tiver consumido o handler, o clique seguinte deixa o diálogo
-       * ABERTO — e um diálogo nativo aberto BLOQUEIA o thread do navegador,
-       * travando o teste até o timeout.
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  CANCELAR PASSOU A PEDIR CONFIRMAÇÃO EM DIÁLOGO DO SISTEMA (revisão de UI)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  Era `window.confirm` — que o Playwright dispensa sozinho quando ninguém o
+       *  trata (submissão cancelada em silêncio). Agora o botão abre o diálogo do
+       *  produto: o teste lê a consequência escrita e confirma, como o usuário faz.
        */
-      page.on('dialog', (dialog) => void dialog.accept());
+      await page.getByTestId('cancel-registration-open').first().click();
 
-      await page.getByRole('button', { name: /cancelar/i }).first().click();
+      const cancelDialog = page.getByTestId('cancel-registration-confirm');
+      await expect(cancelDialog).toBeVisible({ timeout: 20_000 });
+      await expect(cancelDialog).toContainText('Sua vaga é liberada');
+      await cancelDialog.getByTestId('cancel-registration-confirm-confirm').click();
 
       /**
        * Ação aceita -> a rota é revalidada -> a inscrição cancelada SAI da lista

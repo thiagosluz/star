@@ -620,4 +620,126 @@ foi a combinação "banco real + navegador real" que os expôs.
 XP, missões e níveis de prestígio, integrados aos eventos, inscrições e submissões já
 existentes.
 
+---
+
+## 18. Revisão pós-entrega — o rascunho que ninguém conseguia apagar
+
+> **Natureza:** revisão do MESMO tema (F4), a partir do uso real. Nenhuma migração,
+> nenhuma permissão nova. **ADRs:** 121 e 122 · **Testes novos:** 2 unitários + 4 de
+> integração + 1 E2E.
+
+### 18.1 O que o uso revelou
+
+Duas queixas chegaram juntas, com a tela na mão:
+
+- *"quando um participante vai em nova submissão e preenche as informações, vai para essa
+  tela falando que o rascunho foi criado, só que precisa o participante voltar para as
+  minhas submissões para clicar em abrir… poderia já facilitar e ir direto, sem essa
+  página intermediária"*;
+- *"permitir o participante excluir as submissões em rascunho, às vezes ele fez algo errado
+  e ainda não submeteu… mas somente para submissões em rascunho"*.
+
+| # | Relato | Causa raiz | Correção |
+|---|---|---|---|
+| 1 | Página intermediária "Rascunho criado" no meio do caminho | A action devolvia um estado de sucesso e a navegação era do CLIENTE (`useActionState` → cartão). O servidor já tinha o id da submissão recém-criada em mãos | `redirect()` na action para `/submissoes/<id>?novo=1`: o aviso mora onde o trabalho continua, não numa tela que só anuncia |
+| 2 | Não havia como excluir um rascunho | A operação nunca existiu — não havia serviço, regra nem tela. "Excluir" no projeto era sempre lógico (`deletedAt`) | `canDeleteSubmission` (domínio, só `DRAFT`) + `deleteSubmission` (serviço) + botão com o diálogo do sistema, na lista e no detalhe |
+
+### 18.2 Decisões
+
+#### ADR-121 — A criação termina ONDE o trabalho continua
+
+**Contexto.** O fluxo era: preencher → "Rascunho criado" → voltar à lista → clicar em
+"Abrir" → anexar o PDF → enviar. As duas telas do meio existiam porque a navegação era
+decidida no cliente: o `useActionState` recebia `{ ok: true }` e a tela trocava o
+formulário por um cartão.
+
+**Decisão.** A Server Action **redireciona** para a página da submissão recém-criada
+(`/submissoes/<id>?novo=1`). O estado de sucesso deixa de existir: o formulário só trata
+falha, e o aviso "rascunho criado" aparece na página de destino, dentro do contexto em que
+a próxima ação acontece.
+
+**Alternativas descartadas.** (a) `router.push` no cliente ao ver `state.ok` — funciona,
+mas mantém um estado intermediário e devolve ao bundle uma decisão que o servidor já pode
+tomar; (b) manter o cartão com um botão "Abrir agora" — é exatamente a fricção relatada,
+com um clique a menos; (c) abrir o formulário de upload na própria tela de criação — a
+submissão precisa de URL própria (protocolo, arquivos, autoria), e duplicaria a tela de
+detalhe.
+
+**Consequências.** O aviso depende do `searchParams` (`?novo=1`), e o E2E passou a esperar
+pelo AVISO em vez do cartão — o que também é a sincronização correta do teste (o clique
+resolve antes de a action terminar). O formulário de criação não tem mais caminho de
+sucesso, e isso é visível no código.
+
+#### ADR-122 — O rascunho se apaga; a submissão enviada, não
+
+**Contexto.** O módulo de submissões declara, desde a F4, que existe para tornar difícil
+"reescrever a história": uma submissão enviada documenta o que foi avaliado e quando. Ao
+mesmo tempo, o autor escreve ao longo de dias e erra — sem exclusão, o rascunho errado fica
+para sempre na lista dele.
+
+**Decisão.** `canDeleteSubmission(status)` libera **apenas `DRAFT`**, e o serviço
+(`deleteSubmission`) reconfere a posse pelo `submittedById` do banco. A exclusão é
+**FÍSICA** (a linha sai, e autores/arquivos saem por cascade), com o fato registrado na
+trilha de auditoria; os objetos do bucket são removidos **depois** do commit, em
+melhor-esforço. A permissão é `submission:update:own` com posse — não foi criada permissão
+nova.
+
+**Alternativas descartadas.** (a) Exclusão lógica (`deletedAt`), como no resto do sistema —
+guardaria um resumo pela metade em nome de uma auditoria que a própria trilha já faz, e
+manteria o protocolo ocupado; (b) permitir também em `REVISION_REQUESTED` — editável não é
+o mesmo que descartável: a essa altura existe uma versão enviada e um parecer que se refere
+a ela; (c) criar `submission:delete:own` — uma permissão nova no catálogo (57) e em todas as
+matrizes de papel para uma decisão que o ESTADO já toma, sem ganho de segurança; (d) apagar
+os objetos antes da transação — se a transação falhasse, a submissão continuaria existindo
+apontando para um arquivo inexistente, a pior inconsistência possível.
+
+**Consequências.** Um rascunho apagado não tem volta (o diálogo diz isso antes do clique).
+O que sobra dele é a entrada `DELETE` na auditoria, com protocolo, título, estado e número
+de arquivos. E fica explícito o que **não** existe: retirar uma submissão já enviada —
+a máquina de estados tem `WITHDRAWN`, mas não há serviço nem tela (dívida **E31**), então a
+tela manda a pessoa falar com a comissão em vez de prometer um caminho inexistente.
+
+### 18.3 Lições aprendidas (revisão)
+
+| # | Sintoma | Causa raiz | Correção |
+|---|---|---|---|
+| 13 | E2E: a leitura do banco logo depois do clique não encontrava a submissão recém-criada | O clique resolve quando o navegador DISPARA a action; a asserção antiga (o cartão "Rascunho criado") é que sincronizava o teste, e ela deixou de existir com o redirecionamento | A espera passou a ser pelo aviso `draft-created` na página de destino, e a URL prova o redirecionamento (o teste não lê o banco antes de a action terminar) |
+| 14 | O diálogo de exclusão prometia "o caminho é a retirada" — que a plataforma **não** tem | `WITHDRAWN` existe na máquina de estados e no cálculo do limite da trilha, mas nenhum serviço ou tela o produz; a promessa veio de ler o domínio como se fosse a interface | O texto passou a dizer o que existe (falar com a comissão) e a ausência virou dívida **E31**, em `docs/dividas-tecnicas.md` |
+
+### 18.4 Evidência de verificação
+
+```text
+npm run lint                 → 0 erros, 0 warnings
+npm run typecheck            → 0 erros
+npm test                     → 51 arquivos, 1256 testes passando (+6 nesta revisão)
+npm run build                → ✓ Compiled successfully
+npm run test:e2e             → 76 passed
+
+E2E do caminho novo (contra o container de produção):
+✓ autor cria rascunho, anexa o PDF e envia para avaliação        (agora cai direto na submissão)
+✓ o autor exclui um RASCUNHO pela lista — e o botão não existe para o que já foi enviado
+
+Integração (banco e storage reais):
+✓ o autor apaga o PRÓPRIO rascunho: sai a submissão, a autoria, o arquivo e o objeto
+✓ RECUSA excluir a submissão de outra pessoa            (FORBIDDEN)
+✓ RECUSA excluir submissão JÁ ENVIADA                   (NOT_EDITABLE, objeto intacto)
+✓ RECUSA excluir o que não existe                       (NOT_FOUND)
+```
+
+### 18.5 Checklist da revisão
+
+- [x] Criar o rascunho leva DIRETO à página da submissão (nenhuma tela intermediária)
+- [x] O aviso de "rascunho criado" aparece onde a submissão é completada (`?novo=1`)
+- [x] O botão "Excluir rascunho" existe na lista e no detalhe, com diálogo do sistema
+- [x] Só `DRAFT` é excluível (`canDeleteSubmission`), e o SERVIDOR reconfere o estado
+- [x] A posse é do banco: excluir a submissão de terceiro responde `FORBIDDEN`
+- [x] A exclusão leva autores e arquivos (cascade) e remove o objeto do bucket
+- [x] O fato fica na trilha de auditoria (protocolo, título, estado, arquivos)
+- [x] Nenhuma permissão nova: `submission:update:own` com posse
+- [x] Testes: 2 unitários, 4 de integração, 1 E2E (+ o E2E de criação atualizado)
+- [x] Bateria completa executada, com os números reais reportados na seção 18.4
+- [x] `AGENTS.md`, `docs/dividas-tecnicas.md` e `README.md` atualizados
+
+---
+
 Aguardando **"APROVADO: AVANÇAR"**.

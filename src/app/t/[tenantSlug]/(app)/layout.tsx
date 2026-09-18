@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { getRequestContext, loadPrincipal } from '@/lib/auth/session';
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
+import { hasPendingSpeakerInvite } from '@/lib/speakers/speaker-portal-service';
 import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
 import { AccountBlock } from '@/components/shell/account-block';
 import { AppShell } from '@/components/shell/app-shell';
@@ -105,7 +106,25 @@ export default async function TenantLayout({
         href: '/selecionar-instituicao',
         testId: 'active-tenant',
       }}
-      navGroups={buildTenantNav({ tenantSlug, principal })}
+      navGroups={buildTenantNav({
+        tenantSlug,
+        principal,
+        /**
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  O CONVITE DE PALESTRANTE TAMBÉM ABRE UM ITEM DE MENU (revisão da FASE 25)
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  O papel `SPEAKER` nasce com o ACEITE do convite. Sem esta consulta, quem foi
+         *  convidado veria o painel sem nenhuma pista de que existe um convite para
+         *  ele — o item do menu depende de permissão, e ele ainda não tem nenhuma.
+         *
+         *  É UMA consulta por render do shell, por igualdade no índice único
+         *  (`tenantId`, `email`), e só o booleano atravessa daqui para o menu.
+         */
+        hasPendingSpeakerInvite: await hasPendingSpeakerInvite({
+          tenantId: tenant.id,
+          userEmail: context.user.email,
+        }),
+      })}
       account={
         <AccountBlock
           user={{ name: context.user.name, email: context.user.email }}

@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 14, 16, 17, 23 e 24 (F15 pendente: Comunicação)
-Testes ................. 1157 (Vitest: unit + integração) + 69 (Playwright E2E)
-ADRs ................... 112 (numeração GLOBAL e sequencial — a próxima é ADR-113)
-Permissões ............. 54 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 33 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Fases concluídas ........ 1 a 14, 16, 17, 23, 24 e 25 (F15 pendente: Comunicação)
+Testes ................. 1256 (Vitest: unit + integração) + 76 (Playwright E2E)
+ADRs ................... 122 (numeração GLOBAL e sequencial — a próxima é ADR-123)
+Permissões ............. 57 (11 papéis, 4 escopos)
+Tabelas de tenant ...... 35 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1157+ testes passando
+npm test              # esperado: 1256+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 69+ testes passando
+npm run test:e2e      # esperado: 76+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -158,13 +158,19 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 30 | `<input type="color">` **não tem estado vazio**: um campo não preenchido envia `#000000` | Para cor OPCIONAL, use campo de texto com amostra; vazio significa "usar o token do sistema". O seletor nativo só serve quando a cor é obrigatória |
 | 31 | Trocar a ordem de duas linhas num índice único (`(submissionId, authorOrder)`) viola a restrição **no meio** da operação — o PostgreSQL verifica a unicidade a cada `UPDATE` | Substitua o conjunto inteiro na mesma transação (`deleteMany` + `createMany`) em vez de atualizar linha a linha; e preserve os vínculos que seriam perdidos na recriação |
 | 32 | Campo opcional de formulário chega como STRING VAZIA, não como ausente: `z.email()` recusa `'  '`, e `?? null` APAGA o valor gravado quando a tela mostra o dado mascarado | Trate vazio como ausente na entrada (`optionalText`) e defina a semântica da escrita: `undefined` = preservar o valor atual, `''` = limpar |
-| 33 | O Playwright **dispensa diálogos automaticamente** quando ninguém os trata, e um `window.confirm` dispensado devolve `false` | Se a ação pede confirmação nativa, o teste precisa de `page.on('dialog', (d) => d.accept())`. O sintoma engana: a ação **não chega ao servidor**, então não há erro no log nem mensagem na tela — parece que a funcionalidade não existe |
+| 33 | O Playwright **dispensa diálogos automaticamente** quando ninguém os trata, e um `window.confirm` dispensado devolve `false` | **O sistema não usa mais `window.confirm`** (revisão de UI, fora da numeração de fases): confirmação de ação sem volta é `ConfirmDialog` de `@/components/ui` — botão que abre, diálogo com a consequência escrita, botão que nomeia a ação. No E2E: clique em `<testid>-open` e depois em `<testid>-confirm-confirm` (`page.on('dialog')` desapareceu das specs). A armadilha continua valendo para qualquer diálogo nativo que apareça: ele é dispensado em silêncio e a ação nunca chega ao servidor |
 | 34 | `setInputFiles` num input de arquivo ESCONDIDO cujo `onChange` depende de um clique anterior (índice da linha) não dispara nada | Reproduza o fluxo real: `page.waitForEvent('filechooser')` + clique no botão + `chooser.setFiles(...)`. Definir o arquivo direto pula o estado que o clique monta |
 | 35 | Editar uma migração **depois de aplicada** quebra `prisma migrate dev` ("modified after it was applied") mesmo com o banco correto — o ledger guarda o checksum do conteúdo original | Nunca edite migração aplicada: corrija com migração nova. Para um banco de desenvolvimento fora de sincronia, `migrate deploy` aplica o que falta e `prisma migrate reset --force` reaplica a cadeia inteira, realinhando o ledger (e provando que ela funciona do zero) |
 | 36 | Estado derivado de dois campos (`isPublished` + `publishAt`) precisa de uma regra que LIMPE o segundo | Se "despublicar" só desmarca o primeiro, o segundo (data já vencida) republica no instante seguinte. Encode a transição numa função pura com teste — e faça a tela dizer que a data foi limpa |
 | 37 | A armadilha 34 tem um GÊMEO: assumir que todo input de arquivo é escondido. O `AssetUploader` tem o `<input type="file">` **visível** (escolhe e depois envia), então `waitForEvent('filechooser')` **nunca** dispara e o teste morre no timeout de 60 s | Antes de escrever o E2E de upload, olhe o componente: input visível → `setInputFiles` direto no input; input escondido acionado por clique → `filechooser`. Não existe "o jeito certo" único, e o erro aparece longe da causa |
 | 38 | `new Date('2027-03-10T18:00')` de um `<input type="datetime-local">` **usa o fuso do PROCESSO** (UTC no container): a data gravada sai deslocada em horas, sem erro nenhum, e o teste que só compara "existe uma data" passa | Converta explicitamente no fuso da ENTIDADE (aqui, `Event.timezone`) com `zonedWallTimeToInstant`, em **duas passagens** — o deslocamento depende do instante, que depende do deslocamento, e é isso que faz o horário de verão funcionar. Faça o caminho de volta e o teste conferir o INSTANTE gravado |
 | 39 | Referência por **URL** não tem chave estrangeira: o banco não sabe que uma imagem está em uso, então `DELETE` do registro + do objeto deixa a página pública com ícone quebrado e nenhum erro no log | Se a referência é uma URL (campo livre, conteúdo de bloco, coluna sem FK), a exclusão precisa **procurar o uso** antes — e recusar explicando ONDE. Varra por listagem (uso calculado uma vez) e extraia as URLs do conteúdo em vez de varrer bloco a bloco |
+| 40 | Revalidar o caminho ERRADO depois de uma Server Action: a action gravava e dizia "cadastrado", mas a lista aberta continuava vazia (o RSC em cache do caminho atual não é invalidado por `revalidatePath` de OUTRO caminho) | Revalide o **segmento** que contém a tela e as irmãs dela: `revalidatePath(tenantPath(slug, '/administracao'), 'layout')`. Caminho exato só quando existe uma única tela afetada |
+| 41 | Chamar um serviço que abre a PRÓPRIA transação de dentro de um `withTenant` que ainda não commitou: o serviço (em outra conexão) não enxerga o dado recém-criado e devolve `NOT_FOUND` — o sintoma é um vínculo que simplesmente não existe, sem erro | `READ COMMITTED` não mostra transação aberta. Monte em transações SEPARADAS: crie as entidades, saia, e só então chame o serviço que lê o que foi criado. Vale para fixtures de teste e para serviços compostos |
+| 42 | `Field` (o primitivo de formulário) associa o rótulo por `htmlFor={name}`, e o controle precisa do `id` correspondente (`{...fieldAria('nome')}`): sem isso o rótulo não foca o campo e `getByLabel` **nunca** resolve no E2E. Duas telas na mesma página com o mesmo `name` geram `id` duplicado e o locator fica ambíguo | Use `fieldAria(name)` em todo controle dentro de um `Field`; quando precisar de `id` diferente do `name` do formulário (ou houver mais de um formulário igual na tela), passe `id` explícito único e um `name` de `Field` também único |
+| 43 | O `ConfirmDialog` montado SEMPRE (só escondendo o `<dialog>` fechado) quebra testes que já existiam: o elemento fechado segue no DOM com `aria-labelledby` apontando para o título ("Remover o bloco 'Texto'?") e `getByLabel('Texto')` passa a casar com DOIS elementos — `strict mode violation`, porque locator por nome acessível **não** filtra elemento invisível. E, ao corrigir para montar só quando aberto, o efeito que chama `showModal()` com lista de dependências VAZIA nunca roda: o `Modal` fica montado (devolve `null`), o efeito roda no primeiro render com `ref.current === null`, e o diálogo aparece sem o atributo `open` — invisível, sem erro no console e com a ação nunca chegando ao servidor | `Modal` devolve `null` quando fechado (o painel nasce junto com a abertura) e o efeito de `showModal()` **depende de `open`**, com `close()` no cleanup devolvendo o foco ao gatilho. Diagnóstico que separa os dois casos: o `outerHTML` do `<dialog>` no relatório do Playwright — sem `open` = o efeito não abriu |
+| 44 | **Menu e página decidiam a mesma permissão com predicados diferentes.** O menu usava `can(permissão, { scope: 'TENANT' })` para TODO item — e `can()` recusa permissão `:own` sem `ownerId` (fail-closed, invariante nº 4). Resultado: o grupo "Minha participação" era descartado INTEIRO, para qualquer papel, e o palestrante não tinha porta para o próprio portal. Nenhum teste olhava o menu (o E2E navegava por URL direta) e o sintoma foi um relato de uso: "não achei a opção de mudar meus dados" — com o formulário existindo, completo, na tela | Item de menu com permissão `:own` é decidido por `holdsPermission` — o MESMO predicado de `requirePersonalPage` (a posse é conferida no dado, a cada leitura e escrita). Item institucional continua por `can()` no escopo da instituição, com `scopes` explícito no item cuja página aceita mais de um escopo (`Credenciamento` aceita `EVENT`). Menu e página têm de concordar nos DOIS sentidos: link que só redireciona e recurso inalcançável são o mesmo defeito — e recurso novo sem item de menu é a regra nº 1 de `docs/design-system.md` |
+| 45 | **O E2E se sincronizava pelo elemento que o fluxo MOSTRAVA** ("Rascunho criado"): quando a criação passou a redirecionar direto para a submissão, esse cartão deixou de existir, e a leitura seguinte do banco — feita logo depois do clique — rodou antes de a Server Action terminar e estourou com "No record was found for a query" | Em E2E, a sincronização vem de um elemento que o servidor só renderiza DEPOIS de gravar: espere pelo sinal da PÁGINA DE DESTINO (aqui, o aviso `draft-created` que depende de `?novo=1`) e só então consulte o banco — o clique resolve quando o navegador DISPARA a action, não quando ela termina |
 
 ---
 
@@ -334,6 +340,52 @@ site, logotipo, contato e documento — nunca cota, valor de contrato, vigência
 exibição (ADR-111). O acervo **mede** o armazenamento (`sumMediaBytes`), mas **não aplica**
 a quota do plano: impor o limite é decisão de produto da F21 (ADR-112 / dívida C4).
 
+### Portal do palestrante (FASE 25)
+
+O palestrante deixou de ser uma linha de `activity_speakers` e passou a ser uma **pessoa da
+instituição** (`speaker_profiles`): a organização cadastra o perfil, **vincula** a uma ou
+mais atividades e gera um **código de convite**; o palestrante assume o perfil, edita bio e
+foto, publica materiais e emite o próprio certificado.
+
+```
+Cadastro ............... /t/<slug>/administracao/eventos/<eventId>/palestrantes (speaker:manage)
+Convite ................ /t/<slug>/palestrante/convite?codigo=<TOKEN>  (público, autenticado)
+Portal ................. /t/<slug>/palestrante
+Vitrine ................ bloco "Palestrantes" da página pública
+Ficha .................. /t/<slug>/eventos/<eventSlug>/palestrantes/<speakerId>
+Download de material ... /api/t/<slug>/palestrantes/materiais/<materialId>/arquivo
+```
+
+Quatro regras que quebram fácil: **o convite é guardado como HASH** (`inviteTokenHash`) e
+aparece UMA vez; regerar invalida o anterior (ADR-114) — quando a busca é pelo hash e nada
+casa, a resposta é "convite não encontrado", não "código inválido"; **o aceite exige token E
+e-mail** (o token prova a posse do link, o e-mail da conta prova quem é), roda numa **página
+pública autenticada** — porque quem aceita pode ainda não ter vínculo — e o vínculo nasce
+como consequência, com `kind = PARTICIPANT` (convidado de minicurso não consome a quota de
+equipe) e papel `SPEAKER` no escopo **ACTIVITY**, um por atividade (ADR-115); **material tem
+visibilidade própria** (`PUBLIC` / `ATTENDEES_ONLY` / `PRIVATE`) decidida por VISITANTE no
+servidor, com 401 para o anônimo no material de inscritos, 403 para quem não é inscrito e
+403 até para o inscrito no rascunho (404 nunca, porque o rascunho não é informação de quem
+não organiza) — o bucket é privado e todo download passa por rota que assina URL temporária
+(ADR-116); e **a carga do palestrante soma só o que foi ministrado**: atividade cancelada ou
+ainda não concluída fica FORA, com o motivo no `workloadBreakdown`, e o certificado exige
+evento encerrado + credenciamento registrado (ADR-117/118).
+
+O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), porque o papel é
+concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO. Exigir
+escopo de tenant na entrada recusaria o caso normal — foi um dos defeitos que o E2E da fase
+pegou (armadilha 42 mostra a outra metade, no `Field`).
+
+**Duas portas para o portal.** Além de quem já é palestrante, entra quem tem **convite
+pendente para o e-mail da conta** (`userId` nulo + `inviteTokenHash` gravado + e-mail igual):
+o papel nasce com o aceite, então exigir o papel para chegar ao convite era um impasse. A
+mesma condição (`pendingInviteWhere`, em `speaker-portal-service.ts`) decide a guarda, o item
+do menu e a lista — e o item do menu segue a porta ("Convite de palestrante" antes do aceite,
+"Portal do palestrante" depois, com o LAYOUT revalidado no aceite). Quem ainda não tem vínculo
+aceita pela página pública do convite, que lista os convites do e-mail da conta logada
+(ADR-119/120, `docs/fase-25-portal-do-palestrante.md` §10).
+
+
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e
@@ -374,7 +426,8 @@ publicada** (5 blocos, tema próprio, 1 cota com 2 patrocinadores), **11 versõe
 histórico** dessa página, a página do simpósio com **janela completa de exibição**
 (entra no ar em 7 dias, sai em 21 — datas no fuso `America/Bahia` do evento) e o
 **acervo de mídia** da instituição com as imagens de capa, logotipos e galeria
-registradas. Percursos em `README.md` §6.
+registradas, e **1 palestrante** (Bruno, no minicurso de Rust) com perfil, vínculo com a
+atividade, conta vinculada e um material público de apoio. Percursos em `README.md` §6.
 
 ---
 
@@ -435,7 +488,7 @@ tests/{unit,integration,e2e}
 | 1 | Infraestrutura, modelagem, RLS | ✅ |
 | 2 | Autenticação, RBAC, multi-tenancy | ✅ |
 | 3 | Eventos, inscrições, landing pages | ✅ |
-| 4 | Submissões e avaliação por pares | ✅ |
+| 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: criar o rascunho cai direto na página da submissão e o autor pode **excluir rascunhos** (nunca o que já foi enviado) | ✅ |
 | 5 | Gamificação (XP, cartas, missões) | ✅ |
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
 | 7 | Painel administrativo + E2E completo | ✅ |
@@ -452,22 +505,26 @@ tests/{unit,integration,e2e}
 | 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
 | 23 | Conteúdo e mídia (E9–E13: pré-visualização do rascunho pelo mesmo componente da página pública, upload de imagem na galeria, cópia de patrocinador entre eventos, histórico de versões com restauração, publicação agendada decidida na leitura) | ✅ |
 | 24 | Mídia e agendamento (E14–E17: biblioteca de mídia com reaproveitamento por checksum e exclusão que confere o uso, sincronia do patrocinador copiado, janela de exibição com `unpublishAt`, data agendada no fuso do evento) | ✅ |
+| 25 | Portal do palestrante (E21–E24: perfil do palestrante como pessoa da instituição, convite por token hasheado e vínculo de conta em dois caminhos, portal com posse verificada no banco, materiais com visibilidade por visitante, vitrine com foto e bio, certificado `SPEAKER` com carga apurada) — **+ revisão pós-entrega**: o item de menu voltou a aparecer para as permissões pessoais e o convite pendente virou porta de entrada do portal (ADR-119/120, §10 do doc) | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
-> identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23 e a
-> FASE 24 foram entregues antes da F15 — o humano escolheu o tema pelo nome dele. A tabela
-> acima segue a ordem cronológica; a numeração é a do tema.
+> identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
+> FASE 24 e a FASE 25 foram entregues antes da F15 — o humano escolheu o tema pelo nome
+> dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**40 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, soma das
 tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17, 23 e 24
-quitaram, mais o que cada uma declarou de novo; verificado no código, com esforço e
+quitaram, mais o que cada uma declarou de novo, incluindo os cinco itens que a FASE 25
+declarou, o que a revisão dela declarou (E30) e o que a revisão da FASE 4 declarou (E31);
+verificado no código, com esforço e
 fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
 ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
 (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
 de segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco ·
 ~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
-F25 Acervo de mídia: miniaturas, busca e sincronia em lote) está em
+~~F25 Portal do palestrante~~ (entregue) · F26 Acervo de mídia: miniaturas, busca e
+sincronia em lote · F27 Material e convite do palestrante) está em
 **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
@@ -476,7 +533,7 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-24-midia-e-agendamento.md` — a F15 segue pendente).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-25-portal-do-palestrante.md` — a F15 segue pendente).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

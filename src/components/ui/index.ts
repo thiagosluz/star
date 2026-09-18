@@ -27,6 +27,13 @@ export {
 export { MetaItem, MetaList, StatCard, TBody, TD, TH, THead, TR, Table, TableWrapper } from './data';
 export { Alert, Avatar, EmptyState, Progress, Skeleton, type AlertTone } from './feedback';
 export {
+  ConfirmDialog,
+  ConfirmSubmitButton,
+  Modal,
+  type ConfirmDialogProps,
+  type ModalProps,
+} from './dialog';
+export {
   Checkbox,
   Field,
   Input,

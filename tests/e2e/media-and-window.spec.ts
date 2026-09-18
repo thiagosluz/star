@@ -273,8 +273,16 @@ test.describe('mídia e agendamento', () => {
     await expect(page.getByTestId(`media-usage-${assetId}`)).toContainText(/Bloco GALLERY/i);
 
     const deleteForm = page.getByTestId(`delete-media-${assetId}`);
-    page.on('dialog', (dialog) => dialog.accept());
-    await deleteForm.getByTestId('inline-submit').click();
+
+    /**
+     * A exclusão pede confirmação em DIÁLOGO DO SISTEMA (revisão de UI): abre, confere a
+     * consequência escrita e só então confirma. Era `window.confirm`, que o Playwright
+     * dispensava em silêncio — a ação nunca chegava ao servidor (armadilha 33).
+     */
+    await deleteForm.click();
+    const deleteDialog = page.getByTestId(`delete-media-${assetId}-confirm`);
+    await expect(deleteDialog).toBeVisible({ timeout: 20_000 });
+    await deleteDialog.getByTestId(`delete-media-${assetId}-confirm-confirm`).click();
 
     await expect(deleteForm.getByTestId(`delete-media-${assetId}-feedback`)).toContainText(
       /não pode ser excluída/i,

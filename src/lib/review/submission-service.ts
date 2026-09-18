@@ -25,6 +25,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
+import { recordAudit } from '@/lib/admin/audit';
 import {
   BUCKETS,
   buildObjectKey,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/storage/s3-client';
 import {
   MAX_FILE_SIZE_BYTES,
+  canDeleteSubmission,
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
   isEditableByAuthor,
@@ -657,6 +659,117 @@ export async function submitSubmission(
     });
   } catch (error) {
     return toFailure('submitSubmission', error);
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Exclusão do rascunho
+// ───────────────────────────────────────────────────────────────────────────────
+export interface DeleteSubmissionInput {
+  tenantId: string;
+  submissionId: string;
+  userId: string;
+}
+
+/**
+ * Exclui um RASCUNHO do autor.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  EXCLUSÃO FÍSICA — O OPOSTO DO RESTO DO SISTEMA, DE PROPÓSITO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Em quase todo lugar deste projeto "excluir" é `deletedAt` (a trilha guarda
+ *  quem removeu e o dado continua explicável). Aqui não: um rascunho não é
+ *  registro de NADA — não houve avaliação, não há parecer, atribuição, decisão
+ *  nem XP (a recompensa nasce no ENVIO, não na criação). Guardar o rascunho
+ *  apagado só manteria um resumo pela metade em nome de uma auditoria que a
+ *  própria trilha já faz.
+ *
+ *  O que a exclusão NÃO pode alcançar é uma submissão enviada: isso é decidido
+ *  pelo domínio (`canDeleteSubmission`), que só libera `DRAFT`.
+ *
+ *  A ordem aqui importa: os objetos do bucket saem DEPOIS do commit e em
+ *  melhor-esforço. Se saíssem antes e a transação falhasse, a submissão
+ *  continuaria existindo apontando para um arquivo que não existe mais — a pior
+ *  inconsistência possível. Um objeto órfão, em comparação, é lixo silencioso.
+ */
+export async function deleteSubmission(
+  input: DeleteSubmissionInput,
+): Promise<Result<{ protocol: string; removedFiles: number }>> {
+  try {
+    const deleted = await withTenant(input.tenantId, async (tx) => {
+      const submission = await tx.submission.findFirst({
+        where: { id: input.submissionId, deletedAt: null },
+        select: {
+          id: true,
+          protocol: true,
+          title: true,
+          status: true,
+          submittedById: true,
+          files: { select: { bucket: true, storageKey: true } },
+        },
+      });
+
+      if (!submission) {
+        throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
+      }
+
+      if (submission.submittedById !== input.userId) {
+        throw new SubmissionError(
+          'FORBIDDEN',
+          'Apenas o autor correspondente pode excluir esta submissão.',
+        );
+      }
+
+      if (!canDeleteSubmission(submission.status as SubmissionStatus)) {
+        throw new SubmissionError(
+          'NOT_EDITABLE',
+          'Só rascunhos podem ser excluídos. Uma submissão enviada faz parte do registro da avaliação.',
+        );
+      }
+
+      /**
+       * A trilha registra o FATO antes de a linha desaparecer — é o que sobra
+       * dele, e é o que permite responder "para onde foi a submissão 2026-ABCD?".
+       */
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          action: 'DELETE',
+          entityType: 'submission',
+          entityId: submission.id,
+          changes: {
+            protocolo: { from: submission.protocol, to: null },
+            titulo: { from: submission.title, to: null },
+            estado: { from: submission.status, to: null },
+            arquivos: { from: submission.files.length, to: 0 },
+          },
+        },
+        tx,
+      );
+
+      // Autores e arquivos saem por `onDelete: Cascade` (schema).
+      await tx.submission.delete({ where: { id: submission.id } });
+
+      return { protocol: submission.protocol, files: submission.files };
+    });
+
+    let removedFiles = 0;
+    for (const file of deleted.files) {
+      try {
+        await deleteObject(file.bucket, file.storageKey);
+        removedFiles += 1;
+      } catch (error) {
+        console.error(
+          `[submission] rascunho excluído, mas o objeto ${file.storageKey} não foi removido do bucket:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    return { ok: true as const, protocol: deleted.protocol, removedFiles };
+  } catch (error) {
+    return toFailure('deleteSubmission', error);
   }
 }
 

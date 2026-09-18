@@ -20,6 +20,11 @@ import {
 } from '@/domain/events/event-rules';
 import { remainingSeats } from '@/domain/events/registration-rules';
 import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
+import {
+  orderSpeakersForDisplay,
+  readSocialLinks,
+  type SocialLinks,
+} from '@/domain/speakers/speaker-rules';
 
 export interface TenantContext {
   tenantId: string;
@@ -180,7 +185,62 @@ export interface PublicActivitySummary {
   checkInEnabled: boolean;
   isFeatured: boolean;
   tags: string[];
+  /** Nomes para exibição em texto (compatibilidade com a agenda). */
   speakerNames: string[];
+  /**
+   * Palestrantes com PERFIL (FASE 25) — foto, bio, papel e link para a ficha.
+   *
+   * Vazio em atividade sem perfil vinculado; nesse caso `speakerNames` continua
+   * sendo a única fonte e a ficha mostra só os nomes, como antes.
+   */
+  speakers: PublicSpeakerRef[];
+  /**
+   * Materiais PÚBLICOS da atividade.
+   *
+   * Só os abertos: a lista da landing page não conhece o visitante. Materiais de
+   * inscritos são resolvidos na página da atividade, que sabe QUEM está olhando
+   * (`listActivityMaterials` com o `viewer` real).
+   */
+  materials: PublicMaterialRef[];
+}
+
+/** Palestrante como a página pública o mostra. */
+export interface PublicSpeakerRef {
+  id: string;
+  name: string;
+  roleTitle: string | null;
+  avatarUrl: string | null;
+  institution: string | null;
+  isKeynote: boolean;
+}
+
+/** Material público de uma atividade. */
+export interface PublicMaterialRef {
+  id: string;
+  title: string;
+  kind: string;
+  isFile: boolean;
+  fileName: string | null;
+  sizeBytes: number | null;
+  externalUrl: string | null;
+}
+
+/**
+ * Palestrante com perfil completo, como a vitrine e a ficha individual mostram.
+ *
+ * Só o que é PÚBLICO sai daqui: nome, papel, bio, foto, instituição e redes. E-mail e
+ * telefone nunca entram — são dado de contato da instituição, não da página.
+ */
+export interface PublicSpeakerDetail extends PublicSpeakerRef {
+  bio: string | null;
+  company: string | null;
+  socialLinks: SocialLinks;
+  /** Ordem declarada pela instituição para a vitrine (menor primeiro). */
+  displayOrder: number;
+  /** Atividades em que ele aparece (títulos, na ordem da agenda). */
+  activities: { activityId: string; activitySlug: string; title: string; roleTitle: string | null }[];
+  /** Primeiro horário em que fala — usado como desempate na ordenação da vitrine. */
+  firstActivityAt: Date | null;
 }
 
 export interface PublicEventDetail extends PublicEventSummary {
@@ -198,6 +258,14 @@ export interface PublicEventDetail extends PublicEventSummary {
    * formulário de inscrição precisam saber para não oferecer o que será recusado.
    */
   registrationRequiresMembership: boolean;
+  /**
+   * Palestrantes do evento, para a vitrine (FASE 25).
+   *
+   * Derivados das ATIVIDADES visíveis — o mesmo princípio do bloco `SPEAKERS` desde a
+   * FASE 17: não existe um segundo cadastro para a página pública. Quem fala em três
+   * atividades aparece UMA vez, com as três.
+   */
+  speakers: PublicSpeakerDetail[];
   page: {
     id: string;
     title: string;
@@ -363,8 +431,51 @@ async function loadEventDetail(
               orderBy: { displayOrder: 'asc' },
               select: {
                 isKeynote: true,
+                roleTitle: true,
                 guestName: true,
                 user: { select: { name: true } },
+                /**
+                 * O PERFIL é a fonte do que aparece na página (FASE 25). O vínculo
+                 * legado (`guestName`/`user.name`) segue no select como último
+                 * recurso, para atividade cadastrada antes desta fase.
+                 */
+                speakerProfile: {
+                  select: {
+                    id: true,
+                    name: true,
+                    roleTitle: true,
+                    bio: true,
+                    avatarUrl: true,
+                    institution: true,
+                    company: true,
+                    socialLinks: true,
+                    displayOrder: true,
+                    userId: true,
+                    isPublic: true,
+                    deletedAt: true,
+                  },
+                },
+              },
+            },
+            /**
+             * Materiais PÚBLICOS da atividade.
+             *
+             * A lista da landing page é montada para visitante ANÔNIMO (e para a
+             * pré-visualização do organizador), então só o que é público entra aqui.
+             * O material de inscritos é resolvido na página da atividade, com o
+             * visitante real.
+             */
+            speakerMaterials: {
+              where: { deletedAt: null, visibility: 'PUBLIC' },
+              orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+              select: {
+                id: true,
+                title: true,
+                kind: true,
+                storageKey: true,
+                fileName: true,
+                sizeBytes: true,
+                url: true,
               },
             },
           },
@@ -484,6 +595,121 @@ async function loadEventDetail(
     submissionCount: track._count.submissions,
   }));
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  VITRINE: UM PALESTRANTE, UMA ENTRADA (FASE 25)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Quem fala em três atividades aparece UMA vez, com as três — o mesmo
+   *  agrupamento que o bloco `SPEAKERS` faz desde a FASE 17, agora com foto e bio.
+   *
+   *  Só entram perfis VISÍVEIS: um palestrante que pediu para sair da página
+   *  (`isPublic = false`) continua na agenda como nome, porque a atividade precisa de
+   *  quem a ministra — mas não ganha ficha nem aparece na vitrine.
+   */
+  const activities = event.activities.map((activity) => {
+    const speakerRefs: PublicSpeakerRef[] = [];
+    const names: string[] = [];
+
+    for (const link of activity.speakers) {
+      const profile = link.speakerProfile;
+      const visible = profile !== null && profile.isPublic && profile.deletedAt === null;
+
+      names.push(profile?.name ?? link.user?.name ?? link.guestName ?? 'Palestrante');
+
+      if (visible && profile) {
+        speakerRefs.push({
+          id: profile.id,
+          name: profile.name,
+          roleTitle: link.roleTitle ?? profile.roleTitle ?? null,
+          avatarUrl: profile.avatarUrl,
+          institution: profile.institution,
+          isKeynote: link.isKeynote,
+        });
+      }
+    }
+
+    return {
+      id: activity.id,
+      slug: activity.slug,
+      title: activity.title,
+      description: activity.description,
+      type: activity.type,
+      status: activity.status as ActivityStatus,
+      modality: activity.modality,
+      startsAt: activity.startsAt,
+      endsAt: activity.endsAt,
+      workloadMinutes: activity.workloadMinutes,
+      roomName: activity.room?.name ?? null,
+      capacity: activity.capacity,
+      confirmedCount: activity.confirmedCount,
+      waitlistEnabled: activity.waitlistEnabled,
+      waitlistCount: activity.waitlistCount,
+      remainingSeats: remainingSeats(activity.capacity, activity.confirmedCount),
+      checkInEnabled: activity.checkInEnabled,
+      isFeatured: activity.isFeatured,
+      tags: activity.tags,
+      speakerNames: names,
+      speakers: speakerRefs,
+      materials: activity.speakerMaterials.map((material) => ({
+        id: material.id,
+        title: material.title,
+        kind: material.kind,
+        isFile: material.storageKey !== null,
+        fileName: material.fileName,
+        sizeBytes: material.sizeBytes,
+        externalUrl: material.storageKey === null ? material.url : null,
+      })),
+    };
+  });
+
+  const speakerMap = new Map<string, PublicSpeakerDetail>();
+
+  for (const activity of event.activities) {
+    for (const link of activity.speakers) {
+      const profile = link.speakerProfile;
+      if (!profile || !profile.isPublic || profile.deletedAt !== null) continue;
+
+      const existing = speakerMap.get(profile.id);
+
+      if (existing) {
+        existing.activities.push({
+          activityId: activity.id,
+          activitySlug: activity.slug,
+          title: activity.title,
+          roleTitle: link.roleTitle ?? null,
+        });
+        if (existing.firstActivityAt === null || activity.startsAt < existing.firstActivityAt) {
+          existing.firstActivityAt = activity.startsAt;
+        }
+        continue;
+      }
+
+      speakerMap.set(profile.id, {
+        id: profile.id,
+        name: profile.name,
+        roleTitle: profile.roleTitle,
+        avatarUrl: profile.avatarUrl,
+        institution: profile.institution,
+        isKeynote: link.isKeynote,
+        bio: profile.bio,
+        company: profile.company,
+        socialLinks: readSocialLinks(profile.socialLinks),
+        displayOrder: profile.displayOrder,
+        activities: [
+          {
+            activityId: activity.id,
+            activitySlug: activity.slug,
+            title: activity.title,
+            roleTitle: link.roleTitle ?? null,
+          },
+        ],
+        firstActivityAt: activity.startsAt,
+      });
+    }
+  }
+
+  const speakers = orderSpeakersForDisplay([...speakerMap.values()]);
+
   return {
     id: event.id,
     slug: event.slug,
@@ -526,30 +752,8 @@ async function loadEventDetail(
           blocks: page.blocks,
         }
       : null,
-    activities: event.activities.map((activity) => ({
-      id: activity.id,
-      slug: activity.slug,
-      title: activity.title,
-      description: activity.description,
-      type: activity.type,
-      status: activity.status as ActivityStatus,
-      modality: activity.modality,
-      startsAt: activity.startsAt,
-      endsAt: activity.endsAt,
-      workloadMinutes: activity.workloadMinutes,
-      roomName: activity.room?.name ?? null,
-      capacity: activity.capacity,
-      confirmedCount: activity.confirmedCount,
-      waitlistEnabled: activity.waitlistEnabled,
-      waitlistCount: activity.waitlistCount,
-      remainingSeats: remainingSeats(activity.capacity, activity.confirmedCount),
-      checkInEnabled: activity.checkInEnabled,
-      isFeatured: activity.isFeatured,
-      tags: activity.tags,
-      speakerNames: activity.speakers.map(
-        (s) => s.user?.name ?? s.guestName ?? 'Palestrante',
-      ),
-    })),
+    activities,
+    speakers,
     sponsors,
     tracks,
   };
@@ -604,5 +808,27 @@ export async function getPublicActivity(
     },
     activity,
   };
+}
+
+/**
+ * Ficha pública de UM palestrante do evento (FASE 25).
+ *
+ * Deriva do mesmo `getPublicEvent`, e isso é deliberado: a ficha herda a janela de
+ * publicação, o status do evento e a regra de quais atividades aparecem. Uma consulta
+ * própria teria de repetir essas quatro condições — e a primeira que ficasse para trás
+ * publicaria a ficha de um palestrante de evento em rascunho.
+ */
+export async function getPublicSpeaker(
+  tenantId: string,
+  eventSlug: string,
+  speakerId: string,
+): Promise<{ event: PublicEventDetail; speaker: PublicSpeakerDetail } | null> {
+  const event = await getPublicEvent(tenantId, eventSlug);
+  if (!event) return null;
+
+  const speaker = event.speakers.find((entry) => entry.id === speakerId);
+  if (!speaker) return null;
+
+  return { event, speaker };
 }
 

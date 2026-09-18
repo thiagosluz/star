@@ -176,7 +176,12 @@ export default async function EventMediaLibraryPage({
                   submitLabel="Excluir"
                   variant="destructive"
                   testId={`delete-media-${asset.id}`}
-                  confirmText={`Excluir "${asset.fileName}" do acervo e do armazenamento?`}
+                  confirm={{
+                    title: `Excluir “${asset.fileName}”?`,
+                    description:
+                      'O arquivo sai do acervo e do armazenamento — não há como desfazer. O registro de quem enviou fica na trilha de auditoria.',
+                    confirmLabel: 'Excluir imagem',
+                  }}
                 >
                   <input type="hidden" name="tenantSlug" value={tenantSlug} />
                   <input type="hidden" name="eventId" value={eventId} />

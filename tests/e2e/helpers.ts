@@ -76,9 +76,17 @@ export async function linkUser(options: {
 export async function grantRole(options: {
   tenantId: string;
   userId: string;
-  role: 'OWNER' | 'ADMIN' | 'ORGANIZER' | 'CHAIR' | 'REVIEWER' | 'STAFF' | 'PARTICIPANT';
+  role: 'OWNER' | 'ADMIN' | 'ORGANIZER' | 'CHAIR' | 'REVIEWER' | 'STAFF' | 'SPEAKER' | 'PARTICIPANT';
   scope?: 'TENANT' | 'EVENT' | 'ACTIVITY';
   eventId?: string;
+  /**
+   * Alvo quando `scope = 'ACTIVITY'` (FASE 25).
+   *
+   * O papel de palestrante é concedido POR ATIVIDADE: quem ministra um minicurso não
+   * ganha acesso ao evento inteiro. Sem poder apontar a atividade, a fixture não
+   * conseguiria reproduzir o padrão que a própria plataforma recomenda.
+   */
+  activityId?: string;
 }) {
   return e2eDb.$transaction(async (tx) => {
     // `role_assignments` está sob FORCE RLS: nem o admin escapa sem contexto.
@@ -92,6 +100,7 @@ export async function grantRole(options: {
         role: options.role,
         scope: options.scope ?? 'TENANT',
         eventId: options.eventId ?? null,
+        activityId: options.activityId ?? null,
       },
     });
   });

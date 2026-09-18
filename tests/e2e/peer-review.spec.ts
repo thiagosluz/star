@@ -240,16 +240,31 @@ test.describe('submissão de trabalho', () => {
     await page.getByLabel('Trilha temática').selectOption(track.id);
     await page.getByRole('button', { name: /criar rascunho/i }).click();
 
-    await expect(page.getByTestId('submission-created')).toBeVisible();
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O RASCUNHO ABRE DIRETO NA PÁGINA DELE (revisão da FASE 4)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Antes, o clique levava a um cartão "Rascunho criado" e o autor tinha de
+     *  voltar à lista e clicar em "Abrir" para, só então, anexar o PDF. Agora o
+     *  servidor redireciona para a submissão recém-criada, com o aviso lá dentro
+     *  (`?novo=1`) — é o mesmo lugar onde o trabalho é completado.
+     *
+     *  A espera é pelo AVISO, e não pelo banco: o clique resolve antes de a action
+     *  terminar, e ler o id no banco logo depois correria com a própria criação.
+     */
+    await expect(page.getByTestId('draft-created')).toBeVisible({ timeout: 30_000 });
 
-    // ── Abre a submissão e anexa o PDF cego ────────────────────────────────
     const submission = await e2eDb.submission.findFirstOrThrow({
       where: { trackId: track.id },
       select: { id: true, protocol: true },
     });
 
-    await page.goto(`/t/${tenant.slug}/submissoes/${submission.id}`);
+    // A URL prova o redirecionamento: nenhuma tela intermediária no caminho.
+    await expect(page).toHaveURL(
+      new RegExp(`/submissoes/${submission.id}\\?novo=1$`),
+    );
 
+    // ── Anexa o PDF cego ───────────────────────────────────────────────────
     const uploader = page.getByTestId('submission-files');
     await expect(uploader).toBeVisible();
 
@@ -349,6 +364,98 @@ test.describe('submissão de trabalho', () => {
     });
 
     expect(fileCount).toBe(0);
+  }, 120_000);
+
+  test('o autor exclui um RASCUNHO pela lista — e o botão não existe para o que já foi enviado', async ({
+    page,
+  }) => {
+    const { tenant, event, track } = await scenario('exclusao');
+
+    const author = await createUser(page, tenant.id, 'Autora Exclusão', 'PARTICIPANT');
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A MONTAGEM É DIRETA NO BANCO, E DE PROPÓSITO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O que está sob teste é a EXCLUSÃO — o caminho de criação tem cenário próprio
+     *  logo acima. Montar os DOIS estados (um rascunho e um trabalho já enviado) é
+     *  o que permite comparar o que a tela oferece em cada um deles.
+     */
+    const draftId = randomUUID();
+    const sentId = randomUUID();
+
+    await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+
+      await tx.submission.create({
+        data: {
+          id: draftId,
+          tenantId: tenant.id,
+          eventId: event.id,
+          trackId: track.id,
+          protocol: `RSC-${RUN_ID.slice(0, 3)}`,
+          title: 'Rascunho que será excluído',
+          abstract: 'R'.repeat(200),
+          keywords: ['teste', 'exclusao', 'rascunho'],
+          status: 'DRAFT',
+          submittedById: author.id,
+        },
+      });
+
+      await tx.submission.create({
+        data: {
+          id: sentId,
+          tenantId: tenant.id,
+          eventId: event.id,
+          trackId: track.id,
+          protocol: `ENV-${RUN_ID.slice(0, 3)}`,
+          title: 'Trabalho já enviado para avaliação',
+          abstract: 'R'.repeat(200),
+          keywords: ['teste', 'exclusao', 'enviado'],
+          status: 'SUBMITTED',
+          submittedAt: new Date(),
+          submittedById: author.id,
+        },
+      });
+    });
+
+    await page.goto(`/t/${tenant.slug}/submissoes`);
+
+    const list = page.getByTestId('my-submissions');
+    await expect(list).toContainText('Rascunho que será excluído');
+    await expect(list).toContainText('Trabalho já enviado para avaliação');
+
+    /**
+     * A ASSIMETRIA É O PONTO: excluir existe no rascunho e não existe no enviado.
+     * Depois do envio há pareceres e atribuições apontando para a submissão, e
+     * apagá-la seria reescrever a história da avaliação.
+     */
+    await expect(page.getByTestId(`delete-draft-${draftId}`)).toBeVisible();
+    await expect(page.getByTestId(`delete-draft-${sentId}`)).toHaveCount(0);
+
+    // ── Exclui: o diálogo do sistema diz O QUE sai, e o autor confirma ───────
+    await page.getByTestId(`delete-draft-${draftId}`).click();
+
+    const dialog = page.getByTestId(`delete-draft-${draftId}-confirm`);
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Rascunho que será excluído');
+    await dialog.getByTestId(`delete-draft-${draftId}-confirm-confirm`).click();
+
+    // ── O destino é a lista, e o rascunho saiu dela ─────────────────────────
+    await page.waitForURL(new RegExp(`/t/${tenant.slug}/submissoes$`), { timeout: 30_000 });
+    await expect(list).not.toContainText('Rascunho que será excluído');
+    await expect(list).toContainText('Trabalho já enviado para avaliação');
+
+    // ── O banco confirma: a linha do rascunho sumiu, a do enviado ficou ─────
+    const rows = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.submission.findMany({
+        where: { id: { in: [draftId, sentId] } },
+        select: { id: true },
+      });
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([sentId]);
   }, 120_000);
 });
 

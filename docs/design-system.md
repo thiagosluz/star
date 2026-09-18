@@ -96,8 +96,9 @@ Importe **sempre** de `@/components/ui`:
 ```tsx
 import {
   Alert, Avatar, Badge, Button, Card, CardContent, CardHeader, CardTitle,
-  EmptyState, Field, Input, PageHeader, Progress, RarityBadge, Select,
-  SectionHeading, StatCard, Table, TBody, TD, TH, THead, TR, Textarea,
+  ConfirmDialog, EmptyState, Field, Input, Modal, PageHeader, Progress,
+  RarityBadge, Select, SectionHeading, StatCard, Table, TBody, TD, TH, THead,
+  TR, Textarea,
 } from '@/components/ui';
 ```
 
@@ -119,9 +120,51 @@ import {
 | `Progress` | Barra de avanço | `role="progressbar"` com valores |
 | `Avatar` | Pessoa | Iniciais; sem upload nesta fase |
 | `Skeleton` | Carregamento | Nunca um "carregando…" textual |
+| `ConfirmDialog` (`Modal`) | Ação **sem volta** | Título com a pergunta, consequência escrita, botão que **nomeia** a ação e foco inicial em "Cancelar". `window.confirm` é proibido (ver abaixo) |
 
 **Se falta um primitivo:** acrescente-o a `src/components/ui/**` e exporte no
 `index.ts`. Não escreva a classe solta na tela — é assim que o padrão morre.
+
+### Confirmações: nunca `window.confirm`
+
+A caixa nativa do navegador é a única tela do sistema que o design não desenha: aparece
+com o título "localhost:3000 diz", botões "OK/Cancelar" sem hierarquia e ordem diferente
+em cada navegador — e não diz **o que** está sendo confirmado.
+
+```tsx
+// ✔ O padrão: o botão abre o diálogo; quem envia é o `requestSubmit()` do form
+<InlineActionForm
+  action={deleteBlockAction}
+  submitLabel="Remover"
+  variant="destructive"
+  testId={`delete-block-${block.id}`}
+  confirm={{
+    title: `Remover o bloco “${BLOCK_LABELS[block.type]}”?`,
+    description: 'O bloco sai da página na hora. O conteúdo continua no histórico.',
+    confirmLabel: 'Remover bloco',
+  }}
+>
+```
+
+Regras que o primitivo já carrega:
+
+1. **Texto que nomeia a ação** (`Remover bloco`, `Cancelar inscrição`) no lugar do "OK";
+   quem lê a caixa sabe o que vai acontecer sem reler a tela atrás.
+2. **Consequência escrita** — o que sai do ar, o que é preservado, o que não tem volta.
+3. **Foco inicial em "Cancelar"** em ação destrutiva: `Enter` por reflexo não apaga nada.
+4. **`<dialog>` nativo como mecanismo** (top layer, fundo inerte, foco preso, `Esc`) com
+   o painel desenhado pelo produto — o que muda é o DESENHO, não a garantia.
+5. No E2E, o teste clica em `<testid>-open` e confirma em `<testid>-confirm-confirm`;
+   **não** existe mais `page.on('dialog')` a tratar.
+6. **O painel só existe no DOM enquanto está aberto.** Um `<dialog>` fechado continua no
+   documento com `aria-labelledby` apontando para o título ("Remover o bloco 'Texto'?") e
+   `getByLabel('Texto')` passa a casar com **dois** elementos — o campo e o diálogo
+   (`strict mode violation`, porque locator por nome acessível não filtra invisível).
+   Montar sempre "porque é mais simples" quebra o E2E de telas que já existiam.
+7. **O efeito que chama `showModal()` depende de `open`**, nunca de lista vazia: o `Modal`
+   fica montado mesmo fechado (quem o esconde é o `return null`), então um efeito de
+   montagem roda no primeiro render — quando `ref.current` ainda é `null` — e o diálogo
+   aparece sem o atributo `open`, invisível e sem erro nenhum no console.
 
 ---
 
@@ -153,7 +196,12 @@ redireciona e a tela inalcançável.
    (com `breadcrumbs` e `actions`). A rota herda o shell do layout — não monte
    cabeçalho.
 2. **Permissão**: `requirePagePermission({ tenantSlug, permission })` e, se o módulo
-   entra no menu, acrescente o item em `buildTenantNav` com a mesma permissão.
+   entra no menu, acrescente o item em `buildTenantNav` com a mesma permissão — e com o
+   **mesmo predicado**: permissão pessoal (`:own`) é decidida por `holdsPermission`
+   (posse), e permissão de instituição por `can(..., { scope: 'TENANT' })`, com `scopes`
+   explícito quando a página aceita `EVENT` (`credenciamento`). Menu mais restritivo que a
+   página esconde recurso de quem pode usá-lo; mais permissivo, oferece link que só
+   redireciona — os dois já aconteceram (armadilha 44 do `AGENTS.md`).
 3. **Conteúdo**: `Card` para agrupar, `SectionHeading` para separar seções,
    `Table` para lista densa, `EmptyState` para vazio.
 4. **Ação**: `Button` (um primário por tela) + `Alert` para o retorno. Formulário com

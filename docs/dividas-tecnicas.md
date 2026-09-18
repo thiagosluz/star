@@ -8,7 +8,7 @@
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
 > **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
-> **FASE 23** (E9–E13) e a **FASE 24** (E14–E17).
+> **FASE 23** (E9–E13), a **FASE 24** (E14–E17) e a **FASE 25** (escopo próprio: E21–E24).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -81,17 +81,27 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
 | D. Comunicação e comunidade | 6 | 3¹ | Alto para adoção — não há um único e-mail; convite é manual |
-| E. Jornada do participante | 7 | 2 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca |
+| E. Jornada do participante | 14 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), e não há como retirar uma submissão já enviada |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **40** | **12** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24, mais o que cada uma declarou de novo) |
+| **Total** | **47** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+7+5+6+4+1 = 40), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+6+14+5+6+4+1 = 47), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13, a FASE 17 acrescentou
-> E9–E13, a FASE 23 acrescentou E14–E17 e a FASE 24 acrescentou E18–E20).
+> E9–E13, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
+> acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, e o E31, que a
+> **revisão** da FASE 4 declarou).
+>
+> **Nota de contagem (FASE 25):** a fase do portal do palestrante entregou um escopo que
+> **não vinha deste levantamento** (foi definido diretamente pelo humano: E21 perfil e
+> vínculo de conta, E22 portal e posse, E23 materiais com visibilidade, E24 vitrine e
+> certificado de palestrante). Por isso esses quatro **não** entram como linha quitada na
+> seção 2 — não eram itens abertos aqui —, mas os cinco que a fase declarou de novo
+> (E25–E29) entram na tabela do tema E. O identificador `E21` foi escolhido para não
+> colidir com os E18–E20 da FASE 24, que continuam abertos.
 >
 > **Correção de contagem (FASE 23):** o total anterior dizia 46 com o tema E valendo 13,
 > mas a tabela de E tinha NOVE linhas (E1, E2, E7, E8, E9–E13) — o número foi escrito a
@@ -164,6 +174,13 @@
 | E18 | **Miniaturas no acervo de mídia** | FASE 24 (novo) | A lista do acervo carrega a imagem INTEIRA para desenhar um quadrado pequeno; falta gerar (ou servir) uma miniatura | Acervo com 20 fotos de 3 MB baixa dezenas de MB só para abrir a tela | M | Sim |
 | E19 | **Busca e filtro no acervo de mídia** | FASE 24 (novo) | A listagem traz as 200 mais recentes, sem filtro por tipo, evento ou "em uso" (a tela mostra o uso, não filtra por ele) | Acervo grande exige rolar e comparar a olho | P | Sim |
 | E20 | **Sincronizar todas as cópias de uma vez** | FASE 24 (novo) | A sincronia é por patrocinador (ADR-111); falta aplicar a mesma origem a todas as cópias de uma vez | Instituição com muitas edições sincroniza uma cópia por vez | M | Sim |
+| E25 | **Convite de palestrante não sai por e-mail** | FASE 25 (novo) | O código de convite é entregue à mão: a plataforma não tem provedor de e-mail (dívida D1/F15) | Evento com 40 palestrantes exige 40 entregas manuais | M | Sim |
+| E26 | **Integridade do upload confere só o tamanho quando o storage não reporta checksum** | FASE 25 (novo) | O `PUT` assinado não inclui `x-amz-meta-sha256`; `verifyStoredObject` cai no tamanho (mesmo caminho desde a FASE 4) | Um objeto trocado por outro de MESMO tamanho passaria — hoje nenhum caminho do sistema o produz | M | Sim |
+| E27 | **Foto do palestrante só entra por upload** | FASE 25 (novo) | Não há campo de URL para quem hospeda a foto fora (decisão de segurança: a esteira valida a assinatura real) | Quem tem a foto em outro site precisa baixá-la e enviá-la | P | Sim |
+| E28 | **Convite em lote / reenvio automático** | FASE 25 (novo) | Cada convite é gerado por palestrante, e regerar invalida o anterior (ADR-114) | Turma grande de convidados exige repetir o fluxo | M | Sim |
+| E29 | **`activity_speakers` mantém as colunas legadas duplicadas** | FASE 25 (novo) | Nome, e-mail, instituição e bio existem no perfil e no vínculo, sincronizados por dois caminhos de escrita (ADR-113) | Duas fontes do mesmo dado; a divergência exigiria um backfill | M | Sim |
+| E30 | **O convite aberto pelo e-mail da conta se apoia em endereço não verificado** | FASE 25 (revisão, ADR-120) | Quem cria uma conta com o endereço que a organização cadastrou entra no portal e assume o perfil — o mesmo grau de confiança do aceite pelo painel, mas sem a prova de posse do endereço, que é a verificação de e-mail da F15 | Sem F15, um terceiro que consiga criar conta com o e-mail do convidado assume o perfil; a auditoria registra o aceite, e a organização pode desvincular | M | Sim |
+| E31 | **O autor não consegue RETIRAR uma submissão já enviada** | FASE 4 (revisão, ADR-122) | A máquina de estados tem `WITHDRAWN` (e o limite da trilha já o ignora na contagem), mas não existe serviço nem tela que o produza — só a comissão pode cancelar, e não há caminho de autor | Quem enviou por engano depende de um pedido manual à comissão, e o trabalho fica no páreo até alguém agir; a tela de exclusão manda falar com a comissão porque não pode oferecer o que não existe | M | Sim |
 
 ### F. Gamificação
 
@@ -221,7 +238,9 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
 | ~~**F23 — Conteúdo e mídia**~~ | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | **Concluída como FASE 23** — `docs/fase-23-conteudo-e-midia.md`. A página pública virou componente compartilhado, e o histórico exigiu a primeira tabela nova desde a FASE 16 |
 | ~~**F24 — Mídia e agendamento**~~ | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | **Concluída como FASE 24** — `docs/fase-24-midia-e-agendamento.md`. O bucket deixou de ser a biblioteca: a imagem passou a ter registro, com reaproveitamento por checksum e exclusão que confere o uso |
-| **F25 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (storage) ou num mutirão de meio dia |
+| ~~**F25 — Portal do palestrante**~~ | Perfil do palestrante, convite e vínculo de conta, portal com posse, materiais com visibilidade, vitrine e certificado | E21–E24 (escopo definido pelo humano) | **Concluída como FASE 25** — `docs/fase-25-portal-do-palestrante.md`. O palestrante deixou de ser uma linha da atividade e passou a ser uma pessoa da instituição, com portal próprio |
+| **F26 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (storage) ou num mutirão de meio dia |
+| **F27 — Material e convite do palestrante** | Convite por e-mail, integridade forte no upload, foto por URL, convite em lote, colunas legadas | E25–E29 (+ E30) | O que a FASE 25 declarou em aberto (e a revisão dela, o E30). **E25, E28 e E30 dependem da F15** (sem provedor de e-mail não há envio, e sem verificação de e-mail a entrada pelo convite se apoia no endereço da conta); as demais são independentes e cabem em mutirão |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -285,6 +304,36 @@ agendada no fuso do evento. O registro está em
 dívidas novas da fase (E18–E20) e a fronteira que ela **não** cruzou de propósito: o acervo
 mede o armazenamento, mas a quota do plano continua sem ser aplicada — decisão de produto
 que pertence à F21 junto com o resto do ciclo de vida do membro (dívida C4).
+
+### Fase do portal do palestrante executada na FASE 25 (concluído)
+
+O escopo veio **direto do humano** (não deste levantamento): o palestrante deixou de ser uma
+linha de `activity_speakers` e passou a ser uma PESSOA da instituição (`speaker_profiles`), com
+convite por token hasheado, reivindicação em dois caminhos, portal com posse verificada no banco,
+materiais com visibilidade decidida por visitante (401/403/404), vitrine pública com foto e bio, e
+certificado `SPEAKER` que exige evento encerrado e credenciamento registrado. O registro está em
+[`docs/fase-25-portal-do-palestrante.md`](fase-25-portal-do-palestrante.md), que declara as dívidas
+novas da fase (E25–E29) e a fronteira que ela **não** cruzou: o convite é entregue à mão porque não
+há canal de e-mail (F15 pendente).
+
+### Revisão da FASE 25 executada depois da entrega (concluído)
+
+O uso real mostrou que o portal e o convite existiam e **não tinham porta**: o item de menu das
+permissões pessoais era descartado (`can()` sem dono nega `:own`) e o convite só era visível para
+quem já tinha o papel que o aceite concede. A revisão corrigiu o predicado do menu, fez do convite
+pendente uma porta de entrada (guarda, menu e página pública) e está registrada na **seção 10** do
+documento da fase, com os ADRs 119 e 120. Ela declarou **uma** dívida nova, o **E30** (a entrada
+pelo convite se apoia em endereço que a F15 ainda não verifica).
+
+### Revisão da FASE 4 executada depois da entrega (concluído)
+
+Também veio do uso: criar um rascunho parava numa tela de "Rascunho criado" e o autor tinha de
+voltar à lista para abrir a submissão e anexar o arquivo — e não havia como apagar um rascunho
+errado. A revisão faz a criação terminar **na própria submissão** (redirecionamento no servidor) e
+entrega a **exclusão do rascunho**, sempre restrita a `DRAFT` e com o fato na trilha de auditoria.
+Está registrada na **seção 18** do documento da fase, com os ADRs 121 e 122. Ela declarou **uma**
+dívida nova, o **E31**: retirar uma submissão já enviada continua sem serviço e sem tela — e é por
+isso que a tela de exclusão manda falar com a comissão em vez de prometer um caminho que não existe.
 
 ---
 

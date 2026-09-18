@@ -86,6 +86,30 @@ export function isEditableByAuthor(status: SubmissionStatus): boolean {
 }
 
 /**
+ * O autor pode EXCLUIR esta submissão?
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  SÓ O RASCUNHO — E A RAZÃO É O PRINCÍPIO DESTE MÓDULO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Uma submissão ENVIADA documenta o que foi avaliado e quando: existem
+ *  atribuições de parecerista, pareceres e um `blindSnapshot` apontando para ela.
+ *  Apagá-la seria "reescrever a história" — exatamente o que este módulo existe
+ *  para impedir. Quem precisa desistir de um trabalho enviado usa a retirada
+ *  (`WITHDRAWN`), que preserva o registro e o torna explícito.
+ *
+ *  O rascunho é outra coisa: nunca saiu da mão do autor, ninguém o avaliou e nada
+ *  aponta para ele. Poder apagá-lo é o que permite corrigir um envio errado sem
+ *  deixar lixo na própria lista.
+ *
+ *  Repare que `REVISION_REQUESTED` é EDITÁVEL (`isEditableByAuthor`) e mesmo assim
+ *  NÃO é excluível: a essa altura já houve envio e já existe parecer que se refere
+ *  a uma versão específica. Editar e excluir são perguntas diferentes.
+ */
+export function canDeleteSubmission(status: SubmissionStatus): boolean {
+  return status === 'DRAFT';
+}
+
+/**
  * Reenviar durante a revisão cria uma nova versão?
  *
  * Quando a submissão já está em análise, o autor pode ser autorizado a corrigir

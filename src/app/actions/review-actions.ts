@@ -20,6 +20,7 @@
  */
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { adminPrisma } from '@/lib/db/admin-client';
@@ -29,6 +30,7 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   confirmUpload,
   createSubmission,
+  deleteSubmission,
   requestUpload,
   submitSubmission,
 } from '@/lib/review/submission-service';
@@ -205,11 +207,77 @@ export async function createSubmissionAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
-  return {
-    ok: true,
-    message: `Submissão criada com protocolo ${result.protocol}.`,
-    data: { submissionId: result.id, protocol: result.protocol },
-  };
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O RASCUNHO ABRE NA TELA ONDE ELE É COMPLETADO (revisão da FASE 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Antes a action devolvia "Rascunho criado" e a tela ficava parada: para anexar
+   *  o PDF e enviar, o autor tinha de voltar à lista e clicar em "Abrir" — uma
+   *  página intermediária que só existia porque a navegação era do cliente.
+   *
+   *  O servidor já conhece o id recém-criado: então ele REDIRECIONA. O aviso de
+   *  "rascunho criado" reaparece lá (`?novo=1`), onde a próxima ação acontece.
+   */
+  redirect(tenantPath(data.tenantSlug, `/submissoes/${result.id}?novo=1`));
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Exclusão do rascunho
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Exclui um rascunho do próprio autor.
+ *
+ * A permissão é `submission:update:own` COM posse: excluir o rascunho é a forma
+ * extrema de editá-lo, e o serviço reconfere a posse pelo `submittedById` do
+ * banco. O que impede alcançar uma submissão já enviada não é a permissão, é o
+ * ESTADO (`canDeleteSubmission`, no domínio) — e a mensagem que volta diz isso.
+ */
+export async function deleteDraftSubmissionAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      submissionId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      submissionId: formData.get('submissionId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const context = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
+    requiresOwnership: true,
+  });
+
+  if (!context.ok) return context.state;
+
+  const result = await deleteSubmission({
+    tenantId: context.tenantId,
+    submissionId: parsed.data.submissionId,
+    userId: context.userId,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  const listPath = tenantPath(parsed.data.tenantSlug, '/submissoes');
+  // A lista é quem mostra o efeito: sem revalidar, o rascunho apagado continuaria ali.
+  revalidatePath(listPath);
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/submissoes/${parsed.data.submissionId}`));
+
+  /**
+   * O destino é a LISTA: quem acabou de apagar um rascunho não pode continuar numa
+   * página que aponta para ele (a submissão não existe mais e a tela daria 404).
+   */
+  redirect(listPath);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

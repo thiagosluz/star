@@ -1,10 +1,10 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
-import { Button } from '@/components/ui';
+import { Button, ConfirmDialog } from '@/components/ui';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -56,7 +56,7 @@ export function InlineActionForm<S extends InlineActionState>({
   submitLabel,
   testId,
   children,
-  confirmText,
+  confirm,
   variant = 'outline',
   className,
   /** Não exibe o retorno de sucesso — para ações cujo efeito já é visível. */
@@ -66,34 +66,55 @@ export function InlineActionForm<S extends InlineActionState>({
   submitLabel: string;
   testId: string;
   children?: React.ReactNode;
-  /** Texto do `confirm()` do navegador. Ausente = sem confirmação. */
-  confirmText?: string;
+  /**
+   * Confirmação em DIÁLOGO DO SISTEMA (revisão de UI). Ausente = envio direto.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ISTO DEIXOU DE SER UM TEXTO PARA O `window.confirm`
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O diálogo nativo aparecia com o título "localhost:3000 diz", botões "OK" e
+   *  "Cancelar" sem hierarquia e desenho do navegador — a única tela do sistema que o
+   *  design não desenhava. Aqui a confirmação tem título, consequência escrita, botão
+   *  que NOMEIA a ação ("Remover bloco") e o padrão visual do produto.
+   */
+  confirm?: {
+    title: string;
+    description?: React.ReactNode;
+    confirmLabel?: string;
+    tone?: 'default' | 'danger';
+  };
   variant?: 'outline' | 'destructive' | 'primary';
   className?: string;
   quietSuccess?: boolean;
 }) {
   const [state, formAction] = useActionState<S | null, FormData>(action, null);
+  const [confirming, setConfirming] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   return (
-    <form
-      action={formAction}
-      data-testid={testId}
-      className={className}
-      onSubmit={(event) => {
-        /**
-         * `confirm()` do navegador, e não um modal do sistema: a confirmação existe
-         * para uma ação sem volta (remover bloco, remover patrocinador) e o diálogo
-         * nativo é o único que funciona sem JavaScript adicional no bundle.
-         */
-        if (confirmText && !window.confirm(confirmText)) {
-          event.preventDefault();
-        }
-      }}
-    >
+    <form ref={formRef} action={formAction} data-testid={testId} className={className}>
       {children}
 
       <div className="flex flex-wrap items-center gap-2">
-        <InlineSubmit label={submitLabel} variant={variant} />
+        {confirm ? (
+          /**
+           * Com confirmação, o botão do formulário NÃO envia: ele abre o diálogo. Quem
+           * envia é o `requestSubmit()` chamado pelo diálogo, e é isso que mantém o
+           * caminho de envio em um lugar só (o `<form>`), com `useActionState`,
+           * validação nativa e estado de envio funcionando como nas demais ações.
+           */
+          <Button
+            type="button"
+            variant={variant}
+            size="sm"
+            onClick={() => setConfirming(true)}
+            data-testid={`${testId}-open`}
+          >
+            {submitLabel}
+          </Button>
+        ) : (
+          <InlineSubmit label={submitLabel} variant={variant} />
+        )}
 
         {state && !state.ok ? (
           <span
@@ -120,6 +141,22 @@ export function InlineActionForm<S extends InlineActionState>({
           </span>
         ) : null}
       </div>
+
+      {confirm ? (
+        <ConfirmDialog
+          open={confirming}
+          title={confirm.title}
+          description={confirm.description}
+          confirmLabel={confirm.confirmLabel ?? submitLabel}
+          tone={confirm.tone ?? 'danger'}
+          testId={`${testId}-confirm`}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            formRef.current?.requestSubmit();
+          }}
+        />
+      ) : null}
     </form>
   );
 }

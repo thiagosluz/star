@@ -37,6 +37,12 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RegistrationForm } from '@/components/events/registration-form';
 import { Section, ThemeScope } from '@/components/events/theme-scope';
+import {
+  ActivitySpeakerList,
+} from '@/components/events/speaker-gallery';
+import { ActivityMaterials } from '@/components/events/activity-materials';
+import { listActivityMaterials, resolveActivityViewer } from '@/lib/speakers/material-service';
+import { loadActivityNotes } from '@/lib/speakers/speaker-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,6 +122,14 @@ export default async function ActivityPage({
   let alreadyRegistered: 'CONFIRMED' | 'WAITLISTED' | null = null;
   let myRegistrationId: string | null = null;
   let canRegister = false;
+  /**
+   * A pessoa gerencia palestrantes nesta instituição?
+   *
+   * Serve para ela ver na página pública o material em RASCUNHO que o palestrante
+   * ainda não publicou — é quem dá suporte a ele. A decisão vem do RBAC, e não da
+   * tela.
+   */
+  let isOrganizer = false;
 
   if (user) {
     const membership = await adminPrisma.userTenantProfile.findFirst({
@@ -129,6 +143,7 @@ export default async function ActivityPage({
       canRegister = can(principal, PERMISSIONS.REGISTRATION_CREATE, {
         scope: 'TENANT',
       });
+      isOrganizer = can(principal, PERMISSIONS.SPEAKER_MANAGE, { scope: 'TENANT' });
     } else {
       /**
        * INSCRIÇÃO PÚBLICA (FASE 10).
@@ -161,6 +176,34 @@ export default async function ActivityPage({
     activity.status === 'CANCELED' ||
     activity.status === 'COMPLETED' ||
     activity.status === 'IN_PROGRESS';
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  MATERIAIS DO PALESTRANTE (FASE 25)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A leitura é feita com o VISITANTE REAL (`resolveMaterialViewer` consulta o
+   *  banco: ministrante desta atividade, equipe ou inscrito confirmado). É o que
+   *  libera o material de inscritos para quem tem vaga — e o que mantém o rascunho
+   *  do palestrante fora da página.
+   *
+   *  `lockedCount` vem da mesma varredura: é o que existe e não está liberado, e a
+   *  página o usa para avisar que há conteúdo exclusivo em vez de escondê-lo.
+   */
+  const [materialList, notes] = await Promise.all([
+    listActivityMaterials({
+      tenantId: tenant.tenantId,
+      activityId: activity.id,
+      viewer: await resolveActivityViewer({
+        tenantId: tenant.tenantId,
+        activityId: activity.id,
+        userId: user?.id ?? null,
+        isOrganizer,
+      }),
+    }),
+    loadActivityNotes(tenant.tenantId, activity.id),
+  ]);
+
+  const { materials, lockedCount } = materialList;
 
   const loginHref = `/login?redirectTo=${encodeURIComponent(
     tenantPath(tenantSlug, `/eventos/${eventSlug}/atividades/${activitySlug}`),
@@ -243,7 +286,33 @@ export default async function ActivityPage({
                 </div>
               ) : null}
 
-              {activity.speakerNames.length > 0 ? (
+              {activity.speakers.length > 0 ? (
+                <div className="flex items-center gap-2">
+                  <Mic className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <div>
+                    <dt className="text-xs opacity-60">
+                      {activity.speakers.length === 1 ? 'Palestrante' : 'Palestrantes'}
+                    </dt>
+                    <dd className="flex flex-wrap gap-x-2">
+                      {activity.speakers.map((speaker, index) => (
+                        <span key={speaker.id}>
+                          <Link
+                            href={tenantPath(
+                              tenantSlug,
+                              `/eventos/${eventSlug}/palestrantes/${speaker.id}`,
+                            )}
+                            className="underline underline-offset-4"
+                            data-testid={`activity-speaker-link-${speaker.id}`}
+                          >
+                            {speaker.name}
+                          </Link>
+                          {index < activity.speakers.length - 1 ? ',' : ''}
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                </div>
+              ) : activity.speakerNames.length > 0 ? (
                 <div className="flex items-center gap-2">
                   <Mic className="size-4 shrink-0 opacity-60" aria-hidden />
                   <div>
@@ -315,6 +384,66 @@ export default async function ActivityPage({
                 ))}
               </ul>
             ) : null}
+
+            {/**
+             * ─── EMENTA E REQUISITOS DO PALESTRANTE (FASE 25) ────────────────
+             *
+             * A ementa oficial da atividade continua sendo a descrição acima, que a
+             * instituição controla. O que aparece aqui é a contribuição ATRIBUÍDA do
+             * ministrante — e o crédito vai no título, porque num minicurso com dois
+             * instrutores o texto é de um deles.
+             */}
+            {notes ? (
+              <section className="space-y-4" aria-labelledby="ementa-detalhada">
+                <h2 id="ementa-detalhada" className="text-lg font-semibold tracking-tight">
+                  Ementa detalhada
+                </h2>
+                <p className="text-xs opacity-60" data-testid="notes-author">
+                  Por {notes.speakerName}
+                </p>
+
+                {notes.syllabus ? (
+                  <div className="space-y-1.5" data-testid="activity-syllabus">
+                    <h3 className="text-sm font-medium">Conteúdo programático</h3>
+                    <div className="whitespace-pre-line text-pretty text-sm leading-relaxed opacity-85">
+                      {notes.syllabus}
+                    </div>
+                  </div>
+                ) : null}
+
+                {notes.requirements ? (
+                  <div className="space-y-1.5" data-testid="activity-requirements">
+                    <h3 className="text-sm font-medium">Pré-requisitos e ferramentas</h3>
+                    <div className="whitespace-pre-line text-pretty text-sm leading-relaxed opacity-85">
+                      {notes.requirements}
+                    </div>
+                  </div>
+                ) : null}
+
+                {notes.bibliography ? (
+                  <div className="space-y-1.5" data-testid="activity-bibliography">
+                    <h3 className="text-sm font-medium">Bibliografia recomendada</h3>
+                    <div className="whitespace-pre-line text-pretty text-sm leading-relaxed opacity-85">
+                      {notes.bibliography}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <ActivitySpeakerList
+              speakers={activity.speakers}
+              tenantSlug={tenantSlug}
+              eventSlug={eventSlug}
+            />
+
+            <ActivityMaterials
+              materials={materials}
+              activityTitle={activity.title}
+              tenantSlug={tenantSlug}
+              isAuthenticated={Boolean(user)}
+              lockedCount={lockedCount}
+            />
           </article>
 
           {/* ── Painel de inscrição ──────────────────────────────────────── */}

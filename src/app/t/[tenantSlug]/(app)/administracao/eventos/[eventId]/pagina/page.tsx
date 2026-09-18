@@ -413,7 +413,12 @@ export default async function EventLandingPageEditor({
                             submitLabel="Remover"
                             variant="destructive"
                             testId={`delete-block-${block.id}`}
-                            confirmText={`Remover o bloco "${BLOCK_LABELS[block.type]}"?`}
+                            confirm={{
+                              title: `Remover o bloco “${BLOCK_LABELS[block.type]}”?`,
+                              description:
+                                'O bloco sai da página na hora. O conteúdo atual continua no histórico de versões, e você pode restaurá-lo por lá.',
+                              confirmLabel: 'Remover bloco',
+                            }}
                           >
                             <input type="hidden" name="tenantSlug" value={tenantSlug} />
                             <input type="hidden" name="eventId" value={eventId} />
@@ -544,7 +549,13 @@ export default async function EventLandingPageEditor({
                           action={restorePageVersionAction}
                           submitLabel="Restaurar"
                           testId={`restore-${version.id}`}
-                          confirmText="Restaurar esta versão? O conteúdo atual é substituído (e continua no histórico)."
+                          confirm={{
+                            title: 'Restaurar esta versão?',
+                            description:
+                              'O conteúdo atual da página é substituído pelo desta versão. Nada se perde: a versão de agora continua no histórico.',
+                            confirmLabel: 'Restaurar versão',
+                            tone: 'default',
+                          }}
                         >
                           <input type="hidden" name="tenantSlug" value={tenantSlug} />
                           <input type="hidden" name="eventId" value={eventId} />

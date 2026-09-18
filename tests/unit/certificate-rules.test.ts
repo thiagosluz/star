@@ -51,11 +51,43 @@ function facts(overrides: Partial<EligibilityFacts> = {}): Omit<EligibilityFacts
     eventCheckedIn: true,
     miniCourseCount: 1,
     isSpeaker: false,
-    speakerWorkloadMinutes: 0,
+    speakerWorkload: null,
     completedReviews: 0,
     acceptedSubmissions: 0,
+    /**
+     * FASE 25: o evento já terminou nos fatos padrão — é o estado em que a maioria dos
+     * certificados é emitida. Os casos de "ainda não terminou" passam o valor explícito.
+     */
+    eventFinished: true,
     ...overrides,
   };
+}
+
+/** Fatos de palestrante com carga apurada (FASE 25). */
+function speakerFacts(
+  overrides: Partial<EligibilityFacts> = {},
+): Omit<EligibilityFacts, 'kind'> {
+  return facts({
+    isSpeaker: true,
+    speakerWorkload: {
+      totalMinutes: 240,
+      countedActivities: 1,
+      declaredMinutes: 240,
+      entries: [
+        {
+          activityId: 'atividade-1',
+          title: 'Minicurso de Rust',
+          type: null,
+          minutesAttended: 240,
+          workloadMinutes: 240,
+          countedMinutes: 240,
+          counted: true,
+          reason: null,
+        },
+      ],
+    },
+    ...overrides,
+  });
 }
 
 /** `randomInt` determinístico (devolve sempre o primeiro símbolo). */
@@ -208,8 +240,65 @@ describe('evaluateEligibility()', () => {
   });
 
   it('SPEAKER exige constar como palestrante', () => {
-    expect(evaluateEligibility({ ...facts({ isSpeaker: true }), kind: 'SPEAKER' }).eligible).toBe(true);
+    expect(evaluateEligibility({ ...speakerFacts(), kind: 'SPEAKER' }).eligible).toBe(true);
     expect(evaluateEligibility({ ...facts(), kind: 'SPEAKER' }).eligible).toBe(false);
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  FASE 25: O CERTIFICADO DE PALESTRANTE DECLARA FATO CONSUMADO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  As três recusas novas, cada uma com motivo próprio: antes do fim do evento,
+   *  sem credenciamento registrado no balcão e sem nenhuma atividade apurada. A
+   *  mensagem diz QUAL falta — "não elegível" sem motivo obrigaria o palestrante a
+   *  abrir um chamado para descobrir que faltou o credenciamento.
+   */
+  it('SPEAKER recusa antes do término do evento', () => {
+    const verdict = evaluateEligibility({
+      ...speakerFacts({ eventFinished: false }),
+      kind: 'SPEAKER',
+    });
+
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.reason).toMatch(/após o término/i);
+  });
+
+  it('SPEAKER recusa sem credenciamento registrado no evento', () => {
+    const verdict = evaluateEligibility({
+      ...speakerFacts({ eventCheckedIn: false }),
+      kind: 'SPEAKER',
+    });
+
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.reason).toMatch(/credenciamento/i);
+  });
+
+  it('SPEAKER recusa quando nenhuma atividade ministrada entrou na apuração', () => {
+    const verdict = evaluateEligibility({
+      ...speakerFacts({
+        speakerWorkload: {
+          totalMinutes: 0,
+          countedActivities: 0,
+          declaredMinutes: 0,
+          entries: [
+            {
+              activityId: 'a',
+              title: 'Minicurso cancelado',
+              type: null,
+              minutesAttended: 0,
+              workloadMinutes: 240,
+              countedMinutes: 0,
+              counted: false,
+              reason: 'Atividade cancelada.',
+            },
+          ],
+        },
+      }),
+      kind: 'SPEAKER',
+    });
+
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.reason).toMatch(/nenhuma atividade ministrada/i);
   });
 
   it('REVIEWER exige parecer concluído', () => {
@@ -245,7 +334,7 @@ describe('evaluateEligibility()', () => {
 describe('eligibleKindsFor()', () => {
   it('lista os tipos que os fatos sustentam', () => {
     const kinds = eligibleKindsFor(
-      facts({ completedReviews: 1, acceptedSubmissions: 1, isSpeaker: true }),
+      speakerFacts({ completedReviews: 1, acceptedSubmissions: 1 }),
     );
 
     expect(kinds).toContain('ATTENDANCE');

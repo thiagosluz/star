@@ -6,6 +6,8 @@ import { getRequestContext } from '@/lib/auth/session';
 import { listMySubmissions } from '@/lib/review/submission-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
+import { deleteDraftSubmissionAction } from '@/app/actions/review-actions';
+import { DeleteDraftButton } from '@/components/review/delete-draft-button';
 
 export const metadata = { title: 'Minhas submissões' };
 export const dynamic = 'force-dynamic';
@@ -142,12 +144,30 @@ export default async function MySubmissionsPage({
                 </p>
               </div>
 
-              <Link
-                href={tenantPath(tenantSlug, `/submissoes/${submission.id}`)}
-                className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
-              >
-                Abrir
-              </Link>
+              <div className="flex shrink-0 items-center gap-2">
+                <Link
+                  href={tenantPath(tenantSlug, `/submissoes/${submission.id}`)}
+                  className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+                >
+                  Abrir
+                </Link>
+
+                {/*
+                  O rascunho se apaga DAQUI, onde o autor percebe o engano — sem
+                  precisar abrir a submissão para depois excluí-la. Só o rascunho
+                  (o domínio decide; depois do envio existe registro a preservar).
+                */}
+                {submission.status === 'DRAFT' ? (
+                  <DeleteDraftButton
+                    tenantSlug={tenantSlug}
+                    submissionId={submission.id}
+                    title={submission.title}
+                    action={deleteDraftSubmissionAction}
+                    testId={`delete-draft-${submission.id}`}
+                    label="Excluir"
+                  />
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

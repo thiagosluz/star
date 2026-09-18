@@ -38,6 +38,22 @@ export interface UploadAssetInput {
   target: AssetTarget;
   /** Só para `SPONSOR_LOGO`. */
   sponsorId?: string;
+  /**
+   * Campos extras que a Server Action de destino exige (FASE 25).
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ISTO EXISTE
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A esteira nasceu para a capa do evento, e por isso mandava só o que a capa
+   *  precisa. O avatar do palestrante passou a usá-la e o destino exige
+   *  `speakerProfileId` — que a esteira não conhecia. O resultado era o envio
+   *  recusado com "não foi possível ler a imagem", mesmo com a foto correta: o campo
+   *  chegava NULO.
+   *
+   *  Em vez de a esteira aprender sobre palestrante (e depois sobre cada tela nova
+   *  que a reusar), ela repassa o que o chamador declarar.
+   */
+  extraFormFields?: Record<string, string>;
   requestUploadAction: AssetUploadAction;
   confirmUploadAction: AssetUploadAction;
 }
@@ -92,6 +108,9 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
     requestForm.set('sizeBytes', String(file.size));
     requestForm.set('checksum', checksum);
     requestForm.set('magicBytes', magicBytes.join(','));
+    for (const [key, value] of Object.entries(input.extraFormFields ?? {})) {
+      requestForm.set(key, value);
+    }
 
     const requestResult = await input.requestUploadAction(null, requestForm);
     if (!requestResult.ok) {
@@ -127,6 +146,9 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
     confirmForm.set('mimeType', ticket.mimeType);
     confirmForm.set('sizeBytes', String(file.size));
     confirmForm.set('checksum', checksum);
+    for (const [key, value] of Object.entries(input.extraFormFields ?? {})) {
+      confirmForm.set(key, value);
+    }
 
     const confirmResult = await input.confirmUploadAction(null, confirmForm);
     if (!confirmResult.ok) {

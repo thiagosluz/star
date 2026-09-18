@@ -22,6 +22,7 @@ import type {
 } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { Section, SectionHeading } from '@/components/events/theme-scope';
+import { SpeakerGallery } from '@/components/events/speaker-gallery';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -466,7 +467,7 @@ function VenueBlock({ event }: { event: PublicEventDetail }) {
 }
 
 /**
- * Palestrantes — derivados das ATIVIDADES (FASE 17).
+ * Palestrantes — derivados das ATIVIDADES (FASE 17), com perfil desde a FASE 25.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE NÃO HÁ CADASTRO DE PALESTRANTE AQUI
@@ -476,41 +477,63 @@ function VenueBlock({ event }: { event: PublicEventDetail }) {
  *  listas da mesma pessoa — e a divergência entre elas apareceria justamente na
  *  página pública. Este bloco LÊ o que existe; não inventa uma fonte nova.
  *
- *  Sem repetição: quem fala em três atividades aparece uma vez.
+ *  A FASE 25 acrescentou FOTO, BIO e LINK para a ficha: o que era uma lista de
+ *  nomes passou a ser a vitrine de quem conduz o evento. Quando o palestrante ainda
+ *  não tem perfil (cadastro antigo, só nome), o bloco continua funcionando — cai na
+ *  lista simples em vez de sumir.
  */
 function SpeakersBlock({
   activities,
+  speakers,
   content,
+  tenantSlug,
+  eventSlug,
 }: {
   activities: PublicActivitySummary[];
+  speakers: PublicEventDetail['speakers'];
   content: unknown;
+  tenantSlug: string;
+  eventSlug: string;
 }) {
+  const title = readString(content, 'title');
+
+  if (speakers.length > 0) {
+    return (
+      <Section id="palestrantes">
+        <SectionHeading
+          eyebrow="Quem conduz"
+          title={title ?? 'Palestrantes'}
+          description="Conheça quem ministra as atividades deste evento."
+        />
+        <SpeakerGallery speakers={speakers} tenantSlug={tenantSlug} eventSlug={eventSlug} />
+      </Section>
+    );
+  }
+
   const seen = new Set<string>();
-  const speakers: { name: string; titles: string[] }[] = [];
+  const names: { name: string; titles: string[] }[] = [];
 
   for (const activity of activities) {
     for (const name of activity.speakerNames) {
       const key = name.toLowerCase();
-      const existing = speakers.find((entry) => entry.name.toLowerCase() === key);
+      const existing = names.find((entry) => entry.name.toLowerCase() === key);
       if (existing) {
         if (!existing.titles.includes(activity.title)) existing.titles.push(activity.title);
         continue;
       }
       if (seen.has(key)) continue;
       seen.add(key);
-      speakers.push({ name, titles: [activity.title] });
+      names.push({ name, titles: [activity.title] });
     }
   }
 
-  if (speakers.length === 0) return null;
-
-  const title = readString(content, 'title');
+  if (names.length === 0) return null;
 
   return (
     <Section id="palestrantes">
       <SectionHeading eyebrow="Quem conduz" title={title ?? 'Palestrantes'} />
       <ul className="grid gap-3 sm:grid-cols-2">
-        {speakers.map((speaker) => (
+        {names.map((speaker) => (
           <li key={speaker.name} className="ef-card flex items-start gap-3 p-4">
             <Mic className="mt-0.5 size-4 shrink-0 opacity-60" aria-hidden />
             <div className="min-w-0">
@@ -662,7 +685,15 @@ export function BlockRenderer({
     case 'VENUE_MAP':
       return <VenueBlock event={event} />;
     case 'SPEAKERS':
-      return <SpeakersBlock activities={event.activities} content={content} />;
+      return (
+        <SpeakersBlock
+          activities={event.activities}
+          speakers={event.speakers}
+          content={content}
+          tenantSlug={tenantSlug}
+          eventSlug={event.slug}
+        />
+      );
     case 'TRACKS':
       return <TracksBlock tracks={event.tracks} content={content} />;
     case 'REGISTRATION_CTA':

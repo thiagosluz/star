@@ -160,6 +160,18 @@ export default async function AdminEventDetailPage({
           >
             Patrocinadores →
           </Link>
+          {/*
+            Palestrantes (FASE 25): cadastro da PESSOA e dos vínculos com as atividades.
+            Fica ao lado da página pública porque as duas alimentam a mesma vitrine — e
+            quem organiza precisa ver as duas no mesmo lugar.
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/palestrantes`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="speakers-link"
+          >
+            Palestrantes →
+          </Link>
         </p>
       </header>
 

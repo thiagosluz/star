@@ -4,12 +4,14 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 14, 16, 17, 23 e 24 concluídas (F15 pendente: Comunicação) · **1157 testes** unitários/integração · **69 testes E2E**
+> **Estado:** FASES 1 a 14, 16, 17, 23, 24 e 25 concluídas (F15 pendente: Comunicação) · **1256 testes** unitários/integração · **76 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
-> particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe) e
-> **página pública editável** pela instituição, com patrocínio, autoria, **biblioteca de
-> mídia** com reaproveitamento e **janela de exibição** agendada no fuso do evento
+> particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe),
+> **página pública editável** pela instituição com patrocínio, autoria, **biblioteca de
+> mídia** com reaproveitamento, **janela de exibição** agendada no fuso do evento e
+> **portal do palestrante** com convite (que aparece na área do próprio palestrante), materiais
+> e certificado
 
 ---
 
@@ -39,7 +41,7 @@ avaliação por pares e gamificação.
 |---|---|
 | **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 54 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
 | **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado) |
-| **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê |
+| **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê. O autor cria o rascunho e **cai direto na página da submissão** (anexar e enviar), e pode **excluir os próprios rascunhos** — submissões enviadas são registro da avaliação e não se apagam |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
 | **Certificação** | PDF/SVG assinado (HMAC-SHA256), hash de integridade, QR Code e **validação pública sem login** |
 | **Credenciamento** | Check-in/check-out com carga horária real, por busca ou por leitor de QR Code |
@@ -54,6 +56,7 @@ avaliação por pares e gamificação.
 | **Autoria de trabalho** | Coautores editáveis antes do envio, com **ordem de crédito** (a ordem da tela é a ordem de citação), autor correspondente único, ORCID validado e vínculo automático de conta dentro da instituição — o nome de quem tem conta vem do perfil |
 | **Operação do conteúdo** | **Pré-visualização** do rascunho antes de publicar (o mesmo componente da página pública, em rota autenticada com selo de estado), **publicação agendada** que entra no ar sozinha na data marcada, **histórico de versões** com restauração (20 por página, sem gravar versão idêntica), **imagem enviada direto do computador** também para a galeria, e **cópia de patrocinador** de outra edição com cota casada pela categoria e cadastro oculto |
 | **Mídia e agendamento** | **Biblioteca de mídia** da instituição (`media_assets`, com RLS): todo envio registra autor, tamanho, tipo, checksum e finalidade, a **mesma imagem** é reaproveitada em vez de duplicar o objeto e a exclusão **confere o uso** antes de apagar — recusando com a lista de onde a imagem aparece. **Janela de exibição**: a página entra no ar e **sai sozinha** na data de término (decidido na leitura, sem agendador), com estado próprio para "configurada, publicada e fora do prazo". As datas são digitadas e lidas no **fuso do evento** (o mesmo do rodapé da página), com conversão correta em horário de verão. O patrocinador **copiado** de outra edição guarda a origem e pode ser **sincronizado** — propagando só os dados da empresa e preservando cota, contrato e vigência |
+| **Portal do palestrante** | O palestrante é uma **pessoa da instituição** (não uma linha da atividade): a organização cadastra nome, e-mail, instituição e minibiografia, **vincula a uma ou mais atividades** com o papel de cada uma ("Keynote" na abertura, "Instrutor" no minicurso) e recebe um **código de convite** (guardado apenas como hash) para entregar a ele. Com o código — ou pelo painel, quando o e-mail confere — o palestrante **assume o perfil** e passa a editar bio, foto, redes e afiliação, publicar **materiais de apoio** (slides, apostilas, links) com visibilidade por material (**aberto**, **só inscritos** ou **rascunho**) e escrever a ementa detalhada da própria atividade. O convite pendente **aparece na área do palestrante** (e no menu, como "Convite de palestrante") assim que ele entra com a conta daquele e-mail — sem depender do link. A **vitrine pública** mostra foto, bio e atividades de cada um, com ficha individual; e a **ficha da atividade** destaca quem ministra e libera o download conforme a inscrição. O **certificado de palestrante** sai pelo próprio portal, somando apenas as atividades **efetivamente ministradas** — exige evento encerrado e credenciamento registrado no balcão |
 
 ---
 
@@ -183,6 +186,8 @@ Conteúdo ........ 11 versões no histórico da página do congresso (restauráv
                   em 7 dias e sai sozinha em 21 (datas no fuso America/Bahia)
 Mídia ........... acervo da instituição com as imagens de capa, logotipos e galeria
                   registradas (autor, tamanho, checksum e uso por imagem)
+Palestrantes .... Bruno como palestrante do minicurso de Rust (perfil, vínculo com a
+                  atividade, conta vinculada e 1 material público de apoio)
 ```
 
 Os **códigos de validação** dos certificados são aleatórios a cada execução e são
@@ -364,8 +369,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1157 testes (48 arquivos) — unit + integração com banco real
-npm run test:e2e          # 69 testes E2E contra o container de produção
+npm test                  # 1256 testes (51 arquivos) — unit + integração com banco real
+npm run test:e2e          # 74 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -401,7 +406,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
 | [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 10 papéis de instituição (54 permissões hoje, incluindo a de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
 | [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado | ADR-014 … 018 |
-| [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão | ADR-019 … 024 |
+| [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão. A **revisão pós-entrega** (§18) faz a criação do rascunho cair direto na página da submissão e entrega a **exclusão de rascunho** (nunca do que já foi enviado) | ADR-019 … 024 · 121 e 122 |
 | [`docs/fase-05-gamificacao.md`](docs/fase-05-gamificacao.md) | Motor de recompensas, XP idempotente, curva de níveis, prestígio, cartas, foil, missões, credenciamento | ADR-025 … 031 |
 | [`docs/fase-06-certificacao.md`](docs/fase-06-certificacao.md) | Elegibilidade, carga horária real, conteúdo canônico, assinatura HMAC, PDF/SVG, QR, fila BullMQ, validação pública | ADR-032 … 038 |
 | [`docs/fase-07-painel-admin-e2e.md`](docs/fase-07-painel-admin-e2e.md) | Painel administrativo, trilha de auditoria, validações de agenda ligadas, E2E completo e estado final do projeto | ADR-039 … 043 |
@@ -411,6 +416,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
 | [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 40 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/fase-25-portal-do-palestrante.md`](docs/fase-25-portal-do-palestrante.md) | Portal do palestrante: o palestrante passa a ser **pessoa da instituição** (`speaker_profiles`) com perfil e vínculo de conta por **convite hasheado**, **portal** com posse verificada no banco, **materiais** com visibilidade por visitante (401/403/404), **vitrine** com foto e bio, ficha individual e **certificado de palestrante** que exige evento encerrado e credenciamento. A **revisão pós-entrega** (§10) abriu as portas que faltavam: o menu voltou a mostrar os itens pessoais e o convite pendente virou entrada do portal | ADR-113 … 120 |
 | [`docs/fase-24-midia-e-agendamento.md`](docs/fase-24-midia-e-agendamento.md) | Mídia e agendamento: **biblioteca de mídia** (tabela `media_assets` com RLS, reaproveitamento por checksum e exclusão que **confere o uso**), **sincronia** do patrocinador copiado a partir da origem, **janela de exibição** (`unpublishAt` decidido na leitura) e a data agendada interpretada no **fuso do evento** | ADR-107 … 112 |
 | [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
 | [`docs/fase-17-pagina-publica-e-patrocinio.md`](docs/fase-17-pagina-publica-e-patrocinio.md) | Página pública montada pelo organizador: editor de blocos validados por tipo, tema visual, capa e logotipo por upload direto ao storage, cadastro de cotas e patrocinadores com limite de vagas e documento fiscal mascarado, e edição de coautores com ordem de crédito — tudo sem uma única migração | ADR-092 … 099 |
@@ -421,7 +427,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **112 decisões** registradas até aqui.
+> são **122 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -474,9 +480,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              851 testes de regra pura e de formato (sem banco)
-├── integration/       306 testes com banco, Redis e storage reais
-└── e2e/               69 testes Playwright contra o container
+├── unit/              897 testes de regra pura e de formato (sem banco)
+├── integration/       344 testes com banco, Redis e storage reais
+└── e2e/               74 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -628,15 +634,42 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     (FASE 24).** A decisão é tomada na leitura (sem agendador): quem recarregar depois do
     término recebe 404, e quem já carregou continua lendo o que estava lá. A rota pública é
     `force-dynamic` (sem cache), então não existe janela de conteúdo obsoleto servido.
+19. **O convite de palestrante é entregue à mão (FASE 25, dívida E25).** A plataforma ainda
+    não envia e-mail (F15 pendente), então a organização copia o **código** da tela e o
+    entrega ao convidado. O código aparece **uma única vez** (o banco guarda só o SHA-256):
+    se for perdido, gera-se outro — e o anterior deixa de funcionar.
+20. **A integridade do material confere o tamanho, e o checksum quando o storage o reporta
+    (FASE 25, dívida E26).** O upload é assinado sem o metadado `x-amz-meta-sha256`, então o
+    MinIO não devolve o hash e a conferência fica no tamanho — o mesmo caminho desde a
+    FASE 4. Um objeto trocado por outro de **mesmo tamanho** passaria.
+21. **A foto do palestrante entra por upload, não por URL (FASE 25, dívida E27).** É a
+    mesma esteira da capa (allowlist de tipo + assinatura real do arquivo + biblioteca de
+    mídia); quem hospeda a foto fora precisa baixá-la e enviá-la.
+22. **Desvincular um palestrante de uma atividade despublica os materiais dele ali (FASE 25).**
+    Material é do par (palestrante × atividade): sem o vínculo, ele perderia o dono e
+    continuaria na página. A exclusão é lógica (a trilha guarda quem enviou), e a tela diz
+    isso antes de confirmar.
+23. **O convite também abre pelo e-mail da conta, e o endereço ainda não é verificado
+    (FASE 25, revisão — dívida E30).** Quem tem convite pendente para o **e-mail da própria
+    conta** entra no portal e assume o perfil sem precisar do código: é o caminho que faz o
+    convite aparecer na área do palestrante. Como a verificação de e-mail é da F15, quem
+    conseguisse criar uma conta com o endereço convidado assumiria o perfil — o mesmo grau de
+    confiança do aceite pelo painel, registrado na auditoria e reversível pelo desvínculo.
+24. **O autor exclui rascunhos, mas não RETIRA uma submissão enviada (FASE 4, revisão —
+    dívida E31).** Excluir só alcança `DRAFT`: depois do envio existem atribuições, pareceres
+    e o snapshot de autoria apontando para a submissão, e apagá-la seria reescrever a história
+    da avaliação. O estado `WITHDRAWN` existe no domínio (e o limite da trilha já o ignora),
+    mas ainda não há serviço nem tela que o produza — por isso a tela de exclusão manda falar
+    com a comissão em vez de prometer um caminho que não existe.
 
 ---
 
 **Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — comunicação
-(e-mail transacional, que destrava o convite pela instituição e as notificações, F15),
-PKCS#7 e antivírus para uso institucional (F18) — e depois o ciclo de vida do membro com
-a quota de armazenamento (F21, que agora já tem a medição pronta), a operação de palco dos
-sorteios (F22) e o segundo grau do acervo de mídia (F25: miniaturas, busca e sincronia em
-lote).
+(e-mail transacional, que destrava o convite pela instituição, o convite de palestrante
+por e-mail e as notificações, F15), PKCS#7 e antivírus para uso institucional (F18) — e
+depois o ciclo de vida do membro com a quota de armazenamento (F21, que agora já tem a
+medição pronta), a operação de palco dos sorteios (F22), o segundo grau do acervo de mídia
+(F26: miniaturas, busca e sincronia em lote) e o material/convite do palestrante (F27).
 O levantamento atualizado está em [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
 
 

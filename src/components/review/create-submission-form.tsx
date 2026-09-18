@@ -35,6 +35,16 @@ export interface EventOption {
  * Cria um RASCUNHO, não uma submissão enviada. O autor precisa poder salvar e
  * voltar: submissões são escritas ao longo de dias, e exigir o envio completo em
  * uma única sessão seria irreal. A validação completa acontece no envio.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  NÃO HÁ TELA DE SUCESSO AQUI (revisão da FASE 4)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  No sucesso a action REDIRECIONA para a página da submissão criada — então o
+ *  único retorno que este formulário chega a tratar é a FALHA (validação, limite
+ *  da trilha, chamada de trabalhos fechada). Antes existia aqui um cartão
+ *  "Rascunho criado", de onde o autor tinha de voltar à lista e clicar em "Abrir"
+ *  para, só então, anexar o arquivo: uma página intermediária que não fazia nada
+ *  além de anunciar o que a tela seguinte já mostra.
  */
 export function CreateSubmissionForm({
   tenantSlug,
@@ -46,22 +56,6 @@ export function CreateSubmissionForm({
   action: (prev: ActionState | null, formData: FormData) => Promise<ActionState>;
 }) {
   const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
-
-  // Sucesso: a página recarrega e o rascunho aparece na lista.
-  if (state?.ok) {
-    return (
-      <div
-        className="space-y-2 rounded-lg border border-border bg-card p-5"
-        data-testid="submission-created"
-      >
-        <p className="font-medium">Rascunho criado</p>
-        <p className="text-sm text-muted-foreground">{state.message}</p>
-        <p className="text-xs text-muted-foreground">
-          Anexe o arquivo e envie para avaliação na página da submissão.
-        </p>
-      </div>
-    );
-  }
 
   if (events.length === 0) {
     return (

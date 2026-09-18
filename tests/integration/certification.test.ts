@@ -234,7 +234,8 @@ beforeAll(async () => {
       },
     });
 
-    // Palestrante da palestra.
+    // Palestrante da palestra, com credenciamento no evento (FASE 25: o certificado de
+    // palestrante exige presença registrada no balcão, além do vínculo com a atividade).
     await tx.activitySpeaker.create({
       data: {
         id: randomUUID(),
@@ -242,6 +243,19 @@ beforeAll(async () => {
         activityId: lectureId,
         userId: speakerId,
         workloadMinutes: 90,
+      },
+    });
+
+    await tx.registration.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        eventId,
+        activityId: null,
+        userId: speakerId,
+        status: 'ATTENDED',
+        consentData: true,
+        checkedInAt: new Date('2026-09-17T12:00:00.000Z'),
       },
     });
   });
@@ -368,6 +382,15 @@ describe('solicitação de certificado', () => {
       eventId,
       userId: speakerId,
       kind: 'SPEAKER',
+      /**
+       * `now` DEPOIS do fim do evento (FASE 25).
+       *
+       * O certificado de palestrante declara fato consumado: só é emitido com o
+       * evento encerrado e o credenciamento registrado. O fixture marca o evento em
+       * setembro de 2026, então a emissão é avaliada em outubro — como aconteceria
+       * de verdade, no dia seguinte ao encerramento.
+       */
+      now: new Date('2026-10-01T12:00:00.000Z'),
     });
 
     expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
@@ -381,6 +404,91 @@ describe('solicitação de certificado', () => {
     );
 
     expect(row.workloadMinutes).toBe(90);
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS DUAS RECUSAS NOVAS DA FASE 25, CONTRA O BANCO REAL
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Cada uma isola UM fato: o mesmo palestrante, o mesmo evento, o mesmo vínculo —
+   *  mudando só o relógio (evento em andamento) ou o credenciamento (ausente).
+   */
+  it('recusa o certificado de palestrante antes do término do evento', async () => {
+    /**
+     * Palestrante PRÓPRIO para este cenário: o certificado é idempotente pela chave
+     * natural, e reusar o `speakerId` faria a chamada devolver o documento já emitido
+     * acima — o teste passaria (ou falharia) sem nunca avaliar a regra do término.
+     */
+    const cedoId = await createUser('Palestrante Cedo');
+
+    await withTenant(tenantId, async (tx) => {
+      await tx.activitySpeaker.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          activityId: lectureId,
+          userId: cedoId,
+          workloadMinutes: 90,
+        },
+      });
+
+      await tx.registration.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          eventId,
+          activityId: null,
+          userId: cedoId,
+          status: 'ATTENDED',
+          consentData: true,
+          checkedInAt: new Date('2026-09-17T12:00:00.000Z'),
+        },
+      });
+    });
+
+    const result = await requestCertificate({
+      tenantId,
+      eventId,
+      userId: cedoId,
+      kind: 'SPEAKER',
+      now: new Date('2026-09-18T12:00:00.000Z'),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('NOT_ELIGIBLE');
+      expect(result.message).toMatch(/após o término/i);
+    }
+  });
+
+  it('recusa o certificado de palestrante sem credenciamento no evento', async () => {
+    const semCredenciamentoId = await createUser('Palestrante Sem Credencial');
+
+    await withTenant(tenantId, async (tx) => {
+      await tx.activitySpeaker.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          activityId: miniCourseId,
+          userId: semCredenciamentoId,
+          workloadMinutes: 240,
+        },
+      });
+    });
+
+    const result = await requestCertificate({
+      tenantId,
+      eventId,
+      userId: semCredenciamentoId,
+      kind: 'SPEAKER',
+      now: new Date('2026-10-01T12:00:00.000Z'),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('NOT_ELIGIBLE');
+      expect(result.message).toMatch(/credenciamento/i);
+    }
   });
 
   it('emite para revisor e para autora', async () => {

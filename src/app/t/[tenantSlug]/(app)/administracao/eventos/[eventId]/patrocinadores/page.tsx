@@ -189,7 +189,12 @@ export default async function EventSponsorsPage({
                     submitLabel="Remover"
                     variant="destructive"
                     testId={`delete-tier-${tier.id}`}
-                    confirmText={`Remover a cota "${tier.name}"?`}
+                    confirm={{
+                      title: `Remover a cota “${tier.name}”?`,
+                      description:
+                        'A cota deixa de existir neste evento. Patrocinadores que já estão nela precisam ser movidos antes, senão a remoção é recusada.',
+                      confirmLabel: 'Remover cota',
+                    }}
                   >
                     <input type="hidden" name="tenantSlug" value={tenantSlug} />
                     <input type="hidden" name="eventId" value={eventId} />
@@ -374,7 +379,12 @@ export default async function EventSponsorsPage({
                       submitLabel="Remover"
                       variant="destructive"
                       testId={`remove-sponsor-${sponsor.id}`}
-                      confirmText={`Remover "${sponsor.name}" do evento? O histórico financeiro é preservado.`}
+                      confirm={{
+                        title: `Remover “${sponsor.name}” do evento?`,
+                        description:
+                          'O cadastro sai da página pública e da lista. O histórico financeiro é preservado.',
+                        confirmLabel: 'Remover patrocinador',
+                      }}
                     >
                       <input type="hidden" name="tenantSlug" value={tenantSlug} />
                       <input type="hidden" name="eventId" value={eventId} />
