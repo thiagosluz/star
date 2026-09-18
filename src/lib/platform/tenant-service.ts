@@ -29,17 +29,25 @@ import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/pri
 import { recordAudit } from '@/lib/admin/audit';
 import { invalidateTenantCache } from '@/lib/tenancy/tenant-resolver';
 import {
+  evaluateMemberQuota,
   evaluateReactivation,
   evaluateSuspension,
   normalizeSlug,
+  planQuotas,
+  quotaWarnings,
+  validatePlanChange,
   validateProvisioning,
   validatePublicProfile,
+  type PlanChangeInput,
+  type PlanQuotas,
   type ProvisioningInput,
   type PublicProfileInput,
   type TenantPlan,
   type TenantStatus,
 } from '@/domain/platform/platform-rules';
+import { ROLE_KEYS, type RoleKey } from '@/domain/rbac/permissions';
 import {
+  countTenantMembers,
   findTenantById,
   findUserByEmail,
   isDomainTaken,
@@ -58,6 +66,8 @@ export type PlatformErrorCode =
   | 'SLUG_TAKEN'
   | 'OWNER_NOT_FOUND'
   | 'ALREADY_OWNER'
+  | 'ALREADY_MEMBER'
+  | 'QUOTA_EXCEEDED'
   | 'NOT_FOUND'
   | 'INVALID_STATE'
   | 'LAST_SUPERADMIN'
@@ -66,6 +76,21 @@ export type PlatformErrorCode =
 export type PlatformResult<T> =
   | ({ ok: true } & T)
   | { ok: false; code: PlatformErrorCode; message: string; details?: readonly string[] };
+
+/**
+ * Papéis que um vínculo de EQUIPE pode receber da plataforma.
+ *
+ * Derivado das chaves do RBAC, não escrito à mão: `SUPERADMIN` é de plataforma
+ * (não pertence a instituição) e `PARTICIPANT` é o papel do público — concedê-lo
+ * como "papel de equipe" criaria um membro que não administra nada. Um papel novo
+ * no enum entra nesta lista automaticamente, e é o teste de RBAC que decide se
+ * deveria.
+ */
+export const MEMBER_ROLES: readonly TenantMemberRole[] = ROLE_KEYS.filter(
+  (role): role is TenantMemberRole => role !== 'SUPERADMIN' && role !== 'PARTICIPANT',
+);
+
+export type TenantMemberRole = Exclude<RoleKey, 'SUPERADMIN' | 'PARTICIPANT'>;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Provisionamento
@@ -147,6 +172,8 @@ export async function provisionTenant(
 
   try {
     const tenantId = await adminPrisma.$transaction(async (tx) => {
+      const quotas = planQuotas(data.plan);
+
       const tenant = await tx.tenant.create({
         data: {
           slug: data.slug,
@@ -154,8 +181,19 @@ export async function provisionTenant(
           plan: data.plan,
           status: 'ACTIVE',
           customDomain: data.customDomain,
-          maxEvents: data.maxEvents ?? 0,
-          maxMembers: data.maxMembers ?? 0,
+          /**
+           * ───────────────────────────────────────────────────────────────────────
+           *  AS TRÊS QUOTAS VÊM DO PLANO (FASE 14)
+           * ───────────────────────────────────────────────────────────────────────
+           *  Antes, `maxStorageBytes` não era gravado: a coluna ficava no default do
+           *  schema (5 GiB) e uma instituição ENTERPRISE nascia com armazenamento de
+           *  plano gratuito — divergência silenciosa entre o que a tela mostrava e o
+           *  que o plano prometia. `planQuotas` é a fonte única, e o valor informado
+           *  no formulário (quando houver) tem precedência: é o override comercial.
+           */
+          maxEvents: data.maxEvents ?? quotas.maxEvents ?? 0,
+          maxMembers: data.maxMembers ?? quotas.maxMembers ?? 0,
+          maxStorageBytes: BigInt(quotas.maxStorageBytes ?? 0),
           description: data.description,
           isPublic: data.isPublic,
         },
@@ -416,8 +454,320 @@ export async function updateTenantProfile(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  Governança de SuperAdmins
+//  Plano e quotas (FASE 14 — item C3)
 // ───────────────────────────────────────────────────────────────────────────────
+export interface PlanChangeResultData {
+  tenantId: string;
+  slug: string;
+  plan: TenantPlan;
+  quotas: PlanQuotas;
+  /** Quotas que ficaram abaixo do uso atual — a tela mostra antes de comemorar. */
+  warnings: readonly string[];
+}
+
+/**
+ * Troca o plano e/ou edita as quotas de uma instituição já provisionada.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A REDUÇÃO DE QUOTA É PERMITIDA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O operador pode reduzir `maxEvents`/`maxMembers` abaixo do uso atual. Recusar
+ *  seria pior: a plataforma ficaria presa entre "não posso reduzir" e "apague
+ *  dados do cliente para reduzir". O que a redução faz é impedir o NOVO — e por
+ *  isso o serviço devolve `warnings` descrevendo exatamente o que passou a estar
+ *  bloqueado, em vez de aplicar a mudança em silêncio.
+ *
+ *  `useDefaults` aplica as quotas do plano escolhido; sem ele, as quotas informadas
+ *  valem (vazio = ilimitado, que é `null` — não zero).
+ */
+export async function updateTenantPlan(
+  actorId: string,
+  input: { tenantId: string } & PlanChangeInput,
+): Promise<PlatformResult<PlanChangeResultData>> {
+  const validation = validatePlanChange(input);
+
+  if (!validation.valid || !validation.normalized) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Revise o plano e as quotas da instituição.',
+      details: validation.errors,
+    };
+  }
+
+  const tenant = await adminPrisma.tenant.findUnique({
+    where: { id: input.tenantId },
+    select: {
+      id: true,
+      slug: true,
+      plan: true,
+      maxEvents: true,
+      maxMembers: true,
+      maxStorageBytes: true,
+    },
+  });
+
+  if (!tenant) {
+    return { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' };
+  }
+
+  const quotas = validation.normalized;
+  const [eventCount, memberCount] = await Promise.all([
+    adminPrisma.event.count({ where: { tenantId: tenant.id, deletedAt: null } }),
+    countTenantMembers(tenant.id),
+  ]);
+
+  const warnings = quotaWarnings({ eventCount, memberCount, quotas });
+
+  try {
+    await adminPrisma.tenant.update({
+      where: { id: tenant.id },
+      data: {
+        plan: quotas.plan,
+        maxEvents: quotas.maxEvents ?? 0,
+        maxMembers: quotas.maxMembers ?? 0,
+        maxStorageBytes: BigInt(quotas.maxStorageBytes ?? 0),
+      },
+    });
+  } catch (error) {
+    console.error(`[platform] falha ao trocar plano: ${errorMessage(error)}`);
+    return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar o plano agora.' };
+  }
+
+  await recordAudit({
+    tenantId: null,
+    userId: actorId,
+    action: 'UPDATE',
+    entityType: 'TenantPlan',
+    entityId: tenant.id,
+    changes: {
+      plan: { from: tenant.plan, to: quotas.plan },
+      maxEvents: { from: tenant.maxEvents, to: quotas.maxEvents },
+      maxMembers: { from: tenant.maxMembers, to: quotas.maxMembers },
+      // `BigInt` não é serializável em JSON: a trilha guarda número.
+      maxStorageBytes: {
+        from: Number(tenant.maxStorageBytes),
+        to: quotas.maxStorageBytes,
+      },
+    },
+  });
+
+  return {
+    ok: true,
+    tenantId: tenant.id,
+    slug: tenant.slug,
+    plan: quotas.plan,
+    quotas: {
+      maxEvents: quotas.maxEvents,
+      maxMembers: quotas.maxMembers,
+      maxStorageBytes: quotas.maxStorageBytes,
+    },
+    warnings,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Vínculo de membro da equipe (FASE 14 — item C1)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface LinkedMember {
+  userId: string;
+  name: string;
+  email: string;
+  role: RoleKey;
+  /** Slug da instituição — o painel revalida a página pública e a vitrine por ele. */
+  slug: string;
+  /** Contagem de membros DEPOIS do vínculo e o teto vigente. */
+  memberCount: number;
+  maxMembers: number | null;
+}
+
+/**
+ * Vincula uma pessoa que JÁ TEM CONTA à equipe de uma instituição.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE É O PONTO DE ENTRADA DA QUOTA `maxMembers`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O levantamento da FASE 14 registrou que a quota era decorativa porque "nenhum
+ *  caminho conta vínculos nem recusa". Contar não bastava: era preciso um caminho
+ *  de escrita que um humano possa usar — e este é ele. Antes dele, vincular alguém
+ *  era SQL ou seed, e nenhuma quota pode ser aplicada a um caminho que não existe.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A BUSCA POR E-MAIL FICA AQUI, E NÃO NO PAINEL DA INSTITUIÇÃO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Procurar uma pessoa pelo e-mail é varredura da base GLOBAL de identidade. A
+ *  plataforma já faz isso no provisionamento (o proprietário é designado por
+ *  e-mail) e a operação é auditada; um administrador de instituição fazendo o mesmo
+ *  teria um verificador de existência de contas alheias. O convite pela própria
+ *  instituição existe como funcionalidade — e vai pelo caminho de convite, não por
+ *  sondagem de e-mail (dívida D2, fase de Comunicação).
+ *
+ *  Um vínculo que era `PARTICIPANT` é PROMOVIDO a `MEMBER` (ver
+ *  `membership-rules.ts`): a pessoa passa a contar na quota, porque passou a ser
+ *  equipe.
+ */
+export async function addTenantMember(
+  actorId: string,
+  input: { tenantId: string; email: string; role: TenantMemberRole },
+): Promise<PlatformResult<LinkedMember>> {
+  const email = input.email?.trim().toLowerCase() ?? '';
+
+  if (!email.includes('@')) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe o e-mail da pessoa que já tem conta na plataforma.',
+    };
+  }
+
+  if (!MEMBER_ROLES.includes(input.role)) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Papel inválido para um vínculo de equipe.',
+      details: [`Papéis aceitos: ${MEMBER_ROLES.join(', ')}.`],
+    };
+  }
+
+  const tenant = await adminPrisma.tenant.findUnique({
+    where: { id: input.tenantId },
+    select: { id: true, slug: true, name: true, maxMembers: true },
+  });
+
+  if (!tenant) {
+    return { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' };
+  }
+
+  const user = await findUserByEmail(email);
+
+  if (!user) {
+    return {
+      ok: false,
+      code: 'OWNER_NOT_FOUND',
+      message: `Não existe conta com o e-mail ${email}.`,
+      details: [
+        'A identidade é única na plataforma: a pessoa precisa criar a conta em /signup antes de ser vinculada.',
+        'O convite por e-mail para quem ainda não tem conta é uma funcionalidade em desenvolvimento.',
+      ],
+    };
+  }
+
+  const members = await countTenantMembers(tenant.id);
+  const decision = evaluateMemberQuota({ currentCount: members, maxMembers: tenant.maxMembers });
+
+  if (!decision.allowed) {
+    return {
+      ok: false,
+      code: 'QUOTA_EXCEEDED',
+      message: decision.message ?? 'A quota de membros desta instituição está esgotada.',
+      details: [
+        `Membros hoje: ${members} de ${tenant.maxMembers}.`,
+        'Ajuste o plano desta instituição em "Plano e quotas" antes de vincular mais alguém.',
+      ],
+    };
+  }
+
+  const existing = await adminPrisma.userTenantProfile.findUnique({
+    where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
+    select: { id: true, status: true, kind: true, deletedAt: true },
+  });
+
+  if (existing && existing.kind === 'MEMBER' && existing.status === 'ACTIVE' && !existing.deletedAt) {
+    return {
+      ok: false,
+      code: 'ALREADY_MEMBER',
+      message: `${user.name} já é membro ativo desta instituição.`,
+      details: ['Para mudar o papel de alguém que já é da equipe, use a concessão de papel.'],
+    };
+  }
+
+  try {
+    await adminPrisma.$transaction(async (tx) => {
+      await tx.userTenantProfile.upsert({
+        where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
+        create: {
+          tenantId: tenant.id,
+          userId: user.id,
+          status: 'ACTIVE',
+          kind: 'MEMBER',
+          joinedAt: new Date(),
+          invitedById: actorId,
+          invitedAt: new Date(),
+        },
+        // Promoção explícita: participante vinculado à equipe passa a MEMBER.
+        update: { status: 'ACTIVE', kind: 'MEMBER', deletedAt: null, joinedAt: new Date() },
+      });
+
+      const live = await tx.roleAssignment.findFirst({
+        where: {
+          tenantId: tenant.id,
+          userId: user.id,
+          role: input.role,
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        select: { id: true },
+      });
+
+      if (!live) {
+        await tx.roleAssignment.create({
+          data: {
+            tenantId: tenant.id,
+            userId: user.id,
+            role: input.role,
+            scope: 'TENANT',
+            grantedById: actorId,
+            reason: 'Vínculo de equipe registrado pela plataforma',
+          },
+        });
+      }
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return {
+        ok: false,
+        code: 'ALREADY_MEMBER',
+        message: `${user.name} já é membro ativo desta instituição.`,
+      };
+    }
+
+    console.error(`[platform] falha ao vincular membro: ${errorMessage(error)}`);
+
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível vincular a pessoa agora. Nenhuma alteração foi gravada.',
+    };
+  }
+
+  await recordAudit({
+    tenantId: null,
+    userId: actorId,
+    action: 'PERMISSION_CHANGE',
+    entityType: 'TenantMember',
+    entityId: user.id,
+    changes: {
+      tenant: { from: null, to: tenant.slug },
+      email: { from: null, to: user.email },
+      role: { from: null, to: input.role },
+      kind: { from: existing?.kind ?? null, to: 'MEMBER' },
+    },
+  });
+
+  return {
+    ok: true,
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    role: input.role,
+    slug: tenant.slug,
+    memberCount: members + (existing && existing.kind === 'MEMBER' ? 0 : 1),
+    maxMembers: tenant.maxMembers,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Governança de SuperAdmins// ───────────────────────────────────────────────────────────────────────────────
 export async function grantSuperAdmin(
   actorId: string,
   input: { email: string; reason?: string | null },

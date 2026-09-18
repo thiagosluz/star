@@ -55,6 +55,22 @@ enum MembershipStatus {
   REMOVED
 }
 
+/// Natureza do vínculo com a instituição (FASE 14).
+///
+/// A inscrição pública (FASE 10) passou a criar vínculo para quem se inscreve em
+/// evento aberto — correto para dar acesso, mas o modelo não distinguia esse
+/// vínculo do vínculo de EQUIPE. Sem a distinção, a lista de membros da instituição
+/// aparecia cheia de inscritos e a quota `maxMembers` do plano ficava impossível de
+/// aplicar (contar vínculos passou a significar contar o público do evento).
+///
+/// `MEMBER` consome quota e aparece na lista de quem responde pela instituição.
+/// `PARTICIPANT` dá acesso de participante e NÃO consome quota (ver
+/// `src/domain/tenancy/membership-rules.ts`).
+enum MembershipKind {
+  MEMBER
+  PARTICIPANT
+}
+
 /// Papel RBAC. SUPERADMIN é de PLATAFORMA; OWNER/ADMIN são escopo-tenant; os
 /// demais podem ser concedidos por evento ou até por atividade (ex.: coordenador
 /// de um único minicurso).
@@ -317,6 +333,16 @@ enum RaffleStatus {
   CANCELED
 }
 
+/// Papel da posição sorteada (FASE 16).
+///
+/// O suplente é sorteado NA MESMA apuração, logo depois dos titulares, e ocupa uma
+/// posição própria: ninguém precisa "sortear de novo" quando um titular não aparece
+/// para retirar o prêmio, e a ordem de reserva fica registrada e auditável.
+enum RaffleWinnerKind {
+  WINNER
+  ALTERNATE
+}
+
 /// Sorteio de participantes elegíveis por PRESENÇA REAL.
 ///
 /// O sorteio é uma operação de AUDITORIA, não um enfeite: guarda o universo
@@ -345,8 +371,19 @@ model Raffle {
   /// Quantos vencedores devem ser sorteados.
   winnersCount Int
 
+  /// Quantos SUPLENTES sortear, logo depois dos titulares (FASE 16). `0` = nenhum.
+  alternatesCount Int @default(0)
+
+  /// Sortear com chance proporcional aos MINUTOS assistidos (FASE 16).
+  /// Desligado, todo elegível tem a mesma chance.
+  weightByMinutes Boolean @default(false)
+
   /// Quando falso, quem já ganhou qualquer sorteio anterior deste evento sai do páreo.
   allowPriorEventWinners Boolean @default(false)
+
+  /// Publicar o resultado na página pública do evento (FASE 16). Opt-in: publicar
+  /// nome de ganhador é ato da instituição, e o nome sai mascarado por padrão.
+  isPublic Boolean @default(false)
 
   status RaffleStatus @default(DRAFT)
 
@@ -362,6 +399,23 @@ model Raffle {
   resultHash  String? @db.Char(64)
   /// Incrementa a cada apuração (um sorteio cancelado e refeito gera versão nova).
   drawVersion Int     @default(1)
+
+  /// ─── Commit-reveal da semente (FASE 16) ─────────────────────────────────────
+  /// O hash do resultado prova que o registro não foi alterado DEPOIS. Não prova
+  /// que a apuração aconteceu depois do fechamento do credenciamento.
+  ///
+  /// `seedCommitment` é publicado na CRIAÇÃO (sha256 da semente), antes de haver
+  /// elegíveis; a semente fica selada (`seedSealed`, AES-256-GCM) e só é revelada na
+  /// apuração (`seedRevealed`). Quem conferir recalcula o hash da semente revelada,
+  /// compara com o compromisso e reproduz o resultado com ela.
+  seedCommitment String? @db.Char(64)
+  seedSealed     String? @db.Text
+  seedRevealed   String? @db.VarChar(128)
+
+  /// Versão do conteúdo canônico assinado (1 = só titulares; 2 = suplentes, peso e
+  /// papel por posição). Guardada porque o payload de auditoria é reconstruído a
+  /// partir dela — subir a versão não pode invalidar o hash de apurações antigas.
+  resultVersion Int @default(1)
 
   createdById String @db.Uuid
 
@@ -381,6 +435,10 @@ model Raffle {
 }
 
 /// Vencedor de um sorteio. Imutável depois da apuração.
+///
+/// A tabela guarda as POSIÇÕES SORTEADAS, que incluem os suplentes desde a FASE 16
+/// (`kind`). O nome da tabela ficou: renomear tabela sob RLS mexeria em policies e
+/// grants para ganhar nada — a distinção está no dado, não no nome.
 model RaffleWinner {
   id       String @id @default(uuid(7)) @db.Uuid
   tenantId String @db.Uuid
@@ -390,10 +448,19 @@ model RaffleWinner {
   /// Ordem em que foi sorteado (1 = primeiro).
   position Int
 
+  /// Titular do prêmio ou reserva (FASE 16).
+  kind RaffleWinnerKind @default(WINNER)
+
   /// Minutos assistidos que fundamentaram a elegibilidade (auditoria).
   attendanceMinutes Int     @default(0)
   /// Presença que comprovou a elegibilidade (quando houve uma específica).
   attendanceId      String? @db.Uuid
+
+  /// ─── Entrega do prêmio (FASE 16, item G2) ───────────────────────────────────
+  /// Sem isso, "quem já retirou" ficava na memória de quem estava no balcão.
+  deliveredAt  DateTime? @db.Timestamptz(6)
+  deliveredById String?  @db.Uuid
+  deliveryNote String?   @db.VarChar(300)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
@@ -401,6 +468,7 @@ model RaffleWinner {
   raffle     Raffle      @relation(fields: [raffleId], references: [id], onDelete: Cascade)
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   attendance Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  deliveredBy User?      @relation("RafflePrizeDeliveredBy", fields: [deliveredById], references: [id], onDelete: SetNull)
 
   /// A ANTIDUPLICAÇÃO É GARANTIDA PELO BANCO: o mesmo participante não pode
   /// aparecer duas vezes no mesmo sorteio, mesmo que a aplicação falhe.
@@ -567,6 +635,8 @@ model User {
   rafflesCreated Raffle[]       @relation("RaffleCreatedBy")
   /// Sorteios em que esta pessoa foi sorteada — FASE 8.
   raffleWins     RaffleWinner[]
+  /// Prêmios de sorteio que esta pessoa ENTREGOU — FASE 16.
+  rafflePrizesDelivered RaffleWinner[] @relation("RafflePrizeDeliveredBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -657,6 +727,11 @@ model UserTenantProfile {
 
   status MembershipStatus @default(INVITED)
 
+  /// Equipe (`MEMBER`) ou público de evento (`PARTICIPANT`). O default é MEMBER
+  /// porque quem nasce por convite, provisionamento ou seed é equipe; a inscrição
+  /// pública grava `PARTICIPANT` explicitamente.
+  kind MembershipKind @default(MEMBER)
+
   /// Cargo/afiliação declarada dentro da instituição.
   jobTitle    String? @db.VarChar(120)
   department  String? @db.VarChar(120)
@@ -678,6 +753,9 @@ model UserTenantProfile {
 
   @@unique([tenantId, userId])
   @@index([userId, status])
+  /// Contagem de membros por instituição (quota do plano) e separação entre equipe
+  /// e participantes nas listagens.
+  @@index([tenantId, kind, status])
   @@index([tenantId, status])
   @@map("user_tenant_profiles")
 }

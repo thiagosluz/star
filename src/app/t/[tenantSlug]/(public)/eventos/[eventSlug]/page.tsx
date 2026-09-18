@@ -16,7 +16,9 @@ import {
   formatEventPeriod,
 } from '@/domain/events/event-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { listPublicRaffleResults } from '@/lib/raffles/raffle-service';
 import { BlockRenderer } from '@/components/events/block-renderer';
+import { RaffleResults } from '@/components/raffles/raffle-results';
 import { Section, ThemeScope } from '@/components/events/theme-scope';
 
 export const dynamic = 'force-dynamic';
@@ -115,6 +117,15 @@ export default async function PublicEventPage({
     : [];
 
   const hasConfiguredLayout = configuredBlocks.length > 0;
+
+  /**
+   * Resultados de sorteio PUBLICADOS neste evento (FASE 16, item G5).
+   *
+   * Leitura sob RLS com contexto da instituição do slug, e o filtro `isPublic` é do
+   * banco: publicar é uma decisão por sorteio, não um padrão. A leitura devolve
+   * nomes já mascarados conforme o consentimento de perfil público.
+   */
+  const publicRaffles = await listPublicRaffleResults(tenant.tenantId, event.id);
 
   return (
     <ThemeScope theme={event.theme}>
@@ -273,6 +284,13 @@ export default async function PublicEventPage({
             ) : null}
           </>
         )}
+
+        {/*
+          ── RESULTADOS PUBLICADOS (FASE 16) ────────────────────────────────────
+          Aparece só quando a instituição publicou algum resultado (opt-in por
+          sorteio) — e depois do conteúdo, porque é a informação do FIM do evento.
+        */}
+        <RaffleResults results={publicRaffles} />
 
         {/* ── Rodapé ────────────────────────────────────────────────────── */}
         <footer className="px-6 py-10">

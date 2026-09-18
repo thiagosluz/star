@@ -4,10 +4,10 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 13 concluídas · **832 testes** unitários/integração · **47 testes E2E**
+> **Estado:** FASES 1 a 14 e 16 concluídas (F15 pendente: Comunicação) · **921 testes** unitários/integração · **55 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
-> (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics` e
-> `audit_logs` particionada por mês
+> (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
+> particionada por mês e **quotas de plano aplicadas** (eventos e membros da equipe)
 
 ---
 
@@ -42,10 +42,12 @@ avaliação por pares e gamificação.
 | **Certificação** | PDF/SVG assinado (HMAC-SHA256), hash de integridade, QR Code e **validação pública sem login** |
 | **Credenciamento** | Check-in/check-out com carga horária real, por busca ou por leitor de QR Code |
 | **Painel administrativo** | Eventos, salas, programação, trilhas, cartas, missões e certificados pela interface, com trilha de auditoria |
-| **Sorteios** | Sorteio por evento, dia ou atividade, elegível apenas por **presença real**, com amostragem criptográfica, hash auditável e revelação animada |
+| **Sorteios** | Sorteio por evento, dia ou atividade, elegível apenas por **presença real**, com amostragem criptográfica, **suplentes**, **chance proporcional ao tempo de presença**, hash auditável, **prova de commit-reveal** (semente comprometida na criação e revelada na apuração), **registro de entrega do prêmio**, publicação opcional do resultado com nome mascarado, histórico paginado e prévia que acompanha o credenciamento ao vivo |
 | **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
 | **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
 | **Operação e segurança** | Rate limit do login contado no **Redis** (vale entre instâncias), métricas no formato **Prometheus** em `/api/metrics` com token, log estruturado com redação de senha/e-mail, RLS criada pela própria migração, `audit_logs` **particionada por mês** e pool de conexões com **PgBouncer** em modo transação |
+| **Planos e quotas** | Planos FREE/STARTER/PROFESSIONAL/ENTERPRISE com quotas de eventos, **membros da equipe** e armazenamento; troca de plano e edição de quotas pelo painel de governança (com aviso quando a nova quota fica abaixo do uso); a quota de eventos e a de membros **recusam de verdade** — e o público de evento, que ganha acesso automático na inscrição pública, **não** consome a quota de membros |
+| **Gamificação (conquistas)** | Cartas por gatilho, incluindo os dois de **marco** que só existiam no catálogo: `EVENT_ATTENDANCE_FULL` (presença em todas as atividades exigidas, concedida no check-out que fecha a última) e `REVIEWER_TOP` (revisor destaque premiado por ranking de pareceres, com piso lido da própria carta) |
 
 ---
 
@@ -345,8 +347,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 832 testes (32 arquivos) — unit + integração com banco real
-npm run test:e2e          # 47 testes E2E contra o container de produção
+npm test                  # 921 testes (36 arquivos) — unit + integração com banco real
+npm run test:e2e          # 55 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -391,13 +393,15 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 40 dívidas abertas (53 menos as 8 quitadas na FASE 12 e as 5 da FASE 13), verificadas no código, por tema, com esforço e fases candidatas | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 41 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
+| [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe**), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
 | [`docs/fase-12-mutirao-dividas.md`](docs/fase-12-mutirao-dividas.md) | Mutirão de dívidas rápidas: escopo de equipe no credenciamento, evento restrito à comunidade, índice único de concessão, quota de eventos, cache distribuído, diretório sem truncamento e faxina de layout | ADR-071 … 074 |
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **79 decisões** registradas até aqui.
+> são **91 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -450,9 +454,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              645 testes de regra pura e de formato (sem banco)
-├── integration/       187 testes com banco, Redis e storage reais
-└── e2e/               47 testes Playwright contra o container
+├── unit/              706 testes de regra pura e de formato (sem banco)
+├── integration/       215 testes com banco, Redis e storage reais
+└── e2e/               55 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -547,31 +551,43 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
    exigiria PKCS#7/CMS com X.509 (o campo `signatureAlg` já está preparado).
 2. **Editor visual da landing page** e cadastro de patrocinadores pela interface ainda
    não existem (o domínio e a renderização estão prontos desde a FASE 3).
-3. **Convites de membros, edição de coautores e upload de capa** pela UI estão
-   pendentes.
-4. **Paginação** nas listagens administrativas é por limite de consulta.
-5. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
+3. **Ciclo de vida do membro é parcial (FASE 14).** A plataforma **vincula** uma pessoa
+   que já tem conta (com a quota aplicada); **remover** membro, trocar papel, e
+   **convidar** quem ainda não tem conta pela própria instituição continuam sem tela
+   (dívidas C5 e D2 — a segunda vai na fase de Comunicação, porque convite precisa de
+   e-mail e de prova de posse do endereço).
+4. **A quota de armazenamento não é aplicada (dívida C4).** `maxStorageBytes` vem do
+   plano, é editável e aparece na tela — mas nada bloqueia upload por ela ainda.
+5. **Paginação** nas listagens administrativas é por limite de consulta.
+6. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
    não é registrada (exceto o contador de validação pública).
-6. **Antivírus nos arquivos de submissão** (`scanStatus = SKIPPED`, marcado
+7. **Antivírus nos arquivos de submissão** (`scanStatus = SKIPPED`, marcado
    honestamente em vez de afirmar "limpo").
-7. **Notificações por e-mail** (atribuição de parecer, certificado emitido) dependem
+8. **Notificações por e-mail** (atribuição de parecer, certificado emitido) dependem
    do worker; a fila existe, o envio não.
-8. **Adoção do log estruturado é parcial (FASE 13).** Os pontos de operação (fila,
+9. **Adoção do log estruturado é parcial (FASE 13).** Os pontos de operação (fila,
    worker, rate limit) usam o `logger` com redação; os serviços ainda têm ~66
    `console.*` (dívida B6).
-9. **Retenção da auditoria e agendamento das partições** são operação, não código: o
-   particionamento está pronto, mas nada é descartado e o `db:partitions` precisa de
-   cron/orquestrador (dívidas B7 e B8).
-10. **Não há coletor de métricas.** `/api/metrics` é o contrato; Prometheus/Grafana e
+10. **Retenção da auditoria e agendamento das partições** são operação, não código: o
+    particionamento está pronto, mas nada é descartado e o `db:partitions` precisa de
+    cron/orquestrador (dívidas B7 e B8).
+11. **Não há coletor de métricas.** `/api/metrics` é o contrato; Prometheus/Grafana e
     alertas ficam com quem opera (dívida B9).
+12. **Sorteios: operação de palco é parcial (FASE 16).** O sorteio está completo, mas
+    desfazer uma entrega registrada por engano, buscar no histórico, premiar mais de um
+    revisor pela tela e acompanhar um sorteio em página própria ainda não existem
+    (dívidas G8–G11).
+13. **A prévia ao vivo do sorteio é polling de 5 s** (dívida G13) e a semente selada
+    depende do segredo de sessão: trocá-lo invalida a abertura de sementes ainda seladas
+    (dívida G12).
 
 ---
 
 **Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — comunicação
-(e-mail transacional, que destrava convites e notificações), PKCS#7 e antivírus para
-uso institucional — e depois a observabilidade de segunda ordem (coletor, alerta e
-adoção completa do log estruturado). O levantamento atualizado está em
-[`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
+(e-mail transacional, que destrava o convite pela instituição e as notificações, F15),
+PKCS#7 e antivírus para uso institucional (F18) — e depois o ciclo de vida do membro com
+a quota de armazenamento (F21) e a operação de palco dos sorteios (F22). O levantamento
+atualizado está em [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
 
 
 

@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 
 import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
+import { grantFullAttendanceCard } from '@/lib/gamification/achievement-service';
 import {
   awardForEvent,
   rewardKeys,
@@ -406,6 +407,19 @@ export interface CheckoutOutcome {
   countedForXp: boolean;
   activityType: string | null;
   rewards: RewardOutcome[];
+  /**
+   * Conquista de presença em TODAS as atividades (FASE 16). `null` quando não foi
+   * concedida nesta saída; presente quando esta foi a última atividade que faltava.
+   */
+  fullAttendance: AchievementOutcome | null;
+}
+
+/** Conquista concedida no check-out (carta de presença total do evento). */
+export interface AchievementOutcome {
+  granted: true;
+  cardName: string | null;
+  /** Quantas atividades o evento exigia — o "tudo" que foi cumprido. */
+  requiredCount: number;
 }
 
 /**
@@ -526,6 +540,44 @@ export async function checkOut(input: {
       }
     }
 
+    /**
+     * ───────────────────────────────────────────────────────────────────────────
+     *  CONQUISTA DE PRESENÇA TOTAL (FASE 16, item F1)
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O gatilho `EVENT_ATTENDANCE_FULL` existia no catálogo e nunca disparava. Ele
+     *  é avaliado AQUI, depois de a saída estar gravada, porque é o único momento em
+     *  que se sabe que esta atividade terminou para esta pessoa.
+     *
+     *  Fica fora do `if (countedForXp)`: a conquista é sobre ter estado em TODAS as
+     *  atividades, não sobre ter cumprido a fração mínima de uma. E o resultado dela
+     *  NÃO entra em `rewards` — `rewards` é o que credita XP, e esta carta não move
+     *  saldo (ver `achievement-service.ts`).
+     *
+     *  Falhar aqui não pode desfazer a saída: a conquista é avaliada em silêncio e o
+     *  erro vira log (invariante nº 8 — a recompensa nunca derruba o fluxo).
+     */
+    let fullAttendance: AchievementOutcome | null = null;
+
+    try {
+      const outcome = await grantFullAttendanceCard({
+        tenantId: input.tenantId,
+        userId: located.registration.userId,
+        eventId: located.registration.eventId,
+        actorId: input.staffUserId,
+        now,
+      });
+
+      if (outcome.ok && outcome.granted) {
+        fullAttendance = {
+          granted: true,
+          cardName: outcome.cardName,
+          requiredCount: outcome.requiredCount,
+        };
+      }
+    } catch (error) {
+      console.error(`[attendance] conquista de presença total falhou (não-fatal): ${errorMessage(error)}`);
+    }
+
     return {
       ok: true as const,
       attendanceId: located.attendance.id,
@@ -533,6 +585,7 @@ export async function checkOut(input: {
       countedForXp,
       activityType,
       rewards,
+      fullAttendance,
     };
   } catch (error) {
     console.error(`[attendance] falha no check-out: ${errorMessage(error)}`);

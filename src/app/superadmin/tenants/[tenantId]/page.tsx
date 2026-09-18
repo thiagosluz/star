@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Globe, Mail, UserCog } from 'lucide-react';
 
-import { TenantProfileForm, TenantStatusForm } from '@/components/platform/platform-forms';
+import { TenantMemberForm, TenantPlanForm, TenantProfileForm, TenantStatusForm } from '@/components/platform/platform-forms';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { getTenantDetail } from '@/lib/platform/tenant-service';
 import { listPlatformAudit } from '@/lib/platform/global-repository';
@@ -88,16 +88,38 @@ export default async function PlatformTenantDetailPage({
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="tenant-detail-metrics">
         {[
-          { label: 'Eventos', value: tenant.eventCount },
-          { label: 'Membros ativos', value: tenant.memberCount },
+          { label: 'Eventos', value: `${tenant.eventCount} de ${tenant.maxEvents}` },
+          { label: 'Membros', value: `${tenant.memberCount} de ${tenant.maxMembers}` },
+          /**
+           * Participantes aparecem SEPARADOS (FASE 14): desde a inscrição pública,
+           * todo inscrito ganha vínculo, e somá-los aos membros faria um evento de
+           * 300 pessoas parecer uma equipe de 300 — que foi exatamente o defeito
+           * registrado no levantamento (item I4).
+           */
+          { label: 'Participantes', value: tenant.participantCount },
           { label: 'Certificados emitidos', value: tenant.certificateCount },
-          { label: 'Quotas', value: `${tenant.maxEvents} / ${tenant.maxMembers}` },
         ].map((item) => (
           <article key={item.label} className="rounded-xl border border-border bg-card p-5">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{item.value}</p>
           </article>
         ))}
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <TenantPlanForm
+          tenantId={tenant.id}
+          plan={tenant.plan}
+          maxEvents={tenant.maxEvents}
+          maxMembers={tenant.maxMembers}
+          eventCount={tenant.eventCount}
+          memberCount={tenant.memberCount}
+        />
+        <TenantMemberForm
+          tenantId={tenant.id}
+          maxMembers={tenant.maxMembers}
+          memberCount={tenant.memberCount}
+        />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -129,8 +151,8 @@ export default async function PlatformTenantDetailPage({
         <header className="border-b border-border p-5">
           <h2 className="text-base font-semibold text-foreground">Quem responde pela instituição</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Vínculos ativos e papéis vigentes. O convite de novos membros é feito pela própria
-            instituição — a plataforma não impersona ninguém.
+            Vínculos de EQUIPE com papéis vigentes. Inscritos em eventos abertos não aparecem aqui:
+            eles são participantes ({tenant.participantCount} hoje) e não consomem a quota de membros.
           </p>
         </header>
 

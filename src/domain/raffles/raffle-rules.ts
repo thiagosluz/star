@@ -22,7 +22,7 @@
  *  deduplicação e exclusão de ganhadores anteriores sem tocar em infraestrutura.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Tipos
@@ -75,7 +75,32 @@ export interface RaffleConfig {
   minAttendanceMinutes: number;
   winnersCount: number;
   allowPriorEventWinners: boolean;
+  /**
+   * Quantos SUPLENTES sortear (FASE 16, item G1). `0` = nenhum.
+   *
+   * O suplente é sorteado na mesma apuração, logo depois dos titulares, e ocupa uma
+   * posição própria — assim ninguém precisa "sortear de novo" quando um vencedor não
+   * aparece para retirar o prêmio, e a ordem de reserva fica registrada.
+   */
+  alternatesCount?: number;
+  /**
+   * Sortear proporcionalmente aos MINUTOS assistidos (FASE 16, item G3).
+   *
+   * Desligado, todo elegível tem a mesma chance. Ligado, quem ficou mais tempo tem
+   * chance proporcional — e o peso é o próprio tempo, não uma nota subjetiva.
+   */
+  weightByMinutes?: boolean;
 }
+
+/** Papel da posição sorteada: titular do prêmio ou reserva. */
+export type RaffleWinnerKind = 'WINNER' | 'ALTERNATE';
+
+export const RAFFLE_WINNER_KINDS: readonly RaffleWinnerKind[] = ['WINNER', 'ALTERNATE'];
+
+export const RAFFLE_WINNER_KIND_LABELS: Readonly<Record<RaffleWinnerKind, string>> = {
+  WINNER: 'Titular',
+  ALTERNATE: 'Suplente',
+};
 
 export interface EligibilityInput {
   attendances: readonly AttendanceSample[];
@@ -129,6 +154,8 @@ export interface ConfigValidation {
 export const MAX_MINUTES = 24 * 60;
 /** Teto de vencedores por sorteio (evita sorteio que "premia todo mundo"). */
 export const MAX_WINNERS = 500;
+/** Teto de suplentes por sorteio (mesma ordem de grandeza dos titulares). */
+export const MAX_ALTERNATES = 500;
 
 /**
  * Valida a configuração de um sorteio.
@@ -143,6 +170,7 @@ export function validateRaffleConfig(config: {
   minAttendanceMinutes?: number;
   winnersCount: number;
   title?: string | null;
+  alternatesCount?: number;
 }): ConfigValidation {
   const errors: string[] = [];
 
@@ -162,6 +190,13 @@ export function validateRaffleConfig(config: {
     errors.push('O número de vencedores precisa ser ao menos 1.');
   } else if (config.winnersCount > MAX_WINNERS) {
     errors.push(`O número de vencedores não pode passar de ${MAX_WINNERS}.`);
+  }
+
+  const alternates = config.alternatesCount ?? 0;
+  if (!Number.isInteger(alternates) || alternates < 0) {
+    errors.push('O número de suplentes não pode ser negativo.');
+  } else if (alternates > MAX_ALTERNATES) {
+    errors.push(`O número de suplentes não pode passar de ${MAX_ALTERNATES}.`);
   }
 
   const minutes = config.minAttendanceMinutes ?? 0;
@@ -387,10 +422,225 @@ export function selectWinners(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Amostragem ponderada por minutos (item G3)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Peso de um participante no sorteio ponderado.
+ *
+ * O peso é o tempo assistido, com piso 1: quem é elegível com `0` minuto (só
+ * possível quando o piso de minutos é zero) continua concorrendo, com chance
+ * mínima. Zerar o peso o excluiria — e excluir não é o que "ponderado" significa:
+ * quem está na lista de elegíveis concorre.
+ */
+export function participantWeight(participant: EligibleParticipant): number {
+  return Math.max(1, Math.floor(participant.minutes));
+}
+
+/**
+ * Sorteia `count` participantes com chance PROPORCIONAL aos minutos assistidos.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE NÃO REUSAR O FISHER-YATES
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O embaralhamento uniforme dá a todos a mesma chance, que é exatamente o que a
+ *  ponderação precisa desfazer. Aqui cada retirada sorteia um ponto no intervalo
+ *  `[0, somaDosPesos)` e percorre a soma acumulada: um participante com o dobro do
+ *  tempo ocupa o dobro do intervalo, e portanto tem o dobro da chance.
+ *
+ *  A retirada é SEM REPOSIÇÃO: quem sai não volta para a próxima rodada, então a
+ *  soma é recalculada e ninguém é sorteado duas vezes. Empates de peso são
+ *  resolvidos pela ordem do `pool` (que já vem ordenada por nome), e é por isso que
+ *  o resultado é reproduzível a partir da mesma semente.
+ */
+export function selectWeightedWinners(
+  pool: readonly EligibleParticipant[],
+  count: number,
+  randomInt: (max: number) => number,
+): EligibleParticipant[] {
+  const remaining = [...pool];
+  const winners: EligibleParticipant[] = [];
+  const target = Math.min(Math.max(0, Math.floor(count)), remaining.length);
+
+  for (let index = 0; index < target; index += 1) {
+    const total = remaining.reduce((sum, participant) => sum + participantWeight(participant), 0);
+    // `randomInt(total)` devolve `[0, total)`; o acumulado encontra o dono do ponto.
+    let point = Math.max(0, Math.min(randomInt(total), total - 1));
+    let picked = remaining.length - 1;
+
+    for (let position = 0; position < remaining.length; position += 1) {
+      point -= participantWeight(remaining[position]!);
+
+      if (point < 0) {
+        picked = position;
+        break;
+      }
+    }
+
+    const [chosen] = remaining.splice(picked, 1);
+    winners.push(chosen!);
+  }
+
+  return winners;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Aleatoriedade semeada (item G4 — commit-reveal)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Gerador determinístico a partir de uma semente pública revelada.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE O COMMIT-REVEAL RESOLVE
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O hash do resultado prova que o registro não foi ALTERADO depois. Não prova que
+ *  o sorteio aconteceu depois do fechamento do credenciamento — quem tivesse acesso
+ *  ao banco poderia apurar, ver quem ganhou e "refazer" até gostar.
+ *
+ *  Com compromisso: a instituição publica `sha256(semente)` na CRIAÇÃO do sorteio
+ *  (antes de haver elegíveis), a semente fica selada e só é revelada na apuração.
+ *  Qualquer pessoa confere duas coisas — o hash da semente revelada é o compromisso
+ *  publicado, e o resultado se reproduz rodando esta função com a mesma semente.
+ *
+ *  Derivação: `HMAC-SHA256(semente, contador)` em 4 bytes. Não é um CSPRNG de
+ *  propósito geral, mas é determinístico, uniforme o bastante para sortear posições
+ *  e — o que importa aqui — REPRODUZÍVEL por quem só tem a semente.
+ */
+export function createSeededRandomInt(seed: string): (max: number) => number {
+  let counter = 0;
+
+  return (max: number): number => {
+    if (max <= 1) return 0;
+
+    const block = createHmac('sha256', seed).update(`draw:${counter}`).digest();
+    counter += 1;
+
+    // 4 bytes → inteiro sem sinal; o módulo introduz um viés desprezível para os
+    // tamanhos de pool reais (dezenas a milhares de participantes).
+    const value = block.readUInt32BE(0);
+
+    return value % max;
+  };
+}
+
+/** Compromisso público da semente: `sha256(semente)`. */
+export function seedCommitment(seed: string): string {
+  return createHash('sha256').update(seed, 'utf8').digest('hex');
+}
+
+/** A semente revelada corresponde ao compromisso publicado antes da apuração? */
+export function verifySeed(seed: string, commitment: string): boolean {
+  return seedCommitment(seed) === commitment;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Exibição pública do nome (item G5)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Mascara o nome para exibição pública.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE MASCARAR POR PADRÃO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Ganhar um sorteio é um fato da pessoa, e publicar "Fulano de Tal ganhou o
+ *  notebook" na internet é exposição que ninguém consentiu ao se credenciar. O
+ *  padrão é `Ana Souza` → `Ana S.`: quem estava no palco reconhece, quem só navega
+ *  não identifica. Quem optou por ter perfil público (`User.isPublicProfile`) tem o
+ *  nome completo publicado — consentimento explícito e verificável.
+ *
+ *  Nome de uma palavra só é preservado (`Ana` → `Ana`): mascarar viraria `A.`, que
+ *  não identifica nem para quem estava lá.
+ */
+export function maskName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length <= 1) return parts[0] ?? '';
+
+  const [first, ...rest] = parts;
+  const initials = rest
+    .filter((part) => part.length > 2)
+    .map((part) => `${part[0]!.toUpperCase()}.`)
+    .join(' ');
+
+  return initials ? `${first} ${initials}` : first!;
+}
+
+/** Nome para exibição pública, respeitando o consentimento de perfil público. */
+export function publicWinnerName(input: { name: string; publicProfile: boolean }): string {
+  return input.publicProfile ? input.name : maskName(input.name);
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Paginação do histórico (item G6)
+// ───────────────────────────────────────────────────────────────────────────────
+export const RAFFLE_PAGE_SIZE = 10;
+export const MAX_RAFFLE_PAGE_SIZE = 50;
+
+export interface RafflePage {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  /** Índice do primeiro item da página (`skip` do Prisma). */
+  skip: number;
+}
+
+/**
+ * Resolve a página pedida contra o total existente.
+ *
+ * O histórico tinha um teto fixo de 100 e nada além disso aparecia: evento com mais
+ * sorteios do que isso simplesmente perdia o começo da lista, sem aviso. Aqui a
+ * página é LIMITADA ao intervalo válido — pedir `?pagina=999` num evento com 3
+ * páginas devolve a última, em vez de uma tela vazia que parece defeito.
+ *
+ * A regra de recorte é a mesma do diretório público (FASE 9); quando a paginação
+ * transversal entrar no levantamento (item E2), as duas passam a usar uma função só.
+ */
+export function resolveRafflePage(input: {
+  page?: number;
+  pageSize?: number;
+  total: number;
+}): RafflePage {
+  const pageSize = Math.min(
+    Math.max(1, Math.floor(input.pageSize ?? RAFFLE_PAGE_SIZE)),
+    MAX_RAFFLE_PAGE_SIZE,
+  );
+  const total = Math.max(0, Math.floor(input.total));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, Math.floor(input.page ?? 1)), totalPages);
+
+  return { page, pageSize, total, totalPages, skip: (page - 1) * pageSize };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Hash do resultado
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Versão do conteúdo canônico do resultado.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A VERSÃO SUBIU (FASE 16)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A suplência (G1) e o peso por minutos (G3) acrescentaram campos AO CONTEÚDO
+ *  ASSINADO. Se eles entrassem na `version 1`, o hash de todo sorteio já apurado
+ *  deixaria de conferir — e a trilha de auditoria de apurações antigas viraria
+ *  "resultado adulterado" da noite para o dia.
+ *
+ *  Por isso o payload é versionado: quem apurou antes continua verificável pela
+ *  versão 1, quem apura agora usa a 2, e `verifyResult` reconstrói o payload na
+ *  versão CERTA a partir do que está gravado no sorteio.
+ */
+export const RESULT_PAYLOAD_VERSION = 2;
+
+export interface RaffleResultWinner {
+  position: number;
+  userId: string;
+  minutes: number;
+  /** Titular ou suplente. Ausente na versão 1 do payload (só havia titulares). */
+  kind?: RaffleWinnerKind;
+}
+
 export interface RaffleResultPayload {
-  validationVersion: 1;
+  validationVersion: 1 | 2;
   raffleId: string;
   tenantId: string;
   eventId: string;
@@ -400,9 +650,13 @@ export interface RaffleResultPayload {
   minAttendanceMinutes: number;
   winnersCount: number;
   allowPriorEventWinners: boolean;
+  /** Presente a partir da versão 2. */
+  alternatesCount?: number;
+  /** Presente a partir da versão 2. */
+  weightByMinutes?: boolean;
   eligibleCount: number;
   drawnAt: string;
-  winners: { position: number; userId: string; minutes: number }[];
+  winners: RaffleResultWinner[];
 }
 
 /**
@@ -411,27 +665,55 @@ export interface RaffleResultPayload {
  * `JSON.stringify` preserva a ordem de inserção, mas depender disso em qualquer
  * lugar seria frágil: a ordem aqui é parte do contrato, e mudá-la mudaria o hash
  * de todos os sorteios já apurados.
+ *
+ * Na versão 2, cada vencedor também declara `kind` (titular ou suplente): promover
+ * um suplente a titular depois mudaria o hash, que é exatamente o que a auditoria
+ * precisa impedir.
  */
 export function buildResultPayload(input: RaffleResultPayload): string {
-  const ordered: RaffleResultPayload = {
-    validationVersion: 1,
-    raffleId: input.raffleId,
-    tenantId: input.tenantId,
-    eventId: input.eventId,
-    scope: input.scope,
-    activityId: input.activityId,
-    referenceDate: input.referenceDate,
-    minAttendanceMinutes: input.minAttendanceMinutes,
-    winnersCount: input.winnersCount,
-    allowPriorEventWinners: input.allowPriorEventWinners,
-    eligibleCount: input.eligibleCount,
-    drawnAt: input.drawnAt,
-    winners: input.winners.map((winner) => ({
-      position: winner.position,
-      userId: winner.userId,
-      minutes: winner.minutes,
-    })),
-  };
+  const ordered: RaffleResultPayload =
+    input.validationVersion === 2
+      ? {
+          validationVersion: 2,
+          raffleId: input.raffleId,
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          scope: input.scope,
+          activityId: input.activityId,
+          referenceDate: input.referenceDate,
+          minAttendanceMinutes: input.minAttendanceMinutes,
+          winnersCount: input.winnersCount,
+          allowPriorEventWinners: input.allowPriorEventWinners,
+          alternatesCount: input.alternatesCount ?? 0,
+          weightByMinutes: input.weightByMinutes ?? false,
+          eligibleCount: input.eligibleCount,
+          drawnAt: input.drawnAt,
+          winners: input.winners.map((winner) => ({
+            position: winner.position,
+            userId: winner.userId,
+            minutes: winner.minutes,
+            kind: winner.kind ?? 'WINNER',
+          })),
+        }
+      : {
+          validationVersion: 1,
+          raffleId: input.raffleId,
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          scope: input.scope,
+          activityId: input.activityId,
+          referenceDate: input.referenceDate,
+          minAttendanceMinutes: input.minAttendanceMinutes,
+          winnersCount: input.winnersCount,
+          allowPriorEventWinners: input.allowPriorEventWinners,
+          eligibleCount: input.eligibleCount,
+          drawnAt: input.drawnAt,
+          winners: input.winners.map((winner) => ({
+            position: winner.position,
+            userId: winner.userId,
+            minutes: winner.minutes,
+          })),
+        };
 
   return JSON.stringify(ordered);
 }
@@ -461,6 +743,8 @@ export interface RaffleReadiness {
   willDraw: number;
   /** O sorteio vai entregar menos do que o pedido? */
   shortfall: number;
+  /** Quantos suplentes serão sorteados de fato (FASE 16). */
+  alternatesToDraw: number;
   canDraw: boolean;
   message: string;
 }
@@ -471,10 +755,24 @@ export interface RaffleReadiness {
  * Devolver `willDraw` separado de `requested` é o ponto: "pedi 10, só há 6
  * elegíveis" precisa ser uma decisão informada do organizador, não uma surpresa
  * depois do clique.
+ *
+ * Com suplentes, o pool é consumido na ordem: primeiro os titulares, depois as
+ * reservas. Se faltam elegíveis, quem sobra recebe o que existe — e o resumo diz
+ * quantos suplentes saíram, porque "3 titulares e 0 suplentes" é diferente de
+ * "2 titulares e 1 suplente" na hora de entregar o prêmio.
  */
-export function evaluateReadiness(eligibleCount: number, winnersCount: number): RaffleReadiness {
-  const willDraw = Math.min(eligibleCount, Math.max(0, winnersCount));
-  const shortfall = Math.max(0, winnersCount - eligibleCount);
+export function evaluateReadiness(
+  eligibleCount: number,
+  winnersCount: number,
+  alternatesCount = 0,
+): RaffleReadiness {
+  const wanted = Math.max(0, winnersCount) + Math.max(0, alternatesCount);
+  const willDraw = Math.min(eligibleCount, wanted);
+  const shortfall = Math.max(0, wanted - eligibleCount);
+  const winnersDrawn = Math.min(eligibleCount, Math.max(0, winnersCount));
+  const alternatesToDraw = Math.max(0, willDraw - winnersDrawn);
+  const alternatesSuffix =
+    alternatesCount > 0 ? ` + ${alternatesToDraw} suplente(s)` : '';
 
   if (eligibleCount === 0) {
     return {
@@ -482,6 +780,7 @@ export function evaluateReadiness(eligibleCount: number, winnersCount: number): 
       requested: winnersCount,
       willDraw: 0,
       shortfall,
+      alternatesToDraw: 0,
       canDraw: false,
       message:
         'Nenhum participante elegível com presença comprovada para este recorte. Confira o credenciamento e o piso de minutos.',
@@ -494,8 +793,9 @@ export function evaluateReadiness(eligibleCount: number, winnersCount: number): 
       requested: winnersCount,
       willDraw,
       shortfall,
+      alternatesToDraw,
       canDraw: true,
-      message: `Há ${eligibleCount} elegível(is) para ${winnersCount} vaga(s): o sorteio entregará ${willDraw} vencedor(es).`,
+      message: `Há ${eligibleCount} elegível(is) para ${wanted} vaga(s) (titulares + suplentes): o sorteio entregará ${winnersDrawn} titular(es)${alternatesSuffix}.`,
     };
   }
 
@@ -504,7 +804,11 @@ export function evaluateReadiness(eligibleCount: number, winnersCount: number): 
     requested: winnersCount,
     willDraw,
     shortfall: 0,
+    alternatesToDraw,
     canDraw: true,
-    message: `${eligibleCount} elegível(is) para ${winnersCount} vaga(s).`,
+    message:
+      alternatesCount > 0
+        ? `${eligibleCount} elegível(is) para ${winnersCount} vaga(s) e ${alternatesCount} suplência(s).`
+        : `${eligibleCount} elegível(is) para ${winnersCount} vaga(s).`,
   };
 }

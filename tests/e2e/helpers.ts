@@ -53,6 +53,12 @@ export async function linkUser(options: {
   tenantId: string;
   userId: string;
   status?: 'ACTIVE' | 'INVITED' | 'SUSPENDED';
+  /**
+   * Natureza do vínculo (FASE 14): o default é EQUIPE, que é o que os cenários de
+   * RBAC esperam. `PARTICIPANT` existe para montar a fixture do público de eventos
+   * sem passar pelo fluxo de inscrição pública.
+   */
+  kind?: 'MEMBER' | 'PARTICIPANT';
 }) {
   return e2eDb.userTenantProfile.create({
     data: {
@@ -60,6 +66,7 @@ export async function linkUser(options: {
       tenantId: options.tenantId,
       userId: options.userId,
       status: options.status ?? 'ACTIVE',
+      kind: options.kind ?? 'MEMBER',
       joinedAt: options.status === 'INVITED' ? null : new Date(),
     },
   });

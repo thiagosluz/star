@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Dices, Eye, Loader2, Sparkles, Trophy, UserCheck, Users } from 'lucide-react';
+import { Dices, Eye, Loader2, Radio, Sparkles, Trophy, UserCheck, Users } from 'lucide-react';
 
 import type { RaffleActionState } from '@/app/actions/raffle-actions';
 import { celebrate } from '@/components/gamification/celebration';
@@ -37,11 +37,120 @@ interface WinnerEntry {
   userId: string;
   userName: string;
   minutes: number;
+  kind?: 'WINNER' | 'ALTERNATE';
 }
 
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  PRÉVIA AO VIVO DO CREDENCIAMENTO (item G7)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A contagem de elegíveis era calculada uma vez, no carregamento. No palco, com
+ *  gente entrando pela catraca, o número envelhecia em segundos e a única saída era
+ *  recarregar a página no meio da apresentação.
+ *
+ *  Aqui a contagem é reconsultada a cada 5 segundos pela rota
+ *  `/api/events/<id>/raffle-live` — a MESMA função que a apuração usa, para que a
+ *  tela nunca mostre um número diferente do que o sorteio vai considerar.
+ *
+ *  Polling, e não SSE: uma conexão aberta por tela administrativa traria reconexão,
+ *  heartbeat e timeout de infraestrutura para administrar, sem ganho perceptível
+ *  numa contagem que muda quando alguém passa na catraca. A tela DIZ que o número é
+ *  amostrado, com o horário — em vez de fingir tempo real.
+ */
+function LiveEligibility({
+  tenantSlug,
+  eventId,
+  query,
+}: {
+  tenantSlug: string;
+  eventId: string;
+  query: string;
+}) {
+  const [state, setState] = useState<{
+    eligibleCount: number;
+    lastCheckInAt: string | null;
+    sampledAt: string;
+  } | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const load = async () => {
+      try {
+        const response = await fetch(
+          `/api/events/${eventId}/raffle-live?tenantSlug=${encodeURIComponent(tenantSlug)}&${query}`,
+          { signal: controller.signal, cache: 'no-store' },
+        );
+
+        const payload = (await response.json()) as {
+          ok: boolean;
+          eligibleCount?: number;
+          lastCheckInAt?: string | null;
+          sampledAt?: string;
+        };
+
+        if (cancelled) return;
+
+        if (payload.ok) {
+          setFailed(false);
+          setState({
+            eligibleCount: payload.eligibleCount ?? 0,
+            lastCheckInAt: payload.lastCheckInAt ?? null,
+            sampledAt: payload.sampledAt ?? new Date().toISOString(),
+          });
+        } else {
+          setFailed(true);
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    };
+
+    void load();
+    const timer = setInterval(() => void load(), 5_000);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [tenantSlug, eventId, query]);
+
+  return (
+    <p
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-low px-3 py-2 text-xs text-muted-foreground"
+      data-testid="raffle-live"
+      data-eligible={state?.eligibleCount ?? -1}
+    >
+      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+        <Radio className="size-3.5 animate-pulse text-primary" aria-hidden />
+        {state ? `${state.eligibleCount} elegível(is) agora` : 'Contando elegíveis…'}
+      </span>
+      {state?.lastCheckInAt ? (
+        <span>
+          último check-in às{' '}
+          {new Date(state.lastCheckInAt).toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+      ) : null}
+      <span>
+        {failed
+          ? 'não foi possível atualizar agora'
+          : state
+            ? `amostrado às ${new Date(state.sampledAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+            : '—'}
+      </span>
+    </p>
+  );
 }
 
 function SubmitButton({
@@ -183,10 +292,37 @@ export function RaffleConsole({
     referenceDate: '',
     minAttendanceMinutes: '0',
     winnersCount: '1',
+    alternatesCount: '0',
+    weightByMinutes: false,
     allowPriorEventWinners: false,
+    isPublic: false,
   });
 
   const update = (patch: Partial<typeof form>) => setForm((previous) => ({ ...previous, ...patch }));
+
+  /**
+   * Parâmetros da prévia ao vivo — exatamente os que definem ELEGIBILIDADE.
+   *
+   * Título, quantidade de vencedores e publicação ficam de fora de propósito: mudar
+   * o prêmio não muda quem concorre, e reconsultar por isso só gastaria requisição.
+   */
+  const liveQuery = useMemo(() => {
+    const params = new URLSearchParams({
+      scope: form.scope,
+      minAttendanceMinutes: form.minAttendanceMinutes || '0',
+      allowPriorEventWinners: form.allowPriorEventWinners ? 'true' : 'false',
+    });
+
+    if (form.scope === 'ACTIVITY' && (form.activityId || activities[0]?.id)) {
+      params.set('activityId', form.activityId || activities[0]!.id);
+    }
+
+    if (form.scope === 'DAY' && form.referenceDate) {
+      params.set('referenceDate', form.referenceDate);
+    }
+
+    return params.toString();
+  }, [form.scope, form.activityId, form.referenceDate, form.minAttendanceMinutes, form.allowPriorEventWinners, activities]);
 
   const [previewState, previewFormAction] = useActionState<RaffleActionState | null, FormData>(
     previewAction,
@@ -327,7 +463,61 @@ export function RaffleConsole({
               className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
             />
           </label>
+
+          <label className="block space-y-1 text-xs font-medium">
+            Quantos suplentes
+            <input
+              type="number"
+              name="alternatesCount"
+              min={0}
+              max={500}
+              value={form.alternatesCount}
+              onChange={(event) => update({ alternatesCount: event.target.value })}
+              aria-label="Quantos suplentes"
+              data-testid="raffle-alternates"
+              className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+            />
+            <span className="block text-xs font-normal text-muted-foreground">
+              Sorteados na mesma apuração, em ordem de reserva. Não consomem vaga de titular.
+            </span>
+          </label>
         </div>
+
+        <label className="flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            name="weightByMinutes"
+            checked={form.weightByMinutes}
+            onChange={(event) => update({ weightByMinutes: event.target.checked })}
+            data-testid="raffle-weighted"
+            className="mt-0.5 size-3.5"
+          />
+          <span>
+            <span className="font-medium">Chance proporcional ao tempo de presença</span>
+            <span className="block text-xs text-muted-foreground">
+              Desmarcado, todo elegível tem a mesma chance. Marcado, quem ficou 120 min concorre com o
+              dobro da chance de quem ficou 60 min.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            name="isPublic"
+            checked={form.isPublic}
+            onChange={(event) => update({ isPublic: event.target.checked })}
+            data-testid="raffle-public"
+            className="mt-0.5 size-3.5"
+          />
+          <span>
+            <span className="font-medium">Publicar o resultado na página do evento</span>
+            <span className="block text-xs text-muted-foreground">
+              O nome sai mascarado (Ana S.), exceto para quem tem perfil público. A prova da apuração
+              (hash e semente) vai junto.
+            </span>
+          </span>
+        </label>
 
         <label className="flex items-start gap-2 text-xs">
           <input
@@ -341,9 +531,12 @@ export function RaffleConsole({
             <span className="font-medium">Permitir quem já ganhou neste evento</span>
             <span className="block text-xs text-muted-foreground">
               Desmarcado, quem já venceu qualquer sorteio deste evento sai do páreo automaticamente.
+              Suplente não conta como vencedor.
             </span>
           </span>
         </label>
+
+        <LiveEligibility tenantSlug={tenantSlug} eventId={eventId} query={liveQuery} />
 
         <div className="flex flex-wrap gap-3">
           <button
@@ -443,6 +636,29 @@ export function RaffleConsole({
             <p className="break-all code-data text-muted-foreground">
               Hash da apuração: {String(drawState.data.resultHash)}
             </p>
+          ) : null}
+
+          {/*
+            ── PROVA DO COMMIT-REVEAL (item G4) ──────────────────────────────────
+            O compromisso foi publicado na CRIAÇÃO; a semente só aparece agora. Quem
+            quiser conferir recalcula `sha256(semente)` e reproduz o sorteio com ela.
+          */}
+          {drawState.ok && typeof drawState.data?.seedCommitment === 'string' ? (
+            <div className="space-y-1 rounded-md border border-border bg-card/60 p-3 text-xs" data-testid="raffle-seed-proof">
+              <p className="font-medium text-foreground">
+                {drawState.data.seeded === true
+                  ? 'Sorteio verificável: a semente foi comprometida antes da apuração'
+                  : 'Sorteio sem semente comprometida (cofre não configurado)'}
+              </p>
+              <p className="break-all code-data text-muted-foreground">
+                compromisso (sha256 da semente): {String(drawState.data.seedCommitment)}
+              </p>
+              {typeof drawState.data.seedRevealed === 'string' ? (
+                <p className="break-all code-data text-muted-foreground">
+                  semente revelada: {String(drawState.data.seedRevealed)}
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           {/* A `key` remonta a revelação a cada apuração nova (estado zerado). */}

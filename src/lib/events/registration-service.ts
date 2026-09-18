@@ -47,6 +47,10 @@ import {
   type ParticipantLinkDecision,
 } from '@/domain/events/public-registration-rules';
 import { recordAudit } from '@/lib/admin/audit';
+import {
+  kindAfterPublicRegistration,
+  type MembershipKind as MembershipKindName,
+} from '@/domain/tenancy/membership-rules';
 import { invalidateTenantCache } from '@/lib/tenancy/tenant-resolver';
 import {
   isTransientDbError,
@@ -420,12 +424,33 @@ async function applyParticipantLink(
   const now = new Date();
   const activated = input.decision.action === 'ACTIVATE';
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A INSCRIÇÃO CRIA PARTICIPANTE E NUNCA REBAIXA MEMBRO (FASE 14)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `kindAfterPublicRegistration` é o que impede a ordem dos acontecimentos de
+   *  mudar o resultado: quem se inscreve antes de entrar para a equipe fica
+   *  PARTICIPANT (e é promovido depois, se for vinculado pela plataforma), e quem
+   *  já é da equipe e se inscreve continua MEMBER — inclusive contando na quota do
+   *  plano. `currentKind` só é lido aqui para a decisão; o `update` abaixo não toca
+   *  em `kind`.
+   */
+  const existing = await tx.userTenantProfile.findUnique({
+    where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
+    select: { kind: true },
+  });
+
+  const kind = kindAfterPublicRegistration(
+    (existing?.kind as MembershipKindName | undefined) ?? null,
+  );
+
   await tx.userTenantProfile.upsert({
     where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
     create: {
       tenantId: input.tenantId,
       userId: input.userId,
       status: 'ACTIVE',
+      kind,
       joinedAt: now,
       invitedAt: null,
       invitedById: null,

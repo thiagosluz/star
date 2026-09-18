@@ -375,7 +375,10 @@ describe('apuração', () => {
 
     const recomputed = hashResult(
       buildResultPayload({
-        validationVersion: 1,
+        // A VERSÃO vem do que está gravado no sorteio (FASE 16): o payload ganhou
+        // suplentes e peso por minutos, e reconstruir na versão errada acusaria
+        // "resultado adulterado" em uma apuração íntegra.
+        validationVersion: raffle.resultVersion === 2 ? 2 : 1,
         raffleId: raffle.id,
         tenantId,
         eventId,
@@ -384,6 +387,8 @@ describe('apuração', () => {
         referenceDate: raffle.referenceDay,
         minAttendanceMinutes: raffle.minAttendanceMinutes,
         winnersCount: raffle.winnersCount,
+        alternatesCount: raffle.alternatesCount,
+        weightByMinutes: raffle.weightByMinutes,
         allowPriorEventWinners: raffle.allowPriorEventWinners,
         eligibleCount: raffle.eligibleCount,
         drawnAt: raffle.drawnAt!.toISOString(),
@@ -391,6 +396,7 @@ describe('apuração', () => {
           position: winner.position,
           userId: winner.userId,
           minutes: winner.minutes,
+          kind: winner.kind,
         })),
       }),
     );
@@ -401,7 +407,7 @@ describe('apuração', () => {
     expect(
       verifyResult(
         {
-          validationVersion: 1,
+          validationVersion: raffle.resultVersion === 2 ? 2 : 1,
           raffleId: raffle.id,
           tenantId,
           eventId,
@@ -410,6 +416,8 @@ describe('apuração', () => {
           referenceDate: raffle.referenceDay,
           minAttendanceMinutes: raffle.minAttendanceMinutes,
           winnersCount: raffle.winnersCount,
+          alternatesCount: raffle.alternatesCount,
+          weightByMinutes: raffle.weightByMinutes,
           allowPriorEventWinners: raffle.allowPriorEventWinners,
           eligibleCount: raffle.eligibleCount,
           drawnAt: raffle.drawnAt!.toISOString(),
@@ -417,6 +425,7 @@ describe('apuração', () => {
             position: winner.position,
             userId: winner.userId,
             minutes: winner.minutes,
+            kind: winner.kind,
           })),
         },
         raffle.resultHash,

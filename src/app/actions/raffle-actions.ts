@@ -29,7 +29,9 @@ import {
   cancelRaffle,
   createRaffle,
   drawRaffle,
+  markPrizeDelivered,
   previewEligibility,
+  setRaffleVisibility,
 } from '@/lib/raffles/raffle-service';
 
 export interface RaffleActionState {
@@ -106,6 +108,8 @@ const previewSchema = z.object({
   referenceDate: z.string().trim().optional(),
   minAttendanceMinutes: z.coerce.number().int().min(0).max(1440).default(0),
   winnersCount: z.coerce.number().int().min(1).max(500).default(1),
+  alternatesCount: z.coerce.number().int().min(0).max(500).default(0),
+  weightByMinutes: z.coerce.boolean().optional().default(false),
   allowPriorEventWinners: z.coerce.boolean().optional().default(false),
 });
 
@@ -127,6 +131,8 @@ export async function previewRaffleAction(
     referenceDate: (formData.get('referenceDate') as string) || undefined,
     minAttendanceMinutes: formData.get('minAttendanceMinutes') ?? 0,
     winnersCount: formData.get('winnersCount') ?? 1,
+    alternatesCount: formData.get('alternatesCount') ?? 0,
+    weightByMinutes: formData.get('weightByMinutes') === 'on',
     allowPriorEventWinners: formData.get('allowPriorEventWinners') === 'on',
   });
 
@@ -151,6 +157,8 @@ export async function previewRaffleAction(
       activityId: parsed.data.activityId ?? null,
       minAttendanceMinutes: parsed.data.minAttendanceMinutes,
       winnersCount: parsed.data.winnersCount,
+      alternatesCount: parsed.data.alternatesCount,
+      weightByMinutes: parsed.data.weightByMinutes,
       allowPriorEventWinners: parsed.data.allowPriorEventWinners,
     },
   });
@@ -168,6 +176,7 @@ export async function previewRaffleAction(
       canDraw: result.preview.readiness.canDraw,
       willDraw: result.preview.readiness.willDraw,
       shortfall: result.preview.readiness.shortfall,
+      alternatesToDraw: result.preview.readiness.alternatesToDraw,
       eligible: result.preview.eligible.slice(0, 100).map((entry) => ({
         userId: entry.userId,
         userName: entry.userName,
@@ -184,6 +193,7 @@ export async function previewRaffleAction(
 const drawSchema = previewSchema.extend({
   title: z.string().trim().min(3, 'Dê um nome ao sorteio (mínimo 3 caracteres).').max(200),
   description: z.string().trim().max(2000).optional(),
+  isPublic: z.coerce.boolean().optional().default(false),
 });
 
 /**
@@ -192,6 +202,9 @@ const drawSchema = previewSchema.extend({
  * É o fluxo real do palco: o organizador define o recorte, confere a prévia e
  * executa. As duas operações continuam separadas no serviço (a criação grava o
  * `DRAFT` com a configuração), mas a tela não obriga a dois envios.
+ *
+ * O COMPROMISSO da semente (FASE 16) nasce na criação — antes de existir elegível —
+ * e volta na resposta para que a tela possa exibi-lo junto do resultado.
  */
 export async function createAndDrawRaffleAction(
   _prev: RaffleActionState | null,
@@ -207,7 +220,10 @@ export async function createAndDrawRaffleAction(
     referenceDate: (formData.get('referenceDate') as string) || undefined,
     minAttendanceMinutes: formData.get('minAttendanceMinutes') ?? 0,
     winnersCount: formData.get('winnersCount') ?? 1,
+    alternatesCount: formData.get('alternatesCount') ?? 0,
+    weightByMinutes: formData.get('weightByMinutes') === 'on',
     allowPriorEventWinners: formData.get('allowPriorEventWinners') === 'on',
+    isPublic: formData.get('isPublic') === 'on',
   });
 
   if (!parsed.success) {
@@ -233,6 +249,9 @@ export async function createAndDrawRaffleAction(
     activityId: parsed.data.activityId ?? null,
     minAttendanceMinutes: parsed.data.minAttendanceMinutes,
     winnersCount: parsed.data.winnersCount,
+    alternatesCount: parsed.data.alternatesCount,
+    weightByMinutes: parsed.data.weightByMinutes,
+    isPublic: parsed.data.isPublic,
     allowPriorEventWinners: parsed.data.allowPriorEventWinners,
   });
 
@@ -258,7 +277,11 @@ export async function createAndDrawRaffleAction(
       ok: false,
       code: drawn.code,
       message: drawn.message,
-      data: { raffleId: created.raffleId, status: 'DRAFT' },
+      data: {
+        raffleId: created.raffleId,
+        status: 'DRAFT',
+        seedCommitment: created.seedCommitment,
+      },
     };
   }
 
@@ -266,8 +289,10 @@ export async function createAndDrawRaffleAction(
     ok: true,
     message:
       drawn.shortfall > 0
-        ? `${drawn.winners.length} vencedor(es) sorteados entre ${drawn.eligibleCount} elegíveis (faltaram ${drawn.shortfall} para o pedido).`
-        : `${drawn.winners.length} vencedor(es) sorteados entre ${drawn.eligibleCount} elegíveis.`,
+        ? `${drawn.winners.length} posição(ões) sorteadas entre ${drawn.eligibleCount} elegíveis (faltaram ${drawn.shortfall} para o pedido).`
+        : drawn.alternatesDrawn > 0
+          ? `${drawn.winnersDrawn} titular(es) e ${drawn.alternatesDrawn} suplente(s) sorteados entre ${drawn.eligibleCount} elegíveis.`
+          : `${drawn.winnersDrawn} vencedor(es) sorteados entre ${drawn.eligibleCount} elegíveis.`,
     data: {
       raffleId: drawn.raffleId,
       eligibleCount: drawn.eligibleCount,
@@ -276,6 +301,11 @@ export async function createAndDrawRaffleAction(
       drawnAt: drawn.drawnAt.toISOString(),
       shortfall: drawn.shortfall,
       winners: drawn.winners,
+      winnersDrawn: drawn.winnersDrawn,
+      alternatesDrawn: drawn.alternatesDrawn,
+      seedCommitment: drawn.seedCommitment,
+      seedRevealed: drawn.seedRevealed,
+      seeded: drawn.seeded,
     },
   };
 }
@@ -320,14 +350,131 @@ export async function drawRaffleAction(
 
   return {
     ok: true,
-    message: `${drawn.winners.length} vencedor(es) sorteados entre ${drawn.eligibleCount} elegíveis.`,
+    /**
+     * A mensagem volta a dizer "vencedor" quando NÃO há suplentes: é o caso em que
+     * "titular" só acrescentaria uma palavra nova para o mesmo fato. Com suplência, a
+     * distinção passa a importar — quem entrega o prêmio precisa saber quantos são
+     * titulares e quantos são reserva.
+     */
+    message:
+      drawn.alternatesDrawn > 0
+        ? `${drawn.winnersDrawn} titular(es) e ${drawn.alternatesDrawn} suplente(s) sorteados entre ${drawn.eligibleCount} elegíveis.`
+        : `${drawn.winnersDrawn} vencedor(es) sorteados entre ${drawn.eligibleCount} elegíveis.`,
     data: {
       raffleId: drawn.raffleId,
       eligibleCount: drawn.eligibleCount,
       resultHash: drawn.resultHash,
       shortfall: drawn.shortfall,
       winners: drawn.winners,
+      winnersDrawn: drawn.winnersDrawn,
+      alternatesDrawn: drawn.alternatesDrawn,
+      seedCommitment: drawn.seedCommitment,
+      seedRevealed: drawn.seedRevealed,
+      seeded: drawn.seeded,
     },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Entrega do prêmio (FASE 16, item G2)
+// ───────────────────────────────────────────────────────────────────────────────
+export async function markPrizeDeliveredAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      raffleId: z.string().uuid(),
+      // Id da POSIÇÃO sorteada (não da pessoa): é o que o serviço registra.
+      positionId: z.string().uuid(),
+      note: z.string().trim().max(300).optional(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      raffleId: formData.get('raffleId'),
+      positionId: formData.get('positionId'),
+      note: (formData.get('note') as string) || undefined,
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para registrar a entrega.' };
+  }
+
+  const auth = await guard(parsed.data.tenantSlug);
+  if (!auth.ok) return auth.state;
+
+  const result = await markPrizeDelivered({
+    tenantId: auth.tenantId,
+    raffleId: parsed.data.raffleId,
+    positionId: parsed.data.positionId,
+    actorId: auth.userId,
+    note: parsed.data.note ?? null,
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`));
+
+  return result.ok
+    ? {
+        ok: true,
+        message: `Entrega registrada para ${result.userName}.`,
+        data: { positionId: result.positionId },
+      }
+    : { ok: false, code: result.code, message: result.message };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Publicação do resultado (FASE 16, item G5)
+// ───────────────────────────────────────────────────────────────────────────────
+export async function setRaffleVisibilityAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      raffleId: z.string().uuid(),
+      isPublic: z.coerce.boolean(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      raffleId: formData.get('raffleId'),
+      isPublic: formData.get('isPublic') === 'true',
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para publicar o resultado.' };
+  }
+
+  const auth = await guard(parsed.data.tenantSlug);
+  if (!auth.ok) return auth.state;
+
+  const result = await setRaffleVisibility({
+    tenantId: auth.tenantId,
+    raffleId: parsed.data.raffleId,
+    actorId: auth.userId,
+    isPublic: parsed.data.isPublic,
+  });
+
+  const eventPath = tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`);
+  revalidatePath(eventPath);
+
+  if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+  // A página pública do evento mostra o resultado: invalidar é parte de publicar.
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'));
+  revalidatePath(eventPath);
+
+  return {
+    ok: true,
+    message: result.isPublic
+      ? 'Resultado publicado na página do evento (nomes mascarados, exceto perfis públicos).'
+      : 'Resultado deixou de ser publicado.',
+    data: { isPublic: result.isPublic },
   };
 }
 

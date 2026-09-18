@@ -56,12 +56,26 @@ export interface TenantAdminRow {
   websiteUrl: string | null;
   maxEvents: number;
   maxMembers: number;
+  /**
+   * Quota de armazenamento em bytes.
+   *
+   * `BigInt` porque a coluna é `bigint` — e porque converter para `number` aqui
+   * esconderia a diferença em qualquer lugar que devesse lidar com ela. A tela é
+   * que formata.
+   */
+  maxStorageBytes: bigint;
   createdAt: Date;
   suspendedAt: Date | null;
   suspensionReason: string | null;
-  /** Contadores denormalizados por consulta agregada (nunca N+1). */
+  /**
+   * Contadores denormalizados por consulta agregada (nunca N+1).
+   *
+   * `memberCount` é EQUIPE (`kind = MEMBER`), com o mesmo critério da quota do
+   * plano; `participantCount` é o público de eventos e é informativo (FASE 14).
+   */
   eventCount: number;
   memberCount: number;
+  participantCount: number;
   certificateCount: number;
   lastActivityAt: Date | null;
 }
@@ -112,6 +126,7 @@ export async function listTenants(options: ListTenantsOptions = {}): Promise<Ten
       websiteUrl: true,
       maxEvents: true,
       maxMembers: true,
+      maxStorageBytes: true,
       createdAt: true,
       suspendedAt: true,
       suspensionReason: true,
@@ -138,6 +153,7 @@ export async function findTenantById(tenantId: string): Promise<TenantAdminRow |
       websiteUrl: true,
       maxEvents: true,
       maxMembers: true,
+      maxStorageBytes: true,
       createdAt: true,
       suspendedAt: true,
       suspensionReason: true,
@@ -163,6 +179,7 @@ type TenantProjection = {
   websiteUrl: string | null;
   maxEvents: number;
   maxMembers: number;
+  maxStorageBytes: bigint;
   createdAt: Date;
   suspendedAt: Date | null;
   suspensionReason: string | null;
@@ -174,12 +191,22 @@ type TenantProjection = {
  * Existe porque `listTenants` e `findTenantById` precisam do MESMO formato de
  * linha: sem isso, o detalhe da instituição mostraria números diferentes dos da
  * listagem, e a divergência apareceria só na tela.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  MEMBROS E PARTICIPANTES SÃO CONTADOS SEPARADAMENTE (FASE 14)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Desde a FASE 10 todo inscrito em evento aberto ganha vínculo ATIVO. Contar
+ *  vínculos e chamar de "membros" fazia um evento de 300 pessoas aparecer como 300
+ *  membros da instituição — e tornava a quota `maxMembers` impossível de aplicar.
+ *  `memberCount` conta EQUIPE (`kind = MEMBER`), com o MESMO critério da quota
+ *  (ativos + convidados: um convite pendente já reserva lugar no plano);
+ *  `participantCount` conta o público, e é informativo.
  */
 async function attachCounters(tenants: TenantProjection[]): Promise<TenantAdminRow[]> {
   const ids = tenants.map((tenant) => tenant.id);
   if (ids.length === 0) return [];
 
-  const [events, members, certificates, lastActivity] = await Promise.all([
+  const [events, members, participants, certificates, lastActivity] = await Promise.all([
     adminPrisma.event.groupBy({
       by: ['tenantId'],
       where: { tenantId: { in: ids }, deletedAt: null },
@@ -187,7 +214,17 @@ async function attachCounters(tenants: TenantProjection[]): Promise<TenantAdminR
     }),
     adminPrisma.userTenantProfile.groupBy({
       by: ['tenantId'],
-      where: { tenantId: { in: ids }, status: 'ACTIVE', deletedAt: null },
+      where: {
+        tenantId: { in: ids },
+        kind: 'MEMBER',
+        status: { in: ['ACTIVE', 'INVITED'] },
+        deletedAt: null,
+      },
+      _count: { _all: true },
+    }),
+    adminPrisma.userTenantProfile.groupBy({
+      by: ['tenantId'],
+      where: { tenantId: { in: ids }, kind: 'PARTICIPANT', deletedAt: null },
       _count: { _all: true },
     }),
     adminPrisma.certificate.groupBy({
@@ -204,6 +241,7 @@ async function attachCounters(tenants: TenantProjection[]): Promise<TenantAdminR
 
   const eventCounts = new Map(events.map((row) => [row.tenantId, row._count._all]));
   const memberCounts = new Map(members.map((row) => [row.tenantId, row._count._all]));
+  const participantCounts = new Map(participants.map((row) => [row.tenantId, row._count._all]));
   const certificateCounts = new Map(certificates.map((row) => [row.tenantId, row._count._all]));
   const activityDates = new Map(lastActivity.map((row) => [row.tenantId, row._max.checkedInAt]));
 
@@ -211,9 +249,35 @@ async function attachCounters(tenants: TenantProjection[]): Promise<TenantAdminR
     ...tenant,
     eventCount: eventCounts.get(tenant.id) ?? 0,
     memberCount: memberCounts.get(tenant.id) ?? 0,
+    participantCount: participantCounts.get(tenant.id) ?? 0,
     certificateCount: certificateCounts.get(tenant.id) ?? 0,
     lastActivityAt: activityDates.get(tenant.id) ?? null,
   }));
+}
+
+/**
+ * Quantos MEMBROS a instituição tem — o número que a quota do plano consome.
+ *
+ * Mesmo critério do contador do painel: equipe ativa ou convidada. `SUSPENDED` e
+ * `REMOVED` não ocupam lugar (a pessoa perdeu o acesso), e `PARTICIPANT` nunca
+ * ocupa (ver `membership-rules.ts`).
+ */
+export async function countTenantMembers(tenantId: string): Promise<number> {
+  return adminPrisma.userTenantProfile.count({
+    where: {
+      tenantId,
+      kind: 'MEMBER',
+      status: { in: ['ACTIVE', 'INVITED'] },
+      deletedAt: null,
+    },
+  });
+}
+
+/** Quantos PARTICIPANTES (público de eventos) a instituição tem. */
+export async function countTenantParticipants(tenantId: string): Promise<number> {
+  return adminPrisma.userTenantProfile.count({
+    where: { tenantId, kind: 'PARTICIPANT', deletedAt: null },
+  });
 }
 
 /** Slug disponível? (`true` = já existe) */
@@ -267,7 +331,10 @@ export async function findUserByEmail(
 export interface PlatformMetrics {
   tenants: { total: number; active: number; suspended: number; pending: number; public: number };
   users: number;
+  /** Vínculos de EQUIPE ativos (o que consome quota de plano). */
   memberships: number;
+  /** Vínculos de PARTICIPANTE (público de eventos) — informativo, não consome quota. */
+  participants: number;
   events: { total: number; open: number; ongoing: number };
   registrations: number;
   submissions: number;
@@ -291,6 +358,7 @@ export async function getPlatformMetrics(now: Date = new Date()): Promise<Platfo
     isPublic,
     users,
     memberships,
+    participants,
     events,
     openEvents,
     ongoingEvents,
@@ -305,7 +373,10 @@ export async function getPlatformMetrics(now: Date = new Date()): Promise<Platfo
     adminPrisma.tenant.count({ where: { status: 'PENDING' } }),
     adminPrisma.tenant.count({ where: { isPublic: true, status: 'ACTIVE' } }),
     adminPrisma.user.count(),
-    adminPrisma.userTenantProfile.count({ where: { status: 'ACTIVE', deletedAt: null } }),
+    adminPrisma.userTenantProfile.count({
+      where: { kind: 'MEMBER', status: { in: ['ACTIVE', 'INVITED'] }, deletedAt: null },
+    }),
+    adminPrisma.userTenantProfile.count({ where: { kind: 'PARTICIPANT', deletedAt: null } }),
     adminPrisma.event.count({ where: { deletedAt: null } }),
     adminPrisma.event.count({
       where: { deletedAt: null, status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] }, startsAt: { gte: now } },
@@ -323,6 +394,7 @@ export async function getPlatformMetrics(now: Date = new Date()): Promise<Platfo
     tenants: { total, active, suspended, pending, public: isPublic },
     users,
     memberships,
+    participants,
     events: { total: events, open: openEvents, ongoing: ongoingEvents },
     registrations,
     submissions,
@@ -429,6 +501,7 @@ export interface TenantMemberRow {
   name: string;
   email: string;
   membershipStatus: string;
+  kind: string;
   joinedAt: Date | null;
   lastAccessAt: Date | null;
   roles: { role: string; scope: string; expiresAt: Date | null }[];
@@ -437,20 +510,31 @@ export interface TenantMemberRow {
 /**
  * Membros de uma instituição com seus papéis.
  *
- * DUAS consultas, não uma por membro: a lista de vínculos e a de concessões
- * vigentes, juntadas em memória. É o mesmo cuidado do diretório — a alternativa
- * (buscar os papéis dentro do `map`) é o N+1 clássico, e ele só aparece quando a
- * instituição cresce.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  DEPOIS DA FASE 14 ISTO LISTA EQUIPE, NÃO VÍNCULOS (item I4)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Filtrar por `kind = MEMBER` é o conserto do defeito registrado no levantamento:
+ *  a lista de "quem responde pela instituição" exibia todo inscrito de evento
+ *  aberto, porque a FASE 10 passou a criar vínculo ATIVO para participante. Quem se
+ *  inscreve num evento não responde pela instituição — e a contagem separada de
+ *  participantes (`countTenantParticipants`) mantém essa informação visível sem
+ *  misturá-la com a equipe.
+ *
+ *  DUAS consultas, não uma por membro: a lista de vínculos e a de concessões
+ *  vigentes, juntadas em memória. É o mesmo cuidado do diretório — a alternativa
+ *  (buscar os papéis dentro do `map`) é o N+1 clássico, e ele só aparece quando a
+ *  instituição cresce.
  */
 export async function listTenantMembers(tenantId: string): Promise<TenantMemberRow[]> {
   const [memberships, assignments] = await Promise.all([
     adminPrisma.userTenantProfile.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { tenantId, kind: 'MEMBER', deletedAt: null },
       orderBy: [{ status: 'asc' }, { createdAt: 'asc' }],
       take: 500,
       select: {
         userId: true,
         status: true,
+        kind: true,
         joinedAt: true,
         lastAccessAt: true,
         user: { select: { name: true, email: true } },
@@ -478,6 +562,7 @@ export async function listTenantMembers(tenantId: string): Promise<TenantMemberR
     name: membership.user.name,
     email: membership.user.email,
     membershipStatus: membership.status,
+    kind: membership.kind,
     joinedAt: membership.joinedAt,
     lastAccessAt: membership.lastAccessAt,
     roles: byUser.get(membership.userId) ?? [],

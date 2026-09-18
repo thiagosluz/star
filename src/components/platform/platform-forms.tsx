@@ -19,17 +19,35 @@
  */
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Ban, CheckCircle2, Loader2, Plus, ShieldCheck, UserPlus } from 'lucide-react';
+import { Ban, CheckCircle2, Loader2, Plus, ShieldCheck, UserPlus, Wallet } from 'lucide-react';
 
 import {
+  addTenantMemberAction,
   grantSuperAdminAction,
   provisionTenantAction,
   revokeSuperAdminAction,
   setTenantStatusAction,
+  updateTenantPlanAction,
   updateTenantProfileAction,
   type PlatformActionState,
 } from '@/app/actions/platform-actions';
 import { TENANT_PLANS, PLAN_DEFINITIONS, type TenantPlan } from '@/domain/platform/platform-rules';
+import { ROLE_KEYS, type RoleKey } from '@/domain/rbac/permissions';
+
+/**
+ * Papéis que podem ser concedidos a um vínculo de EQUIPE, calculados no cliente a
+ * partir das chaves do RBAC.
+ *
+ * A lista NÃO é importada do serviço de plataforma (`MEMBER_ROLES`): aquele módulo
+ * carrega o cliente administrativo do banco, e um componente `'use client'` não
+ * pode arrastá-lo para o bundle do navegador. As duas listas são derivadas da mesma
+ * fonte (`ROLE_KEYS`), então não podem divergir.
+ */
+type TenantMemberRole = Exclude<RoleKey, 'SUPERADMIN' | 'PARTICIPANT'>;
+
+const MEMBER_ROLE_OPTIONS: readonly TenantMemberRole[] = ROLE_KEYS.filter(
+  (role): role is TenantMemberRole => role !== 'SUPERADMIN' && role !== 'PARTICIPANT',
+);
 
 const INITIAL: PlatformActionState | null = null;
 
@@ -479,6 +497,257 @@ export function TenantProfileForm({
       </form>
 
       <Feedback state={state} testId="tenant-profile-feedback" />
+    </section>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Plano e quotas (FASE 14 — item C3)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Troca de plano e edição de quotas de uma instituição já provisionada.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS DUAS DECISÕES DE INTERFACE QUE ESTE FORMULÁRIO TOMA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  1. "USAR AS QUOTAS DO PLANO" vem marcado. O caso comum é mudar de plano e
+ *     herdar o que ele promete; editar quota é a exceção (acordo comercial
+ *     específico). Sem a caixa marcada, dois campos em branco passariam a
+ *     significar "ilimitado" — o oposto do que a pessoa quis.
+ *  2. O USO ATUAL fica visível ao lado dos campos. Reduzir a quota abaixo do uso é
+ *     permitido (é decisão da plataforma), mas precisa ser uma decisão informada: o
+ *     aviso volta na resposta e aparece embaixo do formulário.
+ */
+export function TenantPlanForm({
+  tenantId,
+  plan,
+  maxEvents,
+  maxMembers,
+  eventCount,
+  memberCount,
+}: {
+  tenantId: string;
+  plan: TenantPlan;
+  maxEvents: number;
+  maxMembers: number;
+  eventCount: number;
+  memberCount: number;
+}) {
+  const [state, action] = useActionState(updateTenantPlanAction, INITIAL);
+
+  // Quotas gravadas: `0` é valor legítimo ("nenhum evento"), então o campo mostra
+  // o número — vazio fica reservado para "ilimitado" (que é `null` no banco, e o
+  // banco guarda 0). A tela explica a diferença em vez de adivinhar.
+  const [values, setValues] = useState({
+    plan,
+    maxEvents: String(maxEvents),
+    maxMembers: String(maxMembers),
+    useDefaults: false,
+  });
+
+  const definition = PLAN_DEFINITIONS[values.plan as TenantPlan];
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-6" data-testid="tenant-plan-section">
+      <header className="flex items-center gap-2">
+        <Wallet className="size-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-base font-semibold text-foreground">Plano e quotas</h2>
+      </header>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        Plano atual: <span className="code-data">{plan}</span> · uso: {eventCount} evento(s) de{' '}
+        {maxEvents} · {memberCount} membro(s) de {maxMembers}. Participantes de eventos não consomem a
+        quota de membros.
+      </p>
+
+      <form action={action} className="mt-4 space-y-4" data-testid="tenant-plan-form">
+        <input type="hidden" name="tenantId" value={tenantId} />
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className={labelClass} htmlFor="plan-change">
+              Plano
+            </label>
+            <select
+              id="plan-change"
+              name="plan"
+              value={values.plan}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, plan: event.target.value as TenantPlan }))
+              }
+              data-testid="plan-change-select"
+              className={inputClass}
+            >
+              {TENANT_PLANS.map((option) => (
+                <option key={option} value={option}>
+                  {option} — {PLAN_DEFINITIONS[option].label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Padrão: {definition.maxEvents ?? 'ilimitados'} eventos ·{' '}
+              {definition.maxMembers ?? 'ilimitados'} membros
+            </p>
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="plan-max-events">
+              Quota de eventos
+            </label>
+            <input
+              id="plan-max-events"
+              name="maxEvents"
+              type="number"
+              min={0}
+              value={values.maxEvents}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, maxEvents: event.target.value }))
+              }
+              data-testid="plan-max-events"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="plan-max-members">
+              Quota de membros (mínimo 1)
+            </label>
+            <input
+              id="plan-max-members"
+              name="maxMembers"
+              type="number"
+              min={1}
+              value={values.maxMembers}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, maxMembers: event.target.value }))
+              }
+              data-testid="plan-max-members"
+              className={inputClass}
+            />
+          </div>
+        </div>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="useDefaults"
+            checked={values.useDefaults}
+            onChange={(event) =>
+              setValues((current) => ({ ...current, useDefaults: event.target.checked }))
+            }
+            data-testid="plan-use-defaults"
+            className="mt-0.5 size-4 rounded border-border"
+          />
+          <span>
+            Usar as quotas padrão do plano escolhido
+            <span className="block text-xs text-muted-foreground">
+              Ignora os números acima e aplica o que o plano promete. Desmarque para um acordo
+              específico. O armazenamento não é aplicado pela plataforma hoje — a quota é
+              registrada, mas nada bloqueia upload por ela (dívida declarada).
+            </span>
+          </span>
+        </label>
+
+        <Submit
+          label="Salvar plano"
+          pendingLabel="Salvando…"
+          testId="plan-submit"
+          icon={<Wallet className="size-4" aria-hidden />}
+        />
+      </form>
+
+      <Feedback state={state} testId="tenant-plan-feedback" />
+    </section>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Vínculo de membro da equipe (FASE 14 — item C1)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Vincula uma pessoa que JÁ TEM CONTA à equipe da instituição.
+ *
+ * É aqui que a quota `maxMembers` do plano é aplicada: enquanto não existia um
+ * caminho de escrita para vínculo de equipe, a quota era decorativa — não se aplica
+ * quota a um caminho que não existe. A recusa por quota volta com o número atual e
+ * o caminho de saída ("ajuste o plano").
+ */
+export function TenantMemberForm({
+  tenantId,
+  maxMembers,
+  memberCount,
+}: {
+  tenantId: string;
+  maxMembers: number;
+  memberCount: number;
+}) {
+  const [state, action] = useActionState(addTenantMemberAction, INITIAL);
+  const [values, setValues] = useState({ email: '', role: 'ADMIN' as TenantMemberRole });
+
+  const full = memberCount >= maxMembers;
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-6" data-testid="tenant-member-section">
+      <header className="flex items-center gap-2">
+        <UserPlus className="size-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-base font-semibold text-foreground">Vincular membro da equipe</h2>
+      </header>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        A pessoa precisa ter conta na plataforma (a identidade é única por pessoa). O vínculo é
+        auditado e ocupa uma vaga da quota: {memberCount} de {maxMembers} em uso.
+      </p>
+
+      <form action={action} className="mt-4 grid gap-4 sm:grid-cols-2" data-testid="tenant-member-form">
+        <input type="hidden" name="tenantId" value={tenantId} />
+
+        <div>
+          <label className={labelClass} htmlFor="member-email">
+            E-mail da pessoa
+          </label>
+          <input
+            id="member-email"
+            name="email"
+            type="email"
+            required
+            value={values.email}
+            onChange={(event) => setValues((current) => ({ ...current, email: event.target.value }))}
+            data-testid="member-email"
+            className={inputClass}
+          />
+        </div>
+
+        <div>
+          <label className={labelClass} htmlFor="member-role">
+            Papel na instituição
+          </label>
+          <select
+            id="member-role"
+            name="role"
+            value={values.role}
+            onChange={(event) =>
+              setValues((current) => ({ ...current, role: event.target.value as TenantMemberRole }))
+            }
+            data-testid="member-role"
+            className={inputClass}
+          >
+            {MEMBER_ROLE_OPTIONS.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="sm:col-span-2">
+          <Submit
+            label={full ? 'Vincular (quota esgotada)' : 'Vincular membro'}
+            pendingLabel="Vinculando…"
+            testId="member-submit"
+            icon={<UserPlus className="size-4" aria-hidden />}
+          />
+        </div>
+      </form>
+
+      <Feedback state={state} testId="tenant-member-feedback" />
     </section>
   );
 }

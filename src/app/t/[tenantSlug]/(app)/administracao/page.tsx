@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CalendarCog, FileBadge, History, Layers, ListChecks, Settings2, Ticket } from 'lucide-react';
+import { CalendarCog, FileBadge, History, Layers, ListChecks, Settings2, Ticket, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -101,6 +101,21 @@ export default async function AdminHomePage({
       icon: Ticket,
       permission: PERMISSIONS.REGISTRATION_CHECKIN,
       metric: `${overview.attendees} presença(s) registrada(s)`,
+    },
+    {
+      // FASE 14: quem responde pela instituição e quem é público do evento. A tela
+      // existe porque a inscrição pública (FASE 10) criou vínculo para participante
+      // e a instituição passou a ver "membros" onde havia inscritos.
+      //
+      // A guarda é a da seção de administração (`tenant:member:invite`), e não
+      // `tenant:read`: participante TEM `tenant:read` e não pode ler e-mails da
+      // equipe (ver a nota na própria tela).
+      href: '/administracao/equipe',
+      label: 'Equipe e participantes',
+      description: 'Membros da equipe com seus papéis, público dos eventos e uso da quota do plano.',
+      icon: Users,
+      permission: PERMISSIONS.TENANT_MEMBER_INVITE,
+      metric: `${overview.members} membro(s) · ${overview.participants} participante(s)`,
     },
   ].filter((area) => can(principal, area.permission, { scope: 'TENANT' }));
 

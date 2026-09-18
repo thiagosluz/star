@@ -951,6 +951,10 @@ export interface AdminOverview {
   certificates: number;
   cards: number;
   missions: number;
+  /** Equipe: vínculos `kind = MEMBER` que ocupam vaga na quota do plano (FASE 14). */
+  members: number;
+  /** Público de eventos: `kind = PARTICIPANT`, não consome quota. */
+  participants: number;
 }
 
 export async function getAdminOverview(tenantId: string): Promise<AdminOverview> {
@@ -965,6 +969,8 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       certificates,
       cards,
       missions,
+      members,
+      participants,
     ] = await Promise.all([
       tx.event.count({ where: { tenantId, deletedAt: null } }),
       tx.event.count({ where: { tenantId, deletedAt: null, status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] } } }),
@@ -975,6 +981,17 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       tx.certificate.count({ where: { tenantId } }),
       tx.cardTemplate.count({ where: { tenantId, deletedAt: null } }),
       tx.taskDefinition.count({ where: { tenantId, deletedAt: null } }),
+      // Mesmo critério da quota do plano: equipe ativa ou convidada (um convite
+      // pendente já reserva lugar).
+      tx.userTenantProfile.count({
+        where: {
+          tenantId,
+          kind: 'MEMBER',
+          status: { in: ['ACTIVE', 'INVITED'] },
+          deletedAt: null,
+        },
+      }),
+      tx.userTenantProfile.count({ where: { tenantId, kind: 'PARTICIPANT', deletedAt: null } }),
     ]);
 
     return {
@@ -987,6 +1004,8 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       certificates,
       cards,
       missions,
+      members,
+      participants,
     };
   });
 }

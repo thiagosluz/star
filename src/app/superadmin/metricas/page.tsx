@@ -75,7 +75,9 @@ export default async function PlatformOverviewPage() {
         <StatCard
           label="Contas"
           value={metrics.users}
-          hint={`${metrics.memberships} vínculos ativos`}
+          // Membros e participantes separados (FASE 14): só o vínculo de equipe
+          // consome quota de plano; o público dos eventos é informativo.
+          hint={`${metrics.memberships} membro(s) · ${metrics.participants} participante(s)`}
           icon={<Users className="size-4" aria-hidden />}
           data-testid="metric-users"
           data-value={metrics.users}

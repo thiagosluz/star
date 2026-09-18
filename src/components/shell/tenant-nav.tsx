@@ -12,6 +12,7 @@ import {
   Medal,
   Settings2,
   Sparkles,
+  Users,
 } from 'lucide-react';
 
 import { can, type Principal } from '@/domain/rbac/authorization';
@@ -129,6 +130,16 @@ export function buildTenantNav(input: {
           href: href('/administracao'),
           label: 'Administração',
           icon: <Settings2 className="size-4" aria-hidden />,
+          permission: PERMISSIONS.TENANT_MEMBER_INVITE,
+        },
+        {
+          // FASE 14: a instituição precisa distinguir EQUIPE de PARTICIPANTES. A
+          // guarda é a da seção de administração (`tenant:member:invite`): o papel
+          // PARTICIPANT tem `tenant:read`, e `tenant:read` aqui entregaria nome,
+          // e-mail e papéis da equipe inteira ao público de qualquer evento aberto.
+          href: href('/administracao/equipe'),
+          label: 'Equipe',
+          icon: <Users className="size-4" aria-hidden />,
           permission: PERMISSIONS.TENANT_MEMBER_INVITE,
         },
       ],

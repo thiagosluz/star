@@ -8,6 +8,7 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { RAFFLE_SCOPE_LABELS } from '@/domain/raffles/raffle-rules';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listRaffles } from '@/lib/raffles/raffle-service';
+import { isSeedVaultConfigured } from '@/lib/raffles/seed-vault';
 import { withTenant } from '@/lib/db/tenant-client';
 import { RaffleConsole } from '@/components/raffles/raffle-console';
 import { RaffleHistory } from '@/components/raffles/raffle-history';
@@ -15,7 +16,9 @@ import {
   cancelRaffleAction,
   createAndDrawRaffleAction,
   drawRaffleAction,
+  markPrizeDeliveredAction,
   previewRaffleAction,
+  setRaffleVisibilityAction,
 } from '@/app/actions/raffle-actions';
 
 export const metadata = { title: 'Sorteios' };
@@ -24,15 +27,20 @@ export const dynamic = 'force-dynamic';
 /**
  * Sorteios do evento.
  *
- * A tela reúne o que o organizador precisa no palco: **conferir** quem concorre,
- * **sortear** com revelação e **provar** depois como foi apurado (hash + trilha).
+ * A tela reúne o que o organizador precisa no palco: **conferir** quem concorre (com
+ * a contagem se atualizando sozinha enquanto o credenciamento acontece), **sortear**
+ * com revelação e **provar** depois como foi apurado (hash, compromisso da semente e
+ * trilha).
  */
 export default async function RafflesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
+  searchParams: Promise<{ pagina?: string }>;
 }) {
   const { tenantSlug, eventId } = await params;
+  const { pagina } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
@@ -44,7 +52,7 @@ export default async function RafflesPage({
   if (!event) notFound();
 
   const [rafflesResult, activities] = await Promise.all([
-    listRaffles(tenantId, eventId),
+    listRaffles(tenantId, eventId, { page: Number(pagina ?? 1) || 1 }),
     withTenant(tenantId, (tx) =>
       tx.activity.findMany({
         where: { tenantId, eventId, deletedAt: null },
@@ -56,6 +64,7 @@ export default async function RafflesPage({
   ]);
 
   const raffles = rafflesResult.ok ? rafflesResult.raffles : [];
+  const vaultConfigured = isSeedVaultConfigured();
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -107,8 +116,13 @@ export default async function RafflesPage({
         <RaffleHistory
           tenantSlug={tenantSlug}
           eventId={eventId}
+          page={rafflesResult.ok ? rafflesResult.page : 1}
+          totalPages={rafflesResult.ok ? rafflesResult.totalPages : 1}
+          total={rafflesResult.ok ? rafflesResult.total : raffles.length}
           drawAction={drawRaffleAction}
           cancelAction={cancelRaffleAction}
+          deliverAction={markPrizeDeliveredAction}
+          visibilityAction={setRaffleVisibilityAction}
           raffles={raffles.map((raffle) => ({
             id: raffle.id,
             title: raffle.title,
@@ -117,6 +131,9 @@ export default async function RafflesPage({
             referenceDay: raffle.referenceDay,
             status: raffle.status,
             winnersCount: raffle.winnersCount,
+            alternatesCount: raffle.alternatesCount,
+            weightByMinutes: raffle.weightByMinutes,
+            isPublic: raffle.isPublic,
             eligibleCount: raffle.eligibleCount,
             inspectedAttendances: raffle.inspectedAttendances,
             minAttendanceMinutes: raffle.minAttendanceMinutes,
@@ -125,17 +142,38 @@ export default async function RafflesPage({
               ? raffle.drawnAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
               : null,
             resultHash: raffle.resultHash,
+            seedCommitment: raffle.seedCommitment,
+            seedRevealed: raffle.seedRevealed,
             createdByName: raffle.createdByName,
-            winners: raffle.winners,
+            winners: raffle.winners.map((winner) => ({
+              id: winner.id,
+              position: winner.position,
+              userId: winner.userId,
+              userName: winner.userName,
+              minutes: winner.minutes,
+              kind: winner.kind,
+              deliveredAtLabel: winner.deliveredAt
+                ? winner.deliveredAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                : null,
+              deliveredByName: winner.deliveredByName,
+              deliveryNote: winner.deliveryNote,
+            })),
           }))}
         />
       </section>
 
       <p className="flex items-start gap-2 rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
-        Cada apuração grava o hash SHA-256 do resultado (regras aplicadas + vencedores na ordem
-        sorteada) e entra na trilha de auditoria do painel. Alterar qualquer vencedor, a ordem ou o
-        piso de minutos muda o hash — é assim que se confere depois que o registro não foi mexido.
+        Cada apuração grava o hash SHA-256 do resultado (regras aplicadas + titulares e suplentes na
+        ordem sorteada) e entra na trilha de auditoria do painel. O compromisso da semente é publicado
+        na <strong>criação</strong> do sorteio e a semente só é revelada na apuração: quem conferir
+        recalcula o hash da semente, compara com o compromisso e reproduz o resultado com ela.
+        {vaultConfigured ? null : (
+          <span className="block pt-1 text-warning-strong">
+            O cofre de sementes não está configurado neste ambiente (BETTER_AUTH_SECRET ausente): o
+            resultado continua auditável por hash, mas não é reproduzível por terceiros.
+          </span>
+        )}
       </p>
     </main>
   );

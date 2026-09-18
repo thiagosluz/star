@@ -29,11 +29,14 @@ import { z } from 'zod';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
 import {
+  addTenantMember,
   grantSuperAdmin,
   provisionTenant,
   revokeSuperAdmin,
   setTenantStatus,
+  updateTenantPlan,
   updateTenantProfile,
+  type TenantMemberRole,
 } from '@/lib/platform/tenant-service';
 
 export interface PlatformActionState {
@@ -242,6 +245,123 @@ export async function updateTenantProfileAction(
   revalidatePlatform(result.slug);
 
   return { ok: true, message: 'Perfil público atualizado.', data: { slug: result.slug } };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Plano e quotas (FASE 14 — item C3)
+// ───────────────────────────────────────────────────────────────────────────────
+const planSchema = z.object({
+  tenantId: z.string().uuid(),
+  plan: z.enum(['FREE', 'STARTER', 'PROFESSIONAL', 'ENTERPRISE']),
+  /**
+   * Vazio é `undefined` — "herdar do plano" —, e não zero.
+   *
+   * É a mesma distinção do provisionamento: `0` é um valor legítimo ("nenhum
+   * evento"), `null` é ilimitado, e vazio significa "não mexi neste campo". O
+   * serviço resolve isso com `useDefaults`.
+   */
+  maxEvents: z.coerce.number().int().min(0).max(100_000).optional(),
+  maxMembers: z.coerce.number().int().min(1).max(1_000_000).optional(),
+  useDefaults: z.coerce.boolean().optional(),
+});
+
+export async function updateTenantPlanAction(
+  _prev: PlatformActionState | null,
+  formData: FormData,
+): Promise<PlatformActionState> {
+  const operator = await requirePlatformPermission();
+
+  const parsed = planSchema.safeParse({
+    tenantId: formData.get('tenantId'),
+    plan: formData.get('plan'),
+    maxEvents: (formData.get('maxEvents') as string) || undefined,
+    maxMembers: (formData.get('maxMembers') as string) || undefined,
+    useDefaults: formData.get('useDefaults') === 'on',
+  });
+
+  if (!parsed.success) {
+    return failure(
+      'INVALID_INPUT',
+      'Revise o plano e as quotas.',
+      parsed.error.issues.map((issue) => issue.message),
+    );
+  }
+
+  const result = await updateTenantPlan(operator.userId, {
+    tenantId: parsed.data.tenantId,
+    plan: parsed.data.plan,
+    maxEvents: parsed.data.maxEvents ?? null,
+    maxMembers: parsed.data.maxMembers ?? null,
+    useDefaults: parsed.data.useDefaults,
+  });
+
+  if (!result.ok) {
+    return failure(result.code, result.message, result.details);
+  }
+
+  revalidatePlatform(result.slug);
+  // O detalhe da instituição é uma rota própria: sem isto, a tela que enviou o
+  // formulário continuaria mostrando o plano anterior até um recarregamento.
+  revalidatePath(`/superadmin/tenants/${parsed.data.tenantId}`);
+
+  /**
+   * Os avisos vão em `details` de propósito: a operação deu certo (o plano mudou) e
+   * o que precisa chegar ao operador é o EFEITO — "esta instituição já tem mais
+   * eventos do que a nova quota permite". Devolver isso como erro faria a pessoa
+   * tentar de novo; devolver em silêncio faria ela bloquear uma instituição sem
+   * saber.
+   */
+  return {
+    ok: true,
+    message: `Plano atualizado para ${result.plan}: ${result.quotas.maxEvents ?? 'ilimitados'} evento(s) e ${result.quotas.maxMembers ?? 'ilimitados'} membro(s).`,
+    details: result.warnings.length > 0 ? result.warnings : undefined,
+    data: { slug: result.slug, plan: result.plan },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Vínculo de membro da equipe (FASE 14 — item C1)
+// ───────────────────────────────────────────────────────────────────────────────
+const memberSchema = z.object({
+  tenantId: z.string().uuid(),
+  email: z.string().trim().min(3).max(255),
+  role: z.string().trim().min(2).max(40),
+});
+
+export async function addTenantMemberAction(
+  _prev: PlatformActionState | null,
+  formData: FormData,
+): Promise<PlatformActionState> {
+  const operator = await requirePlatformPermission();
+
+  const parsed = memberSchema.safeParse({
+    tenantId: formData.get('tenantId'),
+    email: formData.get('email'),
+    role: formData.get('role'),
+  });
+
+  if (!parsed.success) {
+    return failure('INVALID_INPUT', 'Informe o e-mail e o papel da pessoa.');
+  }
+
+  const result = await addTenantMember(operator.userId, {
+    tenantId: parsed.data.tenantId,
+    email: parsed.data.email,
+    role: parsed.data.role as TenantMemberRole,
+  });
+
+  if (!result.ok) {
+    return failure(result.code, result.message, result.details);
+  }
+
+  revalidatePlatform(result.slug);
+  revalidatePath(`/superadmin/tenants/${parsed.data.tenantId}`);
+
+  return {
+    ok: true,
+    message: `${result.name} agora é ${result.role} nesta instituição (${result.memberCount} de ${result.maxMembers ?? 'ilimitados'} membro(s)).`,
+    data: { userId: result.userId, role: result.role },
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

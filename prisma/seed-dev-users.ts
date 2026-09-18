@@ -40,6 +40,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from 'better-auth/crypto';
 
 import { PrismaClient } from '../src/generated/prisma/client.ts';
+import { classifyMembershipKind } from '../src/domain/tenancy/membership-rules.ts';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Trava 1 — ambiente
@@ -417,12 +418,24 @@ async function main() {
             tenantId: tenant.id,
             userId,
             status: link.status,
+            /**
+             * ───────────────────────────────────────────────────────────────────────
+             *  EQUIPE OU PÚBLICO — A MESMA REGRA DA MIGRAÇÃO (FASE 14)
+             * ───────────────────────────────────────────────────────────────────────
+             *  `classifyMembershipKind` é a regra que o backfill da migração usa sobre
+             *  os dados existentes: vínculo cujo ÚNICO papel é `PARTICIPANT` nasceu de
+             *  inscrição pública, não de convite. Usar a mesma função aqui mantém o
+             *  seed de teste coerente com o que o banco real tem — sem uma segunda
+             *  definição de "membro" que só existe no script.
+             */
+            kind: classifyMembershipKind(link.roles.map((grant) => grant.role)),
             joinedAt: link.status === 'ACTIVE' ? new Date() : null,
           },
           // Reafirma o estado a cada execução: o teste de "suspenso" precisa
           // continuar suspenso mesmo depois de alguém mexer na tela.
           update: {
             status: link.status,
+            kind: classifyMembershipKind(link.roles.map((grant) => grant.role)),
             deletedAt: null,
             joinedAt: link.status === 'ACTIVE' ? new Date() : null,
           },

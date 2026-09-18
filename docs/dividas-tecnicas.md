@@ -6,7 +6,15 @@
 > resolvido está na seção 2, para que este documento não repita trabalho feito.
 >
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
-> Atualizado após a **FASE 12** (8 itens) e a **FASE 13** (5 itens: A1, B1, B2, B3, B4).
+> Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
+> **FASE 14** (C1, C3, I4) e a **FASE 16** (G1–G7 + F1).
+>
+> **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
+> ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
+> entregue antes dela por decisão do humano. Os rótulos anteriores estavam defasados em um
+> (a "F12 — Operação e segurança" virou FASE 13 e a "F15 — Quotas e planos" virou FASE 14),
+> e essa distância foi a origem de uma dúvida real na hora de aprovar uma fase — por isso o
+> número passou a ser do tema, e a situação de cada um vive na tabela do `AGENTS.md`.
 
 ---
 
@@ -43,6 +51,11 @@
 | **B2 — RLS fora das migrações** | F1 | **FASE 13** — policies na migração `20260917191000_rls_policies`; o init virou stub |
 | **B3 — Particionamento do `AuditLog`** | F1 | **FASE 13** — partição mensal + PK `(id, createdAt)` + partição `DEFAULT` + `npm run db:partitions` |
 | **B4 — PgBouncer (transaction pooling)** | F1, F2 | **FASE 13** — perfil `pooler` no compose + `npm run db:verify:pooling` |
+| **C1 — `maxMembers` não era aplicado** | F10 | **FASE 14** — `evaluateMemberQuota` + caminho de escrita real (`addTenantMember`) no painel de plataforma, auditado |
+| **C3 — Edição de plano e quotas pela UI** | F9 | **FASE 14** — `updateTenantPlan` + "Plano e quotas" no detalhe da instituição, com avisos de redução |
+| **I4 — Lista de membros poluída por participantes** | F10 | **FASE 14** — `MembershipKind` (equipe × público), backfill, contadores separados e tela de equipe |
+| **G1–G7 — Sorteios de ponta a ponta** | F8 | **FASE 16** — suplentes, entrega do prêmio, peso por minutos, commit-reveal, resultado público com nome mascarado, paginação do histórico e prévia ao vivo do credenciamento |
+| **F1 — Gatilhos `REVIEWER_TOP` e `EVENT_ATTENDANCE_FULL`** | F5 | **FASE 16** — presença total concedida no check-out que fecha a última atividade e revisor destaque premiado por ranking com piso |
 
 ---
 
@@ -51,15 +64,21 @@
 | Tema | Itens abertos | Dos quais rápidos (P) | Risco se ficar como está |
 |---|---|---|---|
 | A. Segurança e conformidade | 4 | 0 | Alto — arquivos sem varredura; assinatura de certificado ainda simétrica |
-| B. Confiabilidade e operação | 1 | 1 | Baixo — resta a migração de `unstable_cache` para `use cache` |
-| C. Quotas e billing | 2 | 1 | Médio — quota de plano é decorativa |
+| B. Confiabilidade e operação | 5 | 1 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
+| C. Quotas e billing | 2 | 1 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
 | D. Comunicação e comunidade | 6 | 1 | Alto para adoção — não há um único e-mail; convite é manual |
 | E. Jornada do participante | 8 | 3 | Médio — atrito e listas sem paginação |
-| F. Gamificação | 6 | 2 | Baixo — mecânicas já existem sem gatilho automático |
-| G. Sorteios | 7 | 2 | Médio — sorteio é completo, mas o prêmio não é entregue nem registrado |
+| F. Gamificação | 5 | 2 | Baixo — mecânicas já existem sem gatilho automático |
+| G. Sorteios | 6 | 2 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 2 | Baixo — aparência consistente; composição heterogênea |
-| I. Plataforma e diretório | 2 | 0 | Baixo a médio |
-| **Total** | **40** | **12** | (8 quitados na FASE 12 · 5 na FASE 13) |
+| I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
+| **Total** | **41** | **12** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16, mais o que cada uma declarou de novo) |
+
+> O total é a **soma das tabelas de tema** (4+5+2+6+8+5+6+4+1 = 41), e não a subtração do
+> número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
+> B6–B9, a FASE 14 acrescentou C4–C5 e a FASE 16 acrescentou G8–G13). A versão anterior
+> deste rodapé dizia "40" enquanto a soma das tabelas dava 44 — a conta que vale é a das
+> tabelas.
 
 ---
 
@@ -91,8 +110,8 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| C1 | **`Tenant.maxMembers` não é aplicado** | F10 | O valor é gravado e exibido, mas nenhum caminho conta vínculos nem recusa | Quota do plano é decorativa; com inscrição pública o número cresce sem aviso | M | Sim |
-| C3 | **Edição de plano e quotas pela UI** | F9 | Trocar de plano depois do provisionamento exige SQL | Operação de billing manual | P | Sim |
+| C4 | **Quota de armazenamento não é aplicada** | FASE 14 (novo) | `maxStorageBytes` é gravada do plano e exibida na tela de plano, mas nenhum caminho soma bytes antes de aceitar upload (submissões e avatares) | A tela sugere um limite que não existe; um cliente ocupa o storage sem teto | M | Sim |
+| C5 | **Ciclo de vida do membro pela UI** | FASE 14 (novo) | `tenant:member:remove` e `tenant:role:assign` existem e não têm tela; a FASE 14 entregou vincular, não desvincular nem trocar papel | Reduzir a equipe (e portanto reduzir quota) continua sendo SQL | M | Sim |
 
 ### D. Comunicação e comunidade
 
@@ -124,7 +143,6 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| F1 | **Gatilhos `REVIEWER_TOP` e `EVENT_ATTENDANCE_FULL` não disparam** | F5 | O gatilho é selecionável na carta, mas nada o aciona (ranking de revisores / check-out) | Carta configurada nunca é concedida | M | Sim |
 | F2 | **Trocas e crafting de duplicatas** | F5 | `UserCard.quantity` acumula; não há conversão nem troca | Duplicata sem valor percebido | G | Decorrente |
 | F3 | **Níveis de carta** | F5 | `UserCard.level` existe e fica em 1 | Mecânica futura | M | Decorrente |
 | F4 | **Histórico de temporadas** | F5 | `seasonXp`/`seasonKey` sem arquivo nem reset agendado | Sem memória de temporada | M | Decorrente |
@@ -135,13 +153,12 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| G1 | **Suplentes (reservas)** | F8 | Só titulares são sorteados | Sem plano B quando o vencedor falta | M | Decorrente |
-| G2 | **Registro de entrega do prêmio** | F8 | Não há registro de retirada nem vínculo com inscrição/credencial | Prêmio sem rastro | M | Decorrente |
-| G3 | **Sorteio ponderado por minutos** | F8 | Todos os elegíveis têm a mesma chance | Evolução pedida em alguns eventos | P | Decorrente |
-| G4 | **Commit-reveal (semente pública)** | F8 | O hash prova integridade, não que o sorteio foi **depois** do fechamento | Questionamento de auditoria | M | Decorrente |
-| G5 | **Exibição pública do resultado** | F8 | Resultado só no painel; expor exige decidir consentimento de nome | Landing não mostra vencedores | P | Decorrente |
-| G6 | **Paginação do histórico** | F8 | Limite de 100 sorteios por evento | Histórico longo truncado | P | Decorrente |
-| G7 | **Sorteio em tempo real com o credenciamento** | F8 | Prévia exige recarregar para ver presenças novas | Operação no palco | M | Decorrente |
+| G8 | **Desfazer uma entrega registrada por engano** | FASE 16 (novo) | O recibo de entrega é imutável por decisão (ADR-086); corrigir exige SQL | Um clique errado no balcão fica registrado até alguém corrigir no banco | P | Sim |
+| G9 | **Busca e filtro no histórico de sorteios** | FASE 16 (novo) | A paginação existe (G6); filtrar por status/período ainda não | Evento com muitos sorteios exige navegar página a página | P | Sim |
+| G10 | **Premiar mais de um revisor pela tela** | FASE 16 (novo) | `awardTopReviewers` aceita `top` N, mas o painel fixa 1 | Premiar os 3 primeiros exige chamada direta ao serviço | P | Sim |
+| G11 | **Página própria do resultado publicado** | FASE 16 (novo) | A seção na página do evento resolve a divulgação; não há página nem feed por sorteio | Quem acompanha um sorteio específico navega até o evento | M | Decorrente |
+| G12 | **Rotação do segredo do cofre de sementes** | FASE 16 (novo) | A chave de selagem é derivada de `BETTER_AUTH_SECRET`; não há versão de chave | Trocar o segredo invalida a abertura de sementes ainda seladas | M | Decorrente |
+| G13 | **Prévia ao vivo por evento em vez de polling** | FASE 16 (novo) | Polling de 5s por tela aberta (ADR-090); SSE/WebSocket é a evolução | 12 requisições/min por tela; número pode atrasar segundos em rede lenta | M | Decorrente |
 
 ### H. Design e acessibilidade
 
@@ -156,7 +173,6 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| I4 | **Lista de membros poluída por participantes públicos** | F10 | Todo inscrito vira vínculo ACTIVE; não há distinção entre "participante de evento" e "membro" | Lista de membros deixa de ser "a equipe" | M | Sim |
 | I6 | **Sigla × nome de instituição** | F4 | `institutionsMatch` não resolve "UFRJ" × nome completo; solução é tabela de instituições | Conflito de interesse com falso negativo | M | Decorrente |
 
 ---
@@ -167,14 +183,16 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 
 | Fase candidata | Tema | Itens | Por que nesta ordem |
 |---|---|---|---|
-| ~~**F12 — Operação e segurança**~~ | Rate limit em Redis, observabilidade, particionamento do `AuditLog`, RLS nas migrações, PgBouncer | A1, B1, B2, B3, B4 | **Concluída como FASE 13** — `docs/fase-13-operacao-e-seguranca.md` |
-| **F14 — Comunicação** | E-mail transacional + as notificações que dependem dele + convites de membros + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | É o maior bloqueio de adoção: sem e-mail, convite é manual e metade das fases futuras fica travada. Destrava A5 e D3–D6 de uma vez |
-| **F15 — Quotas e planos** | Aplicar `maxMembers`, edição de plano pela UI, distinção participante × membro | C1, C3, I4 | Fecha o modelo comercial e limpa a lista de membros que a F10 começou a poluir. A quota de **eventos** já foi aplicada (C2, FASE 12) — este item herda o mesmo desenho |
-| **F16 — Sorteios de ponta a ponta** | Suplentes, entrega de prêmio, pesos, commit-reveal, exibição pública, tempo real | G1–G7 + F1 | Transforma o sorteio (que já é robusto) em **operação completa**, incluindo a carta de presença total |
+| ~~**Operação e segurança**~~ | Rate limit em Redis, observabilidade, particionamento do `AuditLog`, RLS nas migrações, PgBouncer | A1, B1, B2, B3, B4 | **Concluída como FASE 13** — `docs/fase-13-operacao-e-seguranca.md` |
+| ~~**Quotas e planos**~~ | `maxMembers` aplicado, edição de plano pela UI, distinção participante × membro | C1, C3, I4 | **Concluída como FASE 14** — `docs/fase-14-quotas-e-planos.md` |
+| **F15 — Comunicação** | E-mail transacional + as notificações que dependem dele + convite de membros pela instituição + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | É o maior bloqueio de adoção: sem e-mail, convite é manual e metade das fases futuras fica travada. Destrava A5 e D3–D6 de uma vez — e fecha a lacuna que a FASE 14 deixou explícita (convidar de dentro da instituição) |
+| ~~**F16 — Sorteios de ponta a ponta**~~ | Suplentes, entrega de prêmio, pesos, commit-reveal, exibição pública, prévia ao vivo | G1–G7 + F1 | **Concluída como FASE 16** — `docs/fase-16-sorteios-de-ponta-a-ponta.md`. Entregue antes da F15 por decisão do humano: o tema estava maduro e não dependia de e-mail |
 | **F17 — Landing page e patrocínio** | Editor visual, upload de capa, patrocinadores, coautores | E3, E4, E5, E6 | Habilita a instituição a montar a própria vitrine — o maior item de produto ainda ausente |
 | **F18 — Segurança de documentos** | Assinatura assimétrica, antivírus, auditoria de leitura, ZIP, validação em lote | A2, A3, A4, E7, E8 | Documento assinado e arquivo varrido: pré-requisito para uso institucional sério |
 | **F19 — Gamificação avançada** | Trocas/crafting, níveis de carta, temporadas, ranking por evento, antifraude de proximidade | F2–F6 | Mecânicas novas; depende de dados reais de uso para calibrar economia |
-| **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições e política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele e fecha a adoção do log |
+| **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições, política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele |
+| **F21 — Ciclo de vida do membro e storage** | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | Fecha o que a FASE 14 declarou em aberto: a plataforma vincula, mas ninguém remove pela interface; a quota de storage é registrada e não aplicada |
+| **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -187,10 +205,26 @@ implementados na FASE 12** — I7, I3, I5, C2, H2, H4, I1 e I2. O registro compl
 ### Fase de operação executada na FASE 13 (concluído)
 
 Os cinco itens de **operação e segurança** (A1, B1, B2, B3, B4) foram implementados na
-FASE 13 — o que este documento chamava de "F12 — Operação e segurança" deslocou-se um
-número depois do mutirão. O registro completo está em
+FASE 13. O registro completo está em
 [`docs/fase-13-operacao-e-seguranca.md`](fase-13-operacao-e-seguranca.md), que também
 declara as dívidas **novas** que a própria fase criou (B6–B9, na seção B acima).
+
+### Fase de quotas executada na FASE 14 (concluído)
+
+Os três itens de **quotas e planos** (C1, C3, I4) foram implementados na FASE 14 — o que
+este documento chamava de "F15". O registro está em
+[`docs/fase-14-quotas-e-planos.md`](fase-14-quotas-e-planos.md), que declara as dívidas
+novas da fase (C4 e C5, na seção C acima) e a dependência que ficou explícita: convidar
+gente nova de dentro da instituição é a F15 (Comunicação).
+
+### Fase de sorteios executada na FASE 16 (concluído)
+
+Os oito itens de **sorteios de ponta a ponta** (G1–G7 + F1) foram implementados na FASE 16,
+entregue antes da F15 (Comunicação) por decisão do humano: o tema estava maduro, não
+dependia de e-mail e fechava a promessa que a FASE 8 deixou em aberto (o prêmio não era
+entregue, o resultado não era público e dois gatilhos de carta nunca disparavam). O
+registro está em [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](fase-16-sorteios-de-ponta-a-ponta.md),
+que declara as dívidas novas da fase (G8–G13, na seção G acima).
 
 ---
 

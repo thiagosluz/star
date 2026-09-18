@@ -3,10 +3,14 @@ import { notFound } from 'next/navigation';
 import { Building2, CalendarRange, FileText, GraduationCap } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { getRequestContext } from '@/lib/auth/session';
+import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
+import { getReviewerRanking } from '@/lib/gamification/achievement-service';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
+import { ReviewerAwardPanel } from '@/components/reviews/reviewer-award';
 import {
   saveActivityAction,
   saveEventAction,
@@ -83,6 +87,18 @@ export default async function AdminEventDetailPage({
 
   const event = await getAdminEvent(tenantId, eventId);
   if (!event) notFound();
+
+  /**
+   * Ranking de revisores + permissão de premiar (FASE 16, item F1).
+   *
+   * A leitura do ranking é do evento; a CONCESSÃO da carta exige `card:grant`. Quem
+   * só administra o evento vê o ranking e entende por que o botão não está ali — em
+   * vez de clicar e receber um erro.
+   */
+  const context = await getRequestContext();
+  const principal = context?.principal ?? null;
+  const canAward = can(principal, PERMISSIONS.CARD_GRANT, { scope: 'TENANT' });
+  const reviewerRanking = await getReviewerRanking({ tenantId, eventId });
 
   const roomOptions = [
     { value: '', label: 'Sem sala definida' },
@@ -320,6 +336,30 @@ export default async function AdminEventDetailPage({
           </AdminForm>
         </div>
       </details>
+
+      {/* ── Reconhecimento do comitê (FASE 16, item F1) ───────────────────── */}
+      {reviewerRanking.ok ? (
+        <details
+          className="rounded-xl border border-border bg-card p-5"
+          data-testid="reviewer-award-section"
+        >
+          <summary className="cursor-pointer text-base font-semibold">
+            <GraduationCap className="mr-2 inline size-4" aria-hidden />
+            Reconhecimento do comitê científico
+          </summary>
+          <div className="pt-4">
+            <ReviewerAwardPanel
+              tenantSlug={tenantSlug}
+              eventId={eventId}
+              ranking={reviewerRanking.ranked}
+              minReviews={reviewerRanking.minReviews}
+              cardNames={reviewerRanking.cardNames}
+              reason={reviewerRanking.reason}
+              canAward={canAward}
+            />
+          </div>
+        </details>
+      ) : null}
     </main>
   );
 }

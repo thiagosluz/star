@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 13 (docs/fase-NN-*.md)
-Testes ................. 832 (Vitest: unit + integração) + 47 (Playwright E2E)
-ADRs ................... 79 (numeração GLOBAL e sequencial — a próxima é ADR-080)
+Fases concluídas ........ 1 a 14 e 16 (F15 pendente: Comunicação)
+Testes ................. 921 (Vitest: unit + integração) + 55 (Playwright E2E)
+ADRs ................... 91 (numeração GLOBAL e sequencial — a próxima é ADR-092)
 Permissões ............. 54 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 31 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 832+ testes passando
+npm test              # esperado: 921+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 47+ testes passando
+npm run test:e2e      # esperado: 55+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -149,6 +149,11 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 21 | O PostgreSQL **não aceita parâmetro** em DDL: `CREATE TABLE … PARTITION OF … FOR VALUES FROM ($1) TO ($2)` falha com "bind message supplies 2 parameters, but prepared statement requires 0" | Interpole o limite de partição como literal (`'2026-11-01'`), gerado de uma `Date` calculada no processo |
 | 22 | Consulta de introspecção filtrando `relkind = 'r'` **ignora tabela particionada** (`relkind = 'p'`) — o contrato passou a acusar `audit_logs` como ausente e o loop de RLS deixou de cobrir o pai | Use `relkind IN ('r','p') AND NOT c.relispartition` para tabelas-base e verifique as partições separadamente (`relispartition`) |
 | 23 | `tenants` tem policy `USING (true)` **por desenho** (a resolução de slug → id acontece antes de existir contexto) | Um teste de isolamento que lê `tenants` **não prova nada**: use uma tabela de tenant de verdade (ex.: `events."tenantId"`) como leitura discriminante |
+| 24 | `tenant:read` **não** significa "pode ver tudo da instituição": o papel `PARTICIPANT` tem essa permissão (precisa ler evento e inscrição) | Antes de guardar uma tela com `tenant:read`, pergunte se o público do evento pode ver aquilo. Lista de equipe, papéis e e-mails pedem a permissão da seção de administração |
+| 25 | Variável de módulo preenchida no primeiro teste E2E **não existe** no teste seguinte (o worker pode ser recriado) e o sintoma é um `500` com `invalid input syntax for type uuid: "undefined"` | Em E2E, o estado durável é o BANCO: resolva a entidade pelo slug a cada uso (`findUniqueOrThrow`) em vez de guardar o id numa `let` |
+| 26 | **Um teste E2E que falha reinicia o worker**: `beforeAll` roda DE NOVO e recria o fixture, então o teste seguinte opera numa instituição vazia e falha por um motivo que não é o dele | Corrija o PRIMEIRO teste que falhou (o resto é cascata) e confirme com um log temporário do estado do banco (`count` = 0 vs `count` global > 0) antes de suspeitar do código de produção |
+| 27 | Ao mudar o **conteúdo assinado** por hash (payload de auditoria, documento canônico), toda verificação antiga passa a acusar adulteração | Versione o payload (`resultVersion`/`validationVersion`), grave a versão junto do hash e reconstrua na versão certa — teste de integração que remonta o payload deve ler a versão do BANCO |
+| 28 | Parâmetro com nome ambíguo (`winnerId` para uma LINHA enquanto a tela manda o id da PESSOA) produz `NOT_FOUND` silencioso | Nomeie pelo que a coluna É (`positionId`) e deixe o teste de integração cruzar o que a UI envia com o que o serviço procura |
 
 ---
 
@@ -191,6 +196,49 @@ Pool em modo **transação**: seguro aqui porque o contexto de tenant é `SET LO
 gravar auditoria nunca falhe. **Agende `npm run db:partitions`** (host/cron): ele cria
 o mês atual e os seguintes e resgata linhas que caíram na `DEFAULT`. Retenção é
 `DROP TABLE audit_logs_<AAAA_MM>` — decisão de negócio, ainda em aberto (dívida B8).
+
+### Quotas e planos (FASE 14)
+
+O plano da instituição define **três** quotas, e `planQuotas(plan)` é a fonte única
+(o provisionamento já nasceu errado uma vez por não gravar `maxStorageBytes`):
+eventos, **membros da equipe** e armazenamento (esta última ainda não aplicada).
+A quota de membros conta vínculos `kind = MEMBER` com situação `ACTIVE` ou `INVITED`
+— **participante de evento não consome quota**, senão um evento de 300 pessoas
+estouraria o plano gratuito sozinho.
+
+```
+Painel de governança ....... /superadmin/tenants/<id>  → "Plano e quotas" e "Vincular membro"
+Instituição ................ /t/<slug>/administracao/equipe  (tenant:member:invite)
+```
+
+Vincular quem **já tem conta** é ato de PLATAFORMA (`addTenantMember`), e é onde a quota
+é aplicada; convidar quem não tem conta é a F15 (Comunicação), porque exige e-mail e
+prova de posse do endereço. `MembershipKind` (`MEMBER` × `PARTICIPANT`) é o que separa
+equipe de público — regra pura em `src/domain/tenancy/membership-rules.ts`, com a
+mesma função usada pela migração de backfill e pelo seed de teste.
+
+### Sorteios (FASE 16)
+
+O motor da FASE 8 ganhou operação completa: **suplentes** sorteados na mesma apuração
+(`raffle_winners.kind` = `WINNER`/`ALTERNATE`), **entrega do prêmio** registrada por
+POSIÇÃO (`positionId`, não `userId`), **chance proporcional aos minutos** quando
+`weightByMinutes` está ligado, **commit-reveal** (compromisso `sha256` da semente na
+criação, semente selada em AES-256-GCM com chave derivada de `BETTER_AUTH_SECRET`, e
+revelação na apuração), **resultado público** opt-in com nome mascarado por padrão,
+**histórico paginado** e **prévia ao vivo** do credenciamento em
+`GET /api/events/[eventId]/raffle-live`.
+
+```
+Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
+Reconhecimento do comitê  /t/<slug>/administracao/eventos/<eventId>  → seção "comitê científico"
+```
+
+Duas regras que quebram fácil: **o payload de auditoria é versionado**
+(`raffle.resultVersion`; a versão 1 continua verificável e a 2 inclui suplentes, peso e
+papel) e **suplente não conta como ganhador anterior** (só `kind = WINNER` sai do
+páreo). Os gatilhos de carta de marco (`EVENT_ATTENDANCE_FULL` e `REVIEWER_TOP`) são
+concedidos por `src/lib/gamification/achievement-service.ts`, com checagem explícita de
+idempotência — `grantCardForTrigger` sozinho AUMENTARIA as cópias da carta.
 
 ### Contas do seed — **não têm senha**
 
@@ -300,14 +348,24 @@ tests/{unit,integration,e2e}
 | 11B | Propagação do design a todas as telas e quitação da dívida (catraca zerada) | ✅ |
 | 12 | Mutirão de dívidas rápidas (I7, I3, I5, C2, I1, I2, H2, H4) | ✅ |
 | 13 | Operação e segurança (A1, B1, B2, B3, B4: rate limit em Redis, observabilidade, RLS na migração, particionamento da auditoria, PgBouncer) | ✅ |
-| 14+ | *a definir pelo humano* | ⏳ |
+| 14 | Quotas e planos (C1, C3, I4: quota de membros aplicada, plano e quotas editáveis pela UI, membro × participante no modelo e nas listas) | ✅ |
+| 15 | Comunicação (D1–D6, A5: e-mail transacional, notificações, convite de membros, verificação de e-mail) | ⏳ |
+| 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
+| 17+ | *a definir pelo humano* | ⏳ |
 
-**Dívidas técnicas:** o levantamento consolidado (**40 itens abertos** — 53 do
-levantamento original, menos os 8 quitados na FASE 12 e os 5 na FASE 13, já com as
-dívidas NOVAS declaradas pela própria FASE 13 — verificado no código, com esforço e
-fases candidatas — F14 Comunicação · F15 Quotas · F16 Sorteios de ponta a ponta ·
-F17 Landing page · F18 Documentos · F19 Gamificação avançada · F20 Observabilidade de
-segunda ordem) está em **`docs/dividas-tecnicas.md`**.
+> **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
+> identifica o tema, não a ordem de entrega. Por isso a FASE 16 foi entregue antes da
+> F15 — o humano escolheu o tema pelo nome dele. A tabela acima segue a ordem
+> cronológica; a numeração é a do tema.
+
+**Dívidas técnicas:** o levantamento consolidado (**41 itens abertos**, soma das
+tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14 e 16
+quitaram, mais o que cada uma declarou de novo; verificado no código, com esforço e
+fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
+~~F16 Sorteios de ponta a ponta~~ (entregue) · F17 Landing page e patrocínio ·
+F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade de
+segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco)
+está em **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
 
@@ -315,7 +373,7 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase** (`docs/fase-13-*.md`).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-16-*.md` — a F15 segue pendente).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

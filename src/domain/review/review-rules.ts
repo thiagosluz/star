@@ -635,3 +635,73 @@ export function redactForBlindReview<T extends Record<string, unknown>>(
   const { authors: _authors, submittedById: _submittedById, ...rest } = submission;
   return rest as Omit<T, 'authors' | 'submittedById'>;
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Revisor destaque (FASE 16, item F1)
+// ───────────────────────────────────────────────────────────────────────────────
+/** Revisor como o ranking o enxerga (contagem já lida do banco). */
+export interface ReviewerScore {
+  reviewerId: string;
+  reviewerName: string;
+  /** Pareceres CONCLUÍDOS para este evento. */
+  completedReviews: number;
+}
+
+export interface ReviewerRanking {
+  ranked: ReviewerScore[];
+  /** Quem entra no reconhecimento (top N com o mínimo cumprido). */
+  awarded: ReviewerScore[];
+  /** Quantos pareceres o primeiro colocado concluiu (`0` quando não há ninguém). */
+  topCount: number;
+  /** Por que ninguém foi premiado, quando for o caso. */
+  reason: string | null;
+}
+
+/** Mínimo de pareceres para alguém ser considerado "destaque". */
+export const MIN_REVIEWS_FOR_TOP = 3;
+
+/**
+ * Ranking de revisores de um evento.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O MÍNIMO EXISTE, E POR QUE ELE NÃO É ZERO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Sem um piso, o "destaque" seria quem concluiu UM parecer — e a carta perderia
+ *  sentido justamente para quem revisou vinte. O piso padrão é 3 pareceres; a
+ *  carta pode exigir mais pelo seu `triggerCondition.threshold`, e o serviço usa o
+ *  MAIOR dos dois.
+ *
+ *  O desempate é alfabético e ESTÁVEL: dois revisores com a mesma contagem não
+ *  podem trocar de lugar entre duas execuções — a premiação é auditada e precisa
+ *  ser reproduzível.
+ */
+export function rankReviewers(
+  scores: readonly ReviewerScore[],
+  options: { top?: number; minReviews?: number } = {},
+): ReviewerRanking {
+  const top = Math.max(0, Math.floor(options.top ?? 1));
+  const minReviews = Math.max(0, Math.floor(options.minReviews ?? MIN_REVIEWS_FOR_TOP));
+
+  const ranked = [...scores]
+    .filter((score) => score.completedReviews > 0)
+    .sort((a, b) => {
+      if (b.completedReviews !== a.completedReviews) return b.completedReviews - a.completedReviews;
+
+      return a.reviewerName.localeCompare(b.reviewerName, 'pt-BR');
+    });
+
+  const eligible = ranked.filter((score) => score.completedReviews >= minReviews);
+  const awarded = top === 0 ? [] : eligible.slice(0, top);
+
+  return {
+    ranked,
+    awarded,
+    topCount: ranked[0]?.completedReviews ?? 0,
+    reason:
+      awarded.length > 0
+        ? null
+        : ranked.length === 0
+          ? 'Nenhum parecer concluído neste evento ainda.'
+          : `Ninguém atingiu o mínimo de ${minReviews} parecer(es) concluído(s) (o maior tem ${ranked[0]!.completedReviews}).`,
+  };
+}

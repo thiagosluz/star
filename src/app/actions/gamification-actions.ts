@@ -23,6 +23,7 @@ import { claimMission } from '@/lib/gamification/task-service';
 import { setCardPinned } from '@/lib/gamification/card-service';
 import { adjustXp } from '@/lib/gamification/xp-service';
 import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
+import { awardTopReviewers } from '@/lib/gamification/achievement-service';
 
 export interface GamificationActionState {
   ok: boolean;
@@ -364,5 +365,74 @@ export async function grantCardAction(
     ok: true,
     message: `Carta concedida: ${result.cards[0]?.name ?? ''}.`,
     data: { cards: result.cards },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Revisor destaque do evento (FASE 16, item F1)
+// ───────────────────────────────────────────────────────────────────────────────
+const topReviewerSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  eventId: z.string().uuid(),
+  top: z.coerce.number().int().min(1).max(20).default(1),
+});
+
+/**
+ * Premia o(s) revisor(es) que mais concluíram pareceres neste evento.
+ *
+ * O gatilho `REVIEWER_TOP` existia no catálogo e nunca disparava. Ele é MANUAL (e
+ * não derivado de um crédito de XP) porque "ser o destaque" é um julgamento sobre o
+ * evento inteiro: o comitê encerra, o ranking é calculado e a premiação é um ato —
+ * não um efeito colateral de cada parecer enviado.
+ *
+ * A autorização é `card:grant` (conceder carta), a mesma da concessão manual: quem
+ * pode dar uma carta a dedo pode dar a carta de reconhecimento.
+ */
+export async function awardTopReviewersAction(
+  _prev: GamificationActionState | null,
+  formData: FormData,
+): Promise<GamificationActionState> {
+  const parsed = topReviewerSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    eventId: formData.get('eventId'),
+    top: formData.get('top') ?? 1,
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para premiar revisores.' };
+  }
+
+  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.CARD_GRANT });
+  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+
+  const result = await awardTopReviewers({
+    tenantId: auth.tenantId,
+    eventId: parsed.data.eventId,
+    actorId: auth.userId,
+    top: parsed.data.top,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+
+  if (result.awarded.length === 0) {
+    return {
+      ok: false,
+      code: 'NO_REVIEWER',
+      message: result.reason ?? 'Nenhum revisor elegível ao reconhecimento neste evento.',
+    };
+  }
+
+  const names = result.awarded
+    .map((entry) => `${entry.reviewerName} (${entry.completedReviews} pareceres)`)
+    .join(', ');
+
+  return {
+    ok: true,
+    message: `Reconhecimento concedido a ${names}.`,
+    data: { awarded: result.awarded },
   };
 }

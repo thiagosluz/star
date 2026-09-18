@@ -97,6 +97,32 @@ export const PLAN_DEFINITIONS: Readonly<Record<TenantPlan, PlanDefinition>> = {
   },
 };
 
+/** As três quotas de um plano, prontas para gravação (`null` = ilimitado). */
+export interface PlanQuotas {
+  maxEvents: number | null;
+  maxMembers: number | null;
+  maxStorageBytes: number | null;
+}
+
+/**
+ * Quotas do plano — a ÚNICA fonte.
+ *
+ * Existe porque o provisionamento gravava `maxEvents` e `maxMembers` do plano e
+ * deixava `maxStorageBytes` no default do schema (5 GiB): uma instituição
+ * ENTERPRISE nascia com armazenamento de plano gratuito, e o painel mostrava a
+ * quota errada para sempre. Ter uma função só, usada pelo provisionamento, pela
+ * troca de plano e pelas dicas da tela, remove a possibilidade de divergirem.
+ */
+export function planQuotas(plan: TenantPlan): PlanQuotas {
+  const definition = PLAN_DEFINITIONS[plan];
+
+  return {
+    maxEvents: definition.maxEvents,
+    maxMembers: definition.maxMembers,
+    maxStorageBytes: definition.maxStorageBytes,
+  };
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Slug: o endereço público da instituição
 // ───────────────────────────────────────────────────────────────────────────────
@@ -328,8 +354,16 @@ export function validateProvisioning(input: ProvisioningInput): ValidationResult
   }
 
   const maxMembers = input.maxMembers ?? null;
-  if (maxMembers !== null && (!Number.isInteger(maxMembers) || maxMembers < 0)) {
-    errors.push('A quota de membros deve ser um número inteiro maior ou igual a zero.');
+  if (maxMembers !== null && (!Number.isInteger(maxMembers) || maxMembers < MIN_PLAN_MEMBERS)) {
+    /**
+     * Mínimo 1, e não 0: o provisionamento designa um proprietário na mesma
+     * transação, então uma instituição com `maxMembers = 0` nasceria fora do
+     * próprio plano — com o dono dentro. Para eventos o zero continua válido
+     * (instituição que ainda não publica nada).
+     */
+    errors.push(
+      `A quota de membros deve ser um número inteiro maior ou igual a ${MIN_PLAN_MEMBERS} (o proprietário designado ocupa uma vaga).`,
+    );
   }
 
   const description = input.description?.trim() || null;
@@ -411,6 +445,203 @@ export function evaluateEventQuota(input: {
   }
 
   return { allowed: true, message: null, remaining };
+}
+
+/**
+ * A instituição ainda pode vincular membro? (item C1 do levantamento)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A QUOTA DE MEMBROS NÃO É A DE EVENTOS COM OUTRO NOME
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Aqui a contagem é de VÍNCULOS DE EQUIPE (`kind = MEMBER`), não de inscrições:
+ *  quem se inscreve em evento público vira participante e não consome quota — se
+ *  consumisse, um evento de 300 pessoas estouraria o plano gratuito sozinho, e a
+ *  plataforma estaria cobrando por público em vez de por acesso.
+ *
+ *  O mínimo é 1: a instituição sempre tem ao menos o proprietário designado no
+ *  provisionamento. `maxMembers = 0` seria um plano que não pode existir — e é
+ *  recusado na validação do plano, não aqui, para que a tela explique o motivo.
+ */
+export function evaluateMemberQuota(input: {
+  currentCount: number;
+  maxMembers: number | null;
+}): QuotaDecision {
+  if (input.maxMembers === null) {
+    return { allowed: true, message: null, remaining: null };
+  }
+
+  const remaining = input.maxMembers - input.currentCount;
+
+  if (remaining <= 0) {
+    return {
+      allowed: false,
+      remaining: 0,
+      message:
+        `O plano desta instituição permite ${input.maxMembers} membro(s) e todos os vínculos já foram usados. ` +
+        'Solicite à plataforma o aumento da quota (ou a mudança de plano) antes de vincular mais alguém.',
+    };
+  }
+
+  return { allowed: true, message: null, remaining };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Uso da quota (o que a tela mostra)
+// ───────────────────────────────────────────────────────────────────────────────
+export type QuotaState = 'UNLIMITED' | 'OK' | 'AT_LIMIT' | 'EXCEEDED';
+
+export interface QuotaUsage {
+  used: number;
+  quota: number | null;
+  /** Quanto ainda cabe. `null` = ilimitado; negativo = excedido. */
+  remaining: number | null;
+  state: QuotaState;
+}
+
+/**
+ * Situação de uma quota, para exibição e para alerta.
+ *
+ * `EXCEEDED` não é erro de gravação: reduzir a quota de uma instituição que já tem
+ * mais itens do que o novo teto é uma decisão legítima da plataforma (o acesso aos
+ * dados existentes não é revogado por mudança de plano). O que passa a valer é que
+ * NADA NOVO entra — e a tela precisa dizer isso antes de o operador salvar.
+ */
+export function evaluateQuotaUsage(used: number, quota: number | null): QuotaUsage {
+  if (quota === null) {
+    return { used, quota, remaining: null, state: 'UNLIMITED' };
+  }
+
+  const remaining = quota - used;
+
+  if (remaining < 0) return { used, quota, remaining, state: 'EXCEEDED' };
+  if (remaining === 0) return { used, quota, remaining, state: 'AT_LIMIT' };
+
+  return { used, quota, remaining, state: 'OK' };
+}
+
+/** Texto curto para a tela: `12 de 100`, `12 de 0 (bloqueado)`, `12 (ilimitado)`. */
+export function quotaUsageLabel(usage: QuotaUsage): string {
+  if (usage.quota === null) return `${usage.used} (ilimitado)`;
+  if (usage.state === 'EXCEEDED') return `${usage.used} de ${usage.quota} — acima da quota`;
+  if (usage.state === 'AT_LIMIT') return `${usage.used} de ${usage.quota} — no limite`;
+
+  return `${usage.used} de ${usage.quota}`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Troca de plano e edição de quotas
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Mínimo de membros de qualquer plano.
+ *
+ * Não é preferência: o provisionamento designa um proprietário, então uma
+ * instituição com `maxMembers = 0` nasceria imediatamente fora do próprio plano.
+ */
+export const MIN_PLAN_MEMBERS = 1;
+
+export interface PlanChangeInput {
+  plan: TenantPlan;
+  /** `undefined`/`null` = herdar do plano. Use `{ useDefaults: true }` para isso. */
+  maxEvents?: number | null;
+  maxMembers?: number | null;
+  maxStorageBytes?: number | null;
+  /** Ignora as quotas informadas e aplica as do plano escolhido. */
+  useDefaults?: boolean;
+}
+
+export interface PlanChangeResult {
+  valid: boolean;
+  errors: string[];
+  normalized: { plan: TenantPlan } & PlanQuotas | null;
+}
+
+/**
+ * Valida a troca de plano — e resolve a ambiguidade entre "ilimitado" e "não mexer".
+ *
+ * Duas decisões que a validação precisa deixar explícitas:
+ *
+ *   1. `null` significa ILIMITADO (como em `Event.capacity`); `undefined` com
+ *      `useDefaults` significa HERDAR DO PLANO. Confundir os dois faria o
+ *      formulário em branco virar "ilimitado" — o oposto do pretendido.
+ *   2. A quota de membros tem mínimo 1. Eventos podem ser zero (instituição que
+ *      ainda não vai criar evento nenhum); membros não, porque o proprietário
+ *      sempre existe.
+ */
+export function validatePlanChange(input: PlanChangeInput): PlanChangeResult {
+  const errors: string[] = [];
+
+  if (!(TENANT_PLANS as readonly string[]).includes(input.plan)) {
+    return {
+      valid: false,
+      errors: ['Plano inválido. Use FREE, STARTER, PROFESSIONAL ou ENTERPRISE.'],
+      normalized: null,
+    };
+  }
+
+  const defaults = planQuotas(input.plan);
+
+  const resolve = (
+    value: number | null | undefined,
+    fallback: number | null,
+    label: string,
+    minimum: number,
+  ): number | null => {
+    if (input.useDefaults || value === undefined) return fallback;
+    if (value === null) return null;
+
+    if (!Number.isInteger(value) || value < minimum) {
+      errors.push(
+        minimum === 0
+          ? `A ${label} deve ser um número inteiro maior ou igual a zero (ou vazio para ilimitado).`
+          : `A ${label} deve ser um número inteiro maior ou igual a ${minimum}.`,
+      );
+      return fallback;
+    }
+
+    return value;
+  };
+
+  const maxEvents = resolve(input.maxEvents, defaults.maxEvents, 'quota de eventos', 0);
+  const maxMembers = resolve(input.maxMembers, defaults.maxMembers, 'quota de membros', MIN_PLAN_MEMBERS);
+  const maxStorageBytes = resolve(
+    input.maxStorageBytes,
+    defaults.maxStorageBytes,
+    'quota de armazenamento',
+    0,
+  );
+
+  if (errors.length > 0) return { valid: false, errors, normalized: null };
+
+  return { valid: true, errors: [], normalized: { plan: input.plan, maxEvents, maxMembers, maxStorageBytes } };
+}
+
+/**
+ * Quotas que ficaram ABAIXO do uso atual — o aviso que a tela mostra depois de salvar.
+ *
+ * A redução é permitida (decisão da plataforma), mas silenciosa não pode ser: o
+ * operador precisa saber que acabou de bloquear a criação de eventos ou a entrada
+ * de pessoas naquela instituição.
+ */
+export function quotaWarnings(input: {
+  eventCount: number;
+  memberCount: number;
+  quotas: Pick<PlanQuotas, 'maxEvents' | 'maxMembers'>;
+}): string[] {
+  const warnings: string[] = [];
+
+  if (input.quotas.maxEvents !== null && input.eventCount > input.quotas.maxEvents) {
+    warnings.push(
+      `A instituição já tem ${input.eventCount} evento(s) e a nova quota é de ${input.quotas.maxEvents}: nenhum evento novo poderá ser criado até arquivarem os excedentes.`,
+    );
+  }
+
+  if (input.quotas.maxMembers !== null && input.memberCount > input.quotas.maxMembers) {
+    warnings.push(
+      `A instituição já tem ${input.memberCount} membro(s) e a nova quota é de ${input.quotas.maxMembers}: novos vínculos de equipe ficam bloqueados até alguém ser removido.`,
+    );
+  }
+
+  return warnings;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
