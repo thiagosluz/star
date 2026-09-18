@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 14, 16 e 17 (F15 pendente: Comunicação)
-Testes ................. 1060 (Vitest: unit + integração) + 59 (Playwright E2E)
-ADRs ................... 99 (numeração GLOBAL e sequencial — a próxima é ADR-100)
+Fases concluídas ........ 1 a 14, 16, 17 e 23 (F15 pendente: Comunicação)
+Testes ................. 1117 (Vitest: unit + integração) + 64 (Playwright E2E)
+ADRs ................... 106 (numeração GLOBAL e sequencial — a próxima é ADR-107)
 Permissões ............. 54 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 31 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 32 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1060+ testes passando
+npm test              # esperado: 1117+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 59+ testes passando
+npm run test:e2e      # esperado: 64+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -158,6 +158,10 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 30 | `<input type="color">` **não tem estado vazio**: um campo não preenchido envia `#000000` | Para cor OPCIONAL, use campo de texto com amostra; vazio significa "usar o token do sistema". O seletor nativo só serve quando a cor é obrigatória |
 | 31 | Trocar a ordem de duas linhas num índice único (`(submissionId, authorOrder)`) viola a restrição **no meio** da operação — o PostgreSQL verifica a unicidade a cada `UPDATE` | Substitua o conjunto inteiro na mesma transação (`deleteMany` + `createMany`) em vez de atualizar linha a linha; e preserve os vínculos que seriam perdidos na recriação |
 | 32 | Campo opcional de formulário chega como STRING VAZIA, não como ausente: `z.email()` recusa `'  '`, e `?? null` APAGA o valor gravado quando a tela mostra o dado mascarado | Trate vazio como ausente na entrada (`optionalText`) e defina a semântica da escrita: `undefined` = preservar o valor atual, `''` = limpar |
+| 33 | O Playwright **dispensa diálogos automaticamente** quando ninguém os trata, e um `window.confirm` dispensado devolve `false` | Se a ação pede confirmação nativa, o teste precisa de `page.on('dialog', (d) => d.accept())`. O sintoma engana: a ação **não chega ao servidor**, então não há erro no log nem mensagem na tela — parece que a funcionalidade não existe |
+| 34 | `setInputFiles` num input de arquivo ESCONDIDO cujo `onChange` depende de um clique anterior (índice da linha) não dispara nada | Reproduza o fluxo real: `page.waitForEvent('filechooser')` + clique no botão + `chooser.setFiles(...)`. Definir o arquivo direto pula o estado que o clique monta |
+| 35 | Editar uma migração **depois de aplicada** quebra `prisma migrate dev` ("modified after it was applied") mesmo com o banco correto — o ledger guarda o checksum do conteúdo original | Nunca edite migração aplicada: corrija com migração nova. Para um banco de desenvolvimento fora de sincronia, `migrate deploy` aplica o que falta e `prisma migrate reset --force` reaplica a cadeia inteira, realinhando o ledger (e provando que ela funciona do zero) |
+| 36 | Estado derivado de dois campos (`isPublished` + `publishAt`) precisa de uma regra que LIMPE o segundo | Se "despublicar" só desmarca o primeiro, o segundo (data já vencida) republica no instante seguinte. Encode a transição numa função pura com teste — e faça a tela dizer que a data foi limpa |
 
 ---
 
@@ -270,6 +274,31 @@ duas posições linha a linha — com o vínculo de conta preservado por e-mail.
 O tema é do **evento**, em um único lugar (`Event.theme`); `EventPage.theme` segue
 reservado e sem uso, para não existirem duas fontes de verdade para a mesma cor.
 
+### Conteúdo e mídia (FASE 23)
+
+A operação do editor: **pré-visualização** do rascunho, **upload na galeria**, **cópia de
+patrocinador**, **histórico de versões** e **publicação agendada**.
+
+```
+Prévia ................. /t/<slug>/administracao/eventos/<eventId>/pagina/previa (page:manage)
+Histórico .............. mesma tela do editor → seção "Histórico de versões"
+Agendamento ............ mesma tela → "Agendar para entrar no ar"
+Cópia de patrocinador .. /t/<slug>/administracao/eventos/<eventId>/patrocinadores
+```
+
+Quatro regras que quebram fácil: **a página pública é um COMPONENTE** (`EventLanding`)
+consumido pela rota pública e pela prévia — a única diferença entre elas é qual página
+chega (`docs/fase-23-conteudo-e-midia.md`, ADR-100); **a visibilidade agendada é decidida
+na LEITURA** (`isPublished OR publishAt <= now`, sem agendador) e **despublicar LIMPA a
+data**, senão a página volta ao ar sozinha (ADR-101 / armadilha 36); **o histórico é
+snapshot da PÁGINA INTEIRA**, deduplicado pelo SHA-256 da versão canonicalizada (mudar a
+ordem das chaves invalidaria a marcação de "estado atual") e restaurar **não mexe em
+publicação** (ADRs 102–103); e **a cópia de patrocinador é uma CÓPIA** — cota casada pela
+CHAVE, sem valor de contrato e nascendo oculta (ADR-105).
+
+O alvo `GALLERY` do upload **não grava URL no banco**: ele devolve o endereço ao
+formulário, e o vínculo acontece na validação do conteúdo do bloco (ADR-104).
+
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e
@@ -305,9 +334,10 @@ do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **lega
 
 Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, 4 atividades, 1 trilha com
 rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, 2 certificados
-emitidos (códigos impressos no fim do seed), **1 sorteio apurado** e **1 página pública
-publicada** (5 blocos, tema próprio, 1 cota com 2 patrocinadores). Percursos em
-`README.md` §6.
+emitidos (códigos impressos no fim do seed), **1 sorteio apurado**, **1 página pública
+publicada** (5 blocos, tema próprio, 1 cota com 2 patrocinadores), **11 versões no
+histórico** dessa página e a página do simpósio **agendada** para daqui a 7 dias.
+Percursos em `README.md` §6.
 
 ---
 
@@ -383,21 +413,23 @@ tests/{unit,integration,e2e}
 | 15 | Comunicação (D1–D6, A5: e-mail transacional, notificações, convite de membros, verificação de e-mail) | ⏳ |
 | 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
 | 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
+| 23 | Conteúdo e mídia (E9–E13: pré-visualização do rascunho pelo mesmo componente da página pública, upload de imagem na galeria, cópia de patrocinador entre eventos, histórico de versões com restauração, publicação agendada decidida na leitura) | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
-> identifica o tema, não a ordem de entrega. Por isso a FASE 16 e a FASE 17 foram
-> entregues antes da F15 — o humano escolheu o tema pelo nome dele. A tabela acima segue
-> a ordem cronológica; a numeração é a do tema.
+> identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17 e a FASE 23
+> foram entregues antes da F15 — o humano escolheu o tema pelo nome dele. A tabela acima
+> segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**, soma das
-tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16 e 17
+**Dívidas técnicas:** o levantamento consolidado (**41 itens abertos**, soma das
+tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17 e 23
 quitaram, mais o que cada uma declarou de novo; verificado no código, com esforço e
 fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
 ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
 (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
 de segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco ·
-F23 Conteúdo e mídia) está em **`docs/dividas-tecnicas.md`**.
+~~F23 Conteúdo e mídia~~ (entregue) · F24 Mídia e agendamento) está em
+**`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
 
@@ -405,12 +437,13 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-17-*.md` — a F15 segue pendente).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-23-*.md` — a F15 segue pendente).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →
    testes → documentação) e **aguardar** a definição/requisitos dela.
 4. Implementar, verificar, documentar e **parar** em `Aguardando APROVADO: AVANÇAR`.
+
 
 
 

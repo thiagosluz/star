@@ -201,6 +201,10 @@ export interface PublicEventDetail extends PublicEventSummary {
   page: {
     id: string;
     title: string;
+    /** Publicada por decisão explícita? (FASE 23 acrescentou o agendamento.) */
+    isPublished: boolean;
+    /** Data agendada para entrar no ar — `null` quando não há agendamento. */
+    publishAt: Date | null;
     metaTitle: string | null;
     metaDescription: string | null;
     blocks: {
@@ -249,18 +253,61 @@ export interface PublicEventDetail extends PublicEventSummary {
  *
  * Retorna `null` quando o evento não existe OU não é público — a UI responde
  * 404 nos dois casos, sem revelar a existência de rascunhos.
+ *
+ * A página entra na consulta quando está PUBLICADA **ou** quando a data agendada já
+ * passou (FASE 23, item E13). A decisão é do banco, no relógio do banco: sem
+ * agendador, sem job, sem janela em que a campanha deveria estar no ar e não está.
  */
 export async function getPublicEvent(
   tenantId: string,
   eventSlug: string,
 ): Promise<PublicEventDetail | null> {
+  return loadEventDetail(tenantId, {
+    slug: eventSlug,
+    status: { in: [...PUBLIC_EVENT_STATUSES] },
+    deletedAt: null,
+  });
+}
+
+/**
+ * Evento para a PRÉ-VISUALIZAÇÃO do rascunho (FASE 23, item E9).
+ *
+ * Duas diferenças em relação à leitura pública, e as duas são o ponto:
+ *   • o evento é resolvido por ID e SEM filtro de status — o organizador
+ *     pré-visualiza justamente o que ainda é rascunho;
+ *   • a página vem mesmo despublicada (a pública exige `isPublished`).
+ *
+ * É leitura de ADMINISTRAÇÃO: quem chama é a rota de prévia, que exige
+ * `page:manage`. Nada aqui pode ser exposto sem essa guarda.
+ */
+export async function getEventForPreview(
+  tenantId: string,
+  eventId: string,
+): Promise<PublicEventDetail | null> {
+  return loadEventDetail(
+    tenantId,
+    { id: eventId, deletedAt: null },
+    { includeUnpublishedPage: true },
+  );
+}
+
+/**
+ * Leitura do detalhe do evento, com a mesma projeção para os dois consumidores.
+ *
+ * O mapeamento vive em UM lugar de propósito: a prévia existe para mostrar o que o
+ * visitante verá, e duas projeções paralelas divergiriam — a prévia "quase certa" é
+ * pior do que não ter prévia.
+ */
+async function loadEventDetail(
+  tenantId: string,
+  where: Record<string, unknown>,
+  options: { includeUnpublishedPage?: boolean } = {},
+): Promise<PublicEventDetail | null> {
+  const now = new Date();
+
   const event = await withTenant(tenantId, (tx) =>
     tx.event.findFirst({
-      where: {
-        slug: eventSlug,
-        status: { in: [...PUBLIC_EVENT_STATUSES] },
-        deletedAt: null,
-      },
+      where,
       select: {
         id: true,
         slug: true,
@@ -321,12 +368,26 @@ export async function getPublicEvent(
           },
         },
         pages: {
-          where: { isPublished: true, deletedAt: null },
+          /**
+           * Página do evento: publicada AGORA ou agendada para já.
+           *
+           * `publishAt <= now` é o que faz a publicação agendada existir sem job. A
+           * pré-visualização pede a página de qualquer forma (`includeUnpublishedPage`),
+           * porque o rascunho é justamente o que ela mostra.
+           */
+          where: options.includeUnpublishedPage
+            ? { deletedAt: null }
+            : {
+                deletedAt: null,
+                OR: [{ isPublished: true }, { publishAt: { lte: now } }],
+              },
           orderBy: [{ isHome: 'desc' }, { displayOrder: 'asc' }],
           take: 1,
           select: {
             id: true,
             title: true,
+            isPublished: true,
+            publishAt: true,
             metaTitle: true,
             metaDescription: true,
             blocks: {
@@ -410,7 +471,7 @@ export async function getPublicEvent(
     subtitle: event.subtitle,
     summary: event.summary,
     description: event.description,
-    status: deriveEventStatus(event, new Date()),
+    status: deriveEventStatus(event, now),
     modality: event.modality,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
@@ -437,6 +498,8 @@ export async function getPublicEvent(
       ? {
           id: page.id,
           title: page.title,
+          isPublished: page.isPublished,
+          publishAt: page.publishAt,
           metaTitle: page.metaTitle,
           metaDescription: page.metaDescription,
           blocks: page.blocks,

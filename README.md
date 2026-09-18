@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 14, 16 e 17 concluídas (F15 pendente: Comunicação) · **1060 testes** unitários/integração · **59 testes E2E**
+> **Estado:** FASES 1 a 14, 16, 17 e 23 concluídas (F15 pendente: Comunicação) · **1117 testes** unitários/integração · **64 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe) e
@@ -51,6 +51,7 @@ avaliação por pares e gamificação.
 | **Gamificação (conquistas)** | Cartas por gatilho, incluindo os dois de **marco** que só existiam no catálogo: `EVENT_ATTENDANCE_FULL` (presença em todas as atividades exigidas, concedida no check-out que fecha a última) e `REVIEWER_TOP` (revisor destaque premiado por ranking de pareceres, com piso lido da própria carta) |
 | **Página pública e patrocínio** | A instituição **monta a própria vitrine**: página que nasce como rascunho e só vai ao ar quando publicada, 12 tipos de bloco com conteúdo validado por tipo no domínio (destaque, texto, agenda, palestrantes, trilhas, patrocinadores, perguntas frequentes, galeria, contagem, local, chamada de inscrição e HTML exibido como texto), ordem ajustável, blocos ocultáveis, composição sugerida, **tema visual** (cores, tipografia, densidade, cabeçalho e animação) e **capa e logotipo por upload** direto ao storage — com allowlist de tipo e verificação da assinatura real do arquivo (SVG recusado por poder conter script). **Patrocínio** com cotas, ordem de exibição, limite de vagas aplicado na transação e documento fiscal mascarado |
 | **Autoria de trabalho** | Coautores editáveis antes do envio, com **ordem de crédito** (a ordem da tela é a ordem de citação), autor correspondente único, ORCID validado e vínculo automático de conta dentro da instituição — o nome de quem tem conta vem do perfil |
+| **Operação do conteúdo** | **Pré-visualização** do rascunho antes de publicar (o mesmo componente da página pública, em rota autenticada com selo de estado), **publicação agendada** que entra no ar sozinha na data marcada, **histórico de versões** com restauração (20 por página, sem gravar versão idêntica), **imagem enviada direto do computador** também para a galeria, e **cópia de patrocinador** de outra edição com cota casada pela categoria e cadastro oculto |
 
 ---
 
@@ -175,6 +176,8 @@ Certificação .... presença medida de 240 min (Bruno) + 1 trabalho aceito (Ana
 Página pública .. 5 blocos publicados no congresso (texto, trilhas, perguntas
                   frequentes, chamada de inscrição e patrocinadores), tema próprio
                   e 1 cota (Ouro) com 2 patrocinadores
+Conteúdo ........ 11 versões no histórico da página do congresso (restauráveis no
+                  editor) e a página do simpósio AGENDADA para daqui a 7 dias
 ```
 
 Os **códigos de validação** dos certificados são aleatórios a cada execução e são
@@ -204,6 +207,7 @@ Credenciamento ..... /t/ufba-demo/credenciamento    (equipe: busca e leitor de Q
 Painel admin ....... /t/ufba-demo/administracao     (gestão + trilha de auditoria)
 Sorteios ........... /t/ufba-demo/administracao/eventos/<id>/sorteios
 Editor da página ... /t/ufba-demo/administracao/eventos/<id>/pagina
+Pré-visualização ... /t/ufba-demo/administracao/eventos/<id>/pagina/previa
 Patrocínio ......... /t/ufba-demo/administracao/eventos/<id>/patrocinadores
 Validação pública .. /validar/<código>              (sem login)
 Diretório público .. /organizacoes                  (sem login: todas as instituições)
@@ -355,8 +359,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1060 testes (43 arquivos) — unit + integração com banco real
-npm run test:e2e          # 59 testes E2E contra o container de produção
+npm test                  # 1117 testes (46 arquivos) — unit + integração com banco real
+npm run test:e2e          # 64 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -401,7 +405,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 46 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 41 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
 | [`docs/fase-17-pagina-publica-e-patrocinio.md`](docs/fase-17-pagina-publica-e-patrocinio.md) | Página pública montada pelo organizador: editor de blocos validados por tipo, tema visual, capa e logotipo por upload direto ao storage, cadastro de cotas e patrocinadores com limite de vagas e documento fiscal mascarado, e edição de coautores com ordem de crédito — tudo sem uma única migração | ADR-092 … 099 |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe**), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
@@ -410,7 +415,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **99 decisões** registradas até aqui.
+> são **106 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -463,9 +468,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              797 testes de regra pura e de formato (sem banco)
-├── integration/       263 testes com banco, Redis e storage reais
-└── e2e/               59 testes Playwright contra o container
+├── unit/              831 testes de regra pura e de formato (sem banco)
+├── integration/       286 testes com banco, Redis e storage reais
+└── e2e/               64 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -558,12 +563,14 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 1. **Assinatura de certificado é HMAC (simétrica).** Permite à instituição validar os
    próprios documentos; validação offline por terceiros que não confiam na instituição
    exigiria PKCS#7/CMS com X.509 (o campo `signatureAlg` já está preparado).
-2. **A página pública não tem pré-visualização (FASE 17).** O editor monta o rascunho, mas
-   só a publicação o mostra renderizado — conferir exige publicar e despublicar (dívida E9).
-   Também não há upload de imagem dentro do bloco de galeria (a galeria aceita URL, dívida
-   E10), reuso de patrocinador entre eventos pela tela (E11), histórico de versões da página
-   (E12) nem publicação agendada (E13). `EventPage.theme` (tema por página) segue reservado
-   e sem uso: o tema é do evento, para não existirem duas fontes de verdade para a mesma cor.
+2. **Mídia do evento não tem biblioteca própria (FASE 23).** O bucket de assets é a
+   biblioteca: não há registro do arquivo, reuso nem exclusão (dívida E14) — uma imagem
+   enviada e não usada fica no bucket sem referência. O patrocinador copiado entre eventos
+   é uma **cópia**, não um vínculo: corrigir o site em uma edição não corrige as outras
+   (E15). A página entra no ar sozinha na data agendada, mas **não sai** sozinha (E16), e o
+   fuso do agendamento vem do navegador — a tela mostra a data gravada para conferência
+   (E17). `EventPage.theme` (tema por página) segue reservado e sem uso: o tema é do evento,
+   para não existirem duas fontes de verdade para a mesma cor.
 3. **Ciclo de vida do membro é parcial (FASE 14).** A plataforma **vincula** uma pessoa
    que já tem conta (com a quota aplicada); **remover** membro, trocar papel, e
    **convidar** quem ainda não tem conta pela própria instituição continuam sem tela
@@ -600,6 +607,10 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 15. **O documento fiscal do patrocinador (CNPJ/CPF) é gravado, exibido mascarado e nunca
     entra na trilha de auditoria** — e não há como removê-lo pela tela (exige SQL): apagar
     dado fiscal é ato deliberado, não efeito colateral de salvar um formulário.
+16. **Restaurar uma versão da página não devolve o estado de publicação (FASE 23).** O
+    conteúdo volta; `isPublished` e `publishAt` ficam como estão — um "desfazer" que
+    publicasse ou tirasse a página do ar seria uma surpresa cara. O histórico guarda as 20
+    versões mais recentes por página (dívida E12, resolvida, com teto declarado).
 
 ---
 
@@ -607,8 +618,10 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 (e-mail transacional, que destrava o convite pela instituição e as notificações, F15),
 PKCS#7 e antivírus para uso institucional (F18) — e depois o ciclo de vida do membro com
 a quota de armazenamento (F21), a operação de palco dos sorteios (F22) e o restante de
-conteúdo e mídia da página pública (F23: prévia, upload na galeria, versões e agendamento).
+mídia e agendamento da página pública (F24: biblioteca de mídia, vínculo de patrocinador
+entre eventos, janela de exibição e fuso do agendamento).
 O levantamento atualizado está em [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
+
 
 
 

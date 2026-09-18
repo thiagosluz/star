@@ -6,11 +6,13 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getLandingForEdit } from '@/lib/admin/landing-service';
+import { listPageVersions } from '@/lib/admin/page-version-service';
 import { listSponsorBoard } from '@/lib/admin/sponsor-service';
 import {
   BLOCK_LABELS,
   BLOCK_WITHOUT_RENDERER,
   MAX_PAGE_BLOCKS,
+  PUBLICATION_STATE_LABELS,
   type PageBlockType,
 } from '@/domain/events/landing-page';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
@@ -26,6 +28,7 @@ import {
   ensureHomePageAction,
   moveBlockAction,
   requestAssetUploadAction,
+  restorePageVersionAction,
   savePageSettingsAction,
   seedRecommendedBlocksAction,
   updateBlockAction,
@@ -38,6 +41,13 @@ const BLOCK_OPTIONS = (Object.keys(BLOCK_LABELS) as PageBlockType[]).map((type) 
   value: type,
   label: BLOCK_LABELS[type],
 }));
+
+/** `Date` → valor de `<input type="datetime-local">` (hora local do processo). */
+function toLocalInput(date: Date | null): string {
+  if (!date) return '';
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -75,7 +85,11 @@ export default async function EventLandingPageEditor({
   const landing = await getLandingForEdit(tenantId, eventId);
   if (!landing) notFound();
 
-  const board = await listSponsorBoard(tenantId, eventId);
+  const [board, history] = await Promise.all([
+    listSponsorBoard(tenantId, eventId),
+    listPageVersions(tenantId, eventId),
+  ]);
+
   const tierOptions = (board?.tiers ?? []).map((tier) => ({
     value: tier.id,
     label: `${tier.name} (${tier.sponsorCount} patrocinador(es))`,
@@ -97,12 +111,23 @@ export default async function EventLandingPageEditor({
         <h1 className="text-2xl font-semibold tracking-tight">Página pública</h1>
         <p className="text-xs text-muted-foreground" data-testid="landing-status">
           {page
-            ? page.isPublished
-              ? 'Publicada — os visitantes estão vendo esta página.'
-              : 'Rascunho — a página pública mostra a composição padrão até você publicar.'
+            ? PUBLICATION_STATE_LABELS[page.publicationState]
             : 'O evento ainda não tem página configurada.'}
         </p>
         <p className="flex flex-wrap items-center gap-4 text-xs">
+          {/*
+            A pré-visualização vem ANTES do link público de propósito: é o que o
+            organizador precisa enquanto monta (FASE 23, item E9). Sem ela, a única
+            forma de ver a página era publicar — e o rascunho ficava no ar no meio do
+            caminho.
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina/previa`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="preview-page"
+          >
+            Pré-visualizar →
+          </Link>
           <Link
             href={tenantPath(tenantSlug, `/eventos/${landing.eventSlug}`)}
             target="_blank"
@@ -170,10 +195,18 @@ export default async function EventLandingPageEditor({
                 </div>
 
                 <CheckboxField
-                  label="Publicar a página"
+                  label="Publicar a página agora"
                   name="isPublished"
                   defaultChecked={page.isPublished}
-                  hint="Desmarcada, os visitantes continuam vendo a composição padrão do evento."
+                  hint="Desmarcada, a página volta a ser rascunho e o agendamento é CANCELADO (senão ela voltaria ao ar sozinha na data marcada)."
+                />
+
+                <Field
+                  label="Agendar para entrar no ar"
+                  name="publishAt"
+                  type="datetime-local"
+                  defaultValue={toLocalInput(page.publishAt)}
+                  hint="Preencha esta data OU marque “publicar agora” — as duas juntas são recusadas. Para despublicar, apague a data e desmarque a caixa."
                 />
 
                 <LandingThemeFields
@@ -353,6 +386,12 @@ export default async function EventLandingPageEditor({
                               type={block.type}
                               values={values}
                               tierOptions={tierOptions}
+                              uploadContext={{
+                                tenantSlug,
+                                eventId,
+                                requestUploadAction: requestAssetUploadAction,
+                                confirmUploadAction: confirmAssetUploadAction,
+                              }}
                             />
 
                             <label className="flex items-center gap-2 text-sm">
@@ -394,6 +433,77 @@ export default async function EventLandingPageEditor({
               </AdminForm>
             </div>
           </section>
+
+          {/* ── Histórico de versões (FASE 23, item E12) ─────────────────── */}
+          <details className="rounded-xl border border-border bg-card p-5" data-testid="version-history">
+            <summary className="cursor-pointer text-base font-semibold">
+              Histórico de versões ({history?.versions.length ?? 0}/{history?.max ?? 20})
+            </summary>
+
+            <div className="space-y-3 pt-4">
+              <p className="text-xs text-muted-foreground">
+                Cada alteração relevante grava uma fotografia da página inteira (blocos incluídos).
+                Restaurar devolve o conteúdo daquele momento — <strong>sem</strong> mexer em
+                publicação: um “desfazer” que republicasse a página seria uma surpresa desagradável.
+              </p>
+
+              {history && history.versions.length > 0 ? (
+                <ul className="divide-y divide-border rounded-lg border border-border" data-testid="version-list">
+                  {history.versions.map((version) => (
+                    <li
+                      key={version.id}
+                      data-testid={`version-${version.id}`}
+                      data-current={version.isCurrent ? 'true' : 'false'}
+                      className="flex flex-wrap items-start justify-between gap-3 p-3"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                          {version.reason}
+                          {version.isCurrent ? (
+                            <span
+                              className="rounded border border-success/40 px-1.5 py-0.5 text-xs text-success-strong"
+                              data-testid={`version-current-${version.id}`}
+                            >
+                              estado atual
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {version.createdAt.toLocaleString('pt-BR', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })}
+                          {version.actorName ? ` · ${version.actorName}` : ''} ·{' '}
+                          {version.blockCount} bloco(s)
+                          {version.isPublished ? ' · publicada' : ''}
+                          {!version.isPublished && version.publishAt
+                            ? ` · agendada para ${version.publishAt.toLocaleDateString('pt-BR')}`
+                            : ''}
+                        </p>
+                      </div>
+
+                      {version.isCurrent ? null : (
+                        <InlineActionForm
+                          action={restorePageVersionAction}
+                          submitLabel="Restaurar"
+                          testId={`restore-${version.id}`}
+                          confirmText="Restaurar esta versão? O conteúdo atual é substituído (e continua no histórico)."
+                        >
+                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                          <input type="hidden" name="eventId" value={eventId} />
+                          <input type="hidden" name="versionId" value={version.id} />
+                        </InlineActionForm>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground" data-testid="empty-versions">
+                  Ainda não há versões: elas aparecem a partir da primeira alteração relevante.
+                </p>
+              )}
+            </div>
+          </details>
         </>
       )}
     </main>

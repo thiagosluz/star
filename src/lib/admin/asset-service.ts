@@ -193,9 +193,7 @@ export interface ConfirmAssetInput {
   mimeType: string;
   sizeBytes: number;
   checksum: string;
-}
-
-/**
+}/**
  * Confere o objeto enviado e grava a URL pública no destino.
  *
  * A URL é montada a partir da chave NO BUCKET, e não do que o cliente mandou: o
@@ -253,6 +251,23 @@ export async function confirmAssetUpload(
     }
 
     const url = publicObjectUrl(input.bucket, input.objectKey);
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  DESTINO SEM COLUNA: A URL VOLTA PARA O FORMULÁRIO (FASE 23, item E10)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Capa, logotipo e logotipo de patrocinador têm COLUNA onde a URL é gravada.
+     *  A imagem de galeria, não: ela vive dentro do `content` do bloco, que só é
+     *  gravado quando o organizador salva o bloco. Aqui a URL é devolvida e o
+     *  vínculo acontece depois, pela validação do conteúdo do bloco — que já aceita
+     *  apenas URL http(s) (`safeUrlSchema`).
+     *
+     *  A consequência disso está declarada como dívida: uma imagem enviada e não
+     *  usada fica no bucket sem referência (não há tabela de mídia nesta fase).
+     */
+    if (input.target === 'GALLERY') {
+      return { ok: true, url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
+    }
 
     const written = await withTenant(input.tenantId, async (tx) => {
       if (input.target === 'SPONSOR_LOGO') {

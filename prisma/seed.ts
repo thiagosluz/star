@@ -1184,6 +1184,72 @@ async function main() {
 
   console.log(`  ✓ página pública: ${blocosDemo} bloco(s) publicados · patrocínio: ${patrocinioDemo}`);
 
+  // ── Conteúdo e mídia (FASE 23) ─────────────────────────────────────────────
+  /**
+   * A página do SIMPÓSIO nasce AGENDADA (item E13).
+   *
+   * É o estado que mais precisa de demonstração: a página existe, tem conteúdo e
+   * está fora do ar — porque a data ainda não chegou. Sem um exemplo assim, a
+   * diferença entre "rascunho" e "agendada" só aparece na documentação.
+   */
+  const paginaSimposio = await ensureHomePage({
+    tenantId: fiocruzId,
+    eventId: simposioFiocruz,
+    actorId: ana,
+  });
+
+  let agendamentoDemo = 'não configurado';
+
+  if (paginaSimposio.ok) {
+    const bloco = await addPageBlock({
+      tenantId: fiocruzId,
+      eventId: simposioFiocruz,
+      actorId: ana,
+      type: 'RICH_TEXT',
+    });
+
+    if (bloco.ok) {
+      await updatePageBlock({
+        tenantId: fiocruzId,
+        eventId: simposioFiocruz,
+        actorId: ana,
+        blockId: bloco.blockId,
+        content: {
+          title: 'Sobre o simpósio',
+          body:
+            'Encontro anual de pesquisa em saúde coletiva, com mesas-redondas e apresentação ' +
+            'de trabalhos.\n\nA página entra no ar automaticamente na data agendada.',
+        },
+      });
+    }
+
+    const agendadaPara = days(7);
+    const agendamento = await savePageSettings({
+      tenantId: fiocruzId,
+      eventId: simposioFiocruz,
+      actorId: ana,
+      title: 'Simpósio de Saúde Coletiva 2026',
+      metaDescription: 'Pesquisa em saúde coletiva: mesas-redondas e apresentação de trabalhos.',
+      isPublished: false,
+      publishAt: agendadaPara,
+    });
+
+    agendamentoDemo = agendamento.ok
+      ? `${agendamento.publication} para ${agendadaPara.toISOString().slice(0, 16).replace('T', ' ')} UTC`
+      : `falhou: ${agendamento.message}`;
+  }
+
+  /**
+   * O histórico de versões da página do congresso (item E12) é consequência dos
+   * serviços reais: cada alteração acima gravou uma versão. Contá-las aqui é o que
+   * prova que o caminho de escrita está ligado.
+   */
+  const versoesDemo = await prisma.eventPageVersion.count({
+    where: { tenantId: ufbaId },
+  });
+
+  console.log(`  ✓ conteúdo e mídia: ${versoesDemo} versão(ões) no histórico · simpósio ${agendamentoDemo}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1225,6 +1291,10 @@ async function main() {
   console.log(`    ${blocosDemo} bloco(s) e ${patrocinioDemo} publicados em /t/ufba-demo/eventos/congresso-2026`);
   console.log(`    Editor: /t/ufba-demo/administracao/eventos/<id>/pagina`);
   console.log(`    Patrocínio: /t/ufba-demo/administracao/eventos/<id>/patrocinadores`);
+  console.log(`\n  Conteúdo e mídia (FASE 23):`);
+  console.log(`    ${versoesDemo} versão(ões) no histórico da página do congresso (restauráveis no editor)`);
+  console.log(`    Pré-visualização do rascunho: .../eventos/<id>/pagina/previa`);
+  console.log(`    Página do simpósio: ${agendamentoDemo}`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

@@ -290,3 +290,109 @@ export function parseBenefits(raw: string | null | undefined): string[] {
     .filter((line) => line.length > 0)
     .slice(0, MAX_TIER_BENEFITS);
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Reaproveitar um patrocinador em outro evento (FASE 23, item E11)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Dados de um patrocinador que fazem sentido levar para outra edição.
+ *
+ * Contrato, contato e logotipo VÃO junto: é o mesmo patrocínio, com o mesmo
+ * responsável e a mesma marca. O que NÃO vai é a cota — a cota é do evento de
+ * destino (o Ouro de uma edição pode não existir na outra) — e o valor do contrato,
+ * que é renegociado a cada edição.
+ */
+export interface SponsorCopySource {
+  name: string;
+  description: string | null;
+  websiteUrl: string | null;
+  logoUrl: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  taxId: string | null;
+  tierKey: SponsorTierKey | null;
+}
+
+export interface SponsorCopyTarget {
+  eventId: string;
+  /** Cotas do evento de destino, para casar a cota pela CHAVE. */
+  tiers: readonly { id: string; key: SponsorTierKey }[];
+  displayOrder?: number;
+}
+
+export interface SponsorCopyPlan {
+  name: string;
+  description: string | null;
+  websiteUrl: string | null;
+  logoUrl: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  taxId: string | null;
+  tierId: string | null;
+  displayOrder: number;
+  isActive: boolean;
+  /** A cota original não existe no destino? O organizador precisa saber. */
+  tierMatched: boolean;
+}
+
+/**
+ * Monta o cadastro do patrocinador no evento de destino.
+ *
+ * A cota é casada pela CHAVE (`GOLD` → `GOLD`), e não pelo nome: o nome é livre e
+ * editável ("Ouro", "Cota Ouro", "Patrocinador Ouro") — casar por nome acertaria
+ * por sorte. Sem cota correspondente, o patrocinador entra sem cota, que é um estado
+ * válido (aparece no agrupamento genérico) e o chamador avisa na tela.
+ *
+ * O cadastro nasce INATIVO por padrão: quem copia está montando a próxima edição,
+ * e exibir de imediato um patrocínio que ainda não foi fechado publicaria uma marca
+ * no site sem contrato.
+ */
+export function planSponsorCopy(
+  source: SponsorCopySource,
+  target: SponsorCopyTarget,
+): SponsorCopyPlan {
+  const match = source.tierKey
+    ? target.tiers.find((tier) => tier.key === source.tierKey) ?? null
+    : null;
+
+  return {
+    name: source.name,
+    description: source.description,
+    websiteUrl: source.websiteUrl,
+    logoUrl: source.logoUrl,
+    contactName: source.contactName,
+    contactEmail: source.contactEmail,
+    contactPhone: source.contactPhone,
+    taxId: source.taxId,
+    tierId: match?.id ?? null,
+    displayOrder: target.displayOrder ?? 0,
+    isActive: false,
+    tierMatched: match !== null,
+  };
+}
+
+/**
+ * O patrocinador já está neste evento?
+ *
+ * A comparação é por nome normalizado (sem acento, sem caixa) porque é assim que a
+ * mesma empresa aparece escrita por pessoas diferentes — e cadastrar duas vezes a
+ * mesma marca no mesmo evento duplica o logotipo na página pública.
+ */
+export function isAlreadySponsored(
+  candidateName: string,
+  existingNames: readonly string[],
+): boolean {
+  const key = normalizeName(candidateName);
+  return existingNames.some((name) => normalizeName(name) === key);
+}
+
+function normalizeName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}

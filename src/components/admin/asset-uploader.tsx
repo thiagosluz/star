@@ -6,6 +6,7 @@ import { CheckCircle2, ImageUp, Loader2, XCircle } from 'lucide-react';
 
 import type { LandingActionState } from '@/app/actions/landing-actions';
 import { Button, Input } from '@/components/ui';
+import { uploadAssetFile } from '@/components/admin/asset-upload';
 import {
   ASSET_TARGET_LABELS,
   IMAGE_ACCEPT_ATTRIBUTE,
@@ -16,52 +17,22 @@ import {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UPLOAD DE IMAGEM DIRETO AO STORAGE (FASE 17, item E4)
+ *  UPLOAD DE IMAGEM COM DESTINO EM COLUNA (FASE 17, item E4 · FASE 23)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  AS MESMAS TRÊS ETAPAS DO PDF DE SUBMISSÃO, COM UMA DIFERENÇA DECISIVA
+ *  O QUE ESTE COMPONENTE É, DEPOIS DA FASE 23
  *  ─────────────────────────────────────────────────────────────────────────────
- *      1. lê os primeiros bytes do arquivo (assinatura real) e calcula o SHA-256
- *      2. pede a URL pré-assinada — o servidor valida tamanho E assinatura
- *      3. envia o arquivo direto ao bucket público de assets
- *      4. confirma: o servidor lê o objeto de volta e só então grava a URL
+ *  A esteira de três etapas (assina → navegador envia → servidor confere e grava)
+ *  saiu daqui para `asset-upload.ts`, porque a galeria de imagens passou a precisar
+ *  dela com outro destino (o formulário do bloco, e não uma coluna do evento).
  *
- *  A diferença está no passo 1: aqui a ASSINATURA DO ARQUIVO é enviada ao servidor
- *  junto do tipo declarado. É ela que permite recusar um `.exe` renomeado para
- *  `.png` — e numa imagem que vai ser servida pública e indefinidamente, isso é o
- *  que separa "conteúdo do organizador" de "arquivo arbitrário no domínio da
- *  instituição".
+ *  O que fica aqui é o que é DESTE caso: a moldura com pré-visualização e o destino
+ *  fixo — capa, logotipo do evento ou logotipo do patrocinador, todos gravados pelo
+ *  servidor assim que a imagem é confirmada.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-/** Quantos bytes iniciais cobrem todas as assinaturas aceitas (AVIF precisa de 12). */
-const MAGIC_BYTES_TO_READ = 16;
-
-async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function readMagicBytes(file: File): Promise<number[]> {
-  const slice = file.slice(0, MAGIC_BYTES_TO_READ);
-  const buffer = await slice.arrayBuffer();
-  return Array.from(new Uint8Array(buffer));
-}
-
-type Phase = 'idle' | 'hashing' | 'requesting' | 'uploading' | 'confirming' | 'done' | 'error';
-
-const PHASE_LABEL: Record<Phase, string> = {
-  idle: 'Selecionar imagem',
-  hashing: 'Conferindo arquivo…',
-  requesting: 'Preparando envio…',
-  uploading: 'Enviando imagem…',
-  confirming: 'Validando no armazenamento…',
-  done: 'Imagem publicada',
-  error: 'Tentar novamente',
-};
+type Phase = 'idle' | 'uploading' | 'done' | 'error';
 
 export function AssetUploader({
   tenantSlug,
@@ -108,104 +79,39 @@ export function AssetUploader({
       return;
     }
 
-    /**
-     * O limite é checado aqui TAMBÉM, e não só no servidor: enviar 30 MB pela rede
-     * para receber "excede o limite" no fim é desperdício de banda do organizador.
-     * A validação do servidor continua sendo a que decide.
-     */
-    if (file.size > maxBytes) {
+    setMessage(null);
+    setPhase('uploading');
+
+    const result = await uploadAssetFile({
+      file,
+      tenantSlug,
+      eventId,
+      target,
+      ...(sponsorId ? { sponsorId } : {}),
+      requestUploadAction,
+      confirmUploadAction,
+    });
+
+    if (!result.ok) {
       setPhase('error');
-      setMessage(`A imagem excede o limite de ${formatBytes(maxBytes)} para ${label.toLowerCase()}.`);
+      setMessage(result.message);
       return;
     }
 
-    setMessage(null);
+    setUrl(result.url);
+    setPhase('done');
+    setMessage('Imagem enviada e vinculada.');
 
-    try {
-      setPhase('hashing');
-      const checksum = await sha256Hex(file);
-      const magicBytes = await readMagicBytes(file);
-
-      setPhase('requesting');
-      const requestForm = new FormData();
-      requestForm.set('tenantSlug', tenantSlug);
-      requestForm.set('eventId', eventId);
-      requestForm.set('target', target);
-      if (sponsorId) requestForm.set('sponsorId', sponsorId);
-      requestForm.set('fileName', file.name);
-      requestForm.set('mimeType', file.type);
-      requestForm.set('sizeBytes', String(file.size));
-      requestForm.set('checksum', checksum);
-      requestForm.set('magicBytes', magicBytes.join(','));
-
-      const requestResult = await requestUploadAction(null, requestForm);
-      if (!requestResult.ok) {
-        setPhase('error');
-        setMessage(requestResult.message ?? 'Não foi possível preparar o envio.');
-        return;
-      }
-
-      const ticket = requestResult.data as {
-        uploadUrl: string;
-        objectKey: string;
-        bucket: string;
-        requiredHeaders: Record<string, string>;
-        mimeType: string;
-      };
-
-      setPhase('uploading');
-      const put = await fetch(ticket.uploadUrl, {
-        method: 'PUT',
-        headers: ticket.requiredHeaders,
-        body: file,
-      });
-
-      if (!put.ok) {
-        setPhase('error');
-        setMessage(`O envio ao armazenamento falhou (HTTP ${put.status}).`);
-        return;
-      }
-
-      setPhase('confirming');
-      const confirmForm = new FormData();
-      confirmForm.set('tenantSlug', tenantSlug);
-      confirmForm.set('eventId', eventId);
-      confirmForm.set('target', target);
-      if (sponsorId) confirmForm.set('sponsorId', sponsorId);
-      confirmForm.set('objectKey', ticket.objectKey);
-      confirmForm.set('bucket', ticket.bucket);
-      confirmForm.set('fileName', file.name);
-      confirmForm.set('mimeType', ticket.mimeType);
-      confirmForm.set('sizeBytes', String(file.size));
-      confirmForm.set('checksum', checksum);
-
-      const confirmResult = await confirmUploadAction(null, confirmForm);
-      if (!confirmResult.ok) {
-        setPhase('error');
-        setMessage(confirmResult.message ?? 'A validação da imagem falhou.');
-        return;
-      }
-
-      setUrl((confirmResult.data?.url as string | undefined) ?? null);
-      setPhase('done');
-      setMessage('Imagem enviada e vinculada.');
-
-      /**
-       * O refresh do servidor é necessário porque a imagem aparece em OUTRO ponto da
-       * página (o `<img>` do preview, o cabeçalho do evento): o estado local cobre o
-       * preview deste componente, e o refresh cobre o resto. Sem ele, o organizador
-       * veria a capa antiga ao lado da mensagem de sucesso.
-       */
-      router.refresh();
-    } catch (error) {
-      setPhase('error');
-      setMessage(
-        error instanceof Error ? `Falha no envio: ${error.message}` : 'Falha inesperada no envio.',
-      );
-    }
+    /**
+     * O refresh do servidor é necessário porque a imagem aparece em OUTRO ponto da
+     * página (o cabeçalho do evento, o cartão do patrocinador na lista): o estado
+     * local cobre o preview deste componente, e o refresh cobre o resto. Sem ele, o
+     * organizador veria a imagem antiga ao lado da mensagem de sucesso.
+     */
+    router.refresh();
   }
 
-  const busy = phase === 'hashing' || phase === 'requesting' || phase === 'uploading' || phase === 'confirming';
+  const busy = phase === 'uploading';
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-card p-4" data-testid={`asset-uploader-${target}`}>
@@ -250,8 +156,12 @@ export function AssetUploader({
                 className="h-auto py-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-surface-high file:px-2 file:py-1 file:text-xs"
               />
               <Button type="submit" size="sm" disabled={busy}>
-                {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ImageUp className="size-3.5" aria-hidden />}
-                {busy ? PHASE_LABEL[phase] : url ? 'Substituir imagem' : 'Enviar imagem'}
+                {busy ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <ImageUp className="size-3.5" aria-hidden />
+                )}
+                {busy ? 'Enviando imagem…' : url ? 'Substituir imagem' : 'Enviar imagem'}
               </Button>
             </form>
           ) : null}

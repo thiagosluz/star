@@ -6,7 +6,7 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
-import { listSponsorBoard } from '@/lib/admin/sponsor-service';
+import { listSponsorBoard, listSponsorCandidates } from '@/lib/admin/sponsor-service';
 import {
   SPONSOR_TIER_KEYS,
   SPONSOR_TIER_LABELS,
@@ -20,6 +20,7 @@ import {
   requestAssetUploadAction,
 } from '@/app/actions/landing-actions';
 import {
+  copySponsorAction,
   deleteTierAction,
   removeSponsorAction,
   saveSponsorAction,
@@ -88,6 +89,23 @@ export default async function EventSponsorsPage({
 
   const board = await listSponsorBoard(tenantId, eventId);
   if (!board) notFound();
+
+  /**
+   * Patrocinadores de OUTROS eventos da instituição, para copiar (FASE 23, item E11).
+   * Os que já estão neste evento ficam na lista com o motivo — é melhor dizer
+   * "já está aqui" do que esconder o nome e o organizador procurar por ele.
+   */
+  const candidates = await listSponsorCandidates(tenantId, eventId);
+
+  const candidateOptions = [
+    { value: '', label: candidates.length > 0 ? 'Selecione um patrocinador…' : 'Nenhum patrocinador em outros eventos' },
+    ...candidates.map((candidate) => ({
+      value: candidate.sponsorId,
+      label: candidate.alreadyInEvent
+        ? `${candidate.name} (já está neste evento)`
+        : `${candidate.name}${candidate.tierName ? ` — ${candidate.tierName}` : ''} · ${candidate.events.length} evento(s)`,
+    })),
+  ];
 
   const tierChoices = [
     { value: '', label: 'Sem cota (aparece em "Patrocinadores")' },
@@ -436,6 +454,34 @@ export default async function EventSponsorsPage({
               hint="Você pode cadastrar agora e exibir quando o contrato for assinado."
             />
           </AdminForm>
+
+          {/*
+            ── Copiar de outro evento (FASE 23, item E11) ────────────────────────
+            A edição seguinte costuma ter os MESMOS patrocinadores. Redigitar nome,
+            site, contato e logo de cada um é onde o cadastro fica incompleto — e o
+            que se perde primeiro é o logo, que é o que aparece na página.
+          */}
+          <div className="mt-6 space-y-3 border-t border-border pt-4" data-testid="copy-sponsor-section">
+            <h3 className="text-sm font-medium">Copiar de outro evento</h3>
+            <p className="text-xs text-muted-foreground">
+              Copiar traz nome, site, contato, documento e logotipo. O cadastro entra{' '}
+              <strong>oculto e sem valor de contrato</strong>: cada edição tem o seu, e exibir
+              de imediato publicaria uma marca ainda não fechada.
+            </p>
+
+            <AdminForm action={copySponsorAction} submitLabel="Copiar para este evento" testId="copy-sponsor" compact>
+              <input type="hidden" name="tenantSlug" value={tenantSlug} />
+              <input type="hidden" name="eventId" value={eventId} />
+
+              <SelectField
+                label="Patrocinador"
+                name="sourceSponsorId"
+                options={candidateOptions}
+                defaultValue=""
+                hint="A cota é casada pela categoria (Ouro → Ouro). Sem correspondência, o cadastro entra sem cota."
+              />
+            </AdminForm>
+          </div>
         </div>
       </section>
     </main>

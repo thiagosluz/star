@@ -583,6 +583,125 @@ export function summarizeBlockContent(type: PageBlockType, content: unknown): st
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Publicação da página (FASE 23, item E13)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Estado de publicação da página.
+ *
+ * `SCHEDULED` é um estado PRÓPRIO, e não "publicada com data": a diferença aparece
+ * na tela (o organizador precisa ver que ainda falta chegar a hora) e na leitura
+ * pública (a consulta considera a data).
+ */
+export type PublicationState = 'DRAFT' | 'SCHEDULED' | 'PUBLISHED';
+
+export const PUBLICATION_STATE_LABELS: Record<PublicationState, string> = {
+  DRAFT: 'Rascunho — não aparece para visitantes',
+  SCHEDULED: 'Agendada — entra no ar sozinha na data',
+  PUBLISHED: 'Publicada — os visitantes estão vendo',
+};
+
+export interface PublicationPlanInput {
+  /** Caixa "publicar a página" marcada no formulário. */
+  publishNow: boolean;
+  /** Data/hora escolhida para entrar no ar (opcional). */
+  publishAt: Date | null;
+  now: Date;
+}
+
+export type PublicationPlan =
+  | {
+      ok: true;
+      state: PublicationState;
+      /** O que deve ser GRAVADO em `isPublished`. */
+      isPublished: boolean;
+      /** O que deve ser GRAVADO em `publishAt`. */
+      publishAt: Date | null;
+      message: string;
+    }
+  | { ok: false; message: string };
+
+/**
+ * Decide o que gravar a partir do que o organizador pediu.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS TRÊS REGRAS, E O DEFEITO QUE CADA UMA EVITA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  1. **Publicar agora e agendar ao mesmo tempo é recusado.** Os dois pedidos são
+ *     incompatíveis e o sistema não deve escolher por conta própria qual deles vale.
+ *  2. **Despublicar LIMPA a data.** Sem isto, a condição de visibilidade
+ *     (`isPublished || publishAt <= now`) republicaria a página no instante
+ *     seguinte: o organizador tira do ar e ela volta sozinha, porque a data
+ *     agendada já passou. É o defeito mais fácil de escrever e o mais difícil de
+ *     entender depois.
+ *  3. **Data no passado é publicação imediata.** Uma data que já passou não agenda
+ *     nada; tratá-la como erro faria o organizador redigitar, tratá-la como
+ *     "agendada no passado" deixaria a página fora do ar para sempre.
+ */
+export function planPublication(input: PublicationPlanInput): PublicationPlan {
+  const scheduled = input.publishAt;
+
+  if (input.publishNow && scheduled && scheduled.getTime() > input.now.getTime()) {
+    return {
+      ok: false,
+      message: 'Escolha uma coisa: publicar agora ou agendar para depois.',
+    };
+  }
+
+  if (scheduled && scheduled.getTime() > input.now.getTime()) {
+    return {
+      ok: true,
+      state: 'SCHEDULED',
+      isPublished: false,
+      publishAt: scheduled,
+      message: `A página entra no ar em ${formatDateTime(scheduled)} e não precisa de ninguém clicando.`,
+    };
+  }
+
+  if (input.publishNow || scheduled) {
+    return {
+      ok: true,
+      state: 'PUBLISHED',
+      isPublished: true,
+      publishAt: null,
+      message: 'Página publicada — já visível para os visitantes.',
+    };
+  }
+
+  return {
+    ok: true,
+    state: 'DRAFT',
+    isPublished: false,
+    publishAt: null,
+    message: 'Página salva como rascunho (não aparece para visitantes).',
+  };
+}
+
+/**
+ * A página está no ar neste instante?
+ *
+ * A consulta pública aplica a mesma regra no banco (`OR: [isPublished,
+ * publishAt <= now]`); esta função existe para a TELA e para a pré-visualização, que
+ * precisam explicar o estado sem repetir `if`s espalhados.
+ */
+export function resolvePublicationState(
+  page: { isPublished: boolean; publishAt: Date | null },
+  now: Date,
+): PublicationState {
+  if (page.isPublished) return 'PUBLISHED';
+  if (page.publishAt && page.publishAt.getTime() <= now.getTime()) return 'PUBLISHED';
+  if (page.publishAt) return 'SCHEDULED';
+  return 'DRAFT';
+}
+
+function formatDateTime(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  SEO
 // ───────────────────────────────────────────────────────────────────────────────
 export interface EventSeoInput {

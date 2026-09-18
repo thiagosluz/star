@@ -41,6 +41,7 @@ import {
   updatePageBlock,
 } from '@/lib/admin/landing-service';
 import { confirmAssetUpload, requestAssetUpload } from '@/lib/admin/asset-service';
+import { restorePageVersion } from '@/lib/admin/page-version-service';
 
 export interface LandingActionState {
   ok: boolean;
@@ -198,8 +199,33 @@ const pageSettingsSchema = z.object({
   metaTitle: z.string().trim().max(200).optional(),
   metaDescription: z.string().trim().max(320).optional(),
   isPublished: z.coerce.boolean().default(false),
+  /** `datetime-local` — vazio significa "sem agendamento". */
+  publishAt: z.string().trim().max(32).optional(),
   theme: themeSchema,
 });
+
+/**
+ * Converte `<input type="datetime-local">` em data.
+ *
+ * O valor chega como `AAAA-MM-DDTHH:MM`, na hora LOCAL do navegador — que é como o
+ * organizador pensa ("seis da tarde"). `new Date(...)` na string sem fuso usa a hora
+ * local do PROCESSO, e em produção o processo está em UTC: o agendamento sairia três
+ * horas deslocado e o sintoma ("a página entrou no ar mais cedo") não apontaria para
+ * cá.
+ *
+ * Não há como receber o fuso do navegador por `FormData`, então a decisão é
+ * documentada e visível: a tela mostra a data/hora escolhida de volta depois de
+ * salvar, para o organizador conferir o que foi gravado. (A alternativa — enviar o
+ * fuso em campo oculto — depende de JavaScript no cliente, que este formulário não
+ * usa.)
+ */
+function toScheduledDate(value: FormDataEntryValue | null): Date | undefined {
+  const text = nullable(value);
+  if (!text) return undefined;
+
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
 
 /**
  * Salva identidade, publicação e tema.
@@ -227,6 +253,7 @@ export async function savePageSettingsAction(
     metaTitle: nullable(formData.get('metaTitle')) ?? undefined,
     metaDescription: nullable(formData.get('metaDescription')) ?? undefined,
     isPublished: formData.get('isPublished') === 'on',
+    publishAt: nullable(formData.get('publishAt')) ?? undefined,
     theme: {
       ...colors,
       colorMode: formData.get('colorMode') || 'light',
@@ -258,6 +285,7 @@ export async function savePageSettingsAction(
     metaTitle: parsed.data.metaTitle ?? null,
     metaDescription: parsed.data.metaDescription ?? null,
     isPublished: parsed.data.isPublished,
+    publishAt: toScheduledDate(formData.get('publishAt')) ?? null,
     theme: parsed.data.theme,
   });
 
@@ -265,12 +293,13 @@ export async function savePageSettingsAction(
 
   revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
-  return {
-    ok: true,
-    message: parsed.data.isPublished
-      ? 'Página salva e PUBLICADA — já visível para os visitantes.'
-      : 'Página salva como rascunho (não aparece para visitantes).',
-  };
+  /**
+   * A mensagem vem do DOMÍNIO (`planPublication`), e não daqui: é ele que sabe se a
+   * página ficou publicada, agendada ou rascunho — e a explicação de cada caso (por
+   * que a data foi limpa, quando a página entra no ar) precisa ser a mesma em todos
+   * os caminhos que salvam a página.
+   */
+  return { ok: true, message: result.message, data: { publication: result.publication } };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -508,6 +537,52 @@ export async function deleteBlockAction(
   revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Bloco removido.' };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Versões da página (FASE 23, item E12)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Restaura a página a partir de uma versão do histórico.
+ *
+ * A permissão é a MESMA da edição (`page:manage`): restaurar é escrever na página.
+ * Não há permissão nova porque não há ato novo — o que muda é de onde vem o conteúdo.
+ */
+export async function restorePageVersionAction(
+  _prev: LandingActionState | null,
+  formData: FormData,
+): Promise<LandingActionState> {
+  const parsed = tenantEventSchema
+    .extend({ versionId: z.string().uuid() })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      versionId: formData.get('versionId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  if (!context.ok) return context.state;
+
+  const result = await restorePageVersion({
+    tenantId: context.tenantId,
+    eventId: parsed.data.eventId,
+    actorId: context.userId,
+    versionId: parsed.data.versionId,
+  });
+
+  if (!result.ok) return result;
+
+  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+
+  return {
+    ok: true,
+    message: `Versão restaurada (${result.blockCount} bloco(s)). O estado de publicação não mudou.`,
+    data: { pageId: result.pageId, blockCount: result.blockCount },
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

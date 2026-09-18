@@ -33,11 +33,16 @@ import {
   assignDisplayOrder,
   moveBlockId,
   orderBlockIds,
+  planPublication,
+  resolvePublicationState,
   resolveTheme,
   summarizeBlockContent,
   validateBlockContent,
   type PageBlockType,
+  type PublicationState,
 } from '@/domain/events/landing-page';
+import { PAGE_VERSION_REASONS } from '@/domain/events/page-version-rules';
+import { appendVersion } from '@/lib/admin/page-version-service';
 
 export type LandingErrorCode =
   | 'NOT_FOUND'
@@ -68,6 +73,10 @@ export interface EditableEventPage {
   slug: string;
   title: string;
   isPublished: boolean;
+  /** Data/hora agendada para entrar no ar (FASE 23, item E13). */
+  publishAt: Date | null;
+  /** Estado derivado de `isPublished` + `publishAt` + agora. */
+  publicationState: PublicationState;
   metaTitle: string | null;
   metaDescription: string | null;
   blocks: EditablePageBlock[];
@@ -123,6 +132,7 @@ export async function getLandingForEdit(
             slug: true,
             title: true,
             isPublished: true,
+            publishAt: true,
             metaTitle: true,
             metaDescription: true,
             blocks: {
@@ -176,6 +186,11 @@ export async function getLandingForEdit(
             slug: page.slug,
             title: page.title,
             isPublished: page.isPublished,
+            publishAt: page.publishAt,
+            publicationState: resolvePublicationState(
+              { isPublished: page.isPublished, publishAt: page.publishAt },
+              new Date(),
+            ),
             metaTitle: page.metaTitle,
             metaDescription: page.metaDescription,
             blocks,
@@ -259,6 +274,18 @@ export async function ensureHomePage(input: {
         tx,
       );
 
+      /**
+       * A primeira versão nasce com a página (FASE 23): sem ela, o histórico
+       * começaria na PRIMEIRA ALTERAÇÃO, e o estado inicial — o que foi publicado
+       * primeiro — não teria como ser recuperado.
+       */
+      await appendVersion(tx, {
+        tenantId: input.tenantId,
+        pageId,
+        actorId: input.actorId,
+        reason: PAGE_VERSION_REASONS.CREATED,
+      });
+
       return { ok: true as const, pageId, created: true };
     });
   } catch (error) {
@@ -278,6 +305,13 @@ export interface PageSettingsInput {
   metaDescription?: string | null;
   isPublished: boolean;
   /**
+   * Data/hora para entrar no ar sozinha (FASE 23, item E13).
+   *
+   * Combinada com `isPublished` por `planPublication`: os dois juntos decidem o
+   * estado, e a combinação incoerente é recusada em vez de resolvida no chute.
+   */
+  publishAt?: Date | null;
+  /**
    * Tema do EVENTO (tokens visuais). Vazio preserva o que já existe.
    *
    * O editor grava no evento, e não em `EventPage.theme`: a página pública resolve
@@ -293,10 +327,14 @@ export interface PageSettingsInput {
  * O tema passa por `resolveTheme` — o MESMO validador da renderização. É o que
  * garante que nenhum caminho de escrita grave um tema que a página pública vá
  * recusar depois e substituir em silêncio pelo padrão.
+ *
+ * A publicação passa por `planPublication`, que decide entre rascunho, agendada e
+ * publicada — e LIMPA a data ao despublicar (ver o comentário na função: sem isso a
+ * página voltaria ao ar sozinha).
  */
 export async function savePageSettings(
   input: PageSettingsInput,
-): Promise<LandingResult<{ pageId: string }>> {
+): Promise<LandingResult<{ pageId: string; publication: PublicationState; message: string }>> {
   try {
     const themeCheck = input.theme === undefined ? null : resolveTheme(input.theme);
 
@@ -306,6 +344,16 @@ export async function savePageSettings(
         code: 'INVALID_INPUT' as const,
         message: 'O tema tem valores fora do permitido. Use hexadecimal (#rrggbb) ou oklch() nas cores.',
       };
+    }
+
+    const plan = planPublication({
+      publishNow: input.isPublished,
+      publishAt: input.publishAt ?? null,
+      now: new Date(),
+    });
+
+    if (!plan.ok) {
+      return { ok: false as const, code: 'INVALID_INPUT' as const, message: plan.message };
     }
 
     return await withTenant(input.tenantId, async (tx) => {
@@ -318,6 +366,7 @@ export async function savePageSettings(
           metaTitle: true,
           metaDescription: true,
           isPublished: true,
+          publishAt: true,
         },
       });
 
@@ -333,7 +382,8 @@ export async function savePageSettings(
         title: input.title.trim(),
         metaTitle: input.metaTitle?.trim() || null,
         metaDescription: input.metaDescription?.trim() || null,
-        isPublished: input.isPublished,
+        isPublished: plan.isPublished,
+        publishAt: plan.publishAt,
       };
 
       await tx.eventPage.update({ where: { id: page.id }, data });
@@ -348,12 +398,26 @@ export async function savePageSettings(
           /**
            * Publicar e despublicar são registrados com o nome do campo, e não como
            * "página alterada": é a informação que responde "quem tirou a página do
-           * ar", que é a pergunta que alguém faz.
+           * ar", que é a pergunta que alguém faz. O agendamento entra junto, porque
+           * "quem marcou esta data" é a mesma pergunta.
            */
-          changes: diffFields(page, data, ['title', 'metaTitle', 'metaDescription', 'isPublished']),
+          changes: diffFields(page, data, [
+            'title',
+            'metaTitle',
+            'metaDescription',
+            'isPublished',
+            'publishAt',
+          ]),
         },
         tx,
       );
+
+      await appendVersion(tx, {
+        tenantId: input.tenantId,
+        pageId: page.id,
+        actorId: input.actorId,
+        reason: reasonForPublication(page.isPublished, plan.state),
+      });
 
       if (themeCheck) {
         const before = await tx.event.findFirst({
@@ -384,11 +448,32 @@ export async function savePageSettings(
         );
       }
 
-      return { ok: true as const, pageId: page.id };
+      return {
+        ok: true as const,
+        pageId: page.id,
+        publication: plan.state,
+        message: plan.message,
+      };
     });
   } catch (error) {
     return toFailure('savePageSettings', error, 'Não foi possível salvar a página.');
   }
+}
+
+/**
+ * Rótulo da versão a partir da transição de publicação.
+ *
+ * A ordem dos testes importa: publicar uma página que estava agendada é
+ * "publicada" (o organizador antecipou), e despublicar depois de publicada é
+ * "despublicada" (é a informação que alguém procura no histórico).
+ */
+function reasonForPublication(
+  wasPublished: boolean,
+  next: PublicationState,
+): (typeof PAGE_VERSION_REASONS)[keyof typeof PAGE_VERSION_REASONS] {
+  if (next === 'PUBLISHED') return PAGE_VERSION_REASONS.PUBLISHED;
+  if (next === 'SCHEDULED') return PAGE_VERSION_REASONS.SCHEDULED;
+  return wasPublished ? PAGE_VERSION_REASONS.UNPUBLISHED : PAGE_VERSION_REASONS.CONTENT;
 }
 
 /** Resumo do tema para a trilha — não o objeto inteiro (ver `recordAudit`). */
@@ -470,6 +555,13 @@ export async function addPageBlock(input: {
         tx,
       );
 
+      await appendVersion(tx, {
+        tenantId: input.tenantId,
+        pageId: page.id,
+        actorId: input.actorId,
+        reason: PAGE_VERSION_REASONS.BLOCK_ADDED,
+      });
+
       return { ok: true as const, blockId };
     });
   } catch (error) {
@@ -540,6 +632,13 @@ export async function updatePageBlock(input: {
         tx,
       );
 
+      await appendVersion(tx, {
+        tenantId: input.tenantId,
+        pageId: block.pageId,
+        actorId: input.actorId,
+        reason: PAGE_VERSION_REASONS.CONTENT,
+      });
+
       return { ok: true as const, blockId: block.id };
     });
   } catch (error) {
@@ -606,6 +705,13 @@ export async function movePageBlock(input: {
         tx,
       );
 
+      await appendVersion(tx, {
+        tenantId: input.tenantId,
+        pageId: page.id,
+        actorId: input.actorId,
+        reason: PAGE_VERSION_REASONS.REORDERED,
+      });
+
       return { ok: true as const, order: after };
     });
   } catch (error) {
@@ -633,7 +739,9 @@ export async function deletePageBlock(input: {
       /**
        * Remoção FÍSICA, e não lógica: `PageBlock` não tem `deletedAt`, e um bloco
        * removido não tem valor histórico — o que interessa (o que foi publicado,
-       * quando) está na trilha de auditoria, que é imutável.
+       * quando) está na trilha de auditoria, que é imutável. Desde a FASE 23 o
+       * CONTEÚDO do bloco também está na versão da página, então remover deixou de
+       * ser irreversível.
        */
       await tx.pageBlock.delete({ where: { id: block.id } });
 
@@ -648,6 +756,20 @@ export async function deletePageBlock(input: {
         },
         tx,
       );
+
+      const page = await tx.eventPage.findFirst({
+        where: { eventId: input.eventId, tenantId: input.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+
+      if (page) {
+        await appendVersion(tx, {
+          tenantId: input.tenantId,
+          pageId: page.id,
+          actorId: input.actorId,
+          reason: PAGE_VERSION_REASONS.BLOCK_REMOVED,
+        });
+      }
 
       return { ok: true as const, blockId: block.id };
     });
@@ -721,13 +843,19 @@ export async function seedRecommendedBlocks(input: {
         tx,
       );
 
+      await appendVersion(tx, {
+        tenantId: input.tenantId,
+        pageId: page.id,
+        actorId: input.actorId,
+        reason: PAGE_VERSION_REASONS.COMPOSITION,
+      });
+
       return { ok: true as const, created: types.length };
     });
   } catch (error) {
     return toFailure('seedRecommendedBlocks', error, 'Não foi possível aplicar a composição sugerida.');
   }
 }
-
 // ───────────────────────────────────────────────────────────────────────────────
 //  Falhas
 // ───────────────────────────────────────────────────────────────────────────────

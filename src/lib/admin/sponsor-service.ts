@@ -30,8 +30,10 @@ import {
   CONTRACT_STATE_LABELS,
   evaluateContractState,
   evaluateTierCapacity,
+  isAlreadySponsored,
   maskTaxId,
   nextSlugCandidate,
+  planSponsorCopy,
   slugifySponsorName,
   sortSponsorsForDisplay,
   type ContractState,
@@ -712,6 +714,265 @@ export async function removeSponsor(input: {
     });
   } catch (error) {
     return toFailure('removeSponsor', error, 'Não foi possível remover o patrocinador.');
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Reaproveitar um patrocinador em outro evento (FASE 23, item E11)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface SponsorCandidate {
+  sponsorId: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  tierKey: SponsorTierKey | null;
+  tierName: string | null;
+  /** Eventos da instituição em que este patrocinador já está cadastrado. */
+  events: { id: string; title: string }[];
+  /** Já está NESTE evento? (o cadastro não pode ser duplicado) */
+  alreadyInEvent: boolean;
+}
+
+/**
+ * Lista patrocinadores de OUTROS eventos da instituição, para copiar.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE "COPIAR" E NÃO "VINCULAR"
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O modelo tem `Sponsor.eventId` (um evento por linha), e não uma tabela de
+ *  vínculo N:N. Então reaproveitar significa CRIAR um cadastro no evento de destino
+ *  com os mesmos dados — o que é o comportamento certo para patrocínio: cada edição
+ *  tem contrato, valor e vigência próprios, e o histórico de uma edição não deve
+ *  mudar quando a outra é editada.
+ *
+ *  A lista agrupa por NOME (a mesma empresa em três edições é UM candidato, com os
+ *  três eventos), porque o organizador pensa em "quem patrocina", não em linhas de
+ *  banco.
+ */
+export async function listSponsorCandidates(
+  tenantId: string,
+  eventId: string,
+): Promise<SponsorCandidate[]> {
+  return withTenant(tenantId, async (tx) => {
+    const sponsors = await tx.sponsor.findMany({
+      where: { tenantId, deletedAt: null },
+      orderBy: [{ name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        websiteUrl: true,
+        eventId: true,
+        event: { select: { id: true, title: true } },
+        tier: { select: { key: true, name: true } },
+      },
+    });
+
+    const byName = new Map<string, SponsorCandidate>();
+
+    for (const sponsor of sponsors) {
+      const key = sponsor.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const existing = byName.get(key);
+
+      if (!existing) {
+        byName.set(key, {
+          // O candidato carrega o cadastro MAIS RECENTE visto para o nome (a lista
+          // vem ordenada por nome; dentro do nome vale o primeiro, que é o mais
+          // antigo — e é dele que vêm logo, site e cota, os dados estáveis).
+          sponsorId: sponsor.id,
+          name: sponsor.name,
+          logoUrl: sponsor.logoUrl,
+          websiteUrl: sponsor.websiteUrl,
+          tierKey: (sponsor.tier?.key as SponsorTierKey | undefined) ?? null,
+          tierName: sponsor.tier?.name ?? null,
+          events: sponsor.event ? [{ id: sponsor.event.id, title: sponsor.event.title }] : [],
+          alreadyInEvent: sponsor.eventId === eventId,
+        });
+        continue;
+      }
+
+      if (sponsor.event) existing.events.push({ id: sponsor.event.id, title: sponsor.event.title });
+
+      // O logo mais recente encontrado vence: cadastro novo costuma ter a marca
+      // atualizada, e a cópia deve levar a marca de hoje.
+      if (!existing.logoUrl && sponsor.logoUrl) existing.logoUrl = sponsor.logoUrl;
+
+      if (sponsor.eventId === eventId) existing.alreadyInEvent = true;
+    }
+
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  });
+}
+
+export interface CopySponsorInput {
+  tenantId: string;
+  eventId: string;
+  actorId: string;
+  sourceSponsorId: string;
+}
+
+/**
+ * Copia um patrocinador (de outro evento ou de uma edição anterior) para este evento.
+ *
+ * Regras aplicadas, todas com motivo:
+ *   • o cadastro nasce INATIVO — quem copia está montando a próxima edição, e
+ *     exibir de imediato publicaria uma marca no site sem contrato;
+ *   • o VALOR do contrato não é copiado (é renegociado a cada edição), mas o
+ *     contato é (é a mesma pessoa);
+ *   • a cota é casada pela CHAVE (`GOLD` → `GOLD`), e a resposta diz quando não
+ *     houve correspondência, para a tela avisar em vez de deixar o organizador
+ *     descobrir depois;
+ *   • cadastro duplicado no mesmo evento é recusado.
+ */
+export async function copySponsorToEvent(input: CopySponsorInput): Promise<
+  SponsorResult<{
+    sponsorId: string;
+    slug: string;
+    tierMatched: boolean;
+    sourceName: string;
+  }>
+> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const source = await tx.sponsor.findFirst({
+        where: { id: input.sourceSponsorId, tenantId: input.tenantId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          websiteUrl: true,
+          logoUrl: true,
+          contactName: true,
+          contactEmail: true,
+          contactPhone: true,
+          taxId: true,
+          eventId: true,
+          tier: { select: { key: true } },
+        },
+      });
+
+      if (!source) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Patrocinador de origem não encontrado.',
+        };
+      }
+
+      if (source.eventId === input.eventId) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message: 'Este patrocinador já está cadastrado neste evento.',
+        };
+      }
+
+      const target = await tx.event.findFirst({
+        where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
+        select: { id: true, sponsorTiers: { select: { id: true, key: true } } },
+      });
+
+      if (!target) {
+        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
+      }
+
+      /**
+       * A checagem de duplicidade é por NOME, e não só pelo `eventId` de origem: a
+       * mesma empresa pode ter sido cadastrada à mão neste evento com outro
+       * registro, e copiar criaria dois logotipos iguais na página pública.
+       */
+      const sameEvent = await tx.sponsor.findMany({
+        where: { tenantId: input.tenantId, eventId: input.eventId, deletedAt: null },
+        select: { name: true },
+      });
+
+      if (isAlreadySponsored(source.name, sameEvent.map((row) => row.name))) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message: `"${source.name}" já está cadastrado neste evento.`,
+        };
+      }
+
+      const plan = planSponsorCopy(
+        {
+          name: source.name,
+          description: source.description,
+          websiteUrl: source.websiteUrl,
+          logoUrl: source.logoUrl,
+          contactName: source.contactName,
+          contactEmail: source.contactEmail,
+          contactPhone: source.contactPhone,
+          taxId: source.taxId,
+          tierKey: (source.tier?.key as SponsorTierKey | undefined) ?? null,
+        },
+        {
+          eventId: input.eventId,
+          tiers: target.sponsorTiers.map((tier) => ({
+            id: tier.id,
+            key: tier.key as SponsorTierKey,
+          })),
+        },
+      );
+
+      const slug = await allocateSlug(tx, input.tenantId, plan.name);
+      const sponsorId = randomUUID();
+
+      await tx.sponsor.create({
+        data: {
+          id: sponsorId,
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          slug,
+          name: plan.name,
+          description: plan.description,
+          websiteUrl: plan.websiteUrl,
+          logoUrl: plan.logoUrl,
+          tierId: plan.tierId,
+          contactName: plan.contactName,
+          contactEmail: plan.contactEmail,
+          contactPhone: plan.contactPhone,
+          taxId: plan.taxId,
+          // Valor do contrato NÃO é copiado: cada edição tem o seu.
+          contractValueCents: null,
+          displayOrder: plan.displayOrder,
+          isActive: plan.isActive,
+        },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'CREATE',
+          entityType: 'sponsor',
+          entityId: sponsorId,
+          changes: {
+            name: { from: null, to: plan.name },
+            slug: { from: null, to: slug },
+            copiedFrom: { from: null, to: source.id },
+            tierId: { from: null, to: plan.tierId },
+          },
+        },
+        tx,
+      );
+
+      return {
+        ok: true as const,
+        sponsorId,
+        slug,
+        tierMatched: plan.tierMatched,
+        sourceName: source.name,
+      };
+    });
+  } catch (error) {
+    return toFailure('copySponsorToEvent', error, 'Não foi possível copiar o patrocinador.');
   }
 }
 

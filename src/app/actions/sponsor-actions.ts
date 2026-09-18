@@ -36,6 +36,7 @@ import {
   type SponsorTierKey,
 } from '@/domain/events/sponsor-rules';
 import {
+  copySponsorToEvent,
   deleteSponsorTier,
   removeSponsor,
   saveSponsor,
@@ -431,6 +432,60 @@ export async function setSponsorActiveAction(
     message: result.isActive
       ? 'Patrocinador visível na página pública.'
       : 'Patrocinador oculto da página pública.',
+  };
+}
+
+/**
+ * Copia um patrocinador de outro evento da instituição para este (FASE 23, item E11).
+ *
+ * A cópia nasce INATIVA e sem valor de contrato: é um cadastro para a próxima
+ * edição, não um patrocínio fechado. O valor é renegociado a cada edição, e o
+ * contato (a pessoa) é o mesmo.
+ */
+export async function copySponsorAction(
+  _prev: SponsorActionState | null,
+  formData: FormData,
+): Promise<SponsorActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      sourceSponsorId: z.string().uuid('Selecione um patrocinador.'),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      sourceSponsorId: formData.get('sourceSponsorId'),
+    });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: parsed.error.issues[0]?.message ?? 'Dados inválidos.',
+    };
+  }
+
+  const context = await guard(parsed.data.tenantSlug);
+  if (!context.ok) return context.state;
+
+  const result = await copySponsorToEvent({
+    tenantId: context.tenantId,
+    eventId: parsed.data.eventId,
+    actorId: context.userId,
+    sourceSponsorId: parsed.data.sourceSponsorId,
+  });
+
+  if (!result.ok) return result;
+
+  revalidateSponsors(parsed.data.tenantSlug, parsed.data.eventId);
+
+  return {
+    ok: true,
+    message: result.tierMatched
+      ? `"${result.sourceName}" copiado para este evento, na mesma cota. Ele entra OCULTO: revise o contrato e exiba quando estiver fechado.`
+      : `"${result.sourceName}" copiado para este evento SEM cota (a cota de origem não existe aqui). Ele entra OCULTO: escolha a cota e exiba quando estiver fechado.`,
+    data: { sponsorId: result.sponsorId, slug: result.slug, tierMatched: result.tierMatched },
   };
 }
 

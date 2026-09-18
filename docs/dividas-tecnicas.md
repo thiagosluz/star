@@ -7,7 +7,8 @@
 >
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
-> **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1) e a **FASE 17** (E3, E4, E5, E6).
+> **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6) e a
+> **FASE 23** (E9–E13).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -60,6 +61,11 @@
 | **E4 — Upload de imagem de capa** | F3, F7 | **FASE 17** — upload direto ao bucket público de assets, com allowlist de tipo e verificação da assinatura real do arquivo (`image-rules`) |
 | **E5 — Cadastro de patrocinadores pela UI** | F7 | **FASE 17** — cotas e patrocinadores em `/administracao/eventos/<id>/patrocinadores`, com limite de vagas na transação, logotipo por upload, contrato e documento fiscal mascarado |
 | **E6 — Edição de coautores pela UI** | F4, F7 | **FASE 17** — editor de autoria na tela da submissão, com ordem de crédito reindexada, autor correspondente único, vínculo de conta preservado e edição restrita ao estado editável |
+| **E9 — Pré-visualização da página** | FASE 17 (novo) | **FASE 23** — a página pública virou componente (`EventLanding`) consumido pela rota pública e pela prévia autenticada; a prévia mostra o rascunho com selo de estado e avisa quando a página está vazia |
+| **E10 — Upload de imagem na galeria** | FASE 17 (novo) | **FASE 23** — a esteira de upload foi extraída (`asset-upload`) e o alvo `GALLERY` devolve a URL ao formulário, sem coluna; o vínculo passa pela validação do conteúdo do bloco |
+| **E11 — Reaproveitar patrocinador entre eventos** | FASE 17 (novo) | **FASE 23** — `listSponsorCandidates` + `copySponsorToEvent`: cópia com cota casada pela CHAVE, cadastro oculto e sem valor de contrato, duplicidade recusada |
+| **E12 — Histórico de versões da página** | FASE 17 (novo) | **FASE 23** — tabela `event_page_versions` com snapshot, checksum, motivo e autor; restauração por substituição total, 20 versões por página, deduplicação por checksum |
+| **E13 — Publicação agendada** | FASE 17 (novo) | **FASE 23** — `EventPage.publishAt` decidido na LEITURA (`publishAt <= now`), sem agendador; despublicar limpa a data |
 
 ---
 
@@ -71,18 +77,24 @@
 | B. Confiabilidade e operação | 5 | 1 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 1 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
 | D. Comunicação e comunidade | 6 | 1 | Alto para adoção — não há um único e-mail; convite é manual |
-| E. Jornada do participante | 13 | 8 | Médio — atrito e listas sem paginação; o editor de página não tem prévia nem biblioteca de mídia |
+| E. Jornada do participante | 8 | 3 | Médio — atrito e listas sem paginação; a mídia do evento não tem biblioteca própria |
 | F. Gamificação | 5 | 2 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 2 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 2 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **46** | **17** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17, mais o que cada uma declarou de novo) |
+| **Total** | **41** | **12** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+13+5+6+4+1 = 46), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+6+8+5+6+4+1 = 41), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
-> B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13 e a FASE 17 acrescentou
-> E9–E13). A versão anterior deste rodapé dizia "40" enquanto a soma das tabelas dava 44 —
-> a conta que vale é a das tabelas.
+> B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13, a FASE 17 acrescentou
+> E9–E13 e a FASE 23 acrescentou E14–E17).
+>
+> **Correção de contagem (FASE 23):** o total anterior dizia 46 com o tema E valendo 13,
+> mas a tabela de E tinha NOVE linhas (E1, E2, E7, E8, E9–E13) — o número foi escrito a
+> partir da soma esperada, não da contagem real. Com E3–E6 quitados na FASE 17 e E9–E13
+> quitados nesta, a tabela de E ficou com oito itens e o consolidado voltou a 41. O rodapé
+> anterior já registrava esse mesmo tipo de erro ("dizia 40 enquanto a soma dava 44"); a
+> regra continua sendo **contar as linhas**, não somar de cabeça.
 
 ---
 
@@ -138,11 +150,10 @@
 | E2 | **Paginação das listagens públicas** | F3, F4, F7 | Eventos e submissões carregam tudo (limite 100–200); só o diretório pagina | Degrada na casa dos milhares | M | Sim |
 | E7 | **Validação de certificados em lote** | F6 | Serviço existe; falta a tela que confere uma lista de códigos | Contratação verifica um por um | P | Sim |
 | E8 | **Exportação de certificados em ZIP** | F6 | Nada no código (`zip|archiver|jszip` = 0) | Organizador baixa um a um | M | Sim |
-| E9 | **Pré-visualização da página antes de publicar** | FASE 17 (novo) | O editor monta o rascunho, mas só a publicação o mostra renderizado (`isPublished` filtra a leitura pública desde a F3) | O organizador publica para conferir e despublica — janela em que a versão incompleta fica no ar | M | Sim |
-| E10 | **Upload de imagem dentro do bloco de galeria** | FASE 17 (novo) | O upload entregue cobre capa, logotipo do evento e do patrocinador; `GALLERY` aceita apenas URL http(s) | A instituição precisa hospedar as fotos em outro serviço antes de montar a galeria | P | Sim |
-| E11 | **Reaproveitar patrocinador entre eventos pela tela** | FASE 17 (novo) | O `slug` é único por instituição, mas o cadastro nasce preso a um evento e não há tela de "vincular existente" | Cadastrar o mesmo patrocinador em duas edições exige redigitar os dados (criando um segundo registro) | M | Sim |
-| E12 | **Histórico de versões da página** | FASE 17 (novo) | A trilha registra a mudança com resumo do conteúdo; não existe como voltar a uma versão anterior | Um bloco sobrescrito por engano só volta se alguém tiver guardado o texto | M | Decorrente |
-| E13 | **Publicação agendada da página** | FASE 17 (novo) | Publicar é agora/rascunho; não há data-alvo | Campanha com data marcada exige alguém clicar no dia | P | Sim |
+| E14 | **Biblioteca de mídia (tabela de arquivos)** | FASE 23 (novo) | O bucket é a biblioteca: não há registro do arquivo, reuso nem exclusão; o alvo `GALLERY` devolve a URL ao formulário | Imagem enviada e não usada fica sem referência; a mesma foto duas vezes ocupa dois objetos | P | Sim |
+| E15 | **Patrocinador copiado não acompanha a origem** | FASE 23 (novo) | A cópia é uma CÓPIA (ADR-105), não um vínculo N:N entre evento e patrocinador | Corrigir o site de um patrocinador em uma edição não corrige as outras | M | Decorrente |
+| E16 | **Sem `unpublishAt` (janela de exibição)** | FASE 23 (novo) | A página entra no ar sozinha, mas não sai; encerrar exige ação manual | Campanha com data de término exige alguém despublicando no dia | P | Sim |
+| E17 | **Fuso do agendamento vem do navegador** | FASE 23 (novo) | O `FormData` de `<input type="datetime-local">` não traz o fuso; a data é lida na hora local do PROCESSO (UTC em produção) — a tela mostra a data gravada para conferência | Agendamento pode sair deslocado em algumas horas para quem não está em UTC | M | Sim |
 
 ### F. Gamificação
 
@@ -198,7 +209,8 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições, política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele |
 | **F21 — Ciclo de vida do membro e storage** | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | Fecha o que a FASE 14 declarou em aberto: a plataforma vincula, mas ninguém remove pela interface; a quota de storage é registrada e não aplicada |
 | **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
-| **F23 — Conteúdo e mídia** | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | Fecha o que a FASE 17 declarou em aberto. A prévia é o item de maior valor: hoje se publica para conferir |
+| ~~**F23 — Conteúdo e mídia**~~ | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | **Concluída como FASE 23** — `docs/fase-23-conteudo-e-midia.md`. A página pública virou componente compartilhado, e o histórico exigiu a primeira tabela nova desde a FASE 16 |
+| **F24 — Mídia e agendamento** | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | O que a FASE 23 declarou em aberto: são consequências diretas das decisões que ela tomou (cópia em vez de vínculo, bucket como biblioteca, leitura em vez de agendador) |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo, `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -241,6 +253,16 @@ e corrige a autoria do trabalho. O registro está em
 declara as dívidas novas da fase (E9–E13, na seção E acima) e o motivo pelo qual a fase
 **não teve migração**: `EventPage`, `PageBlock`, `SponsorTier`, `Sponsor` e
 `SubmissionAuthor` já existiam desde as FASES 3 e 4, desenhados e sem uso.
+
+### Fase de conteúdo e mídia executada na FASE 23 (concluído)
+
+Os cinco itens que a FASE 17 declarou em aberto (E9–E13) foram implementados na FASE 23: a
+pré-visualização do rascunho, o upload de imagem na galeria, a cópia de patrocinador entre
+eventos, o histórico de versões com restauração e a publicação agendada. O registro está em
+[`docs/fase-23-conteudo-e-midia.md`](fase-23-conteudo-e-midia.md), que declara as dívidas
+novas da fase (E14–E17) — todas consequências diretas das decisões tomadas ali: cópia em vez
+de vínculo entre evento e patrocinador, bucket como biblioteca de mídia e visibilidade
+decidida na leitura (sem agendador).
 
 ---
 

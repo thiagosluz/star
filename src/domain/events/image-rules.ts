@@ -28,13 +28,14 @@
 // ───────────────────────────────────────────────────────────────────────────────
 //  Finalidades
 // ───────────────────────────────────────────────────────────────────────────────
-export const ASSET_TARGETS = ['COVER', 'LOGO', 'SPONSOR_LOGO'] as const;
+export const ASSET_TARGETS = ['COVER', 'LOGO', 'SPONSOR_LOGO', 'GALLERY'] as const;
 export type AssetTarget = (typeof ASSET_TARGETS)[number];
 
 export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
   COVER: 'Imagem de capa',
   LOGO: 'Logotipo do evento',
   SPONSOR_LOGO: 'Logotipo do patrocinador',
+  GALLERY: 'Imagem da galeria',
 };
 
 /**
@@ -42,12 +43,14 @@ export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
  *
  * A capa pode ser uma foto de 5 MB (é o que sai de uma câmera); o logotipo, não —
  * logo é vetor ou PNG tratado, e aceitar 5 MB nele só serviria para publicar uma
- * página lenta.
+ * página lenta. A galeria fica no meio: são fotos, mas várias na MESMA página, e o
+ * peso delas soma.
  */
 export const MAX_IMAGE_BYTES: Record<AssetTarget, number> = {
   COVER: 5 * 1024 * 1024,
   LOGO: 1 * 1024 * 1024,
   SPONSOR_LOGO: 1 * 1024 * 1024,
+  GALLERY: 3 * 1024 * 1024,
 };
 
 export const IMAGE_MIME_TYPES = [

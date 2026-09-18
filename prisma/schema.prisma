@@ -534,6 +534,7 @@ model Tenant {
   activitySpeakers  ActivitySpeaker[]
   tracks            Track[]
   eventPages        EventPage[]
+  eventPageVersions EventPageVersion[]
   pageBlocks        PageBlock[]
   sponsorTiers      SponsorTier[]
   sponsors          Sponsor[]
@@ -637,6 +638,8 @@ model User {
   raffleWins     RaffleWinner[]
   /// Prêmios de sorteio que esta pessoa ENTREGOU — FASE 16.
   rafflePrizesDelivered RaffleWinner[] @relation("RafflePrizeDeliveredBy")
+  /// Versões de página pública que esta pessoa gravou — FASE 23.
+  eventPageVersions EventPageVersion[] @relation("EventPageVersionCreatedBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -1055,6 +1058,14 @@ model EventPage {
   isHome      Boolean @default(false)
   isPublished Boolean @default(false)
 
+  /// Data/hora em que a página entra no ar SOZINHA (FASE 23).
+  ///
+  /// A visibilidade pública é decidida na LEITURA (`publishAt <= now`), e não por
+  /// um agendador: a plataforma não tem scheduler (é a mesma lacuna da manutenção
+  /// de partições), e um agendador que não roda deixaria a campanha fora do ar sem
+  /// ninguém perceber no dia. Assim, o banco é a fonte da verdade do horário.
+  publishAt DateTime? @db.Timestamptz(6)
+
   /// SEO
   metaTitle       String? @db.VarChar(200)
   metaDescription String? @db.VarChar(320)
@@ -1069,13 +1080,51 @@ model EventPage {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event  Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  blocks PageBlock[]
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  blocks   PageBlock[]
+  versions EventPageVersion[]
 
   @@unique([eventId, slug])
   @@index([tenantId, eventId, isPublished])
+  @@index([tenantId, eventId, publishAt])
   @@map("event_pages")
+}
+
+/// Fotografia do conteúdo da página num instante (FASE 23, item E12).
+///
+/// A trilha de auditoria registra QUE houve mudança, com resumo — não o conteúdo
+/// anterior. Um bloco sobrescrito por engano precisava de suporte. Esta tabela
+/// guarda a página inteira (blocos incluídos) para permitir restauração.
+///
+/// O `checksum` existe para NÃO gravar versões idênticas: salvar o formulário sem
+/// mexer em nada geraria uma linha por clique, e a história de vinte versões iguais
+/// esconderia a que importa.
+model EventPageVersion {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  pageId   String @db.Uuid
+
+  /// Por que esta versão foi gravada (rótulo curto, em pt-BR).
+  reason String @db.VarChar(120)
+
+  /// Página + blocos no momento da gravação (formato canônico, ver page-version-rules).
+  snapshot Json
+  /// SHA-256 do snapshot canonicalizado — deduplica versões idênticas.
+  checksum String @db.Char(64)
+
+  createdById String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page   EventPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  /// Autor da alteração (nulo se a conta for removida — a versão permanece).
+  createdBy User?  @relation("EventPageVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, pageId, createdAt])
+  @@index([createdById])
+  @@map("event_page_versions")
 }
 
 /// Bloco visual da landing page. `content` é validado por schema Zod na

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ImageUp, Loader2, Plus, Trash2 } from 'lucide-react';
 
 import { Button, Input, Label, Textarea } from '@/components/ui';
 import { BLOCK_DESCRIPTIONS, type PageBlockType } from '@/domain/events/landing-page';
+import { IMAGE_ACCEPT_ATTRIBUTE, MAX_IMAGE_BYTES, formatBytes } from '@/domain/events/image-rules';
+import { uploadAssetFile, type AssetUploadAction } from '@/components/admin/asset-upload';
 import type { BlockContentValues } from '@/components/admin/block-content-values';
 
 /**
@@ -55,14 +57,84 @@ export function BlockContentFields({
   type,
   values,
   tierOptions,
+  uploadContext,
 }: {
   type: PageBlockType;
   values: BlockContentValues;
   /** Cotas disponíveis, para o filtro do bloco de patrocinadores. */
   tierOptions: { value: string; label: string }[];
+  /**
+   * Contexto de upload (FASE 23, item E10). Presente apenas quando a tela tem como
+   * enviar imagem — o componente continua funcionando sem ele, e aí a galeria aceita
+   * apenas URL (útil em teste e em quem hospeda fora).
+   */
+  uploadContext?: {
+    tenantSlug: string;
+    eventId: string;
+    requestUploadAction: AssetUploadAction;
+    confirmUploadAction: AssetUploadAction;
+  };
 }) {
   const [faq, setFaq] = useState(values.faq);
   const [gallery, setGallery] = useState(values.gallery);
+  /** Índice da linha que está enviando imagem agora (uma por vez). */
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingIndexRef = useRef<number | null>(null);
+
+  /**
+   * Envio de imagem da galeria.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O INPUT DE ARQUIVO É UM SÓ, FORA DAS LINHAS
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Cada linha tem o seu botão "Enviar imagem", mas o `<input type="file">` é único
+   *  e fica escondido: o botão guarda o ÍNDICE da linha e abre o seletor. Vinte
+   *  inputs de arquivo no mesmo formulário seriam vinte `id`s para manter e um
+   *  formulário mais pesado — e o índice já diz para onde a imagem vai.
+   *
+   *  A URL devolvida é gravada na LINHA (estado local). O vínculo definitivo acontece
+   *  quando o bloco é salvo: o conteúdo passa pela validação do domínio, que só
+   *  aceita URL http(s) — a mesma regra vale para imagem enviada e para imagem
+   *  colada de outro site.
+   */
+  async function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    const index = pendingIndexRef.current;
+
+    // Limpa o input para que escolher o MESMO arquivo de novo dispare o evento.
+    event.target.value = '';
+    pendingIndexRef.current = null;
+
+    if (!file || index === null || !uploadContext) return;
+
+    setUploadMessage(null);
+    setUploadingIndex(index);
+
+    const result = await uploadAssetFile({
+      file,
+      tenantSlug: uploadContext.tenantSlug,
+      eventId: uploadContext.eventId,
+      target: 'GALLERY',
+      requestUploadAction: uploadContext.requestUploadAction,
+      confirmUploadAction: uploadContext.confirmUploadAction,
+    });
+
+    setUploadingIndex(null);
+
+    if (!result.ok) {
+      setUploadMessage(result.message);
+      return;
+    }
+
+    setGallery((current) =>
+      current.map((image, i) =>
+        i === index ? { ...image, url: result.url, caption: image.caption || file.name } : image,
+      ),
+    );
+    setUploadMessage('Imagem enviada. Salve o bloco para publicá-la na página.');
+  }
 
   return (
     <div className="space-y-3">
@@ -139,48 +211,129 @@ export function BlockContentFields({
 
       {type === 'GALLERY' ? (
         <div className="space-y-3">
-          <Label>Imagens (por URL)</Label>
+          <Label>Imagens</Label>
+
+          {uploadContext ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={IMAGE_ACCEPT_ATTRIBUTE}
+                onChange={handleFile}
+                className="hidden"
+                aria-label="Escolher imagem para a galeria"
+                data-testid="gallery-file-input"
+              />
+              <p className="text-xs text-muted-foreground">
+                Envie do computador (PNG, JPEG, WebP ou AVIF · até{' '}
+                {formatBytes(MAX_IMAGE_BYTES.GALLERY)}) ou informe o endereço de uma imagem já
+                publicada.
+              </p>
+            </>
+          ) : null}
+
           {gallery.map((image, index) => (
             <div key={index} className="space-y-2 rounded-md border border-border p-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">Imagem {index + 1}</span>
-                {gallery.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Remover imagem ${index + 1}`}
-                    onClick={() => setGallery((current) => current.filter((_, i) => i !== index))}
-                  >
-                    <Trash2 className="size-3.5" aria-hidden />
-                    Remover
-                  </Button>
-                ) : null}
+
+                <div className="flex items-center gap-2">
+                  {uploadContext ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid={`gallery-upload-${index}`}
+                      disabled={uploadingIndex !== null}
+                      onClick={() => {
+                        pendingIndexRef.current = index;
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      {uploadingIndex === index ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <ImageUp className="size-3.5" aria-hidden />
+                      )}
+                      {uploadingIndex === index ? 'Enviando…' : 'Enviar imagem'}
+                    </Button>
+                  ) : null}
+
+                  {gallery.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Remover imagem ${index + 1}`}
+                      onClick={() => setGallery((current) => current.filter((_, i) => i !== index))}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                      Remover
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-              <Input
-                name="galleryUrl"
-                defaultValue={image.url}
-                placeholder="https://cdn.exemplo.br/foto.jpg"
-                aria-label={`URL da imagem ${index + 1}`}
-              />
-              <Input
-                name="galleryCaption"
-                defaultValue={image.caption}
-                placeholder="Legenda (opcional)"
-                aria-label={`Legenda da imagem ${index + 1}`}
-              />
+
+              <div className="flex items-start gap-3">
+                {image.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={image.url}
+                    alt=""
+                    className="size-16 shrink-0 rounded-sm border border-border object-cover"
+                  />
+                ) : null}
+
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Input
+                    name="galleryUrl"
+                    value={image.url}
+                    onChange={(event) =>
+                      setGallery((current) =>
+                        current.map((row, i) =>
+                          i === index ? { ...row, url: event.target.value } : row,
+                        ),
+                      )
+                    }
+                    placeholder="https://cdn.exemplo.br/foto.jpg"
+                    aria-label={`URL da imagem ${index + 1}`}
+                  />
+                  <Input
+                    name="galleryCaption"
+                    value={image.caption}
+                    onChange={(event) =>
+                      setGallery((current) =>
+                        current.map((row, i) =>
+                          i === index ? { ...row, caption: event.target.value } : row,
+                        ),
+                      )
+                    }
+                    placeholder="Legenda (opcional)"
+                    aria-label={`Legenda da imagem ${index + 1}`}
+                  />
+                </div>
+              </div>
             </div>
           ))}
+
           <Button
             type="button"
             variant="outline"
             size="sm"
             data-testid="add-gallery-row"
-            onClick={() => setGallery((current) => [...current, { url: '', caption: '' }])}
+            onClick={() =>
+              setGallery((current) => [...current, { url: '', caption: '' }])
+            }
           >
             <Plus className="size-3.5" aria-hidden />
             Adicionar imagem
           </Button>
+
+          {uploadMessage ? (
+            <p role="status" className="text-xs text-muted-foreground" data-testid="gallery-upload-status">
+              {uploadMessage}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

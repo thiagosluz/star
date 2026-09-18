@@ -49,6 +49,7 @@ export const TENANT_SCOPED_TABLES = [
   'activities',
   'activity_speakers',
   'event_pages',
+  'event_page_versions',
   'page_blocks',
   'sponsor_tiers',
   'sponsors',
