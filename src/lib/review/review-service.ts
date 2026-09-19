@@ -20,6 +20,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
+import { notifyReviewAssigned } from '@/lib/communication/notification-service';
 import {
   evaluateConflict,
   screenReviewersForConflicts,
@@ -486,7 +487,7 @@ export async function assignReviewer(
   input: AssignReviewerInput,
 ): Promise<ReviewResult<{ assignmentId: string; affinityScore: number | null }>> {
   try {
-    return await withTenant(input.tenantId, async (tx) => {
+    const outcome = await withTenant(input.tenantId, async (tx) => {
       const submission = await tx.submission.findFirst({
         where: { id: input.submissionId, deletedAt: null },
         select: {
@@ -629,6 +630,19 @@ export async function assignReviewer(
 
       return { ok: true as const, assignmentId: assignment.id, affinityScore: affinity };
     });
+
+    /**
+     * Aviso ao revisor DEPOIS do commit (armadilha 41): a notificação abre a própria
+     * transação, e chamá-la de dentro desta faria a leitura não enxergar a atribuição
+     * recém-criada. Nunca lança — a atribuição já está gravada.
+     */
+    await notifyReviewAssigned({
+      tenantId: input.tenantId,
+      assignmentId: outcome.assignmentId,
+      actorId: input.assignedById,
+    });
+
+    return outcome;
   } catch (error) {
     return toFailure('assignReviewer', error);
   }

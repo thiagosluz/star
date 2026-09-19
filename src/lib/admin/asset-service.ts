@@ -39,8 +39,10 @@ import {
 } from '@/lib/storage/s3-client';
 import { isSha256Hex, verifyStoredObject } from '@/domain/review/submission-rules';
 import { registerAsset } from '@/lib/admin/media-asset-service';
+import { ensureStorageRoom } from '@/lib/storage/storage-quota';
 import {
   canonicalExtension,
+  formatBytes,
   validateImageUpload,
   type AssetTarget,
   type ImageMimeType,
@@ -51,6 +53,8 @@ export type AssetErrorCode =
   | 'NOT_FOUND'
   | 'INVALID_INPUT'
   | 'INTEGRITY'
+  /** A instituição esgotou a quota de armazenamento do plano (FASE 21). */
+  | 'QUOTA_EXCEEDED'
   | 'STORAGE'
   | 'INTERNAL';
 
@@ -152,6 +156,30 @@ export async function requestAssetUpload(input: {
       mimeType: validation.mimeType,
       fileName: input.fileName,
     });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A QUOTA DO PLANO É CONFERIDA ANTES DE ASSINAR (FASE 21)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Substituir a capa NÃO devolve os bytes da anterior: o objeto antigo continua
+     *  no bucket e no acervo (é histórico). Então toda imagem conta como ADIÇÃO — e a
+     *  recusa acontece aqui, antes de o navegador enviar qualquer byte.
+     */
+    const room = await ensureStorageRoom({
+      tenantId: input.tenantId,
+      incomingBytes: input.sizeBytes,
+    });
+
+    if (!room.ok) {
+      return {
+        ok: false,
+        code: 'QUOTA_EXCEEDED',
+        message: room.message,
+        details: [
+          `A instituição ocupa ${formatBytes(room.usage.totalBytes)} de ${formatBytes(room.usage.maxBytes ?? 0)}.`,
+        ],
+      };
+    }
 
     const bucket = BUCKETS.assets();
 

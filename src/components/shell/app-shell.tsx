@@ -163,7 +163,17 @@ export function AppShell({
           <ShellContextBlock context={context} variant={variant} />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-5">
+        {/**
+         * `min-h-0` é OBRIGATÓRIO aqui, e não é detalhe de estilo.
+         *
+         * Um item flex em coluna tem `min-height: auto`: nunca encolhe abaixo do próprio
+         * conteúdo — exatamente o que `flex-1 overflow-y-auto` precisa que ele faça. Sem
+         * o `min-h-0`, um grupo de menu a mais faz a barra lateral (que é `h-screen`)
+         * transbordar, e o rodapé da conta é empurrado para FORA da tela: o seletor de
+         * instituição fica inalcançável. Foi o E2E que pegou, ao clicar no menu de troca
+         * com a navegação já cheia.
+         */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
           <ShellNav groups={navGroups} />
         </div>
 

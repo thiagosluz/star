@@ -9,6 +9,7 @@ import {
   Gauge,
   GraduationCap,
   Layers,
+  Mail,
   Medal,
   Mic,
   Settings2,
@@ -220,6 +221,16 @@ export function buildTenantNav(input: {
           label: 'Equipe',
           icon: <Users className="size-4" aria-hidden />,
           permission: PERMISSIONS.TENANT_MEMBER_INVITE,
+        },
+        {
+          // FASE 15: a caixa de saída mostra o que a plataforma enviou em nome da
+          // instituição. A permissão é a MESMA da página (`communication:read`),
+          // decidida pelo mesmo predicado de instituição — menu e tela precisam
+          // concordar nos dois sentidos (armadilha 44).
+          href: href('/administracao/comunicacao'),
+          label: 'Comunicação',
+          icon: <Mail className="size-4" aria-hidden />,
+          permission: PERMISSIONS.COMMUNICATION_READ,
         },
       ],
     },

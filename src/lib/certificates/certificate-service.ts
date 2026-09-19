@@ -47,6 +47,7 @@ import {
   type WorkloadResult,
 } from '@/domain/certificates/certificate-rules';
 import { computeSpeakerWorkload } from '@/domain/speakers/speaker-rules';
+import { notifyCertificateIssued } from '@/lib/communication/notification-service';
 import { renderCertificatePdf, renderCertificateSvg } from '@/lib/certificates/renderer';
 import { getSigningConfig, isSigningConfigured, signContentHash, verifySignature } from '@/lib/certificates/signer';
 
@@ -640,6 +641,16 @@ export async function generateCertificate(input: {
         },
       }),
     );
+
+    /**
+     * Aviso de certificado emitido (D6), depois do commit e sem poder falhar: o
+     * documento já existe no storage e no banco. Este é o caminho usado tanto pela
+     * emissão inline quanto pelo worker — quem emite, avisa.
+     */
+    await notifyCertificateIssued({
+      tenantId: input.tenantId,
+      certificateId: certificate.id,
+    });
 
     return {
       ok: true as const,

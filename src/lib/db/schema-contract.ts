@@ -77,6 +77,15 @@ export const TENANT_SCOPED_TABLES = [
   'reviewer_conflict_declarations',
   'raffles',
   'raffle_winners',
+  /**
+   * FASE 15 — comunicação. As duas tabelas entram aqui mesmo com semânticas
+   * diferentes: `email_messages` tem `tenantId` NULO nas mensagens de PLATAFORMA
+   * (verificação de e-mail, redefinição de senha), e a policy faz exatamente o que
+   * se espera — nenhuma instituição enxerga mensagem sem instituição. Quem as
+   * escreve nesse caso é a conexão administrativa (BYPASSRLS), nunca o runtime.
+   */
+  'email_messages',
+  'tenant_invitations',
 ];
 
 /**

@@ -41,7 +41,8 @@ import { randomUUID } from 'node:crypto';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation } from '@/lib/db/prisma-errors';
-import { type CardRarity, type CardTrigger, type XpSourceKind } from '@/domain/gamification/types';
+import { type CardRarity, type CardTrigger, type XpSourceKind, cardTriggerLabel } from '@/domain/gamification/types';
+import { notifyCardGranted } from '@/lib/communication/notification-service';
 import {
   XP_SOURCES,
   applyStreak,
@@ -562,7 +563,7 @@ export async function grantCardForTrigger(input: {
     const now = input.now ?? new Date();
     const random = input.random ?? secureRandom;
 
-    return await withTenant(input.tenantId, async (tx) => {
+    const granted = await withTenant(input.tenantId, async (tx) => {
       const profile = await tx.userXpProfile.findUnique({
         where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
         select: { totalXp: true },
@@ -604,6 +605,30 @@ export async function grantCardForTrigger(input: {
       const minted = await mintFromPool(tx, context, candidates, input.trigger, input.sourceRef ?? null);
       return { ok: true as const, cards: minted ? [minted] : [] };
     });
+
+    /**
+     * Celebração por e-mail (D5), DEPOIS do commit e sem poder falhar — a carta já é
+     * da pessoa. O aviso é por gatilho + evento, então reavaliar a mesma conquista não
+     * manda uma segunda mensagem (a concessão já é idempotente; o aviso também é).
+     *
+     * `isNew` filtra a DUPLICATA: sortear de novo a carta que já está no álbum aumenta
+     * a quantidade e não é conquista — anunciar "você conquistou" seria mentira.
+     */
+    if (granted.ok && granted.cards.length > 0 && granted.cards[0]?.isNew) {
+      const card = granted.cards[0];
+
+      await notifyCardGranted({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        cardName: card.name,
+        rarity: card.rarity,
+        triggerLabel: cardTriggerLabel(input.trigger),
+        eventId: input.eventId ?? null,
+        actorId: input.actorId ?? null,
+      });
+    }
+
+    return granted;
   } catch (error) {
     console.error(`[gamification] falha ao conceder carta: ${errorMessage(error)}`);
     return {

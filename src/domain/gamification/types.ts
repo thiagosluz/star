@@ -83,6 +83,32 @@ export const CARD_TRIGGERS: readonly CardTrigger[] = [
   'EVENT_ATTENDANCE_FULL',
 ];
 
+/**
+ * Rótulo do gatilho em português — o "porquê" que a pessoa lê ao ganhar a carta.
+ *
+ * Mora no domínio, e não na tela, porque o e-mail de conquista (FASE 15) precisa da
+ * MESMA frase que a celebração na tela. Duas listas divergiriam na primeira vez que
+ * alguém ajustasse uma delas.
+ */
+export const CARD_TRIGGER_LABELS: Readonly<Record<CardTrigger, string>> = {
+  CHECKIN: 'Você fez o credenciamento no evento',
+  ACTIVITY_COMPLETION: 'Você participou de uma atividade',
+  MINI_COURSE_COMPLETION: 'Você concluiu um minicurso',
+  SUBMISSION_ACCEPTED: 'Seu trabalho foi aceito',
+  SUBMISSION_SUBMITTED: 'Você submeteu um trabalho',
+  REVIEW_COMPLETED: 'Você concluiu um parecer',
+  REVIEWER_TOP: 'Você foi destaque entre os revisores do evento',
+  XP_THRESHOLD: 'Você alcançou a meta de XP',
+  LEVEL_UP: 'Você subiu de nível',
+  MANUAL_GRANT: 'A organização concedeu esta carta a você',
+  STREAK: 'Você manteve a sequência de participação',
+  EVENT_ATTENDANCE_FULL: 'Você esteve em todas as atividades do evento',
+};
+
+export function cardTriggerLabel(trigger: string): string {
+  return CARD_TRIGGER_LABELS[trigger as CardTrigger] ?? 'Conquista desbloqueada';
+}
+
 /** Tipo de missão. Espelha `enum TaskKind`. */
 export type TaskKind = 'DAILY' | 'WEEKLY' | 'EVENT_LONG' | 'ONE_OFF' | 'ACHIEVEMENT';
 

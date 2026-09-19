@@ -68,6 +68,16 @@ function MenuItem({
  * Cada opção é um formulário independente que chama a Server Action de troca.
  * Não há novo login: apenas o cookie de contexto é reescrito, então os
  * componentes de cliente permanecem montados.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O PAINEL ABRE PARA CIMA (defeito corrigido na FASE 15)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O gatilho é o ÚLTIMO elemento de uma barra lateral de altura total: abrir o painel
+ *  para baixo (`mt-2`) o coloca fora da tela em qualquer monitor de 720 px de altura, e
+ *  o clique nunca acontece — o E2E da troca de contexto reprovava com "element is
+ *  outside of the viewport", e na prática a troca de instituição parecia travada. Como
+ *  o bloco de conta vive no rodapé do shell (desktop e gaveta), a direção certa é
+ *  sempre para CIMA.
  */
 export function TenantMenu({
   memberships,
@@ -88,7 +98,7 @@ export function TenantMenu({
         />
       </summary>
 
-      <div className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+      <div className="absolute right-0 bottom-full z-50 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
         <p className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
           Trocar de instituição
         </p>

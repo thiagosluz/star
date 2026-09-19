@@ -16,11 +16,22 @@
  *      tenha significado em vez de reiniciar em loop.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
+ *  FILA DE E-MAILS E VARREDURA DE PRAZOS (FASE 15)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Dois jobs moram na fila `emails`: `deliver` (entrega uma mensagem do outbox) e
+ *  `review-deadlines` (job REPETÍVEL, de 6 em 6 horas, que avisa quem tem parecer
+ *  perto do prazo ou vencido). O agendamento é registrado pelo próprio worker no
+ *  start — `upsertJobScheduler` com id fixo, então subir dez vezes não cria dez
+ *  varreduras.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
  *  CONTEXTO DE TENANT NO WORKER
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O job carrega `tenantId` no payload e cada operação abre a própria transação com
  *  `withTenant`. Não existe "worker global" lendo dados de todos os tenants: o
- *  paralelismo do BullMQ não pode virar brecha de isolamento.
+ *  paralelismo do BullMQ não pode virar brecha de isolamento. A varredura de prazos
+ *  respeita a mesma regra — ela percorre instituição por instituição (ver
+ *  `reminder-service.ts`).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import 'dotenv/config';
@@ -34,6 +45,7 @@ import { logger } from '@/lib/observability/logger';
  * (nem o `bullmq`) para dentro do bundle do worker antes de ser necessário.
  */
 import type { CertificateJobData } from '@/lib/certificates/queue';
+import type { EmailJobData } from '@/lib/communication/email-queue';
 
 const line = '─'.repeat(78);
 
@@ -167,6 +179,91 @@ async function start(): Promise<void> {
   });
 
   console.log(`\n  Worker pronto. Fila "${CERTIFICATE_QUEUE_NAME}" registrada.`);
+
+  // ── Fila de e-mails (FASE 15) ──────────────────────────────────────────────
+  const { EMAIL_QUEUE_NAME, REVIEW_DEADLINES_JOB, scheduleReviewDeadlineScan } =
+    await import('@/lib/communication/email-queue');
+  const { deliverEmail } = await import('@/lib/communication/email-service');
+  const { runReviewDeadlineScan } = await import('@/lib/communication/reminder-service');
+
+  const emailWorker = new Worker<EmailJobData>(
+    EMAIL_QUEUE_NAME,
+    async (job: Job<EmailJobData>) => {
+      /**
+       * Job repetível: varredura de prazos. Ele não entrega mensagem — cria as que
+       * faltam no outbox —, então tem caminho próprio.
+       */
+      if (job.name === REVIEW_DEADLINES_JOB) {
+        const scan = await runReviewDeadlineScan();
+
+        console.log(
+          `  ✓ prazos: ${scan.dueSoon} aviso(s) de prazo próximo, ${scan.overdue} vencido(s), ` +
+            `${scan.deduplicated} já avisado(s)`,
+        );
+
+        return scan;
+      }
+
+      const { emailMessageId, tenantId } = job.data;
+
+      if (!emailMessageId) {
+        throw new Error('Job inválido: emailMessageId é obrigatório.');
+      }
+
+      console.log(`  → entregando e-mail ${emailMessageId} (tentativa ${job.attemptsMade + 1})`);
+
+      const result = await deliverEmail({ emailMessageId, tenantId });
+
+      if (!result.ok) {
+        /**
+         * Falha TRANSITÓRIA volta para a fila (o BullMQ aplica o backoff); falha
+         * definitiva (chave inválida, remetente não verificado) fica registrada no
+         * outbox com o motivo e NÃO é retentada — insistir só gasta cota.
+         */
+        if (result.retryable) {
+          throw new Error(`[RETRYABLE] ${result.message}`);
+        }
+
+        logger.warn('worker: e-mail não entregue', {
+          emailMessageId,
+          tenantId: tenantId ?? undefined,
+          message: result.message,
+        });
+
+        return { status: 'FAILED', reason: result.message };
+      }
+
+      return { status: result.status, driver: result.driver };
+    },
+    { connection: redisConnection(), concurrency },
+  );
+
+  emailWorker.on('failed', (job, error) => {
+    console.error(`  ✗ e-mail ${job?.id ?? '?'} falhou: ${error.message}`);
+    logger.error('worker: entrega de e-mail falhou', {
+      jobId: job?.id ?? null,
+      emailMessageId: job?.data?.emailMessageId ?? null,
+      tenantId: job?.data?.tenantId ?? undefined,
+      attempt: (job?.attemptsMade ?? 0) + 1,
+      error: error.message,
+    });
+  });
+
+  emailWorker.on('completed', (job) => {
+    logger.info('worker: job de e-mail concluído', {
+      jobId: job.id ?? null,
+      name: job.name,
+      emailMessageId: job.data?.emailMessageId ?? null,
+      tenantId: job.data?.tenantId ?? undefined,
+      durationMs: job.finishedOn && job.processedOn ? job.finishedOn - job.processedOn : null,
+    });
+  });
+
+  // O agendador é registrado aqui, com id fixo: reiniciar o worker reagenda em vez
+  // de acumular varreduras.
+  const scheduled = await scheduleReviewDeadlineScan();
+
+  console.log(`  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (varredura de prazos: ${scheduled ? 'agendada' : 'indisponível'}).`);
   console.log(`${line}\n`);
 
   // ── Shutdown gracioso ──────────────────────────────────────────────────────
@@ -178,8 +275,9 @@ async function start(): Promise<void> {
 
     try {
       // `close()` espera o job em andamento terminar: matar no meio deixaria um
-      // certificado em GENERATING para sempre.
+      // certificado em GENERATING para sempre (e um e-mail pela metade).
       await worker.close();
+      await emailWorker.close();
       await redis.quit();
       await disconnectDb();
       await adminPrisma.$disconnect();

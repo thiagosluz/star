@@ -320,6 +320,15 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-in-production-min-32-chars}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
 
+      # E-mail transacional (FASE 15). O padrão do compose é `log`: a suíte E2E
+      # roda contra este container e NÃO pode disparar e-mail real. Para enviar de
+      # verdade, defina EMAIL_DRIVER=resend e RESEND_API_KEY no ambiente.
+      EMAIL_DRIVER: ${EMAIL_DRIVER:-log}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-EventFlow <nao-responda@eventflow.test>}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
+      REVIEW_REMINDER_HOURS: ${REVIEW_REMINDER_HOURS:-48}
+
       # Assinatura de certificados (FASE 6).
       #
       # O web precisa das MESMAS chaves do worker: a emissão cria a assinatura
@@ -386,6 +395,13 @@ services:
       S3_BUCKET_CERTIFICATES: ${S3_BUCKET_CERTIFICATES:-eventflow-certificates}
       CERTIFICATE_SIGNING_KEY_ID: ${CERTIFICATE_SIGNING_KEY_ID:-dev-key-2025-01}
       CERTIFICATE_HMAC_SECRET: ${CERTIFICATE_HMAC_SECRET:-dev-hmac-secret-change-me}
+      # O worker é quem ENTREGA os e-mails (fila `emails`) e quem dispara o job
+      # repetível de prazo de parecer — precisa das mesmas variáveis do web.
+      EMAIL_DRIVER: ${EMAIL_DRIVER:-log}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-EventFlow <nao-responda@eventflow.test>}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
+      REVIEW_REMINDER_HOURS: ${REVIEW_REMINDER_HOURS:-48}
       # O worker não aceita tráfego HTTP: nenhuma porta publicada.
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
     networks: [eventflow]

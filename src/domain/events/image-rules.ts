@@ -293,10 +293,18 @@ function fileExtension(fileName: string): string | null {
 }
 
 export function formatBytes(bytes: number): string {
+  // GB antes de MB: a quota de armazenamento do plano é medida em GiB, e "5120 MB"
+  // não diz nada a quem lê. Os limites de imagem (KB/MB) continuam com o mesmo texto.
+  if (bytes >= 1024 ** 3) {
+    const gb = bytes / 1024 ** 3;
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+  }
+
   if (bytes >= 1024 * 1024) {
     const mb = bytes / 1024 / 1024;
     return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
   }
+
   return `${Math.round(bytes / 1024)} KB`;
 }
 

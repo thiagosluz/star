@@ -4,10 +4,11 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 14, 16, 17, 23, 24 e 25 concluídas (F15 pendente: Comunicação) · **1283 testes** unitários/integração · **79 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 23, 24 e 25 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1381 testes** unitários/integração · **85 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
-> particionada por mês · **quotas de plano aplicadas** (eventos e membros da equipe),
+> particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
+> **armazenamento**), com **ciclo de vida do membro** (trocar papéis e remover),
 > **página pública editável** pela instituição com patrocínio, autoria, **biblioteca de
 > mídia** com reaproveitamento, **janela de exibição** agendada no fuso do evento,
 > **portal do palestrante** com convite (que aparece na área do próprio palestrante), materiais
@@ -40,7 +41,7 @@ avaliação por pares e gamificação.
 
 | Domínio | Capacidade |
 |---|---|
-| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 57 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
+| **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 58 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
 | **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado). A inscrição pode ser **no evento** — e ela já inclui as atividades **abertas** (palestra, mesa-redonda), que não pedem inscrição própria e ignoram lotação — ou **por atividade** (minicurso, oficina), que continua com vaga e fila. A programação é **editável e excluível** pelo organizador (excluir só o cadastro nunca usado; com inscritos ou presença, a mensagem manda cancelar), e os tipos e situações aparecem **em português** |
 | **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê. O autor cria o rascunho e **cai direto na página da submissão** (anexar e enviar), **edita** título, resumo e palavras-chave enquanto ela não foi enviada — as regras do envio (resumo mínimo, 3 a 8 palavras-chave distintas) valem já na criação, com contagem em tempo real no campo — e pode **excluir os próprios rascunhos**: submissões enviadas são registro da avaliação e não se apagam |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
@@ -51,12 +52,14 @@ avaliação por pares e gamificação.
 | **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
 | **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
 | **Operação e segurança** | Rate limit do login contado no **Redis** (vale entre instâncias), métricas no formato **Prometheus** em `/api/metrics` com token, log estruturado com redação de senha/e-mail, RLS criada pela própria migração, `audit_logs` **particionada por mês** e pool de conexões com **PgBouncer** em modo transação |
-| **Planos e quotas** | Planos FREE/STARTER/PROFESSIONAL/ENTERPRISE com quotas de eventos, **membros da equipe** e armazenamento; troca de plano e edição de quotas pelo painel de governança (com aviso quando a nova quota fica abaixo do uso); a quota de eventos e a de membros **recusam de verdade** — e o público de evento, que ganha acesso automático na inscrição pública, **não** consome a quota de membros |
+| **Planos e quotas** | Planos FREE/STARTER/PROFESSIONAL/ENTERPRISE com quotas de eventos, **membros da equipe** e **armazenamento**; troca de plano e edição de quotas pelo painel de governança (com aviso quando a nova quota fica abaixo do uso); as **três** quotas **recusam de verdade** — e o público de evento, que ganha acesso automático na inscrição pública, **não** consome a quota de membros |
+| **Ciclo de vida do membro** | A tela de equipe passou a **operar** o vínculo: trocar os papéis de um membro (checkboxes com os papéis de instituição, gravados de uma vez) e **remover** — remoção **lógica** (`REMOVED`), com **todas** as concessões revogadas em qualquer escopo e a quota liberada; o histórico de quem fez o quê continua legível. Ninguém remove o próprio acesso, e o **último proprietário ativo** não pode ser removido nem rebaixado — a recusa vem escrita. O diálogo **avisa** quando a pessoa tem inscrições, porque o vínculo é único por (instituição, pessoa) |
 | **Gamificação (conquistas)** | Cartas por gatilho, incluindo os dois de **marco** que só existiam no catálogo: `EVENT_ATTENDANCE_FULL` (presença em todas as atividades exigidas, concedida no check-out que fecha a última) e `REVIEWER_TOP` (revisor destaque premiado por ranking de pareceres, com piso lido da própria carta) |
 | **Página pública e patrocínio** | A instituição **monta a própria vitrine**: página que nasce como rascunho e só vai ao ar quando publicada, 12 tipos de bloco com conteúdo validado por tipo no domínio (destaque, texto, agenda, palestrantes, trilhas, patrocinadores, perguntas frequentes, galeria, contagem, local, chamada de inscrição e HTML exibido como texto), ordem ajustável, blocos ocultáveis, composição sugerida, **tema visual** (cores, tipografia, densidade, cabeçalho e animação) e **capa e logotipo por upload** direto ao storage — com allowlist de tipo e verificação da assinatura real do arquivo (SVG recusado por poder conter script). **Patrocínio** com cotas, ordem de exibição, limite de vagas aplicado na transação e documento fiscal mascarado |
 | **Autoria de trabalho** | Coautores editáveis antes do envio, com **ordem de crédito** (a ordem da tela é a ordem de citação), autor correspondente único, ORCID validado e vínculo automático de conta dentro da instituição — o nome de quem tem conta vem do perfil |
 | **Operação do conteúdo** | **Pré-visualização** do rascunho antes de publicar (o mesmo componente da página pública, em rota autenticada com selo de estado), **publicação agendada** que entra no ar sozinha na data marcada, **histórico de versões** com restauração (20 por página, sem gravar versão idêntica), **imagem enviada direto do computador** também para a galeria, e **cópia de patrocinador** de outra edição com cota casada pela categoria e cadastro oculto |
 | **Mídia e agendamento** | **Biblioteca de mídia** da instituição (`media_assets`, com RLS): todo envio registra autor, tamanho, tipo, checksum e finalidade, a **mesma imagem** é reaproveitada em vez de duplicar o objeto e a exclusão **confere o uso** antes de apagar — recusando com a lista de onde a imagem aparece. **Janela de exibição**: a página entra no ar e **sai sozinha** na data de término (decidido na leitura, sem agendador), com estado próprio para "configurada, publicada e fora do prazo". As datas são digitadas e lidas no **fuso do evento** (o mesmo do rodapé da página), com conversão correta em horário de verão. O patrocinador **copiado** de outra edição guarda a origem e pode ser **sincronizado** — propagando só os dados da empresa e preservando cota, contrato e vigência |
+| **Comunicação** | **E-mail transacional de verdade** (Resend) com fila, tentativas e um **outbox** (`email_messages`) que guarda o que foi enviado antes de sair: assunto, HTML e texto, destinatário, situação, driver e o motivo da falha. Oito mensagens automáticas — confirmação de e-mail, redefinição de senha, **convite de equipe**, avaliação atribuída, prazo de parecer (aviso e vencimento), carta conquistada e certificado emitido. A instituição **convida a própria equipe** pela tela de equipe (o convite não ocupa vaga no plano; o vínculo nasce no aceite, onde a quota é conferida), acompanha tudo em **Comunicação** e a pessoa confirma o próprio endereço numa página própria. **O padrão é não enviar**: sem `EMAIL_DRIVER=resend` declarado, o e-mail é registrado e não sai da máquina |
 | **Portal do palestrante** | O palestrante é uma **pessoa da instituição** (não uma linha da atividade): a organização cadastra nome, e-mail, instituição e minibiografia, **vincula a uma ou mais atividades** com o papel de cada uma ("Keynote" na abertura, "Instrutor" no minicurso) e recebe um **código de convite** (guardado apenas como hash) para entregar a ele. Com o código — ou pelo painel, quando o e-mail confere — o palestrante **assume o perfil** e passa a editar bio, foto, redes e afiliação, publicar **materiais de apoio** (slides, apostilas, links) com visibilidade por material (**aberto**, **só inscritos** ou **rascunho**) e escrever a ementa detalhada da própria atividade. O convite pendente **aparece na área do palestrante** (e no menu, como "Convite de palestrante") assim que ele entra com a conta daquele e-mail — sem depender do link. A **vitrine pública** mostra foto, bio e atividades de cada um, com ficha individual; e a **ficha da atividade** destaca quem ministra e libera o download conforme a inscrição. O **certificado de palestrante** sai pelo próprio portal, somando apenas as atividades **efetivamente ministradas** — exige evento encerrado e credenciamento registrado no balcão |
 
 ---
@@ -68,10 +71,11 @@ avaliação por pares e gamificação.
 | Aplicação | Next.js 16 (App Router, Server Components, Server Actions, Route Handlers) · React 19 |
 | Arquitetura | Clean Architecture / DDD adaptado ao Next.js (domínio puro, aplicação, infraestrutura) |
 | Banco | PostgreSQL 18 com **Row-Level Security** · Prisma 7 (driver adapter `pg`) |
-| Cache e filas | Redis 8 · BullMQ (geração de certificados) |
+| Cache e filas | Redis 8 · BullMQ (geração de certificados e entrega de e-mails) |
 | Storage | MinIO (S3-compatível), buckets privados com URLs pré-assinadas |
 | Interface | Tailwind CSS 4 · Shadcn/UI (primitivas) · Lucide · Canvas Confetti |
 | Autenticação | Better Auth 1.7 + adapter Prisma |
+| E-mail | Resend (API oficial) atrás de um driver com modo `log` para desenvolvimento e teste |
 | Qualidade | Vitest · Testing Library · Playwright |
 | Infra | Docker · Docker Compose multi-stage |
 
@@ -220,7 +224,11 @@ Conquistas ......... /t/ufba-demo/conquistas        (XP, missões, ranking)
 Cartas ............. /t/ufba-demo/cartas            (álbum)
 Certificados ....... /t/ufba-demo/certificados
 Credenciamento ..... /t/ufba-demo/credenciamento    (equipe: busca e leitor de QR)
-Painel admin ....... /t/ufba-demo/administracao     (gestão + trilha de auditoria)
+Painel admin ....... /t/ufba-demo/administracao     (gestão, quotas de uso + trilha de auditoria)
+Equipe ............. /t/ufba-demo/administracao/equipe       (convidar, trocar papéis, remover)
+Comunicação ........ /t/ufba-demo/administracao/comunicacao  (caixa de saída do e-mail)
+Convite de equipe .. /t/ufba-demo/convite?codigo=<TOKEN>     (aceite; público, autenticado)
+Confirmação de e-mail /verificacao                            (resultado do link)
 Sorteios ........... /t/ufba-demo/administracao/eventos/<id>/sorteios
 Editor da página ... /t/ufba-demo/administracao/eventos/<id>/pagina
 Pré-visualização ... /t/ufba-demo/administracao/eventos/<id>/pagina/previa
@@ -327,6 +335,11 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 | `METRICS_TOKEN` | token do `/api/metrics`; **sem ele, em produção, o endpoint responde 404** (a rota não existe para quem sonda) |
 | `DATABASE_URL_POOLED` / `PGBOUNCER_PORT` | endereço do pooler (`6432`) usado pela prova de pooling |
 | `PARTITION_MONTHS_AHEAD` | quantos meses à frente o `db:partitions` mantém criados (padrão `2`) |
+| `RESEND_API_KEY` | chave da API do Resend. **Não é usada enquanto o driver for `log`** |
+| `EMAIL_DRIVER` | `resend` (envia de verdade) ou `log` (**grava e NÃO envia** — padrão em dev e nos testes). Sem a variável, só vira `resend` em produção com chave presente |
+| `EMAIL_FROM` | remetente. **Sem domínio verificado no Resend**, precisa ser `onboarding@resend.dev` — e a entrega só alcança o endereço dono da conta |
+| `EMAIL_REPLY_TO` | opcional; vazio = o destinatário responde ao próprio remetente |
+| `REVIEW_REMINDER_HOURS` | antecedência do aviso "seu parecer está vencendo" (padrão `48`) |
 
 ### Serviços e portas
 
@@ -375,8 +388,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1283 testes (53 arquivos) — unit + integração com banco real
-npm run test:e2e          # 79 testes E2E contra o container de produção
+npm test                  # 1381 testes (57 arquivos) — unit + integração com banco real
+npm run test:e2e          # 85 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -391,7 +404,8 @@ npm run db:partitions         # partições mensais de audit_logs em dia
   provar onde cada linha de auditoria foi gravada.
 - **E2E** exige a stack no ar (`docker compose --profile app up -d --build`) e cobre,
   entre outros: isolamento entre instituições, jornada de inscrição, avaliação por
-  pares, gamificação, certificação, a jornada administrativa completa e o **fechamento
+  pares, gamificação, certificação, convite de equipe com aceite, comunicação (caixa de
+  saída e verificação de e-mail), a jornada administrativa completa e o **fechamento
   do endpoint de métricas em produção** (404 sem token).
 - `tests/unit/**` não toca banco; `tests/integration/**` exige a infraestrutura.
 
@@ -410,7 +424,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | Documento | Conteúdo | ADRs |
 |---|---|---|
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
-| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 11 papéis (57 permissões hoje, incluindo as de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
+| [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 11 papéis (58 permissões hoje, incluindo as de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
 | [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado. A **revisão pós-entrega** (§19) entrega a **inscrição no evento** que materializa as atividades abertas (`EVENT_AUTO`), `requiresRegistration` como coluna com padrão derivado do tipo, **edição e exclusão** de atividade na programação e rótulos de tipo/situação em português | ADR-014 … 018 · 124 a 126 |
 | [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão. A **revisão pós-entrega** (§18) faz a criação do rascunho cair direto na página da submissão e entrega a **exclusão de rascunho** (nunca do que já foi enviado) | ADR-019 … 024 · 121 e 122 |
 | [`docs/fase-05-gamificacao.md`](docs/fase-05-gamificacao.md) | Motor de recompensas, XP idempotente, curva de níveis, prestígio, cartas, foil, missões, credenciamento | ADR-025 … 031 |
@@ -420,20 +434,22 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-09-diretorio-e-superadmin.md`](docs/fase-09-diretorio-e-superadmin.md) | Escopo `PLATFORM`, SuperAdmin, provisionamento atômico, suspensão com corte imediato de tráfego, métricas consolidadas e diretório público de instituições | ADR-050 … 059 |
 | [`docs/fase-10-inscricao-publica.md`](docs/fase-10-inscricao-publica.md) | Inscrição aberta em evento público, vínculo automático de participante na mesma transação, bloqueio da instituição com precedência e aviso ao participante | ADR-060 … 063 |
 | [`docs/contas-de-teste.md`](docs/contas-de-teste.md) | **Guia operacional:** uma conta por perfil com senha padrão, o que testar em cada uma, comportamento das contas de borda e como o script cria as credenciais | — |
+| [`docs/fase-15-comunicacao.md`](docs/fase-15-comunicacao.md) | **Comunicação:** e-mail transacional pelo Resend atrás de um driver com o padrão em NÃO enviar, fila `emails` com 5 tentativas, **outbox** que guarda o que saiu, 8 templates em funções puras, **convite de equipe** com token hasheado e vínculo no aceite, avisos de avaliação/prazo/carta/certificado e verificação de e-mail sem bloquear o login | ADR-127 … 130 |
+| [`docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`](docs/fase-21-ciclo-de-vida-do-membro-e-storage.md) | **Ciclo de vida do membro e armazenamento:** trocar papéis e remover membro pela tela de equipe (remoção lógica, concessões revogadas, guardas de posse própria e de último proprietário) e a **quota de armazenamento aplicada** em todo envio — submissão, mídia e material de palestrante — medida sobre **tudo** o que a instituição guarda, bloqueando só o upload novo e **nunca** a emissão de certificado | ADR-131 … 133 |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 49 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 46 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
 | [`docs/fase-25-portal-do-palestrante.md`](docs/fase-25-portal-do-palestrante.md) | Portal do palestrante: o palestrante passa a ser **pessoa da instituição** (`speaker_profiles`) com perfil e vínculo de conta por **convite hasheado**, **portal** com posse verificada no banco, **materiais** com visibilidade por visitante (401/403/404), **vitrine** com foto e bio, ficha individual e **certificado de palestrante** que exige evento encerrado e credenciamento. A **revisão pós-entrega** (§10) abriu as portas que faltavam: o menu voltou a mostrar os itens pessoais e o convite pendente virou entrada do portal | ADR-113 … 120 |
 | [`docs/fase-24-midia-e-agendamento.md`](docs/fase-24-midia-e-agendamento.md) | Mídia e agendamento: **biblioteca de mídia** (tabela `media_assets` com RLS, reaproveitamento por checksum e exclusão que **confere o uso**), **sincronia** do patrocinador copiado a partir da origem, **janela de exibição** (`unpublishAt` decidido na leitura) e a data agendada interpretada no **fuso do evento** | ADR-107 … 112 |
 | [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
 | [`docs/fase-17-pagina-publica-e-patrocinio.md`](docs/fase-17-pagina-publica-e-patrocinio.md) | Página pública montada pelo organizador: editor de blocos validados por tipo, tema visual, capa e logotipo por upload direto ao storage, cadastro de cotas e patrocinadores com limite de vagas e documento fiscal mascarado, e edição de coautores com ordem de crédito — tudo sem uma única migração | ADR-092 … 099 |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
-| [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe**), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
+| [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
 | [`docs/fase-12-mutirao-dividas.md`](docs/fase-12-mutirao-dividas.md) | Mutirão de dívidas rápidas: escopo de equipe no credenciamento, evento restrito à comunidade, índice único de concessão, quota de eventos, cache distribuído, diretório sem truncamento e faxina de layout | ADR-071 … 074 |
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **123 decisões** registradas até aqui.
+> são **133 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -451,7 +467,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 ```text
 src/
 ├── domain/            regras puras, sem Prisma e sem Next (testáveis isoladamente)
-│   ├── tenancy/       resolução de instituição, slugs e validação
+│   ├── tenancy/       resolução de instituição, slugs e validação; papéis e ciclo de
+│   │                  vida do membro (remoção lógica, guarda do último proprietário)
 │   ├── rbac/          papéis, permissões e o `can()` (fail-closed)
 │   ├── events/        ciclo de vida, inscrições, agenda, landing page
 │   ├── review/        submissão, rubrica, afinidade, conflito de interesse
@@ -467,7 +484,7 @@ src/
 │   ├── admin/         trilha de auditoria e catálogo do painel
 │   ├── platform/      governança global: repositório administrativo, serviços,
 │   │                  diretório público e guarda de plataforma (404)
-│   ├── storage/       cliente S3/MinIO (URLs pré-assinadas)
+│   ├── storage/       cliente S3/MinIO (URLs pré-assinadas) e a quota de armazenamento
 │   └── tenancy/       resolução e cache de instituição
 ├── app/               Next.js
 │   ├── actions/       Server Actions (toda autorização é verificada aqui)
@@ -486,9 +503,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              897 testes de regra pura e de formato (sem banco)
-├── integration/       344 testes com banco, Redis e storage reais
-└── e2e/               79 testes Playwright contra o container
+├── unit/              983 testes de regra pura e de formato (sem banco)
+├── integration/       398 testes com banco, Redis e storage reais
+└── e2e/               85 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -588,15 +605,20 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
    patrocinador copiado é **por patrocinador** (E20): uma instituição com muitas edições
    sincroniza uma cópia por vez. `EventPage.theme` (tema por página) segue reservado e sem
    uso: o tema é do evento, para não existirem duas fontes de verdade para a mesma cor.
-3. **Ciclo de vida do membro é parcial (FASE 14).** A plataforma **vincula** uma pessoa
-   que já tem conta (com a quota aplicada); **remover** membro, trocar papel, e
-   **convidar** quem ainda não tem conta pela própria instituição continuam sem tela
-   (dívidas C5 e D2 — a segunda vai na fase de Comunicação, porque convite precisa de
-   e-mail e de prova de posse do endereço).
-4. **A quota de armazenamento não é aplicada (dívida C4).** `maxStorageBytes` vem do
-   plano, é editável e aparece na tela — mas nada bloqueia upload por ela ainda. Desde a
-   FASE 24 o acervo **mede** o que a instituição ocupa (soma em bytes na tela da biblioteca);
-   medir e impor são decisões diferentes, e a segunda ficou com a F21.
+3. **O vínculo é único por (instituição, pessoa): remover a equipe tira o acesso de
+   participante (FASE 21, dívida C7).** A remoção é lógica (`REMOVED` + todas as
+   concessões revogadas) e o diálogo **avisa** quando a pessoa tem inscrições — mas não
+   existe "rebaixar para participante" (nem separar as duas relações em duas linhas):
+   quem era equipe e público perde a porta de entrada da própria área de participante,
+   com as inscrições e os certificados preservados no banco.
+4. **A quota de armazenamento mede o BANCO, não o bucket (FASE 21, dívida C6).** Ela é
+   conferida **antes de assinar a URL de upload** nos três caminhos (submissão, mídia e
+   material de palestrante), desconta o arquivo substituído no rascunho e recusa com
+   `QUOTA_EXCEEDED`; o **certificado é medido e nunca bloqueado** (o documento do
+   participante não depende da decisão de armazenamento da instituição). O que ela não
+   faz: reconciliar objeto que ficou no bucket sem registro (envio interrompido no meio)
+   nem apagar o arquivo quando o registro sai — a limpeza é manual, e a diferença só
+   aparece na conta do provedor.
 5. **Paginação** nas listagens administrativas é por limite de consulta.
 6. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
    não é registrada (exceto o contador de validação pública).
@@ -677,15 +699,28 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     total do evento foi atingida": não há fila de espera no nível do evento nem promoção
     quando uma vaga abre. Quem não coube simplesmente não entra, e a organização não vê a
     demanda represada.
+27. **O envio de e-mail real depende de um domínio verificado (FASE 15, dívida D7).** A conta
+    do Resend usada hoje é de **teste**: o remetente precisa ser `onboarding@resend.dev` e o
+    provedor **só entrega para o endereço dono da conta** — qualquer outro destinatário volta
+    `403` (que a plataforma registra como falha definitiva, com o motivo do provedor, em
+    "Falhas"). Enquanto isso, o driver `log` é o modo de operação de desenvolvimento e de
+    teste: a mensagem é registrada no outbox e **não sai**. E `SENT` significa "aceito pelo
+    provedor", não "entregue na caixa": não há webhook de entrega (dívida D8) nem preferências
+    de notificação (D9).
+28. **A verificação de e-mail não bloqueia o login (FASE 15).** É decisão consciente: ligar o
+    bloqueio trancaria fora toda conta já existente, inclusive as de teste. A plataforma envia
+    a confirmação, avisa no shell e permite reenviar — mas quem não confirmar continua entrando.
 
 ---
 
-**Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — comunicação
-(e-mail transacional, que destrava o convite pela instituição, o convite de palestrante
-por e-mail e as notificações, F15), PKCS#7 e antivírus para uso institucional (F18) — e
-depois o ciclo de vida do membro com a quota de armazenamento (F21, que agora já tem a
-medição pronta), a operação de palco dos sorteios (F22), o segundo grau do acervo de mídia
-(F26: miniaturas, busca e sincronia em lote) e o material/convite do palestrante (F27).
+**Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — verificar um
+domínio no Resend para o e-mail chegar a qualquer destinatário (D7, que é operação de conta e
+destrava o uso real), PKCS#7 e antivírus para uso institucional (F18) — e depois a
+reconciliação entre banco e bucket e o acesso de participante na remoção (C6 e C7, que a
+FASE 21 declarou), a operação de palco dos sorteios (F22), o segundo grau do acervo de mídia
+(F26: miniaturas, busca e sincronia em lote), o material/convite do palestrante (F27, que
+agora só precisa do template) e a entrega de e-mail de segunda ordem (F28: webhooks e
+preferências).
 O levantamento atualizado está em [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md).
 
 

@@ -25,6 +25,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { safeUrlSchema } from '@/domain/events/landing-page';
+import { formatBytes } from '@/domain/events/image-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Status e planos
@@ -479,6 +480,53 @@ export function evaluateMemberQuota(input: {
       message:
         `O plano desta instituição permite ${input.maxMembers} membro(s) e todos os vínculos já foram usados. ` +
         'Solicite à plataforma o aumento da quota (ou a mudança de plano) antes de vincular mais alguém.',
+    };
+  }
+
+  return { allowed: true, message: null, remaining };
+}
+
+/**
+ * A instituição ainda tem espaço para este arquivo? (item C4 do levantamento)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A QUOTA DE ARMAZENAMENTO OLHA O TAMANHO, E NÃO A QUANTIDADE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  As outras duas quotas contam ITENS (eventos, membros). Aqui o que estoura é o
+ *  volume, e a pergunta certa é "cabe mais este arquivo?" — não "quantos arquivos
+ *  existem?". Por isso a decisão recebe `incomingBytes`: comparar só o uso atual
+ *  com o teto deixaria passar o arquivo que estoura, e recusaria o que cabe.
+ *
+ *  `maxBytes = null` é ILIMITADO (mesma semântica de `Event.capacity` e das outras
+ *  quotas); `0` é "nenhum byte" — um plano assim é recusado na validação, mas a
+ *  função responde certo se alguém construir o caso.
+ *
+ *  A mensagem é acionável de propósito: quem organiza precisa saber QUANTO falta e
+ *  qual é o caminho (liberar espaço no acervo ou pedir aumento de plano) — "quota
+ *  excedida" e nada mais faria a pessoa tentar de novo.
+ */
+export function evaluateStorageQuota(input: {
+  currentBytes: number;
+  incomingBytes: number;
+  maxBytes: number | null;
+}): QuotaDecision {
+  if (input.maxBytes === null) {
+    return { allowed: true, message: null, remaining: null };
+  }
+
+  const remaining = input.maxBytes - input.currentBytes - input.incomingBytes;
+
+  if (remaining < 0) {
+    const free = Math.max(input.maxBytes - input.currentBytes, 0);
+
+    return {
+      allowed: false,
+      remaining: 0,
+      message:
+        `O plano desta instituição guarda ${formatBytes(input.maxBytes)} e já ocupa ` +
+        `${formatBytes(input.currentBytes)}. Este arquivo (${formatBytes(input.incomingBytes)}) ` +
+        `não cabe: restam ${formatBytes(free)}. Libere espaço no acervo de mídia ou peça ` +
+        'o aumento da quota à plataforma.',
     };
   }
 

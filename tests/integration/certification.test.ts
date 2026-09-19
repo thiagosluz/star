@@ -588,6 +588,30 @@ describe('validação pública', () => {
     expect(issued.ok, issued.ok ? 'ok' : issued.message).toBe(true);
     if (!issued.ok) return;
 
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O WORKER, AQUI, SOMOS NÓS (corrigido na FASE 15)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `issueCertificate` ENFILEIRA a geração e devolve `generated: false` — o
+     *  arquivo sai no worker, que não roda numa suíte de integração. Este trecho
+     *  faz o papel dele.
+     *
+     *  Antes da FASE 15 este `if` não existia porque a fila nunca enfileirava de
+     *  verdade: o `jobId` tinha `:`, o BullMQ recusava o job e a geração caía no
+     *  caminho inline SEMPRE — o teste passava sem perceber. Com a fila funcionando,
+     *  a geração explícita é necessária (e o E2E, que roda com o worker no ar,
+     *  continua exercitando o caminho real).
+     */
+    if (!issued.generated) {
+      const generated = await generateCertificate({
+        tenantId,
+        certificateId: issued.certificateId,
+      });
+
+      expect(generated.ok, generated.ok ? 'ok' : generated.message).toBe(true);
+      if (!generated.ok) return;
+    }
+
     // Nenhuma informação de instituição é passada: só o código.
     const result = await getPublicCertificate(issued.validationCode);
 

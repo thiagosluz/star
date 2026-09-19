@@ -98,6 +98,16 @@ function getQueue(): Queue<CertificateJobData> {
  * O `jobId` é o id do certificado: enfileirar duas vezes o mesmo certificado
  * sobrescreve o job em vez de criar um segundo — a mesma garantia de idempotência
  * do banco, estendida à fila.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O ID DO JOB NÃO PODE CONTER `:` (defeito corrigido na FASE 15)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Este `jobId` era `certificate:<id>` desde a FASE 6, e o BullMQ RECUSA id
+ *  customizado com dois segmentos separados por `:` (o `:` é o separador de chave no
+ *  Redis): o `add` lançava "Custom Id cannot contain :", o `catch` daqui devolvia
+ *  `false` e a emissão caía no caminho INLINE — funcionando, porém sem fila e sem
+ *  ninguém perceber. Foi o teste de integração da fila de e-mails (FASE 15) que
+ *  expôs o mesmo padrão aqui. O separador passou a ser hífen.
  */
 export async function enqueueCertificate(
   data: CertificateJobData,
@@ -105,7 +115,7 @@ export async function enqueueCertificate(
 ): Promise<boolean> {
   try {
     await getQueue().add('generate', data, {
-      jobId: `certificate:${data.certificateId}`,
+      jobId: `certificate-${data.certificateId}`,
       ...(options.delayMs ? { delay: options.delayMs } : {}),
     });
 

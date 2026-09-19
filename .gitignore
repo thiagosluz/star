@@ -38,3 +38,7 @@ blob-report/
 Thumbs.db
 *.log
 npm-debug.log*
+
+
+# ag-kit
+.agents/

@@ -292,6 +292,25 @@ enum CertificateStatus {
   FAILED
 }
 
+/// Estado de uma mensagem no outbox de e-mail — FASE 15.
+///
+/// `SKIPPED` existe para o envio que NÃO deve acontecer e não é falha: destinatário
+/// sem endereço, ou mensagem substituída por outra mais recente do mesmo fato. Sem
+/// esse estado, o outbox mostraria "falhou" para o que simplesmente não era para sair.
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+/// Convite de equipe pendente, aceito ou revogado — FASE 15.
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 enum SponsorTierKey {
   DIAMOND
   GOLD
@@ -579,6 +598,10 @@ model Tenant {
   reviewerExpertise    ReviewerExpertise[]
   conflictDeclarations ReviewerConflictDeclaration[]
 
+  /// FASE 15 — comunicação.
+  emailMessages     EmailMessage[]
+  tenantInvitations TenantInvitation[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -667,6 +690,15 @@ model User {
   speakerProfilesCreated SpeakerProfile[] @relation("SpeakerProfileCreatedBy")
   /// Materiais de palestrante que esta pessoa enviou — FASE 25.
   speakerMaterialsUploaded SpeakerMaterial[] @relation("SpeakerMaterialUploadedBy")
+
+  /// E-mails transacionais endereçados a esta pessoa — FASE 15.
+  emailMessages EmailMessage[] @relation("EmailMessageToUser")
+  /// E-mails transacionais que esta pessoa disparou — FASE 15.
+  emailMessagesCreated EmailMessage[] @relation("EmailMessageCreatedBy")
+  /// Convites de equipe que esta pessoa enviou — FASE 15.
+  invitationsSent TenantInvitation[] @relation("TenantInvitationInvitedBy")
+  /// Convites de equipe que esta pessoa aceitou — FASE 15.
+  invitationsAccepted TenantInvitation[] @relation("TenantInvitationAcceptedBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -2370,6 +2402,127 @@ model Certificate {
   @@index([validationCode])
   @@index([status, createdAt])
   @@map("certificates")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  COMUNICAÇÃO — e-mail transacional e convite de equipe (FASE 15)
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Cada mensagem que a plataforma decidiu enviar. É um OUTBOX, não um log:
+/// a linha nasce ANTES do envio (status `QUEUED`), o worker a entrega e atualiza
+/// o estado. Assim existe uma resposta para "o que saiu, para quem, quando e por
+/// qual motivo falhou" — sem depender do painel do provedor.
+///
+/// `tenantId` é NULO nas mensagens de PLATAFORMA (verificação de e-mail e
+/// redefinição de senha, que acontecem antes de existir instituição no contexto):
+/// a policy de RLS só enxerga a linha quando o contexto bate, então mensagem sem
+/// instituição é invisível para qualquer instituição — e é escrita pela conexão
+/// administrativa (`src/lib/platform/platform-mail.ts`).
+model EmailMessage {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String? @db.Uuid
+
+  /// Destinatário e, quando ele tem conta, o vínculo com a pessoa.
+  to       String  @db.VarChar(320)
+  toUserId String? @db.Uuid
+
+  /// Identificador do template no domínio (`EMAIL_TEMPLATES`).
+  template String @db.VarChar(60)
+  subject  String @db.VarChar(300)
+
+  /// Dados que geraram o corpo — guardados para reconstruir a mensagem e para
+  /// auditar o que foi dito sem precisar do HTML.
+  payload Json @default("{}")
+
+  /// Conteúdo renderizado no momento do enfileiramento.
+  ///
+  /// POR QUE O HTML FICA GRAVADO: o outbox precisa mostrar o que REALMENTE saiu.
+  /// Renderizar na entrega faria uma correção de template reescrever o passado —
+  /// e a pergunta "o que essa pessoa recebeu?" deixaria de ter resposta.
+  html String @db.Text
+  text String @db.Text
+
+  status EmailStatus @default(QUEUED)
+
+  /// Chave de idempotência do FATO (ex.: `review-due:<assignmentId>:2026-10-01`).
+  /// Índice único: o mesmo fato não gera duas mensagens, nem que o job rode duas
+  /// vezes — e o índice é parcial no banco (só onde a chave não é nula).
+  dedupeKey String? @db.VarChar(200)
+
+  /// Driver que tentou entregar (`resend`, `log`) e o id devolvido pelo provedor.
+  driver     String? @db.VarChar(20)
+  providerId String? @db.VarChar(160)
+  error      String? @db.VarChar(500)
+
+  /// Tentativas de entrega (o BullMQ reentrega; o número fica no registro).
+  attempts Int       @default(0)
+  sentAt   DateTime? @db.Timestamptz(6)
+
+  createdById String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  toUser    User?   @relation("EmailMessageToUser", fields: [toUserId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("EmailMessageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([dedupeKey])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([to])
+  @@map("email_messages")
+}
+
+/// Convite para alguém entrar na EQUIPE da instituição.
+///
+/// POR QUE UMA TABELA PRÓPRIA (e não `user_tenant_profiles` com status INVITED):
+/// o convidado normalmente AINDA NÃO TEM CONTA, e o vínculo exige `userId`. Criar
+/// uma conta-fantasma no ato do convite ocuparia vaga na quota do plano por alguém
+/// que talvez nunca aceite — e deixaria um usuário sem senha circulando na base.
+/// Aqui o convite é uma promessa: o vínculo (e a conta, se preciso) nasce no ACEITE.
+model TenantInvitation {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+
+  /// Endereço convidado, normalizado (minúsculas, sem espaços).
+  email String @db.VarChar(320)
+  /// Papel que será concedido no aceite (escopo TENANT — ver `roleAllowedInScope`).
+  role  RoleKey
+
+  status InvitationStatus @default(PENDING)
+
+  /// SHA-256 do código entregue por e-mail. O código em claro NÃO é gravado:
+  /// vazamento do banco não vira convite utilizável (mesma decisão do convite de
+  /// palestrante, ADR-114).
+  tokenHash String  @db.Char(64)
+  expiresAt DateTime @db.Timestamptz(6)
+
+  /// Recado opcional do convidante, exibido na página de aceite.
+  message String? @db.VarChar(400)
+
+  /// Quantas vezes o convite foi reenviado e quando saiu a última mensagem.
+  sendCount  Int       @default(0)
+  lastSentAt DateTime? @db.Timestamptz(6)
+
+  invitedById  String?   @db.Uuid
+  acceptedById String?   @db.Uuid
+  acceptedAt   DateTime? @db.Timestamptz(6)
+  revokedAt    DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy User?  @relation("TenantInvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedBy User? @relation("TenantInvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, createdAt])
+  /// A busca do aceite é SEMPRE por hash (o código em claro não existe no banco).
+  @@index([tokenHash])
+  @@index([email])
+  @@map("tenant_invitations")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

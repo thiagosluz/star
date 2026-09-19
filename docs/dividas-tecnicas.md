@@ -8,8 +8,9 @@
 > Levantamento feito em **2025-09-17**, sobre a árvore em `FASES 1 a 11B (70 ADRs)`.
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
 > **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
-> **FASE 23** (E9–E13), a **FASE 24** (E14–E17) e a **FASE 25** (escopo próprio: E21–E24), com as
-> **revisões pós-entrega** da FASE 25 (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
+> **FASE 23** (E9–E13), a **FASE 24** (E14–E17), a **FASE 25** (escopo próprio: E21–E24), a
+> **FASE 15** (D1–D6 + A5) e a **FASE 21** (C4–C5), com as **revisões pós-entrega** da FASE 25
+> (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -71,6 +72,13 @@
 | **E15 — Patrocinador copiado não acompanhava a origem** | FASE 23 (novo) | **FASE 24** — `sponsors.sourceSponsorId` + `planSponsorSync`: sincronizar propaga só os dados da empresa (nome, descrição, site, logotipo, contato, documento), preservando cota, contrato, vigência e exibição |
 | **E16 — Sem `unpublishAt`** | FASE 23 (novo) | **FASE 24** — `EventPage.unpublishAt` na MESMA condição de leitura; janela invertida e término vencido são recusados, e o estado `WINDOW_CLOSED` explica a página fora do ar |
 | **E17 — Fuso do agendamento vinha do navegador** | FASE 23 (novo) | **FASE 24** — a data digitada é interpretada no **fuso do EVENTO** (`zonedWallTimeToInstant`, duas passagens, correto em horário de verão), com o fuso viajando em campo oculto e nomeado na mensagem de sucesso |
+| **D1 — E-mail transacional (nenhum existia)** | F2, F6, F9, F10 | **FASE 15** — provedor Resend atrás de um driver com o padrão em NÃO enviar (`resend` \| `log`), fila `emails` no BullMQ com 5 tentativas e backoff, **outbox** `email_messages` (assunto, HTML e texto gravados no enfileiramento), 8 templates em funções puras e redefinição de senha que finalmente avisa alguém |
+| **D2 — Convites de membros pela UI** | F2, F7, F9, F10 | **FASE 15** — tabela `tenant_invitations` (token só como SHA-256, 7 dias, um convite PENDENTE por endereço por índice parcial), convite na tela de equipe, página pública de aceite, revogação e novo link; o vínculo `MEMBER` + papel nasce **no aceite**, e é lá que a quota do plano é aplicada |
+| **D3 — Notificação de atribuição de revisão** | F4 | **FASE 15** — `notifyReviewAssigned` disparada por `assignReviewer` depois do commit, com prazo no fuso do evento e idempotência por atribuição |
+| **D4 — Lembrete e expiração de prazo de parecer** | F4 | **FASE 15** — job repetível `review-deadlines` (de 6 em 6 horas, via `upsertJobScheduler`) + `runReviewDeadlineScan`, que percorre instituição por instituição **sob RLS** e avisa prazo próximo e vencido uma vez por dia por atribuição |
+| **D5 — Notificação de conquista/carta** | F5 | **FASE 15** — `notifyCardGranted` no ponto único do motor de recompensas (`grantCardForTrigger`), celebrando apenas carta NOVA (duplicata aumenta quantidade e não é conquista) |
+| **D6 — Notificação de certificado emitido** | F6 | **FASE 15** — `notifyCertificateIssued` em `generateCertificate` (vale para a emissão inline e para o worker), com código de validação e link de conferência pública |
+| **A5 — Verificação de e-mail** | F2 | **FASE 15** — `emailVerification.sendOnSignUp` envia a confirmação no cadastro (token de 24 h), página `/verificacao` para o resultado e aviso no shell com reenvio; `requireEmailVerification` continua **false** de propósito, e a decisão está travada por teste |
 
 ---
 
@@ -80,19 +88,20 @@
 |---|---|---|---|
 | A. Segurança e conformidade | 4 | 0 | Alto — arquivos sem varredura; assinatura de certificado ainda simétrica |
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
-| C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento registrada e não aplicada; ciclo de vida do membro só por SQL |
-| D. Comunicação e comunidade | 6 | 3¹ | Alto para adoção — não há um único e-mail; convite é manual |
+| C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
+| D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
 | E. Jornada do participante | 16 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando e o evento lotado não tem fila de espera |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **49** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 8 na FASE 16 · 4 na FASE 17 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **46** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+6+16+5+6+4+1 = 49), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+3+16+5+6+4+1 = 46), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
-> B6–B9, a FASE 14 acrescentou C4–C5, a FASE 16 acrescentou G8–G13, a FASE 17 acrescentou
-> E9–E13, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
+> B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
+> acrescentou G8–G13, a FASE 17 acrescentou
+> E9–E13, a **FASE 21 quitou C4–C5 e acrescentou C6–C7**, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
 > acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, o E31 e o E32,
 > que a **revisão** da FASE 4 declarou, e o E33, que a **revisão** da FASE 3 declarou).
 >
@@ -146,23 +155,23 @@
 
 ### C. Quotas e billing
 
+> **C4 e C5 foram quitados na FASE 21** — `docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`.
+> A quota de armazenamento passou a ser medida (submissões + mídia + materiais +
+> certificados) e **aplicada** antes de assinar cada URL de upload; o ciclo de vida do membro
+> ganhou tela (trocar papéis e remover acesso). O que a fase declarou de novo está abaixo.
+
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| C4 | **Quota de armazenamento não é aplicada** | FASE 14 (novo) | `maxStorageBytes` é gravada do plano e exibida na tela de plano, mas nenhum caminho soma bytes antes de aceitar upload (submissões e avatares) | A tela sugere um limite que não existe; um cliente ocupa o storage sem teto | M | Sim |
-| C5 | **Ciclo de vida do membro pela UI** | FASE 14 (novo) | `tenant:member:remove` e `tenant:role:assign` existem e não têm tela; a FASE 14 entregou vincular, não desvincular nem trocar papel | Reduzir a equipe (e portanto reduzir quota) continua sendo SQL | M | Sim |
+| C6 | **Reconciliação entre banco e bucket** | FASE 21 (novo) | A quota mede o BANCO: objeto que ficou no bucket sem registro (falha no meio do upload) não conta, e excluir o registro não apaga o objeto — a limpeza é manual | O uso medido pode divergir do real, e a diferença só aparece na conta do provedor | M | Sim |
+| C7 | **Remover membro não preserva o acesso de participante** | FASE 21 (novo) | O vínculo é UMA linha por (instituição, pessoa): remover a equipe tira junto a área de participante (as inscrições continuam registradas). Falta a ação "rebaixar para participante" (ou separar as duas relações em duas linhas) | Quem era equipe e público perde o acesso às próprias inscrições e certificados — hoje **avisado** no diálogo, mas sem alternativa | M | Sim |
 
 ### D. Comunicação e comunidade
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| D1 | **E-mail transacional (nenhum existe)** | F2, F6, F9, F10 | Provedor + templates (verificação, convite, certificado, prazo de parecer, conquista) | Toda comunicação depende de aviso manual; bloqueia metade das fases futuras | G | Sim |
-| D2 | **Convites de membros pela UI** | F2, F7, F9, F10 | `tenant:member:invite` existe e guarda o painel; o fluxo não existe — vincular é SQL/seed | Instituição não consegue trazer a própria equipe | M | Sim |
-| D3 | **Notificação de atribuição de revisão** | F4 | `dueAt` e `isOverdue` já existem; nada é enviado | Revisor só descobre entrando na tela | P¹ | Decorrente |
-| D4 | **Lembrete e expiração de prazo de parecer** | F4 | Exige job agendado (BullMQ já de pé) | Prazos vencem sem aviso | M | Decorrente |
-| D5 | **Notificação de conquista/carta** | F5 | Celebração é local (confete); nada sai da tela | Gamificação perde o efeito de surpresa | P¹ | Decorrente |
-| D6 | **Notificação de certificado emitido** | F6 | É preciso entrar na tela para ver | Documento fica esquecido | P¹ | Decorrente |
-
-¹ Depende de **D1** (sem provedor de e-mail, não há o que enviar).
+| D7 | **Domínio de envio não verificado** | FASE 15 (novo) | A conta do Resend é de **teste**: o remetente tem de ser `onboarding@resend.dev` e a entrega só alcança o endereço dono da conta. Falta verificar um domínio em `resend.com/domains` e trocar `EMAIL_FROM` | Convite, aviso de avaliação e certificado só chegam a UM endereço enquanto isso | P | Sim |
+| D8 | **Sem webhook de entrega** | FASE 15 (novo) | `SENT` significa "aceito pelo provedor"; não há webhook de `delivered`/`bounced`/`complained` nem supressão de endereço inválido | Mensagem aceita e não entregue só aparece no painel do provedor; endereço que quica continua recebendo tentativa | M | Sim |
+| D9 | **Sem preferências nem opt-out** | FASE 15 (novo) | Todos os avisos são transacionais e não há central de preferências; a celebração de carta (D5) não pode ser desligada | Quem não quiser a celebração não tem como desligá-la | P | Sim |
 
 ### E. Jornada do participante
 
@@ -231,19 +240,20 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 |---|---|---|---|
 | ~~**Operação e segurança**~~ | Rate limit em Redis, observabilidade, particionamento do `AuditLog`, RLS nas migrações, PgBouncer | A1, B1, B2, B3, B4 | **Concluída como FASE 13** — `docs/fase-13-operacao-e-seguranca.md` |
 | ~~**Quotas e planos**~~ | `maxMembers` aplicado, edição de plano pela UI, distinção participante × membro | C1, C3, I4 | **Concluída como FASE 14** — `docs/fase-14-quotas-e-planos.md` |
-| **F15 — Comunicação** | E-mail transacional + as notificações que dependem dele + convite de membros pela instituição + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | É o maior bloqueio de adoção: sem e-mail, convite é manual e metade das fases futuras fica travada. Destrava A5 e D3–D6 de uma vez — e fecha a lacuna que a FASE 14 deixou explícita (convidar de dentro da instituição) |
+| ~~**F15 — Comunicação**~~ | E-mail transacional + as notificações que dependem dele + convite de membros pela instituição + verificação de e-mail | D1, D2, D3, D4, D5, D6, A5 | **Concluída como FASE 15** — `docs/fase-15-comunicacao.md`. Sem e-mail, convite era manual e metade das fases futuras ficava travada; a fase destravou A5 e D3–D6 de uma vez e fechou a lacuna que a FASE 14 deixou explícita (convidar de dentro da instituição). Declarou D7–D9 |
 | ~~**F16 — Sorteios de ponta a ponta**~~ | Suplentes, entrega de prêmio, pesos, commit-reveal, exibição pública, prévia ao vivo | G1–G7 + F1 | **Concluída como FASE 16** — `docs/fase-16-sorteios-de-ponta-a-ponta.md`. Entregue antes da F15 por decisão do humano: o tema estava maduro e não dependia de e-mail |
 | ~~**F17 — Landing page e patrocínio**~~ | Editor visual, upload de capa, patrocinadores, coautores | E3, E4, E5, E6 | **Concluída como FASE 17** — `docs/fase-17-pagina-publica-e-patrocinio.md`. A fase não precisou de migração: o modelo da F3/F4 já previa tudo |
 | **F18 — Segurança de documentos** | Assinatura assimétrica, antivírus, auditoria de leitura, ZIP, validação em lote | A2, A3, A4, E7, E8 | Documento assinado e arquivo varrido: pré-requisito para uso institucional sério |
 | **F19 — Gamificação avançada** | Trocas/crafting, níveis de carta, temporadas, ranking por evento, antifraude de proximidade | F2–F6 | Mecânicas novas; depende de dados reais de uso para calibrar economia |
 | **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições, política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele |
-| **F21 — Ciclo de vida do membro e storage** | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | Fecha o que a FASE 14 declarou em aberto: a plataforma vincula, mas ninguém remove pela interface; a quota de storage é registrada e não aplicada |
+| ~~**F21 — Ciclo de vida do membro e storage**~~ | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | **Concluída como FASE 21** — `docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`. Fechou o que a FASE 14 declarou em aberto: a plataforma vinculava, mas ninguém removia pela interface, e a quota de storage era registrada e não aplicada. Declarou C6–C7 |
 | **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
 | ~~**F23 — Conteúdo e mídia**~~ | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | **Concluída como FASE 23** — `docs/fase-23-conteudo-e-midia.md`. A página pública virou componente compartilhado, e o histórico exigiu a primeira tabela nova desde a FASE 16 |
 | ~~**F24 — Mídia e agendamento**~~ | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | **Concluída como FASE 24** — `docs/fase-24-midia-e-agendamento.md`. O bucket deixou de ser a biblioteca: a imagem passou a ter registro, com reaproveitamento por checksum e exclusão que confere o uso |
 | ~~**F25 — Portal do palestrante**~~ | Perfil do palestrante, convite e vínculo de conta, portal com posse, materiais com visibilidade, vitrine e certificado | E21–E24 (escopo definido pelo humano) | **Concluída como FASE 25** — `docs/fase-25-portal-do-palestrante.md`. O palestrante deixou de ser uma linha da atividade e passou a ser uma pessoa da instituição, com portal próprio |
-| **F26 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (storage) ou num mutirão de meio dia |
-| **F27 — Material e convite do palestrante** | Convite por e-mail, integridade forte no upload, foto por URL, convite em lote, colunas legadas | E25–E29 (+ E30) | O que a FASE 25 declarou em aberto (e a revisão dela, o E30). **E25, E28 e E30 dependem da F15** (sem provedor de e-mail não há envio, e sem verificação de e-mail a entrada pelo convite se apoia no endereço da conta); as demais são independentes e cabem em mutirão |
+| **F26 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (entregue) ou num mutirão de meio dia |
+| **F27 — Material e convite do palestrante** | Convite por e-mail, integridade forte no upload, foto por URL, convite em lote, colunas legadas | E25–E29 (+ E30) | O que a FASE 25 declarou em aberto (e a revisão dela, o E30). A **FASE 15 entregou a esteira de e-mail**, então E25/E28 agora só precisam do template e do gatilho; a verificação de e-mail também já existe como caminho de confirmação do E30 — o que falta nele é o bloqueio de login |
+| **F28 — Entrega de e-mail de segunda ordem** | Domínio verificado no provedor, webhook de entrega (bounce/reclamação), preferências e opt-out | D7, D8, D9 | O que a FASE 15 declarou em aberto. D7 é operação de conta (verificar domínio e trocar `EMAIL_FROM`); D8 e D9 são produto e cabem juntos num mutirão |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo (atividade e evento), `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2, E33 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -265,8 +275,26 @@ declara as dívidas **novas** que a própria fase criou (B6–B9, na seção B a
 Os três itens de **quotas e planos** (C1, C3, I4) foram implementados na FASE 14 — o que
 este documento chamava de "F15". O registro está em
 [`docs/fase-14-quotas-e-planos.md`](fase-14-quotas-e-planos.md), que declara as dívidas
-novas da fase (C4 e C5, na seção C acima) e a dependência que ficou explícita: convidar
-gente nova de dentro da instituição é a F15 (Comunicação).
+novas da fase (C4 e C5 — **quitadas na FASE 21**) e a dependência que ficou explícita:
+convidar gente nova de dentro da instituição é a F15 (Comunicação).
+
+### Fase de ciclo de vida do membro e armazenamento executada na FASE 21 (concluído)
+
+Os dois itens que a FASE 14 declarou em aberto (C4 e C5) foram implementados na FASE 21. A
+quota de armazenamento deixou de ser um número decorativo: o uso passou a **somar** o que a
+instituição ocupa (PDFs de submissão, acervo de mídia, materiais de palestrante e
+certificados emitidos) e cada um dos três caminhos de upload é **recusado antes de assinar a
+URL** quando o arquivo não cabe — nunca a emissão de certificado, que é a promessa do produto
+(ADR-131). Do outro lado, o ciclo de vida do membro saiu do SQL: a tela de equipe troca
+papéis de escopo da instituição (revogando com `revokedAt`, preservando o histórico e sem
+tocar em papel de evento) e remove acesso com remoção lógica, devolvendo a vaga para a quota,
+com as travas de "não removo a mim mesmo" e "não removo o último proprietário" (ADR-133). O
+registro completo (ADRs 131–133, lições 27–30 e evidências) está em
+[`docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`](fase-21-ciclo-de-vida-do-membro-e-storage.md).
+A fase declarou **duas** dívidas novas: **C6** (a quota mede o banco, não o bucket: falta
+reconciliar objeto órfão e apagar o arquivo quando o registro sai) e **C7** (o vínculo é uma
+linha por instituição + pessoa, então remover a equipe tira o acesso de participante — a tela
+avisa, mas falta a ação "rebaixar para participante").
 
 ### Fase de sorteios executada na FASE 16 (concluído)
 
@@ -354,6 +382,31 @@ recusada quando há inscrição viva ou presença — a mensagem manda cancelar 
 na **seção 19** do documento da fase, com os ADRs 124 a 126. Declarou **uma** dívida nova, o
 **E33**: a fila de espera existe por atividade, mas a inscrição no evento — que consome a lotação do
 evento — **recusa** quando o evento lota, em vez de enfileirar.
+
+### Fase de comunicação executada na FASE 15 (concluído)
+
+Os sete itens de **comunicação** (D1–D6 + A5) foram implementados na FASE 15. O que existia e não
+avisava ninguém passou a sair: verificação de e-mail no cadastro, redefinição de senha, convite de
+equipe, avaliação atribuída, prazo de parecer, carta conquistada e certificado emitido. Três coisas
+definem o desenho:
+
+1. **Outbox, não log.** A mensagem nasce gravada (com o HTML que foi enviado) antes da entrega, e o
+   `dedupeKey` único impede que o mesmo FATO vire duas mensagens. É o que responde "o que essa pessoa
+   recebeu?" sem abrir o painel do provedor.
+2. **O padrão do driver é NÃO enviar.** `resend` só com declaração explícita (ou produção com chave);
+   fora disso `log` — grava e não sai da máquina. Um ambiente mal configurado não manda e-mail real
+   para endereço de pessoa de verdade.
+3. **O convite é promessa, não vínculo.** `tenant_invitations` guarda o token como hash; o vínculo
+   `MEMBER` + papel nasce no ACEITE, e é lá que a quota do plano é aplicada (ADR-127).
+
+O registro completo (ADRs 127–130, lições 21–26 e evidências, incluindo o **envio real verificado
+contra a conta de teste do Resend**) está em
+[`docs/fase-15-comunicacao.md`](fase-15-comunicacao.md). A fase declarou **três** dívidas novas:
+**D7** (a conta do Resend é de teste: sem domínio verificado, só o endereço dono da conta recebe),
+**D8** (não há webhook de entrega: `SENT` é "aceito pelo provedor", não "entregue na caixa") e
+**D9** (não há preferências nem opt-out). Ela também **corrigiu um defeito antigo** encontrado pelos
+seus próprios testes: o `jobId` da fila de certificados continha `:` e o BullMQ recusava o job — a
+fila nunca enfileirou nada desde a FASE 6, e toda emissão rodou inline em silêncio.
 
 ---
 

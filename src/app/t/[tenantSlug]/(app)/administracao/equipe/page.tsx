@@ -1,10 +1,21 @@
-import { Users, UserRoundCheck, UserRoundPlus } from 'lucide-react';
+import { Users, UserRoundCheck, UserRoundPlus, MailPlus } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
-import { PERMISSIONS } from '@/domain/rbac/permissions';
+import { getRequestContext } from '@/lib/auth/session';
+import { can } from '@/domain/rbac/authorization';
+import { PERMISSIONS, roleLabel } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { getTeamOverview } from '@/lib/admin/member-service';
+import { assignableTenantRoles, getTeamOverview } from '@/lib/admin/member-service';
 import { quotaUsageLabel } from '@/domain/platform/platform-rules';
+import { listInvitations } from '@/lib/communication/invitation-service';
+import {
+  invitationConsequence,
+  invitableRoles,
+} from '@/domain/communication/invitation-rules';
+import { invitationRoleLabel } from '@/domain/communication/email-rules';
+import { InviteMemberForm } from '@/components/communication/invite-member-form';
+import { InvitationActions } from '@/components/communication/invitation-actions';
+import { MemberRowActions } from '@/components/admin/member-actions';
 import {
   Alert,
   Badge,
@@ -50,13 +61,16 @@ const STATUS_LABELS: Record<string, string> = {
  *  pela conexão administrativa — a instituição vê os próprios vínculos.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE ESTA TELA NÃO FAZ (E POR QUÊ)
+ *  O QUE ESTA TELA FAZ DESDE A FASE 15
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Não convida e não remove ninguém. Convite exige provar que o endereço pertence a
- *  quem convida (e não sondar se um e-mail tem conta na plataforma), o que é o
- *  desenho da fase de Comunicação; remover membro mexe em acesso e auditoria e
- *  pede fluxo próprio. Vincular alguém que já tem conta é ação da PLATAFORMA, no
- *  painel de governança — e é onde a quota `maxMembers` é aplicada.
+ *  Convida por e-mail (a dívida D2, que a FASE 14 declarou aqui em texto: "convite
+ *  exige provar que o endereço pertence a quem convida... é o desenho da fase de
+ *  Comunicação"). O convite nasce PENDENTE, não ocupa vaga na quota e o vínculo só
+ *  existe no aceite — é lá que a quota do plano é aplicada.
+ *
+ *  Vincular alguém que JÁ tem conta continua sendo ação da PLATAFORMA, no painel de
+ *  governança; remover membro ainda é dívida (C5), porque mexe em acesso e auditoria
+ *  e pede fluxo próprio.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE A GUARDA É `tenant:member:invite`, E NÃO `tenant:read`
@@ -75,12 +89,48 @@ const STATUS_LABELS: Record<string, string> = {
 export default async function TeamPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  const { tenantId, tenantName, userId: actorUserId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
 
   const team = await getTeamOverview(tenantId);
+  const invitations = await listInvitations({ tenantId });
+
+  /**
+   * Papéis oferecidos no convite, com a consequência escrita de cada um.
+   *
+   * A lista vem do DOMÍNIO (`invitableRoles`): `OWNER` fica de fora porque
+   * propriedade se transfere, não se convida; `SUPERADMIN` porque é papel de
+   * plataforma; e `PARTICIPANT` porque quem entra na equipe não é público de evento
+   * (é a distinção que a FASE 14 criou). A consequência aparece na dica do campo —
+   * convidar "Administrador" sem dizer o que isso significa é convite no escuro.
+   */
+  const invitableRoleOptions = invitableRoles().map((role) => ({
+    value: role,
+    label: invitationRoleLabel(role),
+    consequence: invitationConsequence(role),
+  }));
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  QUEM PODE O QUÊ, NA MESMA LEITURA DA GUARDA (FASE 21)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O `Principal` já vem resolvido no contexto da requisição — não é uma segunda ida
+   *  ao banco. As duas permissões são DIFERENTES de propósito: trocar papéis exige
+   *  `tenant:role:assign` (OWNER), remover gente exige `tenant:member:remove`
+   *  (OWNER e ADMIN). A tela mostra o que cada perfil pode, e cada ação reconfere.
+   */
+  const context = await getRequestContext();
+  const principal = context?.principal ?? null;
+
+  const canAssignTenantRoles = can(principal, PERMISSIONS.TENANT_ROLE_ASSIGN, { scope: 'TENANT' });
+  const canRemoveMembers = can(principal, PERMISSIONS.TENANT_MEMBER_REMOVE, { scope: 'TENANT' });
+
+  const manageableRoleOptions = assignableTenantRoles().map((role) => ({
+    value: role,
+    label: roleLabel(role),
+  }));
 
   return (
     <div className="space-y-8" data-testid="team-page">
@@ -137,6 +187,98 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
         </Alert>
       ) : null}
 
+      <section className="space-y-4" aria-labelledby="convidar">
+        <SectionHeading
+          title="Convidar para a equipe"
+          description="O convite vale para o endereço informado: a pessoa entra com a conta daquele e-mail (ou cria uma na hora) e o acesso nasce no aceite."
+        />
+
+        <Card>
+          <div className="p-5">
+            <InviteMemberForm tenantSlug={tenantSlug} roles={invitableRoleOptions} />
+          </div>
+        </Card>
+      </section>
+
+      <section className="space-y-4" aria-labelledby="convites">
+        <SectionHeading
+          title="Convites"
+          description="Convites emitidos, com a situação calculada na leitura — convite vencido não precisa de agendador para virar vencido."
+        />
+
+        {invitations.length === 0 ? (
+          <EmptyState
+            icon={MailPlus}
+            title="Nenhum convite emitido"
+            description="Ao convidar alguém, o convite aparece aqui com o prazo de validade e o que já foi aceito."
+          />
+        ) : (
+          <Card className="overflow-hidden">
+            <TableWrapper>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Convidado</TH>
+                    <TH>Papel</TH>
+                    <TH>Situação</TH>
+                    <TH>Validade</TH>
+                    <TH>Ações</TH>
+                  </TR>
+                </THead>
+                <TBody data-testid="invitation-list">
+                  {invitations.map((invitation) => (
+                    <TR key={invitation.id} data-invitation-id={invitation.id} data-state={invitation.state}>
+                      <TD>
+                        <span className="block font-medium text-foreground">{invitation.email}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {invitation.invitedByName
+                            ? `convidado por ${invitation.invitedByName}`
+                            : 'convite da plataforma'}
+                          {invitation.sendCount > 1 ? ` · ${invitation.sendCount} envios` : ''}
+                        </span>
+                      </TD>
+                      <TD className="text-xs text-muted-foreground">{invitation.roleLabel}</TD>
+                      <TD>
+                        <Badge
+                          tone={
+                            invitation.state === 'ACCEPTED'
+                              ? 'success'
+                              : invitation.state === 'PENDING'
+                                ? 'primary'
+                                : 'neutral'
+                          }
+                          size="sm"
+                        >
+                          {invitation.stateLabel}
+                        </Badge>
+                      </TD>
+                      <TD className="text-xs text-muted-foreground">
+                        {invitation.expiresAt.toLocaleString('pt-BR', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                      </TD>
+                      <TD>
+                        {invitation.state === 'PENDING' ? (
+                          <InvitationActions
+                            tenantSlug={tenantSlug}
+                            invitationId={invitation.id}
+                            email={invitation.email}
+                            canRevoke
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrapper>
+          </Card>
+        )}
+      </section>
+
       <section className="space-y-4" aria-labelledby="equipe">
         <SectionHeading
           title="Equipe da instituição"
@@ -159,11 +301,12 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
                     <TH>Papéis</TH>
                     <TH>Situação</TH>
                     <TH>Último acesso</TH>
+                    <TH>Ações</TH>
                   </TR>
                 </THead>
                 <TBody data-testid="team-members">
                   {team.members.map((member) => (
-                    <TR key={member.userId} data-user-id={member.userId}>
+                    <TR key={member.userId} data-user-id={member.userId} data-status={member.status}>
                       <TD>
                         <span className="block font-medium text-foreground">{member.name}</span>
                         <span className="block text-xs text-muted-foreground">{member.email}</span>
@@ -174,8 +317,12 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
                             <span className="text-xs text-muted-foreground">sem papel vigente</span>
                           ) : (
                             member.roles.map((role) => (
-                              <Badge key={`${role.role}-${role.scope}`} tone="neutral" size="sm">
-                                {role.role}
+                              <Badge
+                                key={`${role.role}-${role.scope}`}
+                                tone="neutral"
+                                size="sm"
+                              >
+                                {roleLabel(role.role)}
                               </Badge>
                             ))
                           )}
@@ -193,6 +340,24 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
                               timeStyle: 'short',
                             })
                           : 'nunca'}
+                      </TD>
+                      <TD className="align-top">
+                        {/**
+                         * As permissões vêm do MESMO `Principal` que a guarda usa, e cada
+                         * ação reconfere no servidor: a tela só decide o que MOSTRAR.
+                         */}
+                        <MemberRowActions
+                          tenantSlug={tenantSlug}
+                          userId={member.userId}
+                          memberName={member.name}
+                          memberEmail={member.email}
+                          isSelf={member.userId === actorUserId}
+                          canAssignRoles={canAssignTenantRoles}
+                          canRemove={canRemoveMembers}
+                          rolesOptions={manageableRoleOptions}
+                          currentRoles={member.tenantRoles}
+                          registrationCount={member.registrationCount}
+                        />
                       </TD>
                     </TR>
                   ))}

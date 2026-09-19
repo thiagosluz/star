@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 14, 16, 17, 23, 24 e 25 (F15 pendente: Comunicação)
-Testes ................. 1283 (Vitest: unit + integração) + 79 (Playwright E2E)
-ADRs ................... 126 (numeração GLOBAL e sequencial — a próxima é ADR-127)
-Permissões ............. 57 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 35 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Fases concluídas ........ 1 a 17, 21, 23, 24 e 25 (F15 e F21 entregues; a F18+ é a próxima)
+Testes ................. 1381 (Vitest: unit + integração) + 85 (Playwright E2E)
+ADRs ................... 133 (numeração GLOBAL e sequencial — a próxima é ADR-134)
+Permissões ............. 58 (11 papéis, 4 escopos)
+Tabelas de tenant ...... 37 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1283+ testes passando
+npm test              # esperado: 1381+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 79+ testes passando
+npm run test:e2e      # esperado: 85+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -174,6 +174,10 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 46 | **Regra obrigatória validada em UM único ponto do ciclo**: título, resumo, palavras-chave (3 a 8 distintas) e idioma eram checados SÓ no envio. O rascunho era salvo com uma palavra-chave, e o autor só descobria no fim — com "a submissão está incompleta" e sem ter onde corrigir (a tela de detalhe era só leitura). A dica do campo dizia a regra que ninguém aplicava | Toda regra que impede a CONCLUSÃO de um fluxo tem de valer em cada passo que a torna verdadeira: a criação passou a usar a MESMA função do envio (`validateSubmissionContent`), a edição também, e a lista gravada é a normalizada (`normalizeKeywords`) — a contagem da tela usa a função do domínio, não uma segunda cópia da regra |
 | 47 | **`<input type="datetime-local">` tem precisão de MINUTO**, e o formulário de edição de atividade devolveu "a atividade precisa acontecer dentro do período do evento" para uma atividade que estava claramente dentro dele: ela fora criada no MESMO instante do início do evento (+30 dias), com segundos e milissegundos, e o valor do campo (truncado para o minuto) caía ~30 s ANTES da abertura. A tela mostrava o horário certo — a diferença era invisível | Ao editar por formulário um registro cujo horário tem segundos, espere o arredondamento: em teste, crie o dado com folga (dia seguinte) ou compare o INSTANTE gravado, não o texto. É o mesmo cuidado da armadilha 38, do lado do formulário |
 | 48 | **`/signup` com sessão ativa redireciona** (a pessoa já está dentro) e a tela de cadastro não existe — o E2E que tentava criar o SEGUNDO usuário pela interface morria esperando o campo "Nome completo", com o sintoma parecendo problema de formulário | Para mais de um usuário na mesma jornada, cadastre pela API (`/api/auth/sign-up/email`) — padrão das outras specs — ou saia antes (`/api/auth/sign-out`, armadilha 9). A tela de cadastro tem cenário próprio e não é o que os testes de jornada medem |
+| 49 | **O BullMQ RECUSA `jobId` com `:`** (`Custom Id cannot contain :` — o `:` é separador de chave no Redis, e só passa id de três segmentos). O `add` lança, o `catch` do enqueue interpreta como "fila indisponível" e a operação cai no caminho INLINE — funcionando, devagar e **em silêncio**. Foi assim que a fila de certificados ficou SEIS FASES sem enfileirar nada (`certificate:<uuid>` desde a FASE 6), com o E2E que documenta "o worker gera o arquivo" passando porque inline também emite | `jobId` usa hífen (`certificate-<id>`, `email-<id>`), e o teste de integração afirma `queued === true` — sem essa asserção, a degradação silenciosa volta sem ninguém notar |
+| 50 | **Variável já exportada no shell VENCE o `.env`**: `dotenv` não sobrescreve o que já existe no ambiente. O envio real falhou com "the eventflow.test domain is not verified" mesmo com o `.env` correto — o valor antigo estava no processo | Ao investigar "o `.env` não está sendo lido", imprima `process.env.A_VARIAVEL` **antes** de culpar o arquivo; e passe o valor explícito no comando (`$env:EMAIL_FROM=...`) quando quiser garantir o que está testando |
+| 51 | **Painel que abre para BAIXO a partir do último elemento de uma barra lateral de altura total** nasce fora da tela em 720 px de altura: o Playwright reprova com "element is outside of the viewport" (116 tentativas) e, na prática, a troca de instituição parece travada. O sintoma apareceu quando um item de menu a mais tornou a navegação mais alta | O seletor de contexto vive no RODAPÉ do shell: o painel abre para CIMA (`bottom-full mb-2`). E o contêiner rolável da navegação precisa de `min-h-0` — sem ele, `flex-1 overflow-y-auto` não encolhe abaixo do conteúdo e empurra o rodapé para fora da tela |
+| 52 | **Regra que depende de um dado que NÃO entra na função.** `planRoleChange` recebia `string[]` de NOMES de papel para reescrever os papéis da equipe — e `REVIEWER` concedido por **EVENTO** tem o mesmo nome do papel de instituição. Um chamador que esquecesse de filtrar o escopo revogaria a avaliação de uma trilha, **em silêncio**: para o domínio eram dois nomes iguais. Foi o teste unitário que reprovou, não a produção | Quando a decisão depende de um atributo (aqui, o `scope`), ele entra na ASSINATURA (`RoleRef = { role, scope }`), e o que não pertence ao conjunto fica fora **por construção**. Documentar "o chamador deve filtrar" deixa o defeito invisível para todo teste que não repita o filtro |
 
 ---
 
@@ -185,7 +189,7 @@ npm install
 docker compose up -d            # postgres, redis, minio (+ provisionamento de buckets)
 npm run db:setup                # migrate + rls + verify + isolation + seed
 npm run dev                     # http://localhost:3000
-docker compose --profile app up -d --build   # + web e worker (fila de certificados)
+docker compose --profile app up -d --build   # + web e worker (certificados e e-mails)
 docker compose --profile pooler up -d pooler # + PgBouncer (opcional, porta 6432)
 ```
 
@@ -221,7 +225,7 @@ o mês atual e os seguintes e resgata linhas que caíram na `DEFAULT`. Retençã
 
 O plano da instituição define **três** quotas, e `planQuotas(plan)` é a fonte única
 (o provisionamento já nasceu errado uma vez por não gravar `maxStorageBytes`):
-eventos, **membros da equipe** e armazenamento (esta última ainda não aplicada).
+eventos, **membros da equipe** e armazenamento — **todas aplicadas** desde a FASE 21.
 A quota de membros conta vínculos `kind = MEMBER` com situação `ACTIVE` ou `INVITED`
 — **participante de evento não consome quota**, senão um evento de 300 pessoas
 estouraria o plano gratuito sozinho.
@@ -236,6 +240,32 @@ Vincular quem **já tem conta** é ato de PLATAFORMA (`addTenantMember`), e é o
 prova de posse do endereço. `MembershipKind` (`MEMBER` × `PARTICIPANT`) é o que separa
 equipe de público — regra pura em `src/domain/tenancy/membership-rules.ts`, com a
 mesma função usada pela migração de backfill e pelo seed de teste.
+
+### Membros e armazenamento (FASE 21)
+
+A FASE 14 vinculava membro; a FASE 21 fecha o ciclo — **trocar papéis** e **remover** pela
+tela de equipe, e a quota de armazenamento **aplicada** de verdade em todo envio.
+
+```
+Equipe ................. /t/<slug>/administracao/equipe  → coluna "Ações" (papéis e remoção)
+Armazenamento .......... /t/<slug>/administracao         → seção "Armazenamento"
+```
+
+Quatro regras que quebram fácil: **a decisão de papéis recebe `RoleRef = { role, scope }`**,
+nunca só o NOME do papel — `REVIEWER` por EVENTO tem o mesmo nome do papel de instituição e
+seria revogado em silêncio (ADR-132 / armadilha 52); **a remoção é LÓGICA** (`status =
+'REMOVED'` + `deletedAt`, com **todas** as concessões revogadas por `revokedAt`, em qualquer
+escopo) e as guardas são conferidas **nesta ordem**: SELF antes de LAST_OWNER, senão quem se
+remove por último recebe a mensagem errada (ADR-133); **a quota mede TUDO o que a instituição
+guarda** — submissão, mídia, material de palestrante e certificado — e **bloqueia só o
+upload novo**, nunca a emissão de certificado: o documento do participante não pode depender
+da decisão de armazenamento da instituição (ADR-131); e a conferência acontece **antes de
+assinar a URL de upload** nos três caminhos (submissão, mídia, material), com desconto do
+arquivo substituído no rascunho — código `QUOTA_EXCEEDED`.
+
+**Manter o RBAC como está é decisão, não esquecimento:** `OWNER` tem `tenant:role:assign`,
+`ADMIN` só tem `tenant:member:remove`. Trocar papéis é ato de dono; a tela esconde o que a
+action recusaria.
 
 ### Sorteios (FASE 16)
 
@@ -340,8 +370,9 @@ usado (ADR-110 / armadilha 38).
 
 Sincronizar cópia é **explícito e limitado** (`SPONSOR_SYNC_FIELDS`): nome, descrição,
 site, logotipo, contato e documento — nunca cota, valor de contrato, vigência, ordem ou
-exibição (ADR-111). O acervo **mede** o armazenamento (`sumMediaBytes`), mas **não aplica**
-a quota do plano: impor o limite é decisão de produto da F21 (ADR-112 / dívida C4).
+exibição (ADR-111). O acervo **mede** o armazenamento (`sumMediaBytes`), e desde a FASE 21 a
+quota do plano é **aplicada** em todo envio (ADR-131): medir e bloquear passaram a ser a
+mesma esteira.
 
 ### Portal do palestrante (FASE 25)
 
@@ -388,6 +419,36 @@ do menu e a lista — e o item do menu segue a porta ("Convite de palestrante" a
 aceita pela página pública do convite, que lista os convites do e-mail da conta logada
 (ADR-119/120, `docs/fase-25-portal-do-palestrante.md` §10).
 
+
+### Comunicação (FASE 15)
+
+O e-mail transacional saiu do papel: **Resend** atrás de um driver com o padrão em **não
+enviar**, fila `emails` no BullMQ e um **outbox** (`email_messages`) que guarda o assunto,
+o HTML e o texto de cada mensagem **antes** da entrega.
+
+```
+Fila e entrega .......... src/lib/communication/{mailer,email-queue,email-service}.ts
+Templates (8) ........... src/domain/communication/email-templates.ts   (funções puras)
+Convite de equipe ....... /t/<slug>/administracao/equipe   → /t/<slug>/convite?codigo=<TOKEN>
+Caixa de saída .......... /t/<slug>/administracao/comunicacao   (communication:read)
+Confirmação de e-mail ... /verificacao  (destino do link; sem login)
+```
+
+Quatro regras que quebram fácil: **o driver só é `resend` com declaração explícita** (ou
+produção com chave) — em qualquer outro caso `log` grava e não envia, e
+`EMAIL_DRIVER=resend` **sem** chave falha com o motivo escrito em vez de cair para `log`
+(ADR-128); **o HTML é gravado no enfileiramento** e o `dedupeKey` (único) carrega o FATO,
+não o momento — é o que impede a mesma conquista de virar duas mensagens; **o convite é
+promessa, não vínculo** (`tenant_invitations`, token só como SHA-256, um PENDENTE por
+endereço por índice parcial, `MEMBER` + papel criados **no aceite**, onde a quota do plano
+é aplicada — ADR-127); e **nenhuma notificação lança** (D3/D5/D6 são disparadas do serviço
+que já conhece o fato, **fora** da transação — ADR-129).
+
+A conta do Resend **ainda não tem domínio verificado**: o remetente tem de ser
+`onboarding@resend.dev` e a entrega só alcança o endereço dono da conta (qualquer outro
+volta 403, classificado como falha DEFINITIVA e visível em "Falhas"). Enquanto isso, o
+driver `log` é o modo de operação de desenvolvimento e de teste — a suíte **força**
+`log`, para que uma chave real no `.env` nunca dispare e-mail de teste.
 
 ### Contas do seed — **não têm senha**
 
@@ -440,17 +501,19 @@ atividade, conta vinculada e um material público de apoio. Percursos em `README
 docs/                  documentação por fase (ADRs, lições, evidências)
 README.md              instalação, seed, contas, variáveis, scripts, índice dos docs
 src/domain/**          regras puras por área (tenancy, rbac, events, review,
-                       gamification, certificates, raffles, platform)
+                       gamification, certificates, raffles, platform, communication)
 src/lib/**             aplicação e infraestrutura (db, auth, events, review,
-                       gamification, certificates, raffles, admin, storage)
-src/lib/platform/**    governança global (único uso de adminPrisma na aplicação)
+                       gamification, certificates, raffles, admin, storage, communication)
+src/lib/platform/**    governança global (único uso de adminPrisma na aplicação — inclui o
+                       e-mail de plataforma: verificação e redefinição de senha)
 src/app/actions/**     Server Actions — TODA autorização é verificada aqui
 src/app/t/[slug]/**    (public) landing pages · (app) painel autenticado
+src/app/verificacao/** resultado da confirmação de e-mail (Better Auth redireciona para cá)
 src/app/(public)/organizacoes/**  diretório público de instituições
 src/app/superadmin/**  painel de governança (404 para quem não é SuperAdmin)
 src/app/instituicao-bloqueada/**  página de bloqueio de instituição suspensa
 src/app/validar/**     validação pública de certificado (sem login)
-src/workers/           worker BullMQ (fila de certificados)
+src/workers/           worker BullMQ (filas `certificates` e `emails` + varredura de prazos)
 prisma/schema.prisma   modelo de dados (camelCase citado nas colunas)
 prisma/migrations/**   migrações (algumas escritas à mão: índices parciais, policies,
                        particionamento de audit_logs)
@@ -479,8 +542,9 @@ tests/{unit,integration,e2e}
 6. **Idempotência por chave do fato** (XP, certificado, sorteio): repetir não duplica.
 7. **Documento é dado, não tela:** snapshot imutável + hash sobre conteúdo canônico;
    renderizador (PDF/SVG) é apresentação. Ordem de chaves canônicas é CONTRATO.
-8. **A recompensa nunca derruba o fluxo acadêmico:** ganchos de gamificação falham em
-   silêncio (log), nunca bloqueiam submissão ou parecer.
+8. **A recompensa nunca derruba o fluxo acadêmico:** ganchos de gamificação **e de
+   comunicação** falham em silêncio (log), nunca bloqueiam submissão, parecer, emissão de
+   certificado ou aceite de convite.
 
 ---
 
@@ -503,32 +567,38 @@ tests/{unit,integration,e2e}
 | 12 | Mutirão de dívidas rápidas (I7, I3, I5, C2, I1, I2, H2, H4) | ✅ |
 | 13 | Operação e segurança (A1, B1, B2, B3, B4: rate limit em Redis, observabilidade, RLS na migração, particionamento da auditoria, PgBouncer) | ✅ |
 | 14 | Quotas e planos (C1, C3, I4: quota de membros aplicada, plano e quotas editáveis pela UI, membro × participante no modelo e nas listas) | ✅ |
-| 15 | Comunicação (D1–D6, A5: e-mail transacional, notificações, convite de membros, verificação de e-mail) | ⏳ |
+| 15 | Comunicação (D1–D6, A5: e-mail transacional com Resend atrás de um driver que por padrão NÃO envia, fila `emails` com outbox `email_messages`, 8 templates em funções puras, convite de equipe em `tenant_invitations` com aceite e quota no aceite, avisos de avaliação/prazo/carta/certificado e verificação de e-mail sem bloquear o login) | ✅ |
 | 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
 | 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
 | 23 | Conteúdo e mídia (E9–E13: pré-visualização do rascunho pelo mesmo componente da página pública, upload de imagem na galeria, cópia de patrocinador entre eventos, histórico de versões com restauração, publicação agendada decidida na leitura) | ✅ |
 | 24 | Mídia e agendamento (E14–E17: biblioteca de mídia com reaproveitamento por checksum e exclusão que confere o uso, sincronia do patrocinador copiado, janela de exibição com `unpublishAt`, data agendada no fuso do evento) | ✅ |
 | 25 | Portal do palestrante (E21–E24: perfil do palestrante como pessoa da instituição, convite por token hasheado e vínculo de conta em dois caminhos, portal com posse verificada no banco, materiais com visibilidade por visitante, vitrine com foto e bio, certificado `SPEAKER` com carga apurada) — **+ revisão pós-entrega**: o item de menu voltou a aparecer para as permissões pessoais e o convite pendente virou porta de entrada do portal (ADR-119/120, §10 do doc) | ✅ |
+| 21 | Ciclo de vida do membro e storage (C4, C5: troca de papéis e remoção lógica do membro pela tela de equipe com posse do OWNER protegida, quota de **armazenamento aplicada de verdade** em todo envio — submissão, mídia e material de palestrante — medida sobre tudo o que a instituição guarda) | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
 > identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
-> FASE 24 e a FASE 25 foram entregues antes da F15 — o humano escolheu o tema pelo nome
+> FASE 24 e a FASE 25 foram entregues antes da F15 — e a FASE 21, numerada no meio, foi
+> entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**49 itens abertos**, soma das
-tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 16, 17, 23 e 24
-quitaram, mais o que cada uma declarou de novo, incluindo os cinco itens que a FASE 25
-declarou, o que a revisão dela declarou (E30), o que as duas rodadas da revisão da FASE 4
-declararam (E31 e E32) e o que a revisão da FASE 3 declarou (E33); verificado no código,
+**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**, soma das
+tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 15, 16, 17, 21,
+23 e 24 quitaram, mais o que cada uma declarou de novo: a FASE 15 quitou os sete itens de
+comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
+(reconciliação banco × bucket e acesso de participante perdido na remoção); a FASE 25
+declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
+declararam o E31 e o E32, e a revisão da FASE 3 declarou o E33; verificado no código,
 com esforço e
-fases candidatas numeradas como as fases que serão entregues — **F15 Comunicação** ·
-~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e patrocínio~~
-(entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20 Observabilidade
-de segunda ordem · F21 Ciclo de vida do membro e storage · F22 Operação de palco ·
-~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
+fases candidatas numeradas como as fases que serão entregues — ~~F15 Comunicação~~
+(entregue) · ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e
+patrocínio~~ (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20
+Observabilidade de segunda ordem · ~~F21 Ciclo de vida do membro e storage~~ (entregue) ·
+F22 Operação de
+palco · ~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
 ~~F25 Portal do palestrante~~ (entregue) · F26 Acervo de mídia: miniaturas, busca e
-sincronia em lote · F27 Material e convite do palestrante) está em
+sincronia em lote · F27 Material e convite do palestrante · F28 Entrega de e-mail de
+segunda ordem) está em
 **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
@@ -537,7 +607,7 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-25-portal-do-palestrante.md` — a F15 segue pendente).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`; a referência de comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

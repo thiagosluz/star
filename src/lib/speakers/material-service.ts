@@ -44,6 +44,8 @@ import {
   UPLOAD_URL_TTL_SECONDS,
 } from '@/lib/storage/s3-client';
 import { isSha256Hex, verifyStoredObject } from '@/domain/review/submission-rules';
+import { ensureStorageRoom } from '@/lib/storage/storage-quota';
+import { formatBytes } from '@/domain/events/image-rules';
 import {
   canAccessMaterial,
   canonicalMaterialExtension,
@@ -64,6 +66,8 @@ export type MaterialErrorCode =
   | 'FORBIDDEN'
   | 'INVALID_INPUT'
   | 'INTEGRITY'
+  /** A instituição esgotou a quota de armazenamento do plano (FASE 21). */
+  | 'QUOTA_EXCEEDED'
   | 'STORAGE'
   | 'INTERNAL';
 
@@ -181,6 +185,27 @@ export async function requestMaterialUpload(input: {
       mimeType: validation.mimeType,
       fileName: input.fileName,
     });
+
+    /**
+     * A quota do plano é conferida ANTES de assinar a URL (FASE 21): o material é uma
+     * adição (cada envio é um objeto novo, com o próprio registro), e recusar depois
+     * deixaria o arquivo no bucket sem dono.
+     */
+    const room = await ensureStorageRoom({
+      tenantId: input.tenantId,
+      incomingBytes: input.sizeBytes,
+    });
+
+    if (!room.ok) {
+      return {
+        ok: false,
+        code: 'QUOTA_EXCEEDED',
+        message: room.message,
+        details: [
+          `A instituição ocupa ${formatBytes(room.usage.totalBytes)} de ${formatBytes(room.usage.maxBytes ?? 0)}.`,
+        ],
+      };
+    }
 
     const bucket = materialBucket();
 

@@ -31,6 +31,7 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { nextCookies } from 'better-auth/next-js';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { createRedisRateLimitStorage } from '@/lib/auth/rate-limit-storage';
+import { RESET_TOKEN_MINUTES, VERIFICATION_TOKEN_HOURS, sendAccountEmail } from '@/lib/communication/account-mail';
 
 const rootDomain = process.env.ROOT_DOMAIN ?? 'lvh.me';
 const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
@@ -68,7 +69,61 @@ export const auth = betterAuth({
     minPasswordLength: 10,
     maxPasswordLength: 128,
     autoSignIn: true,
-    requireEmailVerification: false, // Fase 2 não tem provedor de e-mail ainda.
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `requireEmailVerification: false` — DECISÃO CONSCIENTE (FASE 15)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A verificação de e-mail existe, é enviada e confirma o endereço de verdade
+     *  (ver `emailVerification` abaixo). O que ela NÃO faz é bloquear o login.
+     *
+     *  Ligar o bloqueio hoje trancaria fora TODA conta já existente — inclusive as 16
+     *  contas de teste e qualquer usuário cadastrado antes desta fase —, porque
+     *  `emailVerified` nasce falso e ninguém foi convidado a confirmar. Um fluxo de
+     *  bloqueio exige aviso prévio, prazo e caminho de recuperação: é mudança de
+     *  produto, não consequência de ligar um provedor de e-mail.
+     *
+     *  O que a plataforma faz agora: envia a confirmação no cadastro, mostra o aviso
+     *  para quem não confirmou e permite reenviar. O endereço confirmado passa a ser
+     *  um sinal de confiança para o convite de equipe que se apoia nele (dívida E30).
+     */
+    requireEmailVerification: false,
+    resetPasswordTokenExpiresIn: RESET_TOKEN_MINUTES * 60,
+    /**
+     * Redefinição de senha (D1). O fluxo já existia na biblioteca e não tinha como
+     * avisar ninguém: o pedido era aceito, o token criado e a pessoa nunca sabia.
+     * Agora sai pelo mesmo outbox das demais mensagens.
+     */
+    sendResetPassword: async ({ user, url }) => {
+      await sendAccountEmail({
+        template: 'PASSWORD_RESET',
+        user: { id: user.id, email: user.email, name: user.name },
+        url,
+      });
+    },
+  },
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  VERIFICAÇÃO DE E-MAIL (A5)
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  `sendOnSignUp: true` faz o cadastro já disparar a confirmação — sem isso, a
+   *  pessoa só descobriria o recurso se procurasse por ele. O token vale 24 h (o
+   *  padrão da biblioteca é 1 h, curto demais para um e-mail que chega no meio de
+   *  uma aula).
+   *
+   *  O envio NÃO pode derrubar o cadastro: `sendAccountEmail` engole qualquer falha
+   *  (a conta existe, o e-mail é consequência dela).
+   */
+  emailVerification: {
+    sendOnSignUp: true,
+    expiresIn: VERIFICATION_TOKEN_HOURS * 60 * 60,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendAccountEmail({
+        template: 'EMAIL_VERIFICATION',
+        user: { id: user.id, email: user.email, name: user.name },
+        url,
+      });
+    },
   },
 
   session: {

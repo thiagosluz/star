@@ -7,6 +7,7 @@ import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
 import { AccountBlock } from '@/components/shell/account-block';
 import { AppShell } from '@/components/shell/app-shell';
 import { buildTenantNav } from '@/components/shell/tenant-nav';
+import { VerificationNotice } from '@/components/communication/verification-notice';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -133,6 +134,18 @@ export default async function TenantLayout({
         />
       }
     >
+      {/**
+       * Aviso de endereço não confirmado (FASE 15). Ele vive no shell porque a
+       * verificação NÃO bloqueia o login: sem um lugar que apareça sempre, quem cria a
+       * conta nunca voltaria para confirmar. O dado vem da sessão — sem consulta extra.
+       */}
+      {!context.user.emailVerified ? (
+        <VerificationNotice
+          email={context.user.email}
+          redirectTo={tenantPath(tenantSlug, '/dashboard')}
+        />
+      ) : null}
+
       {children}
     </AppShell>
   );

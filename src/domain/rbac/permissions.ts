@@ -38,6 +38,14 @@ export const PERMISSIONS = {
   TENANT_ROLE_ASSIGN: 'tenant:role:assign',
   TENANT_ANALYTICS_READ: 'tenant:analytics:read',
   TENANT_AUDIT_READ: 'tenant:audit:read',
+  /**
+   * Comunicação da instituição — FASE 15.
+   *
+   * Dá acesso à caixa de saída (o que a plataforma enviou em nome da instituição,
+   * para quem e com que resultado). É permissão de ADMINISTRAÇÃO: o conteúdo inclui
+   * endereço de pessoas e o texto das mensagens.
+   */
+  COMMUNICATION_READ: 'communication:read',
 
   // ── Eventos ─────────────────────────────────────────────────────────────────
   EVENT_CREATE: 'event:create',
@@ -224,6 +232,36 @@ export const ROLE_KEYS = [
 
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
+/**
+ * Rótulo do papel em português (FASE 21).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE MAPA SAIU DO MÓDULO DE E-MAIL
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Ele nasceu na FASE 15, dentro de `domain/communication/email-rules.ts`, porque o
+ *  primeiro lugar que precisou dele foi o convite por e-mail. A tela de equipe da
+ *  FASE 21 precisa do MESMO rótulo para as caixas de seleção de papel — e importar
+ *  o domínio de comunicação para rotular RBAC inverteria a dependência. O rótulo é
+ *  do papel, e o papel é daqui.
+ */
+export const ROLE_LABELS: Readonly<Record<RoleKey, string>> = {
+  SUPERADMIN: 'Administração da plataforma',
+  OWNER: 'Proprietário(a)',
+  ADMIN: 'Administrador(a)',
+  ORGANIZER: 'Organizador(a)',
+  FINANCE: 'Financeiro',
+  REVIEWER: 'Revisor(a)',
+  CHAIR: 'Coordenação científica',
+  SPEAKER: 'Palestrante',
+  STAFF: 'Equipe de operação',
+  PARTICIPANT: 'Participante',
+  SPONSOR: 'Patrocinador(a)',
+};
+
+export function roleLabel(role: string): string {
+  return ROLE_LABELS[role as RoleKey] ?? role;
+}
+
 /** Papéis que só fazem sentido no escopo de tenant (não por evento/atividade). */
 export const TENANT_ONLY_ROLES: readonly RoleKey[] = Object.freeze(['OWNER', 'ADMIN']);
 
@@ -285,6 +323,13 @@ const ORGANIZER_PERMISSIONS: Permission[] = [
    */
   PERMISSIONS.SPEAKER_MANAGE,
   PERMISSIONS.PAGE_MANAGE,
+  /**
+   * `communication:read` — quem organiza o evento responde também pelos avisos que
+   * ele gera (convites de equipe, atribuições de avaliação, certificados). Fica com
+   * o ORGANIZER, e não com o CHAIR: a caixa de saída é da instituição inteira, não da
+   * trilha científica.
+   */
+  PERMISSIONS.COMMUNICATION_READ,
 ];
 
 /** Permissões de quem participa (todo usuário tem, no mínimo, estas). */

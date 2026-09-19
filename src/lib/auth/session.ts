@@ -92,6 +92,13 @@ export interface AuthenticatedUser {
   email: string;
   image: string | null;
   publicHandle: string | null;
+  /**
+   * Endereço confirmado (FASE 15).
+   *
+   * Vem na própria sessão do Better Auth — não custa consulta. É o que permite ao
+   * shell avisar quem ainda não confirmou sem uma ida ao banco por render.
+   */
+  emailVerified: boolean;
 }
 
 /** Uma instituição à qual o usuário tem acesso, com os papéis que ali exerce. */
@@ -326,6 +333,7 @@ export async function getRequestContext(): Promise<RequestContext | null> {
     image: session.user.image ?? null,
     publicHandle:
       (session.user as { publicHandle?: string | null }).publicHandle ?? null,
+    emailVerified: session.user.emailVerified ?? false,
   };
 
   const memberships = await loadMemberships(user.id);
@@ -377,5 +385,6 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
     image: session.user.image ?? null,
     publicHandle:
       (session.user as { publicHandle?: string | null }).publicHandle ?? null,
+    emailVerified: session.user.emailVerified ?? false,
   };
 }

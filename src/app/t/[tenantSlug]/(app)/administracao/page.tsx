@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CalendarCog, FileBadge, History, Layers, ListChecks, Settings2, Ticket, Users } from 'lucide-react';
+import { CalendarCog, FileBadge, HardDrive, History, Layers, ListChecks, Settings2, Ticket, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -8,7 +8,11 @@ import { getRequestContext } from '@/lib/auth/session';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminOverview } from '@/lib/admin/catalog-service';
 import { listAuditLog } from '@/lib/admin/audit';
+import { storageUsage } from '@/lib/storage/storage-quota';
+import { formatBytes } from '@/domain/events/image-rules';
+import { quotaUsageLabel } from '@/domain/platform/platform-rules';
 import {
+  Alert,
   Badge,
   Card,
   CardContent,
@@ -56,9 +60,10 @@ export default async function AdminHomePage({
   const context = await getRequestContext();
   const principal = context?.principal;
 
-  const [overview, audit] = await Promise.all([
+  const [overview, audit, storage] = await Promise.all([
     getAdminOverview(tenantId),
     listAuditLog(tenantId, { limit: 15 }),
+    storageUsage(tenantId),
   ]);
 
   const areas = [
@@ -152,6 +157,53 @@ export default async function AdminHomePage({
           value={overview.submissions}
           data-testid="stat-Submissões"
         />
+      </section>
+
+      <section className="space-y-4" aria-labelledby="armazenamento">
+        <SectionHeading
+          title="Armazenamento"
+          description="Tudo o que a plataforma guarda para a instituição — e o teto do plano."
+        />
+
+        {storage.usage.state === 'EXCEEDED' || storage.usage.state === 'AT_LIMIT' ? (
+          <Alert tone="warning" title="Sem espaço no plano" data-testid="storage-quota-alert">
+            A instituição ocupa <strong className="font-medium">{formatBytes(storage.totalBytes)}</strong>{' '}
+            e o plano permite {formatBytes(storage.maxBytes ?? 0)}. A partir daqui,{' '}
+            <strong className="font-medium">novos envios são recusados</strong> (PDF de submissão,
+            imagens da página e materiais de palestrante) — os arquivos e certificados que já existem
+            continuam disponíveis. Libere espaço excluindo imagens do acervo ou peça o aumento da
+            quota à plataforma.
+          </Alert>
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="storage-stats">
+          <StatCard
+            label="Armazenamento usado"
+            value={formatBytes(storage.totalBytes)}
+            hint={quotaUsageLabel(storage.usage)}
+            icon={<HardDrive className="size-4" aria-hidden />}
+            tone={storage.usage.state === 'EXCEEDED' || storage.usage.state === 'AT_LIMIT' ? 'warning' : 'primary'}
+            data-testid="storage-total"
+          />
+          <StatCard
+            label="Submissões"
+            value={formatBytes(storage.submissionBytes)}
+            hint="PDFs enviados por autores"
+            data-testid="storage-submissions"
+          />
+          <StatCard
+            label="Acervo de mídia"
+            value={formatBytes(storage.mediaBytes)}
+            hint="Capas, logotipos e galeria"
+            data-testid="storage-media"
+          />
+          <StatCard
+            label="Certificados e materiais"
+            value={formatBytes(storage.certificateBytes + storage.speakerMaterialBytes)}
+            hint="Documentos gerados e apoio dos palestrantes"
+            data-testid="storage-generated"
+          />
+        </div>
       </section>
 
       <section className="space-y-4" aria-labelledby="areas">

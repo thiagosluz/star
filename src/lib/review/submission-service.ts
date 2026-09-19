@@ -26,6 +26,8 @@ import { randomBytes } from 'node:crypto';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
+import { ensureStorageRoom } from '@/lib/storage/storage-quota';
+import { formatBytes } from '@/domain/events/image-rules';
 import {
   BUCKETS,
   buildObjectKey,
@@ -71,6 +73,8 @@ export type SubmissionErrorCode =
   | 'TRACK_LIMIT_REACHED'
   | 'CFP_CLOSED'
   | 'NOT_READY'
+  /** A instituição esgotou a quota de armazenamento do plano (FASE 21). */
+  | 'QUOTA_EXCEEDED'
   | 'FORBIDDEN'
   | 'INTERNAL';
 
@@ -369,12 +373,37 @@ export async function requestUpload(
       const previous = await tx.submissionFile.findFirst({
         where: { submissionId: submission.id, kind: input.kind },
         orderBy: { version: 'desc' },
-        select: { version: true },
+        select: { version: true, sizeBytes: true },
       });
 
       const createsVersion = fileReplacementCreatesVersion(
         submission.status as SubmissionStatus,
       );
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  A QUOTA DE ARMAZENAMENTO É CONFERIDA ANTES DE ASSINAR A URL (FASE 21)
+       * ─────────────────────────────────────────────────────────────────────────
+       *  Recusar depois do upload deixaria o PDF no bucket, pago e sem registro.
+       *  Em RASCUNHO o envio substitui o MESMO objeto (`version` não incrementa), então
+       *  os bytes do arquivo anterior saem da conta: sem esse desconto, trocar um PDF
+       *  de 5 MB por outro de 5 MB seria recusado numa instituição no limite.
+       */
+      const replacingBytes =
+        previous && !createsVersion ? Number(previous.sizeBytes ?? 0) : 0;
+
+      const room = await ensureStorageRoom({
+        tenantId: input.tenantId,
+        incomingBytes: input.sizeBytes,
+        replacingBytes,
+      });
+
+      if (!room.ok) {
+        throw new SubmissionError('QUOTA_EXCEEDED', room.message, [
+          `A instituição ocupa ${formatBytes(room.usage.totalBytes)} de ${formatBytes(room.usage.maxBytes ?? 0)}.`,
+        ]);
+      }
+
       const version = previous ? (createsVersion ? previous.version + 1 : previous.version) : 1;
 
       const bucket = BUCKETS.submissions();
