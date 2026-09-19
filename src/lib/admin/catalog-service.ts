@@ -30,7 +30,14 @@ import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { resolveTheme } from '@/domain/events/landing-page';
 import { evaluateEventQuota } from '@/domain/platform/platform-rules';
 import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
-import { checkScheduleConflict, evaluateRoomFit } from '@/domain/events/event-rules';
+import {
+  checkScheduleConflict,
+  evaluateRoomCapacityChange,
+  evaluateRoomFit,
+  evaluateRoomRemoval,
+  normalizeRoomCapacity,
+  type RoomUsage,
+} from '@/domain/events/event-rules';
 import { parseRubric } from '@/domain/review/review-rules';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
 
@@ -40,6 +47,12 @@ export type AdminErrorCode =
   | 'SLUG_TAKEN'
   | 'ROOM_CONFLICT'
   | 'ROOM_TOO_SMALL'
+  /** O nome da sala já existe neste evento (revisão da FASE 3, edição de sala). */
+  | 'ROOM_NAME_TAKEN'
+  /** A sala está em uso por atividades — excluir apagaria a referência em silêncio. */
+  | 'ROOM_IN_USE'
+  /** A capacidade nova da sala ficaria abaixo de atividade já configurada/ocupada. */
+  | 'ROOM_CAPACITY_BELOW_USAGE'
   /** O plano da instituição atingiu o limite de eventos (FASE 12, item C2). */
   | 'QUOTA_EXCEEDED'
   | 'INTERNAL';
@@ -326,7 +339,7 @@ export interface AdminEventDetail extends AdminEventRow {
   cfpClosesAt: Date | null;
   /** A inscrição está restrita à comunidade? (FASE 12, item I3) */
   registrationRequiresMembership: boolean;
-  rooms: { id: string; name: string; capacity: number }[];
+  rooms: { id: string; name: string; capacity: number | null }[];
   activities: {
     id: string;
     slug: string;
@@ -339,6 +352,10 @@ export interface AdminEventDetail extends AdminEventRow {
     endsAt: Date;
     workloadMinutes: number;
     capacity: number | null;
+    /** Teto da SALA (`null` = a sala não declara limite). */
+    roomCapacity: number | null;
+    /** Ocupação real (contador denormalizado da reserva de vaga). */
+    confirmedCount: number;
     waitlistEnabled: boolean;
     roomId: string | null;
     roomName: string | null;
@@ -407,12 +424,13 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
             endsAt: true,
             workloadMinutes: true,
             capacity: true,
+            confirmedCount: true,
             waitlistEnabled: true,
             roomId: true,
             isFeatured: true,
             checkInEnabled: true,
             requiresRegistration: true,
-            room: { select: { name: true } },
+            room: { select: { name: true, capacity: true } },
             _count: {
               select: {
                 registrations: {
@@ -485,7 +503,15 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       startsAt: activity.startsAt,
       endsAt: activity.endsAt,
       workloadMinutes: activity.workloadMinutes,
+      /**
+       * `capacity` é a lotação DECLARADA e `roomCapacity` é o teto da sala: os dois
+       * viajam separados até a tela, porque a tela precisa explicar POR QUE as vagas
+       * efetivas são menores do que o organizador digitou (revisão da FASE 3). O
+       * número efetivo sai da função do domínio, não de uma conta local.
+       */
       capacity: activity.capacity,
+      roomCapacity: activity.room?.capacity ?? null,
+      confirmedCount: activity.confirmedCount,
       waitlistEnabled: activity.waitlistEnabled,
       roomId: activity.roomId,
       roomName: activity.room?.name ?? null,
@@ -510,15 +536,60 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
 // ───────────────────────────────────────────────────────────────────────────────
 //  Salas
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O que as atividades VIVAS ocupam de uma sala.
+ *
+ * A leitura é feita na MESMA transação da escrita: a capacidade da sala é o teto
+ * do limite efetivo das atividades, então decidir com uma lista lida antes (a tela
+ * foi aberta há um minuto) deixaria passar a redução que o próprio sistema acabou
+ * de tornar inválida — a mesma janela que a checagem de conflito de horário evita.
+ */
+async function readRoomUsage(
+  tx: Parameters<Parameters<typeof withTenant>[1]>[0],
+  eventId: string,
+  roomId: string,
+): Promise<RoomUsage[]> {
+  const rows = await tx.activity.findMany({
+    where: { eventId, roomId, deletedAt: null },
+    orderBy: { startsAt: 'asc' },
+    select: { title: true, capacity: true, confirmedCount: true },
+  });
+
+  return rows.map((row) => ({
+    title: row.title,
+    capacity: row.capacity,
+    confirmedCount: row.confirmedCount,
+  }));
+}
+
+/**
+ * Cria ou atualiza uma sala.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A CAPACIDADE É OPCIONAL, E ISSO MUDA A REGRA — NÃO SÓ O CAMPO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Vazio = a sala não declara limite (a lotação da atividade manda). Com limite, a
+ *  sala passa a ser o TETO do limite efetivo da atividade que acontece nela, então
+ *  reduzir a capacidade de uma sala em uso é recusado quando deixaria uma atividade
+ *  configurada com mais vagas do que a sala comporta, ou gente já inscrita sem
+ *  lugar (`evaluateRoomCapacityChange`, revisão da FASE 3).
+ *
+ *  Editar uma sala para o nome de OUTRA do mesmo evento esbarra no índice único
+ *  `(eventId, name)` — caminho que só existe porque agora dá para editar. Sem o
+ *  tratamento abaixo, o organizador recebia "Não foi possível salvar a sala."
+ */
 export async function saveRoom(input: {
   tenantId: string;
   actorId: string;
   eventId: string;
   roomId?: string;
   name: string;
-  capacity: number;
+  /** `null`/ausente/≤ 0 = sala SEM LIMITE definido. */
+  capacity: number | null;
 }): Promise<AdminResult<{ roomId: string; created: boolean }>> {
   try {
+    const capacity = normalizeRoomCapacity(input.capacity);
+
     return await withTenant(input.tenantId, async (tx) => {
       const event = await tx.event.findFirst({
         where: { id: input.eventId, deletedAt: null },
@@ -531,7 +602,7 @@ export async function saveRoom(input: {
 
       if (input.roomId) {
         const before = await tx.room.findFirst({
-          where: { id: input.roomId },
+          where: { id: input.roomId, eventId: input.eventId },
           select: { id: true, name: true, capacity: true },
         });
 
@@ -539,9 +610,18 @@ export async function saveRoom(input: {
           return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Sala não encontrada.' };
         }
 
+        const change = evaluateRoomCapacityChange({
+          nextCapacity: capacity,
+          usage: await readRoomUsage(tx, input.eventId, before.id),
+        });
+
+        if (!change.allowed) {
+          return { ok: false as const, code: change.code, message: change.message };
+        }
+
         await tx.room.update({
           where: { id: before.id },
-          data: { name: input.name, capacity: input.capacity },
+          data: { name: input.name, capacity: change.normalizedCapacity },
         });
 
         await recordAudit(
@@ -551,7 +631,11 @@ export async function saveRoom(input: {
             action: 'UPDATE',
             entityType: 'room',
             entityId: before.id,
-            changes: diffFields(before, { name: input.name, capacity: input.capacity }, ['name', 'capacity']),
+            changes: diffFields(
+              before,
+              { name: input.name, capacity: change.normalizedCapacity },
+              ['name', 'capacity'],
+            ),
           },
           tx,
         );
@@ -562,7 +646,7 @@ export async function saveRoom(input: {
       const id = randomUUID();
 
       await tx.room.create({
-        data: { id, tenantId: input.tenantId, eventId: input.eventId, name: input.name, capacity: input.capacity },
+        data: { id, tenantId: input.tenantId, eventId: input.eventId, name: input.name, capacity },
       });
 
       await recordAudit(
@@ -572,7 +656,7 @@ export async function saveRoom(input: {
           action: 'CREATE',
           entityType: 'room',
           entityId: id,
-          changes: { name: { from: null, to: input.name }, capacity: { from: null, to: input.capacity } },
+          changes: { name: { from: null, to: input.name }, capacity: { from: null, to: capacity } },
         },
         tx,
       );
@@ -580,8 +664,82 @@ export async function saveRoom(input: {
       return { ok: true as const, roomId: id, created: true };
     });
   } catch (error) {
+    if (isUniqueViolation(error) && violatedIndexName(error)?.includes('name')) {
+      return {
+        ok: false as const,
+        code: 'ROOM_NAME_TAKEN',
+        message: 'Já existe uma sala com este nome neste evento.',
+      };
+    }
+
     console.error(`[admin] falha ao salvar sala: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a sala.' };
+  }
+}
+
+/**
+ * Exclui uma sala que não está sendo usada.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  EXCLUSÃO FÍSICA, E SÓ QUANDO NADA APONTA PARA ELA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Ao contrário da atividade (que tem histórico de gente inscrita e por isso é
+ *  exclusão lógica), a sala não é referenciada por nada além da atividade — e a
+ *  atividade já recusou, aqui, quando existe. Não há rastro a preservar: o que
+ *  havia era um cadastro errado, e a trilha de auditoria guarda o fato.
+ *
+ *  `activities."roomId"` é `ON DELETE SET NULL`, então excluir sem esta guarda não
+ *  falharia: a sala sumiria da programação em silêncio. É exatamente o que a recusa
+ *  evita (`evaluateRoomRemoval`).
+ */
+export async function deleteRoom(input: {
+  tenantId: string;
+  actorId: string;
+  eventId: string;
+  roomId: string;
+}): Promise<AdminResult<{ name: string; activities: number }>> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const room = await tx.room.findFirst({
+        where: { id: input.roomId, eventId: input.eventId },
+        select: { id: true, name: true, capacity: true },
+      });
+
+      if (!room) {
+        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Sala não encontrada.' };
+      }
+
+      const usage = await readRoomUsage(tx, input.eventId, room.id);
+      const removal = evaluateRoomRemoval({ usage });
+
+      if (!removal.allowed) {
+        return { ok: false as const, code: removal.code, message: removal.message };
+      }
+
+      /**
+       * Atividades JÁ EXCLUÍDAS (logicamente) não bloqueiam a exclusão da sala: elas
+       * saíram da programação e ninguém as lê. O vínculo delas passa a nulo pela
+       * própria FK — mudança em registro que já estava fora de circulação.
+       */
+      await tx.room.delete({ where: { id: room.id } });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'DELETE',
+          entityType: 'room',
+          entityId: room.id,
+          changes: { name: { from: room.name, to: null }, capacity: { from: room.capacity, to: null } },
+        },
+        tx,
+      );
+
+      return { ok: true as const, name: room.name, activities: 0 };
+    });
+  } catch (error) {
+    console.error(`[admin] falha ao excluir sala: ${errorMessage(error)}`);
+    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível excluir a sala.' };
   }
 }
 

@@ -972,7 +972,18 @@ model Room {
   name     String  @db.VarChar(120)
   building String? @db.VarChar(120)
   floor    String? @db.VarChar(40)
-  capacity Int     @default(0)
+
+  /// Capacidade da sala. `null` = SEM LIMITE definido.
+  ///
+  /// A sala não tem "zero lugares": ela tem ausência de limite. Por isso o valor
+  /// não positivo é normalizado para `null` na escrita (`normalizeRoomCapacity`) e
+  /// a coluna nasceu sem `DEFAULT` — um `DEFAULT 0` transformava "não sei" em
+  /// "não cabe ninguém", que é uma afirmação diferente.
+  ///
+  /// Sala sem limite NÃO restringe a lotação da atividade; com limite, ela passa a
+  /// ser o teto do limite EFETIVO (`effectiveActivityCapacity`), inclusive na
+  /// reserva de vaga sob concorrência (revisão da FASE 3, ADR-134/135).
+  capacity Int?
 
   /// Recursos disponíveis: projetor, som, acessibilidade, etc.
   resources Json    @default("[]")

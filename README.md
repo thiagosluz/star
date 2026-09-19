@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 23, 24 e 25 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1381 testes** unitários/integração · **85 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 23, 24 e 25 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1414 testes** unitários/integração · **89 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -43,6 +43,7 @@ avaliação por pares e gamificação.
 |---|---|
 | **Multi-tenancy + RBAC** | Uma base, várias instituições isoladas por Row-Level Security; 11 papéis e 58 permissões, com acúmulo de papéis e troca de contexto sem perder a sessão |
 | **Eventos e inscrições** | Eventos, atividades, salas, vagas sem superlotação (mesmo sob concorrência), lista de espera FIFO, landing pages públicas personalizáveis e **inscrição aberta**: quem se inscreve passa a ser participante da instituição (vínculo suspenso ou removido continua bloqueado). A inscrição pode ser **no evento** — e ela já inclui as atividades **abertas** (palestra, mesa-redonda), que não pedem inscrição própria e ignoram lotação — ou **por atividade** (minicurso, oficina), que continua com vaga e fila. A programação é **editável e excluível** pelo organizador (excluir só o cadastro nunca usado; com inscritos ou presença, a mensagem manda cancelar), e os tipos e situações aparecem **em português** |
+| **Salas e vagas** | A sala tem **ciclo de vida próprio** na tela do evento: criar, **editar** e **excluir** (a exclusão é recusada enquanto alguma atividade a usa, com a contagem — a FK é `ON DELETE SET NULL` e sem a guarda a sala sumiria da programação em silêncio). A **capacidade é opcional**: em branco significa **sem limite**, e quem limita é a lotação da atividade. Com capacidade declarada, a sala passa a ser o **teto das vagas**: a atividade que não couber é recusada ao salvar, e a **reserva de vaga** (a mesma instrução atômica que impede superlotação sob concorrência) para no limite da sala — uma atividade sem vagas declaradas numa sala de 40 confirma 40, não mais. Reduzir a capacidade abaixo das vagas configuradas ou dos inscritos é recusado com o número. A página pública anuncia o limite **efetivo**, dizendo quando a sala é quem limita |
 | **Submissão e avaliação** | Chamada de trabalhos por trilha, upload de PDF direto ao storage, revisão cega, rubrica com nota ponderada, conflito de interesse e decisão do comitê. O autor cria o rascunho e **cai direto na página da submissão** (anexar e enviar), **edita** título, resumo e palavras-chave enquanto ela não foi enviada — as regras do envio (resumo mínimo, 3 a 8 palavras-chave distintas) valem já na criação, com contagem em tempo real no campo — e pode **excluir os próprios rascunhos**: submissões enviadas são registro da avaliação e não se apagam |
 | **Gamificação** | XP com livro-razão idempotente, cartas colecionáveis com raridade e foil, missões, ofensiva, níveis e prestígio |
 | **Certificação** | PDF/SVG assinado (HMAC-SHA256), hash de integridade, QR Code e **validação pública sem login** |
@@ -388,8 +389,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1381 testes (57 arquivos) — unit + integração com banco real
-npm run test:e2e          # 85 testes E2E contra o container de produção
+npm test                  # 1414 testes (58 arquivos) — unit + integração com banco real
+npm run test:e2e          # 89 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -425,7 +426,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 |---|---|---|
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
 | [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 11 papéis (58 permissões hoje, incluindo as de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |
-| [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado. A **revisão pós-entrega** (§19) entrega a **inscrição no evento** que materializa as atividades abertas (`EVENT_AUTO`), `requiresRegistration` como coluna com padrão derivado do tipo, **edição e exclusão** de atividade na programação e rótulos de tipo/situação em português | ADR-014 … 018 · 124 a 126 |
+| [`docs/fase-03-eventos-inscricoes.md`](docs/fase-03-eventos-inscricoes.md) | Ciclo de vida do evento, lotação sob concorrência, lista de espera FIFO, landing page modular com tema validado. A **revisão pós-entrega** (§19) entrega a **inscrição no evento** que materializa as atividades abertas (`EVENT_AUTO`), `requiresRegistration` como coluna com padrão derivado do tipo, **edição e exclusão** de atividade na programação e rótulos de tipo/situação em português. A **segunda revisão** (§20) entrega o ciclo de vida da **sala** (editar e excluir, com a exclusão recusada quando há atividade usando), a **capacidade opcional** (vazio = sem limite) e a sala como **teto das vagas** — inclusive na reserva de vaga, com o limite efetivo anunciado na página pública | ADR-014 … 018 · 124 a 126 · 134 a 136 |
 | [`docs/fase-04-submissoes-peer-review.md`](docs/fase-04-submissoes-peer-review.md) | Chamada de trabalhos, upload direto ao storage, rubrica ponderada, conflito de interesse, revisão cega, decisão. A **revisão pós-entrega** (§18) faz a criação do rascunho cair direto na página da submissão e entrega a **exclusão de rascunho** (nunca do que já foi enviado) | ADR-019 … 024 · 121 e 122 |
 | [`docs/fase-05-gamificacao.md`](docs/fase-05-gamificacao.md) | Motor de recompensas, XP idempotente, curva de níveis, prestígio, cartas, foil, missões, credenciamento | ADR-025 … 031 |
 | [`docs/fase-06-certificacao.md`](docs/fase-06-certificacao.md) | Elegibilidade, carga horária real, conteúdo canônico, assinatura HMAC, PDF/SVG, QR, fila BullMQ, validação pública | ADR-032 … 038 |
@@ -449,7 +450,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **133 decisões** registradas até aqui.
+> são **136 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -503,9 +504,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              983 testes de regra pura e de formato (sem banco)
-├── integration/       398 testes com banco, Redis e storage reais
-└── e2e/               85 testes Playwright contra o container
+├── unit/              1000 testes de regra pura e de formato (sem banco)
+├── integration/       414 testes com banco, Redis e storage reais
+└── e2e/               89 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -710,6 +711,13 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 28. **A verificação de e-mail não bloqueia o login (FASE 15).** É decisão consciente: ligar o
     bloqueio trancaria fora toda conta já existente, inclusive as de teste. A plataforma envia
     a confirmação, avisa no shell e permite reenviar — mas quem não confirmar continua entrando.
+29. **A sala de uma atividade ABERTA não limita o público do evento (revisão da FASE 3, dívida
+    E34).** O teto da sala vale para as atividades com inscrição própria — minicursos e oficinas,
+    justamente as que acontecem em sala —, aplicado na reserva da vaga. Atividade aberta recebe
+    automaticamente quem se inscreveu no evento e não tem fila: barrar ali significaria negar
+    acesso em silêncio a quem já está inscrito, por causa de uma sala escolhida depois. O painel
+    **avisa** quando o público do evento excede a capacidade da sala, com os dois números, e a
+    decisão (sala maior, atividade com vagas ou limite no evento) fica com quem organiza.
 
 ---
 

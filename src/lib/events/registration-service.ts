@@ -31,9 +31,13 @@ import {
   cancelReleasesSeat,
   decideRegistration,
   remainingSeats,
+  RESERVE_ACTIVITY_SEAT_SQL,
+  RESERVE_EVENT_SEAT_SQL,
+  RESERVE_OPEN_ACTIVITY_SEAT_SQL,
   type RegistrationDecision,
 } from '@/domain/events/registration-rules';
 import {
+  effectiveActivityCapacity,
   evaluateRegistrationWindow,
   type ActivityStatus,
   type EventStatus,
@@ -128,6 +132,15 @@ interface ActivityContext {
   slug: string;
   title: string;
   status: ActivityStatus;
+  /**
+   * LIMITE EFETIVO da atividade (revisão da FASE 3): o menor entre a lotação que
+   * ela declara e a capacidade da SALA onde acontece (`effectiveActivityCapacity`).
+   *
+   * `null` = ilimitada de verdade (nem a atividade nem a sala declaram limite);
+   * `0` = esgotada. Quem monta este contexto já aplicou o teto da sala, então todo
+   * consumidor daqui para baixo — mensagem de lotação, vagas restantes, decisão de
+   * lista de espera — fala do número real, e não do que foi digitado na tela.
+   */
   capacity: number | null;
   confirmedCount: number;
   waitlistEnabled: boolean;
@@ -242,6 +255,8 @@ async function attemptRegistration(
             endsAt: true,
             eventId: true,
             requiresRegistration: true,
+            /** O teto da sala entra no limite efetivo (revisão da FASE 3). */
+            room: { select: { capacity: true } },
           },
         });
 
@@ -312,6 +327,19 @@ async function attemptRegistration(
           );
         }
 
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O LIMITE EFETIVO DA ATIVIDADE (revisão da FASE 3)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  Calculado UMA vez, aqui, e usado nas três decisões desta tentativa: a
+         *  mensagem de duplicidade, a reserva atômica e o que sobra depois. A sala
+         *  é um teto, então "80 vagas numa sala de 40" são 40 vagas de verdade.
+         */
+        const effectiveCapacity = effectiveActivityCapacity(
+          activity.capacity,
+          activity.room?.capacity ?? null,
+        );
+
         // ── Inscrição existente? ---------------------------------------------
         // O @@unique([activityId, userId]) é a garantia final; esta checagem
         // existe para devolver uma mensagem boa em vez de erro de constraint.
@@ -322,7 +350,7 @@ async function attemptRegistration(
 
         if (existing) {
           const decision = decideRegistration({
-            capacity: activity.capacity,
+            capacity: effectiveCapacity,
             confirmedCount: activity.confirmedCount,
             waitlistEnabled: activity.waitlistEnabled,
             waitlistCount: activity.waitlistCount,
@@ -340,7 +368,25 @@ async function attemptRegistration(
         }
 
         // ── Tenta reservar vaga (caminho atômico) ----------------------------
-        const attempt = await tryReserveSeat(tx, input, activity, event.id, userId);
+        const attempt = await tryReserveSeat(
+          tx,
+          input,
+          {
+            id: activity.id,
+            slug: activity.slug,
+            title: activity.title,
+            status: activity.status as ActivityStatus,
+            capacity: effectiveCapacity,
+            confirmedCount: activity.confirmedCount,
+            waitlistEnabled: activity.waitlistEnabled,
+            waitlistCount: activity.waitlistCount,
+            startsAt: activity.startsAt,
+            endsAt: activity.endsAt,
+            eventId: activity.eventId,
+          },
+          event.id,
+          userId,
+        );
 
         if (attempt.status === 'REJECTED') {
           throw new RegistrationError(attempt.reason, attempt.message);
@@ -589,12 +635,7 @@ async function tryReserveSeat(
    * Reservando primeiro, a única escrita no caminho de espera é o INSERT da
    * própria lista de espera: sem ida e volta, sem colisão artificial.
    */
-  const reserved = await tx.$executeRaw`
-    UPDATE activities
-       SET "confirmedCount" = "confirmedCount" + 1
-     WHERE id = ${activity.id}::uuid
-       AND ("capacity" IS NULL OR "confirmedCount" < "capacity")
-  `;
+  const reserved = await tx.$executeRawUnsafe(RESERVE_ACTIVITY_SEAT_SQL, activity.id);
 
   if (reserved === 1) {
     const registration = await tx.registration.create({
@@ -713,12 +754,7 @@ async function tryReserveSeat(
 
 /** Reserva uma vaga no evento. Retorna `false` quando o evento está lotado. */
 async function reserveEventSeat(tx: TxClient, eventId: string): Promise<boolean> {
-  const affected = await tx.$executeRaw`
-    UPDATE events
-       SET "confirmedCount" = "confirmedCount" + 1
-     WHERE id = ${eventId}::uuid
-       AND ("capacity" IS NULL OR "confirmedCount" < "capacity")
-  `;
+  const affected = await tx.$executeRawUnsafe(RESERVE_EVENT_SEAT_SQL, eventId);
   return affected === 1;
 }
 
@@ -1012,13 +1048,9 @@ async function enrollEventRegistrationInOpenActivities(
     /**
      * O contador da atividade acompanha, mesmo sem controle de vaga: ele é o que
      * a lista de presença e o painel mostram. Atividade ABERTA não tem predicado de
-     * capacidade — quem está no evento entra.
+     * capacidade — quem está no evento entra (`RESERVE_OPEN_ACTIVITY_SEAT_SQL`).
      */
-    await tx.$executeRaw`
-      UPDATE activities
-         SET "confirmedCount" = "confirmedCount" + 1
-       WHERE id = ${activity.id}::uuid
-    `;
+    await tx.$executeRawUnsafe(RESERVE_OPEN_ACTIVITY_SEAT_SQL, activity.id);
 
     titles.push(activity.title);
   }
@@ -1104,11 +1136,7 @@ export async function syncOpenActivityEnrollments(input: {
         },
       });
 
-      await tx.$executeRaw`
-        UPDATE activities
-           SET "confirmedCount" = "confirmedCount" + 1
-         WHERE id = ${activity.id}::uuid
-      `;
+      await tx.$executeRawUnsafe(RESERVE_OPEN_ACTIVITY_SEAT_SQL, activity.id);
 
       created += 1;
     }
@@ -1320,12 +1348,7 @@ async function promoteNextFromWaitlist(
 
   if (!next) return null;
 
-  const reserved = await tx.$executeRaw`
-    UPDATE activities
-       SET "confirmedCount" = "confirmedCount" + 1
-     WHERE id = ${activityId}::uuid
-       AND ("capacity" IS NULL OR "confirmedCount" < "capacity")
-  `;
+  const reserved = await tx.$executeRawUnsafe(RESERVE_ACTIVITY_SEAT_SQL, activityId);
 
   if (reserved !== 1) return null;
 
@@ -1576,18 +1599,44 @@ function isTransientFailure(code: RegistrationErrorCode | undefined): boolean {
   return code === 'SERIALIZATION_FAILURE' || code === 'CONFLICT';
 }
 
-/** Exposto para os testes de integração medirem o estado real. */
+/**
+ * Exposto para os testes de integração medirem o estado real.
+ *
+ * `capacity` é o LIMITE EFETIVO (o teto da sala já aplicado) e `declaredCapacity` é
+ * o que a atividade declara — os dois juntos, porque um teste que só visse o
+ * declarado não conseguiria distinguir "80 vagas" de "80 vagas numa sala de 40".
+ */
 export async function readActivityCounters(
   tenantId: string,
   activityId: string,
-): Promise<{ confirmedCount: number; waitlistCount: number; capacity: number | null } | null> {
+): Promise<{
+  confirmedCount: number;
+  waitlistCount: number;
+  capacity: number | null;
+  declaredCapacity: number | null;
+  roomCapacity: number | null;
+} | null> {
   const row = await withTenant(tenantId, (tx) =>
     tx.activity.findFirst({
       where: { id: activityId },
-      select: { confirmedCount: true, waitlistCount: true, capacity: true },
+      select: {
+        confirmedCount: true,
+        waitlistCount: true,
+        capacity: true,
+        room: { select: { capacity: true } },
+      },
     }),
   );
-  return row ?? null;
+
+  if (!row) return null;
+
+  return {
+    confirmedCount: row.confirmedCount,
+    waitlistCount: row.waitlistCount,
+    capacity: effectiveActivityCapacity(row.capacity, row.room?.capacity ?? null),
+    declaredCapacity: row.capacity,
+    roomCapacity: row.room?.capacity ?? null,
+  };
 }
 
 export { invalidateTenantCache, type RegistrationDecision };

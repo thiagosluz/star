@@ -765,4 +765,190 @@ Unitários:
 
 ---
 
+## 20. Revisão pós-entrega — ciclo de vida da SALA e o teto das vagas
+
+> **Natureza:** revisão do MESMO tema (F3), a partir do uso real. **Uma migração**
+> (`20260921100000_room_capacity_optional`). Nenhuma permissão nova.
+> **ADRs:** 134 a 136 · **Testes novos:** 17 unitários + 16 de integração + 4 E2E.
+
+### 20.1 O que o uso revelou
+
+O relato veio com a tela na mão:
+
+- *"nessa parte do gerenciamento de evento, no cadastro de sala, ter uma opção de deletar e editar
+  sala"*;
+- *"quando não digitar a capacidade é sem limite, o limite das vagas se dará pelo limite da
+  atividade"*;
+- *"o numero de vagas da atividade também não pode ultrapassar o limite da sala, para não ocorrer
+  de ter mais inscritos que a capacidade da sala"*.
+
+| # | Relato | Causa raiz | Correção |
+|---|---|---|---|
+| 1 | Não havia como editar nem excluir sala | O serviço `saveRoom` já aceitava `roomId` (edição existia desde a F7), mas **nenhuma tela a usava**; exclusão não existia. É o mesmo defeito que a revisão anterior corrigiu para a ATIVIDADE — e que ficou faltando na SALA, cadastrada na mesma tela | Formulário de edição por sala na lista e exclusão com o diálogo do sistema; `deleteRoom` recusa a sala em uso |
+| 2 | A capacidade era obrigatória, com `min=1` | A coluna nasceu `Int NOT NULL DEFAULT 0`: a sala criada sem número declarado passava a afirmar "zero lugares" — e o domínio tinha de reinterpretar o 0 como "sem limite" para não bloquear tudo | `rooms."capacity"` virou `Int?`, o campo é OPCIONAL ("vazio = sem limite") e o `0` é normalizado para `NULL` na escrita |
+| 3 | Nada impedia mais inscritos do que a sala comporta | `evaluateRoomFit` comparava a LOTação DECLARADA com a sala, **uma vez, ao salvar a atividade**. Atividade com `capacity = null` (ilimitada) numa sala de 40 não tinha teto nenhum — e o `UPDATE` que reserva a vaga só conhecia `activities.capacity` | O limite passou a ser o **efetivo** (`effectiveActivityCapacity`), aplicado no MESMO predicado atômico da reserva — e a página pública anuncia esse número, não o declarado |
+
+### 20.2 Decisões
+
+#### ADR-134 — Sala sem capacidade declarada é `NULL`, não zero
+
+**Contexto.** `rooms."capacity"` nasceu `integer NOT NULL DEFAULT 0`. O `DEFAULT 0` era um problema
+de SIGNIFICADO: a sala criada sem capacidade declarada passava a afirmar "zero lugares", e
+`evaluateRoomFit` precisava ler `<= 0` como "sem limite" para que uma atividade pudesse acontecer
+nela. Duas afirmações diferentes moravam no mesmo valor.
+
+**Decisão.** A coluna passa a aceitar `NULL`, sem `DEFAULT`. `NULL` = a sala não declara limite (a
+lotação da atividade manda); `n > 0` = a sala comporta n pessoas. Na escrita, valor não positivo é
+normalizado para `NULL` (`normalizeRoomCapacity`), e o rótulo é `roomCapacityLabel` — "sem limite",
+nunca "0 lugares".
+
+**Alternativas descartadas.** *Manter `NOT NULL` com um sentinela* (0 ou −1): o sentinela precisa ser
+lembrado em toda leitura, e a primeira que esquecer bloqueia a sala inteira. É a mesma razão pela
+qual `Activity.capacity` já era `Int?` desde a F3 — e a assimetria entre as duas colunas era, por si
+só, um convite ao erro. *Recusar o campo vazio com "informe a capacidade"*: contraria o pedido (a
+sala sem número é uma configuração legítima, comum em salas cedidas sem planta) e obrigaria a
+inventar um número.
+
+**Consequências.** A migração normaliza os zeros existentes para `NULL` — e isso **não muda
+comportamento nenhum**, porque o domínio já os lia assim. Nenhuma atividade perde vaga e nenhuma
+inscrição é tocada.
+
+#### ADR-135 — O limite EFETIVO da atividade é o da sala quando ela é menor, e vale na reserva atômica
+
+**Contexto.** Havia duas respostas possíveis para "quantas pessoas cabem nesta atividade?": a
+lotação declarada (`activities.capacity`) e a capacidade física da sala. A checagem de sala existia
+só no salvamento, e o caminho de escrita da inscrição conhecia apenas a primeira — então uma
+atividade ILIMITADA numa sala de 40 aceitava 300 inscritos.
+
+**Decisão.** Existe **uma** função para isso, `effectiveActivityCapacity(activityCapacity,
+roomCapacity)`: atividade ilimitada assume o teto da sala; ambos limitados devolvem o menor;
+atividade `0` (esgotada) continua `0` — a sala não "devolve" vaga. O número efetivo é usado em TRÊS
+lugares: no que a página pública anuncia, na mensagem de lotação e — o que fecha o buraco — no
+`WHERE` do `UPDATE` que reserva a vaga (`RESERVE_ACTIVITY_SEAT_SQL`, com
+`ROOM_SEAT_AVAILABLE_PREDICATE`).
+
+**Alternativas descartadas.** *Checar a sala em JavaScript antes do UPDATE*: reabriria exatamente a
+janela que a reserva atômica fecha (duas requisições leem "cabe", ambas reservam). *Copiar a
+capacidade da sala para dentro da atividade* (coluna denormalizada): criaria duas fontes de verdade
+para o mesmo número — reduzir a sala passaria a exigir reescrever as atividades, e a primeira que
+ficasse para trás anunciaria vaga inexistente. *Bloquear a atividade sem vagas declaradas numa sala
+com limite*: proibiria o caso mais comum (a sala é quem sabe o tamanho).
+
+**Consequências.** A subconsulta do predicado enxerga os valores ANTIGOS da linha atualizada — é
+assim que `UPDATE ... WHERE` funciona —, então a última vaga de uma sala de 2 é entregue UMA vez,
+mesmo com três requisições simultâneas. O `RESERVE_ACTIVITY_SEAT_SQL` também acabou com as quatro
+cópias do mesmo `UPDATE` escritas à mão no serviço de inscrição.
+
+#### ADR-136 — A sala em uso recusa a exclusão; a redução recusa abaixo do que existe
+
+**Contexto.** `activities."roomId"` é `ON DELETE SET NULL`: excluir uma sala usada por atividades não
+falharia — ela sumiria da programação em silêncio, e a atividade passaria a "sem sala" sem ninguém
+pedir. É a mesma classe de defeito que a exclusão de mídia da FASE 24 foi desenhada para não ter
+(armadilha 39). Do outro lado, reduzir a capacidade de uma sala em uso recriaria a situação que o
+ADR-135 existe para impedir: uma atividade com 50 vagas numa sala de 30, ou 12 inscritos numa sala
+de 5.
+
+**Decisão.** Duas guardas no domínio, com a leitura feita NA MESMA TRANSAÇÃO da escrita:
+
+1. `evaluateRoomRemoval` recusa quando alguma atividade viva usa a sala, e a mensagem diz quantas e
+   qual, com o caminho ("troque a sala dessas atividades ou deixe-as sem sala definida");
+2. `evaluateRoomCapacityChange` recusa reduzir abaixo das VAGAS declaradas ou dos INSCRITOS já
+   confirmados de qualquer atividade da sala — com o número que impede, porque quem digita precisa
+   saber QUAL atividade trava.
+
+**Alternativas descartadas.** *Exclusão lógica (como a atividade)*: a sala não tem histórico de gente
+inscrita — quem tem é a atividade —, e o `@@unique([eventId, name])` faria um nome excluído bloquear
+para sempre a criação de outro igual (a armadilha que a ATIVIDADE já tem, e que aqui seria evitável).
+*Recusar quando a sala tem QUALQUER atividade, inclusive cancelada*: já é o comportamento adotado —
+cancelar não libera a sala, porque a atividade cancelada continua sendo registro do que aconteceria
+ali.
+
+**Consequências.** Aumentar a capacidade ou tirar o limite é sempre permitido (nenhuma configuração
+existente fica inválida). Atividades já EXCLUÍDAS (logicamente) não bloqueiam: saíram da programação
+e o vínculo delas passa a nulo pela própria FK — mudança em registro que já estava fora de
+circulação.
+
+### 20.3 O caso da atividade ABERTA: aviso, não recusa
+
+Atividade aberta (`requiresRegistration = false`) recebe automaticamente quem se inscreveu no evento
+— é a decisão da revisão anterior (ADR-124), e ela não tem fila nem vagas. Aplicar o teto da sala
+nessa entrega significaria **negar acesso em silêncio** a quem já está inscrito no evento, por causa
+de uma sala escolhida depois.
+
+A escolha foi **avisar**: o painel mostra, na linha da atividade, quando o público do evento excede a
+capacidade da sala, com os dois números e o caminho ("uma sala maior ou uma atividade com inscrição
+própria"). O aviso acontece antes do dia, que é quando ainda dá para resolver. Para as atividades com
+inscrição própria (minicursos e oficinas — justamente as que acontecem em sala), o teto é aplicado
+sem aviso nenhum: a vaga simplesmente não existe.
+
+### 20.4 Lições aprendidas (revisão)
+
+| # | Sintoma | Causa raiz | Correção |
+|---|---|---|---|
+| 31 | `prisma migrate dev` gerou uma migração que **derrubava quatro índices** e alterava colunas de seis tabelas alheias (`event_pages_tenantId_eventId_unpublishAt_idx`, `raffle_winners_raffleId_kind_idx`, `raffles_eventId_isPublic_status_idx`, `registrations_event_origin_idx`) | O projeto tem migrações **escritas à mão** (índices parciais, policies, partições) que o `schema.prisma` não declara. O Prisma compara o schema com o banco, vê o que não conhece e propõe REMOVER — a migração de uma coluna virava uma faxina destrutiva | A migração foi escrita à mão com as duas instruções que interessam, criada com `--create-only` e aplicada com `db:migrate:deploy`. A lição: **leia o SQL gerado antes de aplicar**; `migrate dev` não é seguro num projeto com DDL manual |
+| 32 | A migração nasceu com carimbo de tempo ANTERIOR ao das duas últimas já aplicadas (`20260919141704` contra `20260920140000`) | O relógio da máquina está em 19/09 e as migrações anteriores foram nomeadas à mão com datas à frente (20/09). Prisma ordena por NOME, então a migração nova seria aplicada "no meio" do histórico | O diretório foi renomeado para `20260921100000_room_capacity_optional`: **a ordem é o nome**. Numa migração criada localmente, o carimbo precisa ser maior que o da última aplicada |
+| 33 | Ao trocar o teto da atividade pelo limite EFETIVO, o `UPDATE` que reserva a vaga continuava conhecendo só `activities.capacity` | A mesma instrução estava escrita à mão em QUATRO pontos do serviço (inscrição, promoção da espera e as duas sincronizações de atividade aberta). A regra mudou em um lugar e três ficaram para trás — em silêncio, porque o teto da sala não era o caminho testado | As quatro viraram constantes nomeadas no domínio (`RESERVE_ACTIVITY_SEAT_SQL`, `RESERVE_OPEN_ACTIVITY_SEAT_SQL`, `RESERVE_EVENT_SEAT_SQL`), e o teste de integração prende o caso central: atividade ILIMITADA numa sala de 2 confirma exatamente 2 |
+
+### 20.5 Evidência de verificação
+
+```text
+npm run lint                 → 0 erros, 0 warnings
+npm run typecheck            → 0 erros
+npm test                     → 58 arquivos, 1414 testes passando (+33 nesta revisão)
+npm run build                → ✓ Compiled successfully
+npm run db:migrate:status    → 20 migrations found · Database schema is up to date!
+npm run db:verify            → Contrato íntegro.
+npm run db:verify:isolation  → 9/9 verificações passaram.
+npm run test:e2e             → 89 passed
+
+Integração (banco real) — tests/integration/room-lifecycle.test.ts:
+✓ sala SEM capacidade é gravada como NULL (e não como zero lugares)
+✓ capacidade ZERO é normalizada para NULL
+✓ a edição troca nome e capacidade, e a trilha registra as duas mudanças
+✓ RECUSA renomear uma sala para o nome de outra do mesmo evento (ROOM_NAME_TAKEN)
+✓ RECUSA atividade com mais vagas do que a sala comporta
+✓ ACEITA atividade sem vagas declaradas numa sala com limite (o limite efetivo é o da sala)
+✓ RECUSA reduzir a sala abaixo das vagas já configuradas, dizendo qual atividade
+✓ RECUSA reduzir a sala abaixo dos inscritos já confirmados
+✓ atividade ILIMITADA numa sala de 2 lugares confirma exatamente 2 (a 3ª recebe FULL)
+✓ a página pública anuncia o limite da SALA, não o da atividade
+✓ a lista de espera é PROMOVIDA só até o teto da sala
+✓ RECUSA excluir a sala em uso e diz quantas atividades a usam
+✓ exclui depois que a atividade sai da sala, e registra na trilha
+✓ o painel entrega capacidade (ou a ausência dela) e o teto da sala na atividade
+
+Unitários (domínio) — 17 novos:
+✓ vazio/zero/negativo significam SEM LIMITE; positivo é preservado; rótulo diz "sem limite"
+✓ sala com limite é o teto da atividade sem vagas declaradas; sala menor manda; sem limite deixa a
+  atividade decidir; atividade ESGOTADA (0) não é "devolvida" pela sala
+✓ reduzir abaixo das vagas declaradas / dos inscritos confirmados é recusado, com o número
+✓ TIRAR o limite é sempre permitido, mesmo com a sala cheia
+✓ sala EM USO não pode ser excluída — e a recusa diz por quem
+
+E2E (4) — tests/e2e/room-lifecycle.spec.ts:
+✓ o ciclo inteiro pela tela (criar sem capacidade, editar, excluir), com "sem limite" na lista
+✓ a lista volta ao estado de "nenhuma sala" depois de excluir a única sala
+✓ vagas acima da sala são recusadas, e a sala em uso não pode ser excluída
+✓ atividade aberta numa sala pequena: o painel avisa que o público do evento não cabe
+```
+
+### 20.6 Checklist da revisão
+
+- [x] Editar sala pela lista (nome e capacidade), com os mesmos campos da criação
+- [x] Excluir sala pelo diálogo do sistema, recusado quando alguma atividade a usa
+- [x] Capacidade OPCIONAL: vazio = sem limite; `0` e negativo normalizados para `NULL`
+- [x] `rooms."capacity"` nullable, sem `DEFAULT`, com os zeros existentes migrados para `NULL`
+- [x] Limite EFETIVO da atividade = menor entre a lotação declarada e a sala (uma função só)
+- [x] Vagas da atividade acima da sala: recusadas ao salvar, com os dois números na mensagem
+- [x] A reserva de vaga (inscrição individual e promoção da lista de espera) respeita o teto da sala
+- [x] A página pública anuncia o limite efetivo, dizendo quando a sala é quem limita
+- [x] Reduzir a sala abaixo das vagas configuradas ou dos inscritos é recusado, com o número
+- [x] Atividade aberta em sala pequena: aviso no painel, sem negar acesso em silêncio
+- [x] Sala de OUTRO evento não é alcançada (o escopo é o evento)
+- [x] Testes: 17 unitários, 16 de integração, 4 E2E
+- [x] Bateria completa executada, com os números reais reportados na seção 20.5
+- [x] `AGENTS.md`, `docs/dividas-tecnicas.md` e `README.md` atualizados
+
+---
+
 Aguardando **"APROVADO: AVANÇAR"**.

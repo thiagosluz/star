@@ -10,11 +10,13 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { getReviewerRanking } from '@/lib/gamification/achievement-service';
 import { activityStatusLabel, activityTypeLabel } from '@/domain/events/activity-rules';
+import { effectiveActivityCapacity, roomCapacityLabel } from '@/domain/events/event-rules';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { ReviewerAwardPanel } from '@/components/reviews/reviewer-award';
 import {
   deleteActivityAction,
+  deleteRoomAction,
   saveActivityAction,
   saveEventAction,
   saveRoomAction,
@@ -69,6 +71,45 @@ function toLocalInput(date: Date | null): string {
 }
 
 /**
+ * As vagas REAIS da atividade, com a sala no lugar de onde ela limita.
+ *
+ * O organizador digita "80 vagas" numa sala de 40, e a tela dizia 80 — um número que
+ * o sistema nunca entregaria. A conta é a mesma do servidor
+ * (`effectiveActivityCapacity`), e a frase explica de onde vem o número menor em vez
+ * de simplesmente trocá-lo (revisão da FASE 3).
+ */
+function activitySeatsLabel(activity: { capacity: number | null; roomCapacity: number | null }): string {
+  const effective = effectiveActivityCapacity(activity.capacity, activity.roomCapacity);
+
+  const limitedByRoom =
+    activity.roomCapacity !== null &&
+    (activity.capacity === null || activity.capacity > activity.roomCapacity);
+
+  const base = effective === null ? 'sem limite' : `${effective} vaga(s)`;
+
+  return limitedByRoom ? `${base} — a sala comporta ${activity.roomCapacity}` : base;
+}
+
+/**
+ * Atividade ABERTA numa sala pequena para o público do evento.
+ *
+ * Atividade aberta não tem fila nem recusa: quem se inscreve no evento entra nela
+ * (decisão da revisão da FASE 3). O aviso existe porque a sala é física — se o evento
+ * tem 300 inscritos e a sala comporta 40, o organizador precisa saber ANTES do dia,
+ * e o sistema não pode resolver isso negando acesso em silêncio.
+ */
+function openActivityOverflowsRoom(activity: {
+  requiresRegistration: boolean;
+  roomCapacity: number | null;
+}, eventRegistrationCount: number): boolean {
+  return (
+    !activity.requiresRegistration &&
+    activity.roomCapacity !== null &&
+    eventRegistrationCount > activity.roomCapacity
+  );
+}
+
+/**
  * Gestão de UM evento: dados, salas, programação e trilhas.
  *
  * Tudo em uma página porque as quatro coisas são decididas JUNTAS na prática:
@@ -105,7 +146,10 @@ export default async function AdminEventDetailPage({
 
   const roomOptions = [
     { value: '', label: 'Sem sala definida' },
-    ...event.rooms.map((room) => ({ value: room.id, label: `${room.name} (${room.capacity} lugares)` })),
+    ...event.rooms.map((room) => ({
+      value: room.id,
+      label: `${room.name} (${roomCapacityLabel(room.capacity)})`,
+    })),
   ];
 
   return (
@@ -235,9 +279,73 @@ export default async function AdminEventDetailPage({
           {event.rooms.length > 0 ? (
             <ul className="divide-y divide-border rounded-lg border border-border" data-testid="room-list">
               {event.rooms.map((room) => (
-                <li key={room.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-                  <span>{room.name}</span>
-                  <span className="code-data text-muted-foreground">{room.capacity} lugares</span>
+                <li key={room.id} className="space-y-3 p-3 text-sm" data-testid={`room-row-${room.id}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="font-medium">{room.name}</span>
+                    {/*
+                      "sem limite" e não "0 lugares": a sala que não declara capacidade
+                      não bloqueia nada, e exibir zero faria parecer o contrário.
+                    */}
+                    <span
+                      className="code-data text-muted-foreground"
+                      data-testid={`room-capacity-${room.id}`}
+                    >
+                      {roomCapacityLabel(room.capacity)}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-start gap-3">
+                    <details className="min-w-0 flex-1 rounded-lg border border-border p-2">
+                      <summary className="cursor-pointer text-xs font-medium" data-testid={`edit-room-${room.id}`}>
+                        Editar sala
+                      </summary>
+
+                      <AdminForm
+                        action={saveRoomAction}
+                        submitLabel="Salvar sala"
+                        testId={`room-form-${room.id}`}
+                        compact
+                      >
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={event.id} />
+                        <input type="hidden" name="roomId" value={room.id} />
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <Field label="Nome da sala" name="name" required defaultValue={room.name} />
+                          <Field
+                            label="Capacidade"
+                            name="capacity"
+                            type="number"
+                            min={0}
+                            defaultValue={room.capacity ?? ''}
+                            hint="Em branco = sem limite. Com limite, a sala passa a ser o teto das vagas das atividades."
+                          />
+                        </div>
+                      </AdminForm>
+                    </details>
+
+                    {/*
+                      Excluir recusa quando alguma atividade usa a sala — e diz quantas
+                      e qual. Sem a recusa, a FK `ON DELETE SET NULL` tiraria a sala da
+                      programação em silêncio.
+                    */}
+                    <InlineActionForm
+                      action={deleteRoomAction}
+                      submitLabel="Excluir"
+                      variant="destructive"
+                      testId={`delete-room-${room.id}`}
+                      confirm={{
+                        title: `Excluir a sala “${room.name}”?`,
+                        description:
+                          'A sala sai do cadastro do evento. Só é possível excluir a sala que nenhuma atividade usa — havendo alguma, o sistema recusa e o caminho é trocar a sala dessas atividades (ou deixá-las “Sem sala definida”).',
+                        confirmLabel: 'Excluir sala',
+                      }}
+                    >
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <input type="hidden" name="roomId" value={room.id} />
+                    </InlineActionForm>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -251,7 +359,20 @@ export default async function AdminEventDetailPage({
 
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Nome da sala" name="name" required placeholder="Auditório Principal" />
-              <Field label="Capacidade" name="capacity" type="number" min={1} required defaultValue={50} />
+              {/*
+                Capacidade OPCIONAL: em branco, a sala não declara limite e quem
+                limita é a lotação da atividade. Antes o campo era obrigatório com
+                `min=1`, e a sala sem número declarado nascia com zero lugares — um
+                limite que ninguém pediu.
+              */}
+              <Field
+                label="Capacidade"
+                name="capacity"
+                type="number"
+                min={0}
+                placeholder="Sem limite"
+                hint="Em branco = sem limite definido."
+              />
             </div>
           </AdminForm>
         </div>
@@ -292,11 +413,19 @@ export default async function AdminEventDetailPage({
                       {activity.startsAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
                       {activity.workloadMinutes} min · {activity.roomName ?? 'sem sala'} ·{' '}
                       {activity.requiresRegistration
-                        ? `${activity.capacity ?? 'sem limite'} vaga(s)`
+                        ? activitySeatsLabel(activity)
                         : 'sem controle de vagas'}
                       {activity.waitlistEnabled && activity.requiresRegistration ? ' · lista de espera' : ''} ·{' '}
                       {activityStatusLabel(activity.status)} · {activity.registrationCount} inscrito(s)
                     </p>
+                    {openActivityOverflowsRoom(activity, event.registrationCount) ? (
+                      <p className="text-xs text-warning-strong" data-testid={`activity-room-overflow-${activity.id}`}>
+                        A sala comporta {activity.roomCapacity} lugares e o evento já tem{' '}
+                        {event.registrationCount} inscrito(s): esta atividade é aberta a todos os inscritos, então
+                        o público não cabe no espaço. Considere uma sala maior ou uma atividade com inscrição própria
+                        e vagas limitadas.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-wrap items-start gap-3">
@@ -354,6 +483,7 @@ export default async function AdminEventDetailPage({
                             type="number"
                             min={0}
                             defaultValue={activity.capacity ?? ''}
+                            hint="Em branco = sem limite. A sala escolhida passa a ser o teto destas vagas."
                           />
                         </div>
 
@@ -425,7 +555,13 @@ export default async function AdminEventDetailPage({
               <Field label="Início" name="startsAt" type="datetime-local" required defaultValue={toLocalInput(event.startsAt)} />
               <Field label="Término" name="endsAt" type="datetime-local" required defaultValue={toLocalInput(new Date(event.startsAt.getTime() + 3_600_000))} />
               <Field label="Carga horária (min)" name="workloadMinutes" type="number" min={1} required defaultValue={60} />
-              <Field label="Vagas" name="capacity" type="number" min={0} />
+              <Field
+                label="Vagas"
+                name="capacity"
+                type="number"
+                min={0}
+                hint="Em branco = sem limite. A sala escolhida passa a ser o teto destas vagas."
+              />
             </div>
 
             <div className="flex flex-wrap gap-4">

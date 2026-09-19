@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 23, 24 e 25 (F15 e F21 entregues; a F18+ é a próxima)
-Testes ................. 1381 (Vitest: unit + integração) + 85 (Playwright E2E)
-ADRs ................... 133 (numeração GLOBAL e sequencial — a próxima é ADR-134)
+Fases concluídas ........ 1 a 17, 21, 23 e 25 (F15 e F21 entregues; a F18+ é a próxima)
+Testes ................. 1414 (Vitest: unit + integração) + 89 (Playwright E2E)
+ADRs ................... 136 (numeração GLOBAL e sequencial — a próxima é ADR-137)
 Permissões ............. 58 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 37 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1381+ testes passando
+npm test              # esperado: 1414+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 85+ testes passando
+npm run test:e2e      # esperado: 89+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -178,6 +178,10 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 50 | **Variável já exportada no shell VENCE o `.env`**: `dotenv` não sobrescreve o que já existe no ambiente. O envio real falhou com "the eventflow.test domain is not verified" mesmo com o `.env` correto — o valor antigo estava no processo | Ao investigar "o `.env` não está sendo lido", imprima `process.env.A_VARIAVEL` **antes** de culpar o arquivo; e passe o valor explícito no comando (`$env:EMAIL_FROM=...`) quando quiser garantir o que está testando |
 | 51 | **Painel que abre para BAIXO a partir do último elemento de uma barra lateral de altura total** nasce fora da tela em 720 px de altura: o Playwright reprova com "element is outside of the viewport" (116 tentativas) e, na prática, a troca de instituição parece travada. O sintoma apareceu quando um item de menu a mais tornou a navegação mais alta | O seletor de contexto vive no RODAPÉ do shell: o painel abre para CIMA (`bottom-full mb-2`). E o contêiner rolável da navegação precisa de `min-h-0` — sem ele, `flex-1 overflow-y-auto` não encolhe abaixo do conteúdo e empurra o rodapé para fora da tela |
 | 52 | **Regra que depende de um dado que NÃO entra na função.** `planRoleChange` recebia `string[]` de NOMES de papel para reescrever os papéis da equipe — e `REVIEWER` concedido por **EVENTO** tem o mesmo nome do papel de instituição. Um chamador que esquecesse de filtrar o escopo revogaria a avaliação de uma trilha, **em silêncio**: para o domínio eram dois nomes iguais. Foi o teste unitário que reprovou, não a produção | Quando a decisão depende de um atributo (aqui, o `scope`), ele entra na ASSINATURA (`RoleRef = { role, scope }`), e o que não pertence ao conjunto fica fora **por construção**. Documentar "o chamador deve filtrar" deixa o defeito invisível para todo teste que não repita o filtro |
+| 53 | **`prisma migrate dev` propôs uma migração DESTRUTIVA** para uma mudança de uma coluna: derrubava quatro índices criados à mão (`event_pages_tenantId_eventId_unpublishAt_idx`, `raffle_winners_raffleId_kind_idx`, `raffles_eventId_isPublic_status_idx`, `registrations_event_origin_idx`) e alterava defaults de seis tabelas alheias | O projeto tem **DDL escrito à mão** (índices parciais, policies, partições) que o `schema.prisma` não declara. O Prisma compara o schema com o banco, vê o que não conhece e propõe REMOVER — a migração de uma coluna virava faxina | **Leia o SQL gerado antes de aplicar.** Crie com `--create-only`, confira linha por linha e aplique com `npm run db:migrate:deploy`. Num projeto com DDL manual, `migrate dev` não é seguro por padrão — e a migração à mão é o caminho normal aqui |
+| 54 | Uma migração nova nasceu com carimbo **anterior** ao das duas últimas já aplicadas (`20260919141704` contra `20260920140000`): o relógio da máquina estava em 19/09 e as anteriores foram nomeadas à mão com data à frente | O Prisma ordena as migrações **pelo NOME do diretório**, não pela data de criação. Uma migração que ordena "no meio" do histórico já aplicado confunde o `migrate`/`deploy` | Renomeie o diretório para um carimbo maior que o da última aplicada (`20260921100000_...`). **A ordem é o nome** — e ele precisa ser maior que o de tudo o que já foi aplicado |
+| 55 | A mesma instrução `UPDATE activities SET "confirmedCount" = "confirmedCount" + 1 WHERE ... capacity ...` estava escrita à mão em **quatro** pontos do serviço de inscrição | Quando a SALA passou a ser um teto, a regra mudou em um ponto e três ficaram para trás — em silêncio, porque o caminho testado era o outro. Cópia de regra é regra que diverge | As quatro viraram constantes nomeadas no domínio (`RESERVE_ACTIVITY_SEAT_SQL`, `RESERVE_OPEN_ACTIVITY_SEAT_SQL`, `RESERVE_EVENT_SEAT_SQL`), e a ausência de predicado na atividade ABERTA ficou explícita num nome próprio. Teste de integração prende o caso central (atividade ilimitada numa sala de 2 confirma exatamente 2) |
+| 56 | O E2E corrigia um campo e reenviava o formulário logo depois de uma recusa — e a segunda submissão levava o valor **ANTIGO** (`80` em vez de `30`), com o teste falhando por um motivo que não era o dele | A armadilha 5 tem um GÊMEO: o reset do React 19 é **assíncrono**. Preencher um campo enquanto o formulário está sendo reiniciado é corrida — o valor escrito pode ser revertido pelo reset que ainda não chegou | Depois de uma recusa, **recomece de uma tela limpa** (`page.reload()`) em vez de corrigir por cima. É determinístico e o teste passa a medir o que quer medir. E, ao recarregar, lembre que os `<details>` voltam FECHADOS: reabra a seção antes de clicar dentro dela |
 
 ---
 
@@ -266,6 +270,32 @@ arquivo substituído no rascunho — código `QUOTA_EXCEEDED`.
 **Manter o RBAC como está é decisão, não esquecimento:** `OWNER` tem `tenant:role:assign`,
 `ADMIN` só tem `tenant:member:remove`. Trocar papéis é ato de dono; a tela esconde o que a
 action recusaria.
+
+### Salas e vagas (revisão da FASE 3)
+
+A sala ganhou ciclo de vida próprio e passou a ser o **teto das vagas** da atividade que
+acontece nela.
+
+```
+Salas .................. /t/<slug>/administracao/eventos/<eventId>  → seção "Salas"
+                         (cada linha: "Editar sala" e "Excluir")
+Vagas da atividade ..... mesma tela → seção "Programação" → "Vagas"
+```
+
+Quatro regras que quebram fácil: **a capacidade é OPCIONAL e vazio significa "sem limite"**
+(`null`; `0` e negativo são normalizados na escrita — a coluna nasceu com `DEFAULT 0`, que
+fazia a sala afirmar "zero lugares"); **o limite EFETIVO da atividade é o menor entre a
+lotação declarada e a sala** (`effectiveActivityCapacity`), e é ele que a página pública
+anuncia e que a mensagem de lotação usa; **a sala entra no predicado ATÔMICO da reserva de
+vaga** (`RESERVE_ACTIVITY_SEAT_SQL` + `ROOM_SEAT_AVAILABLE_PREDICATE`, ADR-135) — uma
+checagem em JavaScript antes do `UPDATE` reabriria a janela de superlotação sob concorrência;
+e **a sala em uso recusa a exclusão**, com a contagem e o caminho (trocar a sala das
+atividades) — a FK é `ON DELETE SET NULL` e sem a guarda a sala sumiria da programação em
+silêncio (ADR-136).
+
+**Atividade ABERTA é a exceção deliberada:** ela recebe quem se inscreveu no evento e não tem
+fila, então o teto da sala não a bloqueia — o painel **avisa** quando o público excede a sala
+(dívida E34). Negar acesso em silêncio a quem já está inscrito seria pior que o aviso.
 
 ### Sorteios (FASE 16)
 
@@ -554,7 +584,7 @@ tests/{unit,integration,e2e}
 |---|---|---|
 | 1 | Infraestrutura, modelagem, RLS | ✅ |
 | 2 | Autenticação, RBAC, multi-tenancy | ✅ |
-| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ revisão pós-entrega**: **inscrição no EVENTO** que já inclui as atividades **abertas** (`requiresRegistration = false`, linhas `EVENT_AUTO`), **editar e excluir** atividade na programação (exclusão recusada com inscritos/presença) e rótulos de tipo/situação **em português** (ADR-124/125/126, §19 do doc) | ✅ |
+| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ revisão pós-entrega**: **inscrição no EVENTO** que já inclui as atividades **abertas** (`requiresRegistration = false`, linhas `EVENT_AUTO`), **editar e excluir** atividade na programação (exclusão recusada com inscritos/presença) e rótulos de tipo/situação **em português** (ADR-124/125/126, §19 do doc) — **+ segunda revisão**: **ciclo de vida da SALA** (editar e excluir, com a exclusão recusada enquanto há atividade usando), **capacidade opcional** (vazio = sem limite) e a **sala como teto das vagas**, aplicado inclusive na reserva atômica da inscrição e anunciado na página pública (ADR-134/135/136, §20 do doc) | ✅ |
 | 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: criar o rascunho cai direto na página da submissão, o rascunho **não nasce inválido** (a validação do envio vale na criação e na edição), o autor **edita** título/resumo/palavras-chave e pode **excluir rascunhos** (nunca o que já foi enviado) | ✅ |
 | 5 | Gamificação (XP, cartas, missões) | ✅ |
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
@@ -582,13 +612,15 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, soma das
 tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 15, 16, 17, 21,
 23 e 24 quitaram, mais o que cada uma declarou de novo: a FASE 15 quitou os sete itens de
 comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
 (reconciliação banco × bucket e acesso de participante perdido na remoção); a FASE 25
 declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
-declararam o E31 e o E32, e a revisão da FASE 3 declarou o E33; verificado no código,
+declararam o E31 e o E32, a **primeira** revisão da FASE 3 declarou o E33 e a **segunda**
+declarou o E34 (a sala de uma atividade ABERTA não limita o público do evento: o painel
+avisa); verificado no código,
 com esforço e
 fases candidatas numeradas como as fases que serão entregues — ~~F15 Comunicação~~
 (entregue) · ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e

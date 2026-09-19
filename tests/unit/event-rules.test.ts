@@ -14,15 +14,21 @@ import {
   checkScheduleConflict,
   deriveEventStatus,
   durationMinutes,
+  effectiveActivityCapacity,
   evaluateRegistrationWindow,
+  evaluateRoomCapacityChange,
   evaluateRoomFit,
+  evaluateRoomRemoval,
   eventAcceptsRegistration,
   formatDuration,
   formatEventPeriod,
   isPubliclyVisible,
   isRegistrationOpen,
   isWithinEventWindow,
+  normalizeRoomCapacity,
   overlaps,
+  roomCapacityLabel,
+  roomHasCapacityLimit,
   type ActivityStatus,
   type EventStatus,
 } from '../../src/domain/events/event-rules';
@@ -478,6 +484,123 @@ describe('janela do evento e capacidade da sala', () => {
 
   it('atividade sem limite definido não é bloqueada pela sala', () => {
     expect(evaluateRoomFit(null, 10).fits).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Revisão da FASE 3 — a capacidade da sala passou a ser OPCIONAL, e a sala virou
+//  o TETO do limite efetivo da atividade que acontece nela.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('sala: capacidade opcional e limite efetivo', () => {
+  it('capacidade vazia, zero ou negativa significa SEM LIMITE', () => {
+    expect(normalizeRoomCapacity(null)).toBeNull();
+    expect(normalizeRoomCapacity(undefined)).toBeNull();
+    expect(normalizeRoomCapacity(0)).toBeNull();
+    expect(normalizeRoomCapacity(-5)).toBeNull();
+  });
+
+  it('capacidade positiva é preservada', () => {
+    expect(normalizeRoomCapacity(40)).toBe(40);
+    expect(roomHasCapacityLimit(40)).toBe(true);
+    expect(roomHasCapacityLimit(null)).toBe(false);
+    expect(roomHasCapacityLimit(0)).toBe(false);
+  });
+
+  it('o rótulo diz "sem limite" em vez de "0 lugares"', () => {
+    expect(roomCapacityLabel(null)).toBe('sem limite');
+    expect(roomCapacityLabel(0)).toBe('sem limite');
+    expect(roomCapacityLabel(40)).toBe('40 lugares');
+  });
+
+  it('sala com limite é o TETO da atividade sem vagas declaradas', () => {
+    expect(effectiveActivityCapacity(null, 40)).toBe(40);
+  });
+
+  it('sala menor que a atividade declarada manda', () => {
+    expect(effectiveActivityCapacity(80, 40)).toBe(40);
+  });
+
+  it('sala sem limite deixa a atividade decidir', () => {
+    expect(effectiveActivityCapacity(80, null)).toBe(80);
+    expect(effectiveActivityCapacity(80, 0)).toBe(80);
+  });
+
+  it('atividade ESGOTADA (0) não é "devolvida" pela sala', () => {
+    // Zero é uma afirmação: "não há vaga". A sala não pode transformar isso em 40.
+    expect(effectiveActivityCapacity(0, 40)).toBe(0);
+  });
+
+  it('sem limite nos dois lados, não há denominador', () => {
+    expect(effectiveActivityCapacity(null, null)).toBeNull();
+  });
+
+  it('sala igual à atividade não muda nada', () => {
+    expect(effectiveActivityCapacity(40, 40)).toBe(40);
+  });
+
+  it('sala sem capacidade declarada (null) não bloqueia a lotação', () => {
+    expect(evaluateRoomFit(500, null).fits).toBe(true);
+  });
+});
+
+describe('sala: as guardas de editar e excluir', () => {
+  const ocupada = [
+    { title: 'Minicurso de Rust', capacity: 40, confirmedCount: 12 },
+    { title: 'Abertura', capacity: null, confirmedCount: 3 },
+  ];
+
+  it('reduzir abaixo das VAGAS declaradas de uma atividade é recusado, com o número', () => {
+    const result = evaluateRoomCapacityChange({ nextCapacity: 30, usage: ocupada });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.code).toBe('ROOM_CAPACITY_BELOW_USAGE');
+      expect(result.message).toContain('Minicurso de Rust');
+      expect(result.message).toContain('40');
+    }
+  });
+
+  it('reduzir abaixo dos INSCRITOS já confirmados é recusado, com o número', () => {
+    const result = evaluateRoomCapacityChange({
+      nextCapacity: 5,
+      usage: [{ title: 'Oficina de Robótica', capacity: null, confirmedCount: 9 }],
+    });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.message).toContain('9 inscrito(s)');
+  });
+
+  it('reduzir para um número que ainda cabe é permitido', () => {
+    const result = evaluateRoomCapacityChange({ nextCapacity: 40, usage: ocupada });
+    expect(result.allowed).toBe(true);
+    if (result.allowed) expect(result.normalizedCapacity).toBe(40);
+  });
+
+  it('TIRAR o limite é sempre permitido, mesmo com a sala cheia', () => {
+    const result = evaluateRoomCapacityChange({ nextCapacity: null, usage: ocupada });
+    expect(result.allowed).toBe(true);
+    if (result.allowed) expect(result.normalizedCapacity).toBeNull();
+  });
+
+  it('sala sem atividade nenhuma aceita qualquer capacidade', () => {
+    const result = evaluateRoomCapacityChange({ nextCapacity: 1, usage: [] });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('sala VAZIA pode ser excluída', () => {
+    expect(evaluateRoomRemoval({ usage: [] }).allowed).toBe(true);
+  });
+
+  it('sala EM USO não pode ser excluída — e a recusa diz por quem', () => {
+    const result = evaluateRoomRemoval({ usage: ocupada });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.code).toBe('ROOM_IN_USE');
+      expect(result.message).toContain('2 atividade(s)');
+      expect(result.message).toContain('Minicurso de Rust');
+      expect(result.message).toMatch(/sem sala/i);
+    }
   });
 });
 

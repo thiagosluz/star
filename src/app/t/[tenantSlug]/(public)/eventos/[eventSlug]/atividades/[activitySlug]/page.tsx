@@ -161,6 +161,19 @@ export default async function ActivityPage({
   }
 
   const isFull = activity.remainingSeats === 0;
+
+  /**
+   * A SALA é quem está limitando? (revisão da FASE 3)
+   *
+   * `capacity` já chega como o limite EFETIVO. Quando ele é menor do que a atividade
+   * declarou — ou quando a atividade não declarou nada e a sala sim —, a página diz
+   * de onde vem o número: sem isso, "40 vagas" numa atividade configurada com 80
+   * pareceria erro de cadastro.
+   */
+  const roomLimits =
+    activity.roomCapacity !== null &&
+    (activity.capacity === null || activity.capacity > activity.roomCapacity);
+
   const activityClosed =
     activity.status === 'CANCELED' ||
     activity.status === 'COMPLETED' ||
@@ -326,6 +339,7 @@ export default async function ActivityPage({
                     {activity.remainingSeats !== null && activity.remainingSeats > 0
                       ? ` · ${activity.remainingSeats} restantes`
                       : ''}
+                    {roomLimits ? ` · a sala comporta ${activity.roomCapacity}` : ''}
                   </dd>
                   {/**
                    * DIAGNÓSTICO PARA OS TESTES, EM ATRIBUTOS — nunca em texto.
@@ -343,6 +357,7 @@ export default async function ActivityPage({
                     data-testid="activity-flags"
                     hidden
                     data-capacity={String(activity.capacity)}
+                    data-room-capacity={String(activity.roomCapacity)}
                     data-confirmed={String(activity.confirmedCount)}
                     data-remaining={String(activity.remainingSeats)}
                     data-full={String(isFull)}

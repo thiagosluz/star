@@ -90,20 +90,21 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 16 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando e o evento lotado não tem fila de espera |
+| E. Jornada do participante | 17 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera e a sala de uma atividade aberta não limita o público do evento |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **46** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **47** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+3+16+5+6+4+1 = 46), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+3+17+5+6+4+1 = 47), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
 > acrescentou G8–G13, a FASE 17 acrescentou
 > E9–E13, a **FASE 21 quitou C4–C5 e acrescentou C6–C7**, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
 > acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, o E31 e o E32,
-> que a **revisão** da FASE 4 declarou, e o E33, que a **revisão** da FASE 3 declarou).
+> que a **revisão** da FASE 4 declarou, o E33, que a **primeira revisão** da FASE 3 declarou, e
+> o E34, que a **segunda revisão** da FASE 3 (ciclo de vida da sala) declarou).
 >
 > **Nota de contagem (FASE 25):** a fase do portal do palestrante entregou um escopo que
 > **não vinha deste levantamento** (foi definido diretamente pelo humano: E21 perfil e
@@ -193,6 +194,7 @@
 | E31 | **O autor não consegue RETIRAR uma submissão já enviada** | FASE 4 (revisão, ADR-122) | A máquina de estados tem `WITHDRAWN` (e o limite da trilha já o ignora na contagem), mas não existe serviço nem tela que o produza — só a comissão pode cancelar, e não há caminho de autor | Quem enviou por engano depende de um pedido manual à comissão, e o trabalho fica no páreo até alguém agir; a tela de exclusão manda falar com a comissão porque não pode oferecer o que não existe | M | Sim |
 | E32 | **A trilha do rascunho não pode ser trocada pela interface** | FASE 4 (revisão, ADR-123) | Título, resumo, palavras-chave e idioma são editáveis; a trilha ficou de fora porque trocá-la muda a rubrica de avaliação, o requisito de versão cega e a fila de revisores (decisão do comitê) | Quem escolheu a trilha errada precisa excluir o rascunho e recomeçar — a edição cobre o texto, não a classificação | P | Sim |
 | E33 | **Não há lista de espera no nível do EVENTO** | FASE 3 (revisão, ADR-124/125) | A fila existe por ATIVIDADE (com vaga e promoção automática); a inscrição no evento, criada nesta revisão, consome a lotação do evento e, quando ela acaba, **recusa** em vez de enfileirar — quem não coube não entra em fila nenhuma | Evento lotado perde o interessado: não há como saber quem esperava nem promover ninguém quando uma vaga abre; a organização só descobre a demanda por fora | M | Sim |
+| E34 | **A sala de uma atividade ABERTA não limita o público do evento** | FASE 3 (revisão da sala, ADR-135) | O teto da sala é aplicado na reserva de vaga das atividades com inscrição própria. Atividade ABERTA recebe automaticamente quem se inscreveu no evento (ADR-124) e não tem fila: aplicar o teto ali significaria negar acesso em silêncio a quem já está inscrito. Hoje o painel **avisa** quando o público do evento excede a sala (`activity-room-overflow`), mas não bloqueia nem redistribui | O público pode passar do que a sala comporta e a organização só descobre pelo aviso da tela — a decisão (sala maior, atividade com vagas ou limite no evento) fica com quem organiza | M | Sim |
 
 ### F. Gamificação
 
@@ -382,6 +384,26 @@ recusada quando há inscrição viva ou presença — a mensagem manda cancelar 
 na **seção 19** do documento da fase, com os ADRs 124 a 126. Declarou **uma** dívida nova, o
 **E33**: a fila de espera existe por atividade, mas a inscrição no evento — que consome a lotação do
 evento — **recusa** quando o evento lota, em vez de enfileirar.
+
+### Segunda revisão da FASE 3 — ciclo de vida da SALA e o teto das vagas (concluído)
+
+O relato veio do uso, com a tela na mão: faltava **editar e excluir sala** (a ATIVIDADE já tinha
+ganhado as duas na primeira revisão, e a sala — cadastrada na MESMA tela — ficou para trás), a
+capacidade deveria ser **opcional** ("sem limite") e as **vagas da atividade não poderiam passar da
+sala**, "para não ocorrer de ter mais inscritos que a capacidade da sala". A revisão está registrada
+na **seção 20** do documento da fase, com os ADRs 134 a 136:
+
+1. `rooms."capacity"` virou `Int?` sem `DEFAULT` (**ADR-134**) — a sala sem número declarado afirma
+   "sem limite", e não "zero lugares"; o `0` legado é normalizado para `NULL` sem mudar comportamento;
+2. o **limite efetivo** da atividade é o menor entre a lotação declarada e a sala
+   (`effectiveActivityCapacity`, **ADR-135**), aplicado no MESMO predicado atômico que reserva a vaga
+   — a prova é uma atividade ILIMITADA numa sala de 2 confirmar exatamente 2, com a terceira recusada;
+3. a sala em uso **recusa a exclusão** e a redução de capacidade **recusa abaixo do que já existe**
+   (**ADR-136**), com o número e a atividade na mensagem.
+
+Declarou **uma** dívida nova, o **E34**: a sala de uma atividade ABERTA não limita o público do
+evento — o painel avisa, e a decisão fica com quem organiza (negar acesso em silêncio a quem já está
+inscrito seria pior).
 
 ### Fase de comunicação executada na FASE 15 (concluído)
 

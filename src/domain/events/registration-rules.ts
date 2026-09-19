@@ -296,11 +296,90 @@ export function cancelAffectsWaitlist(status: RegistrationStatus): boolean {
  */
 export const SEAT_AVAILABLE_PREDICATE = `("capacity" IS NULL OR "confirmedCount" < "capacity")`;
 
+/**
+ * O teto da SALA, no mesmo predicado (revisão da FASE 3).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A SALA ENTRA AQUI, E NÃO NUMA CHECAGEM ANTES
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A vaga é reservada por UM `UPDATE` condicional, e é isso que torna a
+ *  superlotação impossível sob concorrência (ver o cabeçalho deste módulo). Uma
+ *  checagem de sala em JavaScript antes do UPDATE reabriria exatamente a janela que
+ *  o predicado fecha: duas requisições leem "cabe", ambas reservam, e a sala
+ *  termina com mais gente do que cadeiras.
+ *
+ *  A subconsulta enxerga os valores ANTIGOS da linha sendo atualizada — é assim que
+ *  `UPDATE ... WHERE` funciona no PostgreSQL —, então `confirmedCount` aqui é o
+ *  ocupado de antes da reserva. Sem isso, a última vaga de uma sala de 40 seria
+ *  entregue duas vezes.
+ *
+ *  O `activities.` explícito no interior da subconsulta não é decorativo: sem ele
+ *  o PostgreSQL resolveria `"confirmedCount"` contra a própria `rooms` (que não tem
+ *  essa coluna) e a consulta falharia.
+ */
+export const ROOM_SEAT_AVAILABLE_PREDICATE = `(
+  "roomId" IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM rooms r
+     WHERE r.id = activities."roomId"
+       AND r."capacity" IS NOT NULL
+       AND r."capacity" > 0
+       AND activities."confirmedCount" >= r."capacity"
+  )
+)`;
+
+/**
+ * A reserva de vaga de ATIVIDADE — uma instrução, um lugar.
+ *
+ * Estava escrita à mão em quatro pontos do serviço de inscrição (inscrição
+ * individual, promoção da lista de espera e as duas sincronizações de atividade
+ * aberta). Quatro cópias da mesma regra é uma regra que vai divergir: foi o que
+ * quase aconteceu quando a SALA passou a limitar, porque só um dos pontos poderia
+ * ter sido lembrado.
+ *
+ * Uso: `tx.$executeRawUnsafe(RESERVE_ACTIVITY_SEAT_SQL, activityId)` — sem
+ * interpolação de entrada, com `$1` como parâmetro.
+ */
+export const RESERVE_ACTIVITY_SEAT_SQL = `
+  UPDATE activities
+     SET "confirmedCount" = "confirmedCount" + 1
+   WHERE id = $1::uuid
+     AND ${SEAT_AVAILABLE_PREDICATE}
+     AND ${ROOM_SEAT_AVAILABLE_PREDICATE}
+`;
+
+/**
+ * A reserva de vaga de uma atividade ABERTA — sem predicado de lotação.
+ *
+ * Atividade aberta recebe quem se inscreveu no evento, por decisão da revisão da
+ * FASE 3 (`requiresRegistration = false`): ela não tem fila nem recusa. O contador
+ * acompanha mesmo assim, porque é ele que a lista de presença e o painel mostram.
+ * Ficou nomeado para que a AUSÊNCIA de predicado seja uma escolha visível, e não
+ * uma cópia esquecida do SQL acima.
+ */
+export const RESERVE_OPEN_ACTIVITY_SEAT_SQL = `
+  UPDATE activities
+     SET "confirmedCount" = "confirmedCount" + 1
+   WHERE id = $1::uuid
+`;
+
 /** Predicado para reservar vaga de lista de espera (não mexe no contador). */
-export const WAITLIST_POSITION_SQL = `
-  COALESCE(
+export const WAITLIST_POSITION_SQL = `  COALESCE(
     (SELECT MAX("waitlistPosition") FROM registrations
       WHERE "activityId" = $1 AND status = 'WAITLISTED'),
     0
   ) + 1
+`;
+
+/**
+ * A reserva de vaga na INSCRIÇÃO DO EVENTO.
+ *
+ * Sem `ROOM_SEAT_AVAILABLE_PREDICATE`: a sala pertence à ATIVIDADE, e o evento não
+ * tem uma. Uso: `tx.$executeRawUnsafe(RESERVE_EVENT_SEAT_SQL, eventId)`.
+ */
+export const RESERVE_EVENT_SEAT_SQL = `
+  UPDATE events
+     SET "confirmedCount" = "confirmedCount" + 1
+   WHERE id = $1::uuid
+     AND ${SEAT_AVAILABLE_PREDICATE}
 `;

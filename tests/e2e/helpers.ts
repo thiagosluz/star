@@ -213,12 +213,19 @@ export async function createActivity(options: {
   });
 }
 
-/** Cria uma sala no evento. */
+/**
+ * Cria uma sala no evento.
+ *
+ * `capacity: null` (ou ausente com `null` explícito) = sala SEM LIMITE definido —
+ * é o estado que a revisão da FASE 3 passou a permitir e que os cenários de
+ * "atividade ilimitada numa sala pequena" precisam montar. O default continua
+ * sendo 50 lugares, para não mudar o significado das fixtures existentes.
+ */
 export async function createRoom(options: {
   tenantId: string;
   eventId: string;
   name: string;
-  capacity?: number;
+  capacity?: number | null;
 }) {
   return e2eDb.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${options.tenantId}, true)`;
@@ -229,7 +236,7 @@ export async function createRoom(options: {
         tenantId: options.tenantId,
         eventId: options.eventId,
         name: options.name,
-        capacity: options.capacity ?? 50,
+        capacity: options.capacity === undefined ? 50 : options.capacity,
       },
     });
   });

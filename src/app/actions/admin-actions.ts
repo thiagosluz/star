@@ -30,6 +30,7 @@ import { DEFAULT_RUBRIC } from '@/domain/review/review-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, TASK_KINDS, XP_SOURCE_KINDS } from '@/domain/gamification/types';
 import {
   deleteActivity,
+  deleteRoom,
   saveActivity,
   saveEvent,
   saveRoom,
@@ -118,6 +119,26 @@ function toDate(value: FormDataEntryValue | null): Date | null {
 function toInt(value: FormDataEntryValue | null, fallback = 0): number {
   const numeric = Number(typeof value === 'string' ? value : NaN);
   return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
+}
+
+/**
+ * Inteiro OPCIONAL: campo vazio vira `null`, e não `0`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE NÃO REUSAR `toInt(..., 0)`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  "Vazio" e "zero" são afirmações diferentes, e o campo de capacidade da sala é o
+ *  caso em que a diferença importa: em branco significa "sem limite definido"
+ *  (`null`), e não "não cabe ninguém". Com o `fallback = 0` genérico, quem deixasse
+ *  o campo vazio gravaria zero — e a sala afirmaria o oposto do que a pessoa quis
+ *  dizer.
+ */
+function toOptionalInt(value: FormDataEntryValue | null): number | null {
+  const text = nullable(value);
+  if (text === null) return null;
+
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -234,6 +255,14 @@ export async function saveEventAction(
   };
 }
 
+/**
+ * Cria ou edita uma sala (revisão da FASE 3).
+ *
+ * `roomId` presente = edição. A capacidade é OPCIONAL: em branco, a sala não declara
+ * limite, e quem limita é a lotação da atividade. A validação de forma fica aqui
+ * (nome, negativos explícitos) e a de REGRA fica no serviço — reduzir a capacidade
+ * abaixo do que as atividades já usam é recusado lá, com o número que impede.
+ */
 export async function saveRoomAction(
   _prev: AdminActionState | null,
   formData: FormData,
@@ -246,14 +275,18 @@ export async function saveRoomAction(
 
   const eventId = String(formData.get('eventId') ?? '');
   const name = nullable(formData.get('name'));
-  const capacity = toInt(formData.get('capacity'), 0);
+  const capacity = toOptionalInt(formData.get('capacity'));
 
   if (!z.string().uuid().safeParse(eventId).success || !name) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Informe o nome da sala.' };
   }
 
-  if (capacity <= 0) {
-    return { ok: false, code: 'INVALID_INPUT', message: 'A capacidade da sala precisa ser maior que zero.' };
+  if (capacity !== null && capacity < 0) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'A capacidade da sala não pode ser negativa. Deixe em branco para uma sala sem limite.',
+    };
   }
 
   const result = await saveRoom({
@@ -269,6 +302,54 @@ export async function saveRoomAction(
 
   return result.ok
     ? { ok: true, message: result.created ? 'Sala criada.' : 'Sala atualizada.' }
+    : { ok: false, code: result.code, message: result.message };
+}
+
+/**
+ * Exclui uma sala (revisão da FASE 3).
+ *
+ * Mesma permissão da criação: quem monta a programação é quem corrige o cadastro. A
+ * recusa quando a sala está em uso vem do serviço, com a contagem e o caminho
+ * (trocar a sala das atividades) — a exclusão de uma sala referenciada apagaria a
+ * referência em silêncio, porque a FK é `ON DELETE SET NULL`.
+ */
+export async function deleteRoomAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      roomId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      roomId: formData.get('roomId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const auth = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.EVENT_UPDATE,
+  });
+  if (!auth.ok) return auth.state;
+
+  const result = await deleteRoom({
+    tenantId: auth.tenantId,
+    actorId: auth.userId,
+    eventId: parsed.data.eventId,
+    roomId: parsed.data.roomId,
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+
+  return result.ok
+    ? { ok: true, message: `Sala “${result.name}” excluída.` }
     : { ok: false, code: result.code, message: result.message };
 }
 

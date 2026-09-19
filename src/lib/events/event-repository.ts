@@ -15,6 +15,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { resolveTheme, type ResolvedEventTheme } from '@/domain/events/landing-page';
 import {
   deriveEventStatus,
+  effectiveActivityCapacity,
   type ActivityStatus,
   type EventStatus,
 } from '@/domain/events/event-rules';
@@ -177,7 +178,14 @@ export interface PublicActivitySummary {
   endsAt: Date;
   workloadMinutes: number;
   roomName: string | null;
+  /**
+   * LIMITE EFETIVO de vagas: o menor entre o que a atividade declara e o que a SALA
+   * comporta (revisão da FASE 3). É este número que a página pública anuncia, porque
+   * é ele que o servidor vai aplicar na reserva da vaga.
+   */
   capacity: number | null;
+  /** Teto da sala (`null` = a sala não declara limite) — para a página explicar. */
+  roomCapacity: number | null;
   confirmedCount: number;
   waitlistEnabled: boolean;
   waitlistCount: number;
@@ -436,7 +444,7 @@ async function loadEventDetail(
             /** `false` = aberta: quem se inscreveu no evento entra automaticamente. */
             requiresRegistration: true,
             tags: true,
-            room: { select: { name: true } },
+            room: { select: { name: true, capacity: true } },
             speakers: {
               orderBy: { displayOrder: 'asc' },
               select: {
@@ -650,11 +658,20 @@ async function loadEventDetail(
       endsAt: activity.endsAt,
       workloadMinutes: activity.workloadMinutes,
       roomName: activity.room?.name ?? null,
-      capacity: activity.capacity,
+      /**
+       * A sala é o TETO do limite: anunciar "80 vagas" numa sala de 40 seria prometer
+       * o que a reserva de vaga vai recusar. O número efetivo vem da função do
+       * domínio que o serviço de inscrição também usa (revisão da FASE 3).
+       */
+      capacity: effectiveActivityCapacity(activity.capacity, activity.room?.capacity ?? null),
+      roomCapacity: activity.room?.capacity ?? null,
       confirmedCount: activity.confirmedCount,
       waitlistEnabled: activity.waitlistEnabled,
       waitlistCount: activity.waitlistCount,
-      remainingSeats: remainingSeats(activity.capacity, activity.confirmedCount),
+      remainingSeats: remainingSeats(
+        effectiveActivityCapacity(activity.capacity, activity.room?.capacity ?? null),
+        activity.confirmedCount,
+      ),
       checkInEnabled: activity.checkInEnabled,
       isFeatured: activity.isFeatured,
       requiresRegistration: activity.requiresRegistration,
