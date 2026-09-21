@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 
 import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
+import { sessionMinutes } from '@/domain/events/attendance-rules';
 import { grantFullAttendanceCard } from '@/lib/gamification/achievement-service';
 import {
   awardForEvent,
@@ -449,7 +450,7 @@ export async function checkOut(input: {
           eventId: true,
           activityId: true,
           checkedInAt: true,
-          activity: { select: { type: true, workloadMinutes: true } },
+          activity: { select: { type: true, workloadMinutes: true, endsAt: true } },
         },
       });
 
@@ -480,10 +481,21 @@ export async function checkOut(input: {
       };
     }
 
-    const minutes = Math.max(
-      0,
-      Math.round((now.getTime() - located.attendance.checkedInAt.getTime()) / 60_000),
-    );
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  OS MINUTOS TÊM TETO NO FIM DA ATIVIDADE (FASE 31)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A regra era "agora − entrada", e ela premiava o esquecimento: quem entrava na
+     *  oficina de 60 min e não registrava saída saía com 180 minutos — que é a conta
+     *  que PESA no sorteio (chance proporcional ao tempo), que compõe a carga do
+     *  certificado e que decide a carta de presença total. A regra agora é uma só, no
+     *  domínio, e vale para o balcão, para o crachá e para o fechamento automático.
+     */
+    const minutes = sessionMinutes({
+      checkedInAt: located.attendance.checkedInAt,
+      closedAt: now,
+      activityEndsAt: located.registration.activity?.endsAt ?? null,
+    });
 
     await withTenant(input.tenantId, (tx) =>
       tx.attendance.update({

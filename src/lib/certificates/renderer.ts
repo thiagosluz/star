@@ -23,7 +23,16 @@
  *  ganho: o QR é preto e branco por definição.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import QRCode from 'qrcode';
+import {
+  approximateWidth,
+  assemblePdf,
+  buildQrMatrix,
+  escapePdfText,
+  escapeXml,
+  PDF_FONT_OBJECTS,
+  pdfDate,
+  wrapText,
+} from '@/lib/documents/pdf-text';
 
 export interface CertificateDocument {
   /** Título do documento (ex.: "Certificado de conclusão de minicurso"). */
@@ -43,24 +52,26 @@ export interface CertificateDocument {
   issuedAt: Date;
 }
 
-/** Dimensões do QR (do próprio gerador) — usadas para reservar espaço no layout. */
-export function buildQrMatrix(text: string): { size: number; data: Uint8Array } {
-  const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
-  return { size: qr.modules.size, data: qr.modules.data };
-}
+/**
+ * As primitivas de documento (QR, escape, quebra de linha, montagem do PDF) vivem
+ * em `@/lib/documents/pdf-text` desde a FASE 31 — o crachá precisa das MESMAS
+ * regras. Estes nomes continuam sendo reexportados porque eram a API pública deste
+ * módulo e há teste que os importa daqui.
+ */
+export {
+  approximateWidth,
+  buildQrMatrix,
+  escapePdfText,
+  escapeXml,
+  PDF_FONT_OBJECTS,
+  pdfDate,
+  wrapText,
+} from '@/lib/documents/pdf-text';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  SVG
 // ───────────────────────────────────────────────────────────────────────────────
-/** Escapa texto para XML — sem isso, um `&` no nome do evento quebra o SVG. */
-export function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+
 
 /**
  * Gera o certificado em SVG (A4 paisagem: 297 × 210 mm).
@@ -140,29 +151,9 @@ export function renderCertificateSvg(document: CertificateDocument): string {
 const PDF_WIDTH = 842;
 const PDF_HEIGHT = 595;
 
-/** Escapa texto para o operador `Tj` do PDF. */
-export function escapePdfText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-}
 
-/**
- * Largura aproximada em Helvetica.
- *
- * As larguras reais das 14 fontes padrão estão em tabelas da especificação; usamos
- * uma média ponderada por caractere (maiúsculas e dígitos são mais largos). É
- * aproximação suficiente para CENTRALIZAR texto — e aproximação documentada é
- * melhor que uma tabela de 224 números que ninguém vai conferir.
- */
-function approximateWidth(text: string, fontSize: number): number {
-  let units = 0;
-  for (const char of text) {
-    if (/[A-Z0-9]/.test(char)) units += 0.62;
-    else if (/[a-z]/.test(char)) units += 0.52;
-    else if (char === ' ') units += 0.28;
-    else units += 0.4;
-  }
-  return units * fontSize;
-}
+
+
 
 /**
  * Gera o certificado em PDF.
@@ -237,43 +228,21 @@ export function renderCertificatePdf(document: CertificateDocument): Buffer {
 
   const issued = pdfDate(document.issuedAt);
 
+  /**
+   * A numeração de objetos é CONTRATO do arquivo: a página referencia as fontes por
+   * `5 0 R` e `6 0 R`, e a ordem abaixo mantém isso (e é a mesma de antes da FASE 31,
+   * quando a montagem passou a ser compartilhada com o crachá).
+   */
   const objects: string[] = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_WIDTH} ${PDF_HEIGHT}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`,
     `<< /Length ${contentBuffer.length} >>\nstream\n${content}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+    ...PDF_FONT_OBJECTS,
     `<< /Title (${escapePdfText(document.title)}) /Author (${escapePdfText(document.tenantName)}) /Subject (${escapePdfText(document.validationCode)}) /Creator (EventFlow) /Producer (EventFlow) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
   ];
 
-  // ── Montagem com offsets para a tabela xref ────────────────────────────────
-  const header = '%PDF-1.4\n';
-  let pdf = header;
-  const offsets: number[] = [];
-
-  objects.forEach((body, index) => {
-    offsets.push(Buffer.byteLength(pdf, 'latin1'));
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
-  });
-
-  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
-  const total = objects.length + 1;
-
-  pdf += `xref\n0 ${total}\n0000000000 65535 f \n`;
-  for (const offset of offsets) {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
-  }
-
-  pdf += `trailer\n<< /Size ${total} /Root 1 0 R /Info ${objects.length} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-
-  return Buffer.from(pdf, 'latin1');
-}
-
-/** Data no formato do PDF (`D:YYYYMMDDHHmmSSZ`), sempre em UTC. */
-function pdfDate(date: Date): string {
-  const iso = date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  return `${iso}Z`;
+  return assemblePdf(objects);
 }
 
 /** Data legível para exibição. */
@@ -286,37 +255,4 @@ export function formatIssuedAt(date: Date): string {
   }).format(date);
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
-//  Quebra de linha
-// ───────────────────────────────────────────────────────────────────────────────
-/**
- * Quebra o texto em linhas de até `maxChars` caracteres.
- *
- * Quebra por caractere, não por palavra: o certificado é um bloco curto e
- * centralizado, e quebrar no meio de uma palavra é visualmente melhor do que
- * deixar uma linha enorme sair da moldura. O corte é feito em espaços quando
- * possível.
- */
-export function wrapText(text: string, maxChars: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = '';
 
-  for (const word of words) {
-    if (current.length === 0) {
-      current = word;
-      continue;
-    }
-
-    if (current.length + 1 + word.length <= maxChars) {
-      current += ` ${word}`;
-      continue;
-    }
-
-    lines.push(current);
-    current = word;
-  }
-
-  if (current.length > 0) lines.push(current);
-  return lines.length > 0 ? lines : [''];
-}

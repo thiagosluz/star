@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29 e 30 (F15, F21, F22, F29 e F30 entregues; a F18+ é a próxima)
-Testes ................. 1531 (Vitest: unit + integração) + 97 (Playwright E2E)
-ADRs ................... 147 (numeração GLOBAL e sequencial — a próxima é ADR-148)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29, 30 e 31 (F15, F21, F22, F29, F30 e F31 entregues; a F18+ é a próxima)
+Testes ................. 1587 (Vitest: unit + integração) + 102 (Playwright E2E)
+ADRs ................... 152 (numeração GLOBAL e sequencial — a próxima é ADR-153)
 Permissões ............. 58 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 38 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 39 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1531+ testes passando
+npm test              # esperado: 1587+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 97+ testes passando
+npm run test:e2e      # esperado: 102+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -124,7 +124,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 66 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 71 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
 > no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
 > seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
@@ -151,6 +151,11 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 64 | **`npx prettier --write` reescreveu o estilo de um arquivo inteiro** (`raffle-service.ts`): ~2.000 linhas de diff, aspas simples virando duplas e objeto de uma linha virando sete | O repositório **não tem configuração de prettier**, então o comando aplicou o PADRÃO da ferramenta (aspas duplas, largura 80) sobre um projeto que usa outro estilo. O formatador do projeto é o **ESLint** (`npm run lint`) — o prettier nunca fez parte da esteira | Se a intenção é formatar, use **as flags do projeto** (`npx prettier --single-quote --print-width 110 <arquivo>`) e **confira o diff**: o jeito barato de descobrir o estilo real é formatar a versão do `HEAD` do mesmo arquivo com as flags candidatas e contar as linhas que mudam (com essas, foram 3 em vez de 2.000) |
 | 65 | A auditoria de um sorteio novo mostrava **"Trilha: —"** na rodada 1: sem data e sem autor do compromisso | A página lê a procedência do compromisso no registro `CREATE` da **RODADA**, mas a rodada 1 nasce em `createRaffle`, e aquele caminho gravava só o registro do SORTEIO — o registro da rodada existia apenas para as rodadas criadas depois, por `prepareRound`. A prova existia; a procedência dela, não | Quando uma entidade nova passa a ser a fonte de um dado (o compromisso saiu da raffle para a rodada), **todos os caminhos que criam essa entidade precisam gravar o registro dela** — inclusive o mais antigo, que é o que ninguém revisita. Teste de integração prende `commitmentRecordedAt`/`commitmentRecordedBy` de cada rodada |
 | 66 | O E2E do telão passava, e **a funcionalidade que ele descrevia não existia na interface**: o sorteio só era alcançável já apurado | O cenário montava o rascunho por escrita direta no banco (`tx.raffle.create({ status: 'DRAFT' })`) e testava a PÁGINA — o **caminho que produz aquele estado** (um botão que cria sem apurar) não existia, e nenhum teste olhava para ele | Cenário que precisa de um estado deve produzi-lo **pelo caminho que a pessoa usa** quando é esse caminho que está sob suspeita. Fixture por escrita direta isola a tela, mas **não é evidência de que a tela é alcançável** — e o buraco entre "a página funciona" e "dá para chegar nela" é onde o produto fica sem a funcionalidade |
+| 67 | **Um campo que TODO MUNDO lê e NINGUÉM escreve**: `Registration.badgeToken` era usado pela fila, pelo check-in por crachá e pelos testes, e nenhum caminho do sistema o gerava | O fluxo do crachá só funcionava com dado gravado à mão: o teste escrevia o token na fixture, o seed escrevia o token, e o produto não tinha emissão. Mesma classe do telão que nascia sorteado (66) | A FASE 31 criou a emissão real e o seed passou a usá-la. **Ao achar um campo misterioso no schema, pergunte quem ESCREVE nele** |
+| 68 | A **segunda visita** à mesma atividade não abria sessão: a pessoa saía para o almoço e a tarde dela desaparecia da conta de minutos | O caminho de entrada chamava `checkIn`, idempotente por `registration.checkedInAt` — certo para a chegada ao evento, errado para a frequência, que se repete | `checkIn` só na primeira vez; depois, a sessão é criada pelo serviço de crachá. **Comando idempotente usado para um fato que se repete tem a chave errada**: a chave da frequência é a sessão aberta |
+| 69 | **Dois nomes de segmento dinâmico no mesmo nível derrubam o build**: *"You cannot use different slug names for the same dynamic path ('eventSlug' !== 'eventId')"* | Já existia `/api/t/[tenantSlug]/eventos/[eventSlug]/...` e a rota nova nasceu com `[eventId]` ali. O erro é da árvore inteira, não da rota nova | A rota foi para o namespace da própria tela, com o evento por parâmetro validado no banco. **Antes de nomear um segmento dinâmico, olhe como o mesmo nível é nomeado no resto da árvore** |
+| 70 | `npm run lint` recusou a página com *"Cannot call impure function during render: `Date.now`"* | O React Compiler trata o corpo do Server Component como render, e a tela precisava de "agora" para sugerir a atividade em curso | O instante passou a vir do **relógio do banco** (`SELECT now()`), o mesmo que carimba as presenças. **Relógio do processo no lugar de dado** é impureza no render — e o relógio certo é o de quem grava |
+| 71 | **O crachá LEGADO deixou de ser encontrado** no balcão: o E2E da jornada da plataforma (FASE 7) reprovou dizendo que o crachá não existia, enquanto todos os testes da fase passavam | A busca montava os candidatos como `[normalizado, raw.toUpperCase()]`. Normalizar serve para o código NOVO (`CR-…`, que é nosso), mas o token da coluna antiga é **string opaca**: `badge-plat-a1b2c3` virava `BADGE-PLAT-A1B2C3` e a linha nunca casava. O caminho legado estava documentado e **nenhum teste olhava para ele** | O candidato na **caixa exata** entrou na busca, com o porquê no código, e um teste de integração novo prende o token de caixa mista — verificado nos dois sentidos: sem a correção reprova, com ela passa. **Identificador opaco não se normaliza**: a etiqueta impressa é lida letra por letra |
 
 ---
 
@@ -322,6 +327,41 @@ valores que estavam em `raffles`: as colunas de semente/lista do sorteio são **
 congelado** desde então, e a fonte de verdade é a rodada. O fluxo ao vivo assina por RODADA
 (`pendingRound`/`lastDrawnRound`), porque o status do sorteio fica `DRAWN` para sempre depois
 da primeira apuração.
+
+### Credenciamento por crachá (FASE 31)
+
+O crachá passou a existir de verdade — a coluna `registrations.badgeToken` era **lida por todos
+e escrita por ninguém** (não havia emissão) — e o sistema separou dois fatos que estavam
+misturados: **chegar ao evento** e **estar na atividade**.
+
+```
+Crachás ................. /t/<slug>/credenciamento/crachas?evento=<eventId>
+                           → emitir (individual/em massa), imprimir a folha, revogar
+Folha em PDF ............ /api/t/<slug>/credenciamento/crachas/folha?eventId=<id>
+                           → A4, 8 por página: QR + CÓDIGO do crachá + NOME
+Balcão (modo monitor) ... /t/<slug>/credenciamento?evento=<eventId>
+                           → contexto (portaria × atividade) + câmera/leitor USB/digitação
+Crachá do participante .. /t/<slug>/meu-cracha?evento=<eventId>
+```
+
+Cinco regras que quebram fácil: **o crachá é da PESSOA no evento**, um código por par
+(evento, pessoa) em `event_credentials`, e é o **CONTEXTO da leitura** que decide onde o fato
+é gravado (ADR-148) — a inscrição é por pessoa × evento E por pessoa × atividade, e com o
+código na inscrição quem tivesse evento + 2 minicursos teria três crachás; **chegada é
+diferente de frequência** (ADR-149): a portaria grava presença com `activityId` nulo (e marca a
+inscrição, onde vivem o XP e a fila), a atividade grava **uma sessão por visita**, com entrada,
+saída e minutos — e a chave de idempotência da frequência é a SESSÃO, nunca a inscrição (usar
+`checkIn` na segunda visita respondia "já credenciado" e a tarde da pessoa desaparecia);
+**os minutos têm teto no fim da ATIVIDADE** (ADR-150), porque a conta antiga premiava o
+esquecimento e é ela que pesa no sorteio e compõe o certificado; **leitura fora da inscrição
+registra e AVISA** (ADR-151) — a presença de quem apareceu sem inscrição é um fato real, e o
+que não acontece sem inscrição é XP, porque não há chave para creditar; e **o QR carrega só o
+código** (ADR-152), sem dado pessoal — a etiqueta leva nome e código porque é lida por GENTE.
+
+Duas decisões de operação: a câmera tenta a **API nativa** do navegador e cai para o `jsqr`
+local (Firefox e Safari não têm `BarcodeDetector`), com o leitor USB e a digitação como
+caminhos de volta; e quem esquece de registrar a saída é fechado no **fim da atividade** pela
+varredura do worker (ou pelo botão do painel), com o MESMO número sempre.
 
 ### Operação de palco (FASE 22)
 
@@ -660,6 +700,7 @@ tests/{unit,integration,e2e}
 | 22 | Operação de palco (G8–G13: **desfazer** a entrega com motivo na trilha, filtro do histórico por situação e período, premiar N revisores, **endereço próprio** do resultado publicado, chave do cofre **versionada** e prévia ao vivo por SSE com polling de volta) — **+ correção de privacidade**: o consentimento de perfil público passou a nascer DESLIGADO (ADR-139) | ✅ |
 | 29 | Palco público e auditoria do sorteio (**telão** com compromisso antes da apuração, contagem ao vivo e revelação automática; **link + QR** na tela de sorteios; **lista publicada** gravada na apuração e assinada no resultado (payload v3); **auditoria** que refaz as contas no navegador e receita para conferir fora do site) — escopo definido pelo humano | ✅ |
 | 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) — escopo definido pelo humano; **+ revisão da FASE 29**: o telão só era alcançável já apurado, e o E2E montava o rascunho por escrita direta | ✅ |
+| 31 | Credenciamento e frequência por crachá (**um código por pessoa** no evento, com o **contexto da leitura** decidindo o fato; **área de crachás** com emissão individual e em massa e **folha A4** em PDF com QR + código + nome; **crachá online** do participante; **modo monitor** com câmera (API nativa + decodificador local), leitor USB e digitação; **chegada ≠ frequência**, com sessão por visita e minutos com teto no fim da atividade) — escopo definido pelo humano | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -668,16 +709,16 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**50 itens abertos**, soma das
 tabelas de tema — o tema G ficou ZERADO na FASE 22 — o levantamento original menos o que
-as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29 e 30 quitaram, mais o que cada uma declarou de
+as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29, 30 e 31 quitaram, mais o que cada uma declarou de
 novo: a FASE 15 quitou os sete itens de
 comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
 (reconciliação banco × bucket e acesso de participante perdido na remoção); **a FASE 22
 quitou G8–G13 e declarou o E35** (não há tela para a pessoa autorizar o nome no resultado
-público); **as FASES 29 e 30 não quitaram item deste levantamento** (o escopo veio do
+público); **as FASES 29, 30 e 31 não quitaram item deste levantamento** (o escopo veio do
 humano) e declararam o **E36** (a lista auditável não pode ser comprometida antes da apuração) e o
-**E37** (não há interruptor para manter o telão fora do ar), o **E38** (o prêmio anunciado de uma rodada não pode ser corrigido pela tela) e o **E39** (a roleta não pode ser repetida nem desligada pelo operador); a FASE 25
+**E37** (não há interruptor para manter o telão fora do ar), o **E38** (o prêmio anunciado de uma rodada não pode ser corrigido pela tela) e o **E39** (a roleta não pode ser repetida nem desligada pelo operador), o **E40** (o credenciamento não funciona sem rede), o **E41** (a impressão é folha A4 para recortar), o **E42** (o crachá não tem identidade visual do evento) e o **E43** (o botão único do balcão fecha a presença na segunda leitura: não há como pedir "só entrada" na tela); a FASE 25
 declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
 declararam o E31 e o E32, a **primeira** revisão da FASE 3 declarou o E33 e a **segunda**
 declarou o E34 (a sala de uma atividade ABERTA não limita o público do evento: o painel
@@ -691,7 +732,7 @@ Observabilidade de segunda ordem · ~~F21 Ciclo de vida do membro e storage~~ (e
 ~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
 ~~F25 Portal do palestrante~~ (entregue) · F26 Acervo de mídia: miniaturas, busca e
 sincronia em lote · F27 Material e convite do palestrante · F28 Entrega de e-mail de
-segunda ordem · ~~F29 Palco público e auditoria do sorteio~~ (entregue) · ~~F30 Sorteio ao vivo, em rodadas~~ (entregue)) está em
+segunda ordem · ~~F29 Palco público e auditoria do sorteio~~ (entregue) · ~~F30 Sorteio ao vivo, em rodadas~~ (entregue) · ~~F31 Credenciamento e frequência por crachá~~ (entregue)) está em
 **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
@@ -701,8 +742,8 @@ ordem sugerida.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 66 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-30-sorteio-ao-vivo-em-rodadas.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 71 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-31-credenciamento-e-frequencia.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

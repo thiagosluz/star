@@ -42,6 +42,29 @@ export const REVIEW_DEADLINES_JOB = 'review-deadlines';
  */
 export const REVIEW_DEADLINES_PATTERN = '0 */6 * * *';
 
+/**
+ * Nome do job repetível que fecha as presenças abertas (FASE 31).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ELE MORA NA MESMA FILA DOS E-MAILS
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O nome `emails` ficou, mas esta é a fila de HOUSEKEEPING do processo: o worker faz
+ *  a manutenção periódica aqui. O fechamento de presenças é uma consulta por
+ *  varredura e não justifica uma terceira conexão, um terceiro worker e um terceiro
+ *  agendador — o que justifica é o relógio que já existe. Se a fila ganhar outro
+ *  dono, ela deve ser renomeada.
+ */
+export const ATTENDANCE_SWEEP_JOB = 'attendance-sweep';
+
+/**
+ * Cadência do fechamento automático das presenças.
+ *
+ *  De 15 em 15 minutos: quem esqueceu de registrar a saída recebe a saída no FIM DA
+ *  ATIVIDADE (o número não depende de quando a varredura roda), então a cadência só
+ *  decide quanto tempo o painel mostra uma sessão aberta que já acabou.
+ */
+export const ATTENDANCE_SWEEP_PATTERN = '*/15 * * * *';
+
 export interface EmailJobData {
   emailMessageId: string;
   /** NULO nas mensagens de plataforma (verificação, redefinição de senha). */
@@ -121,6 +144,30 @@ export async function scheduleReviewDeadlineScan(): Promise<boolean> {
     logger.warn('não foi possível agendar a varredura de prazos de parecer', {
       error: error instanceof Error ? error.message : 'erro desconhecido',
     });
+    return false;
+  }
+}
+
+/**
+ * Registra (uma vez) o job repetível que fecha as presenças abertas.
+ *
+ * Mesmo padrão do agendamento de prazos: id FIXO, então reiniciar o worker reagenda
+ * em vez de acumular varreduras.
+ */
+export async function scheduleAttendanceSweep(): Promise<boolean> {
+  try {
+    await getQueue().upsertJobScheduler(
+      'attendance-sweep',
+      { pattern: ATTENDANCE_SWEEP_PATTERN },
+      { name: ATTENDANCE_SWEEP_JOB, data: { emailMessageId: '', tenantId: null } },
+    );
+
+    return true;
+  } catch (error) {
+    logger.warn('não foi possível agendar o fechamento de presenças', {
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
+
     return false;
   }
 }

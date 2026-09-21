@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   CalendarDays,
   ClipboardCheck,
+  IdCard,
   Compass,
   FileText,
   Gauge,
@@ -134,6 +135,17 @@ export function buildTenantNav(input: {
           href: href('/minhas-inscricoes'),
           label: 'Minhas inscrições',
           icon: <ClipboardCheck className="size-4" aria-hidden />,
+          permission: PERMISSIONS.REGISTRATION_READ_OWN,
+        },
+        {
+          /**
+           * Crachá online (FASE 31): a pessoa mostra o QR na tela do celular quando não
+           * tem a etiqueta em mão. É a MESMA permissão da inscrição própria — quem vê as
+           * próprias inscrições vê o próprio crachá.
+           */
+          href: href('/meu-cracha'),
+          label: 'Meu crachá',
+          icon: <IdCard className="size-4" aria-hidden />,
           permission: PERMISSIONS.REGISTRATION_READ_OWN,
         },
         {

@@ -37,6 +37,7 @@ import {
   requestCertificate,
 } from '../src/lib/certificates/certificate-service';
 import { createRaffle, drawRaffle } from '../src/lib/raffles/raffle-service';
+import { issueCredentials } from '../src/lib/events/credential-service';
 import {
   addPageBlock,
   ensureHomePage,
@@ -922,7 +923,11 @@ async function main() {
         consentData: true,
         consentImage: true,
         consentAt: presencaInicio,
-        badgeToken: `DEMO-BADGE-${ufbaId.slice(0, 8)}`,
+        /**
+         * O crachá NÃO é gravado aqui (FASE 31): `badgeToken` é legado congelado, e o
+         * crachá passou a ser emitido pelo serviço real, logo abaixo — é o mesmo
+         * caminho que a tela usa.
+         */
         checkedInAt: presencaInicio,
         checkedInById: ana,
       },
@@ -945,6 +950,27 @@ async function main() {
         validatedById: ana,
       },
     });
+
+    /**
+     * ── O CRACHÁ DO PARTICIPANTE, PELO SERVIÇO REAL (FASE 31) ────────────────────
+     * O dado de demonstração nasce do MESMO caminho que a tela usa: um crachá por
+     * pessoa no evento, com código opaco no formato novo (`CR-XXXX-XXXX`). Sem isso, a
+     * demonstração mostraria a tela de crachás vazia — e quem abrisse o sistema pela
+     * primeira vez concluiria que a emissão não funciona.
+     */
+    const crachaDemo = await issueCredentials({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      actorId: ana,
+      userIds: [bruno],
+      notes: 'Crachá do participante do minicurso (demonstração).',
+    });
+
+    console.log(
+      crachaDemo.ok && crachaDemo.issued.length > 0
+        ? `  ✓ crachá de demonstração: ${crachaDemo.issued[0]!.code} (${crachaDemo.issued[0]!.userName})`
+        : '  ✓ crachá de demonstração: já existia',
+    );
 
     await prisma.submission.create({
       data: {

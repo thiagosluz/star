@@ -257,10 +257,20 @@ test.describe('jornada completa da plataforma', () => {
     await signInAs(page, staff.email);
     await page.goto(`/t/${tenant.slug}/credenciamento?evento=${event.id}`);
 
-    await page.getByTestId('badge-token').fill(badgeToken);
-    await page.getByTestId('badge-checkin').click();
+    /**
+     * A FASE 31 trocou o formulário de check-in pelo BALCÃO do monitor, onde o
+     * CONTEXTO da leitura decide o fato: a portaria marca a chegada (e credita o XP),
+     * a atividade marca a frequência. Aqui o que está em teste é a chegada, então o
+     * contexto é dito em voz alta — a atividade criada acima é no futuro, mas depender
+     * do palpite do padrão seria medir outra coisa se a heurística mudar.
+     */
+    await page.getByTestId('monitor-context-kind').selectOption('EVENT');
+    await expect(page.getByTestId('monitor-context-label')).toContainText(/portaria/i);
 
-    await expect(page.getByTestId('badge-feedback')).toContainText(/entrada registrada/i, {
+    await page.getByTestId('monitor-code').fill(badgeToken);
+    await page.getByTestId('presence-submit').click();
+
+    await expect(page.getByTestId('monitor-feedback')).toContainText(/entrada registrada/i, {
       timeout: 30_000,
     });
 

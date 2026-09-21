@@ -181,7 +181,13 @@ async function start(): Promise<void> {
   console.log(`\n  Worker pronto. Fila "${CERTIFICATE_QUEUE_NAME}" registrada.`);
 
   // ── Fila de e-mails (FASE 15) ──────────────────────────────────────────────
-  const { EMAIL_QUEUE_NAME, REVIEW_DEADLINES_JOB, scheduleReviewDeadlineScan } =
+  const {
+    ATTENDANCE_SWEEP_JOB,
+    EMAIL_QUEUE_NAME,
+    REVIEW_DEADLINES_JOB,
+    scheduleAttendanceSweep,
+    scheduleReviewDeadlineScan,
+  } =
     await import('@/lib/communication/email-queue');
   const { deliverEmail } = await import('@/lib/communication/email-service');
   const { runReviewDeadlineScan } = await import('@/lib/communication/reminder-service');
@@ -193,6 +199,23 @@ async function start(): Promise<void> {
        * Job repetível: varredura de prazos. Ele não entrega mensagem — cria as que
        * faltam no outbox —, então tem caminho próprio.
        */
+      /**
+       * Fechamento automático das presenças abertas (FASE 31): quem esqueceu de registrar
+       * a saída recebe a saída no FIM DA ATIVIDADE — o número não depende de quando esta
+       * varredura rodou, o que importa para quem audita e para quem reemite certificado.
+       */
+      if (job.name === ATTENDANCE_SWEEP_JOB) {
+        const { runAttendanceSweep } = await import('@/lib/events/attendance-sweep');
+        const sweep = await runAttendanceSweep();
+
+        console.log(
+          `  ✓ presenças: ${sweep.closed} sessão(ões) fechada(s) em ${sweep.tenants} instituição(ões), ` +
+            `${sweep.minutes} minuto(s) apurados, ${sweep.pending} ainda em andamento`,
+        );
+
+        return sweep;
+      }
+
       if (job.name === REVIEW_DEADLINES_JOB) {
         const scan = await runReviewDeadlineScan();
 
@@ -262,8 +285,12 @@ async function start(): Promise<void> {
   // O agendador é registrado aqui, com id fixo: reiniciar o worker reagenda em vez
   // de acumular varreduras.
   const scheduled = await scheduleReviewDeadlineScan();
+  const sweepScheduled = await scheduleAttendanceSweep();
 
-  console.log(`  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (varredura de prazos: ${scheduled ? 'agendada' : 'indisponível'}).`);
+  console.log(
+    `  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (prazos de parecer: ${scheduled ? 'agendados' : 'indisponível'}; ` +
+      `fechamento de presenças: ${sweepScheduled ? 'agendado' : 'indisponível'}).`,
+  );
   console.log(`${line}\n`);
 
   // ── Shutdown gracioso ──────────────────────────────────────────────────────

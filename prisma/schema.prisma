@@ -168,6 +168,72 @@ enum AttendanceSource {
   IMPORTS
 }
 
+/// Estado do crachá: revogado deixa de valer no balcão, sem apagar o histórico.
+enum CredentialStatus {
+  ACTIVE
+  REVOKED
+}
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  CRACHÁ DO PARTICIPANTE NO EVENTO (FASE 31)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE O CRACHÁ NÃO MORA NA INSCRIÇÃO
+///  ─────────────────────────────────────────────────────────────────────────────
+///  A inscrição é por (pessoa × evento) E por (pessoa × atividade). Com o crachá
+///  na inscrição (`Registration.badgeToken`), quem se inscreveu no evento e em dois
+///  minicursos teria TRÊS crachás — e a portaria não saberia qual ler.
+///
+///  O crachá é da PESSOA no EVENTO: um código opaco, um por par (evento, pessoa),
+///  que o monitor lê escolhendo o CONTEXTO (portaria ou atividade). A presença
+///  continua sendo por (pessoa × atividade), em `attendances`.
+///
+///  `Registration.badgeToken` fica como LEGADO CONGELADO: o código novo não escreve
+///  mais nele, e a leitura por token antigo continua funcionando até que os crachás
+///  impressos antes desta fase saiam de circulação.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model EventCredential {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+  userId   String @db.Uuid
+
+  /// Código do crachá (`CR-XXXX-XXXX`) — é ele que vai no QR Code. Único GLOBAL,
+  /// para que uma leitura não precise de contexto; a RLS limita a busca à instituição.
+  code   String           @unique @db.VarChar(32)
+  status CredentialStatus @default(ACTIVE)
+
+  /// Quem emitiu. NULO = emitido no backfill da migração (antes de existir emissão).
+  issuedById String?   @db.Uuid
+  issuedAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  /// Última impressão da etiqueta (a folha pode ser reimpressa; isto guarda a mais recente).
+  printedAt   DateTime? @db.Timestamptz(6)
+  printedById String?   @db.Uuid
+
+  revokedAt    DateTime? @db.Timestamptz(6)
+  revokedById  String?   @db.Uuid
+  revokeReason String?   @db.VarChar(300)
+
+  /// Observação da organização (ex.: "crachá de imprensa", "equipe de apoio").
+  notes String? @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User   @relation("CredentialHolder", fields: [userId], references: [id], onDelete: Cascade)
+  issuedBy  User?  @relation("CredentialIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  printedBy User?  @relation("CredentialPrintedBy", fields: [printedById], references: [id], onDelete: SetNull)
+  revokedBy User?  @relation("CredentialRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  /// UM crachá por pessoa por evento — é o que a decisão da fase exige.
+  @@unique([eventId, userId])
+  @@index([tenantId, eventId, status])
+  @@index([tenantId, userId])
+  @@map("event_credentials")
+}
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -696,6 +762,8 @@ model Tenant {
   reviewConflicts   ReviewConflict[]
   raffles           Raffle[]
   raffleWinners     RaffleWinner[]
+  /// Crachás emitidos para este evento — FASE 31.
+  eventCredentials  EventCredential[]
   cardTemplates     CardTemplate[]
   userCards         UserCard[]
   xpProfiles        UserXpProfile[]
@@ -800,6 +868,11 @@ model User {
   raffleRoundsCreated   RaffleRound[]      @relation("RaffleRoundCreatedBy")
   /// Sorteios em que esta pessoa foi sorteada — FASE 8.
   raffleWins            RaffleWinner[]
+  /// Crachá que esta pessoa usa no evento (FASE 31).
+  eventCredentials      EventCredential[] @relation("CredentialHolder")
+  eventCredentialsIssued EventCredential[] @relation("CredentialIssuedBy")
+  eventCredentialsPrinted EventCredential[] @relation("CredentialPrintedBy")
+  eventCredentialsRevoked EventCredential[] @relation("CredentialRevokedBy")
   /// Prêmios de sorteio que esta pessoa ENTREGOU — FASE 16.
   rafflePrizesDelivered RaffleWinner[]     @relation("RafflePrizeDeliveredBy")
   /// Versões de página pública que esta pessoa gravou — FASE 23.
@@ -1077,6 +1150,8 @@ model Event {
   xpTransactions  XpTransaction[]
   raffles         Raffle[]
   mediaAssets     MediaAsset[]
+  /// Crachás emitidos para este evento — FASE 31.
+  eventCredentials EventCredential[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
