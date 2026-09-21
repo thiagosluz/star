@@ -47,20 +47,22 @@ function prefersReducedMotion(): boolean {
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- *  PRÉVIA AO VIVO DO CREDENCIAMENTO (item G7)
+ *  PRÉVIA AO VIVO DO CREDENCIAMENTO (item G7 · FASE 22, item G13)
  * ─────────────────────────────────────────────────────────────────────────────
  *  A contagem de elegíveis era calculada uma vez, no carregamento. No palco, com
  *  gente entrando pela catraca, o número envelhecia em segundos e a única saída era
  *  recarregar a página no meio da apresentação.
  *
- *  Aqui a contagem é reconsultada a cada 5 segundos pela rota
- *  `/api/events/<id>/raffle-live` — a MESMA função que a apuração usa, para que a
- *  tela nunca mostre um número diferente do que o sorteio vai considerar.
+ *  A contagem vem da rota `/api/events/<id>/raffle-live` — a MESMA função que a
+ *  apuração usa, para que a tela nunca mostre um número diferente do que o sorteio
+ *  vai considerar.
  *
- *  Polling, e não SSE: uma conexão aberta por tela administrativa traria reconexão,
- *  heartbeat e timeout de infraestrutura para administrar, sem ganho perceptível
- *  numa contagem que muda quando alguém passa na catraca. A tela DIZ que o número é
- *  amostrado, com o horário — em vez de fingir tempo real.
+ *  O transporte é SSE, com o polling de 5 s como CAMINHO DE VOLTA: o servidor manda
+ *  o número quando ele muda, e a tela não pergunta nada. Se o navegador não tiver
+ *  `EventSource` ou um proxy derrubar o fluxo, a tela volta a perguntar — em vez de
+ *  congelar o número no meio da apresentação. O atributo `data-transport` diz qual
+ *  dos dois está em uso, e o texto também ("ao vivo" × "consultado"), para ninguém
+ *  confundir um número vivo com um número parado (ADR-138).
  */
 function LiveEligibility({
   tenantSlug,
@@ -77,49 +79,102 @@ function LiveEligibility({
     sampledAt: string;
   } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
+    let source: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let controller: AbortController | null = null;
 
-    const load = async () => {
-      try {
-        const response = await fetch(
-          `/api/events/${eventId}/raffle-live?tenantSlug=${encodeURIComponent(tenantSlug)}&${query}`,
-          { signal: controller.signal, cache: 'no-store' },
-        );
+    const url = `/api/events/${eventId}/raffle-live?tenantSlug=${encodeURIComponent(tenantSlug)}&${query}`;
 
-        const payload = (await response.json()) as {
-          ok: boolean;
-          eligibleCount?: number;
-          lastCheckInAt?: string | null;
-          sampledAt?: string;
-        };
+    const apply = (payload: {
+      ok: boolean;
+      eligibleCount?: number;
+      lastCheckInAt?: string | null;
+      sampledAt?: string;
+    }) => {
+      if (cancelled) return;
 
-        if (cancelled) return;
-
-        if (payload.ok) {
-          setFailed(false);
-          setState({
-            eligibleCount: payload.eligibleCount ?? 0,
-            lastCheckInAt: payload.lastCheckInAt ?? null,
-            sampledAt: payload.sampledAt ?? new Date().toISOString(),
-          });
-        } else {
-          setFailed(true);
-        }
-      } catch {
-        if (!cancelled) setFailed(true);
+      if (!payload.ok) {
+        setFailed(true);
+        return;
       }
+
+      setFailed(false);
+      setState({
+        eligibleCount: payload.eligibleCount ?? 0,
+        lastCheckInAt: payload.lastCheckInAt ?? null,
+        sampledAt: payload.sampledAt ?? new Date().toISOString(),
+      });
     };
 
-    void load();
-    const timer = setInterval(() => void load(), 5_000);
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O CAMINHO DE VOLTA: POLLING QUANDO O FLUXO NÃO ESTÁ DISPONÍVEL (FASE 22)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A tela vive no PALCO: se o `EventSource` não existir no navegador ou o fluxo
+     *  for derrubado por um proxy que não o suporta, é melhor voltar a perguntar de
+     *  5 em 5 segundos do que deixar o organizador com um número congelado. O caminho
+     *  antigo continua existindo na rota (`Accept` sem `text/event-stream`), então a
+     *  degradação é só de transporte — e o rótulo diz qual dos dois está em uso.
+     */
+    const startPolling = () => {
+      const load = async () => {
+        try {
+          controller = controller ?? new AbortController();
+
+          const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+          apply((await response.json()) as { ok: boolean });
+        } catch {
+          if (!cancelled) setFailed(true);
+        }
+      };
+
+      void load();
+      pollTimer = setInterval(() => void load(), 5_000);
+    };
+
+    if (typeof EventSource === 'undefined') {
+      startPolling();
+    } else {
+      source = new EventSource(url);
+
+      source.addEventListener('open', () => {
+        if (!cancelled) setLive(true);
+      });
+
+      source.addEventListener('live', (event) => {
+        try {
+          apply(JSON.parse((event as MessageEvent<string>).data) as { ok: boolean });
+        } catch {
+          // Evento malformado não pode derrubar a tela do palco.
+        }
+      });
+
+      source.addEventListener('error', () => {
+        if (cancelled) return;
+
+        /**
+         * `CONNECTING` = o próprio `EventSource` está reconectando (o caso normal de
+         * uma rede instável). Só quando ele desiste (`CLOSED`) é que vale trocar de
+         * transporte — senão os dois caminhos rodariam ao mesmo tempo.
+         */
+        if (source?.readyState === EventSource.CLOSED) {
+          setLive(false);
+          source.close();
+          source = null;
+          startPolling();
+        }
+      });
+    }
 
     return () => {
       cancelled = true;
-      controller.abort();
-      clearInterval(timer);
+      source?.close();
+      if (pollTimer) clearInterval(pollTimer);
+      controller?.abort();
     };
   }, [tenantSlug, eventId, query]);
 
@@ -128,6 +183,7 @@ function LiveEligibility({
       className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-low px-3 py-2 text-xs text-muted-foreground"
       data-testid="raffle-live"
       data-eligible={state?.eligibleCount ?? -1}
+      data-transport={live ? 'sse' : 'polling'}
     >
       <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
         <Radio className="size-3.5 animate-pulse text-primary" aria-hidden />
@@ -146,7 +202,7 @@ function LiveEligibility({
         {failed
           ? 'não foi possível atualizar agora'
           : state
-            ? `amostrado às ${new Date(state.sampledAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+            ? `${live ? 'ao vivo' : 'consultado'} às ${new Date(state.sampledAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
             : '—'}
       </span>
     </p>

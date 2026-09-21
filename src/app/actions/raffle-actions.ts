@@ -31,6 +31,7 @@ import {
   drawRaffle,
   markPrizeDelivered,
   previewEligibility,
+  reversePrizeDelivery,
   setRaffleVisibility,
 } from '@/lib/raffles/raffle-service';
 
@@ -420,6 +421,71 @@ export async function markPrizeDeliveredAction(
     ? {
         ok: true,
         message: `Entrega registrada para ${result.userName}.`,
+        data: { positionId: result.positionId },
+      }
+    : { ok: false, code: result.code, message: result.message };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Desfazer a entrega do prêmio (FASE 22, item G8)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Desfaz o registro de entrega de uma posição — com motivo obrigatório.
+ *
+ * Mesma permissão da entrega (`event:manage`): quem registra no balcão é quem
+ * corrige. O motivo chega do formulário e vai inteiro para a trilha; a validação de
+ * tamanho é do domínio (`evaluateDeliveryReversal`), para a regra valer também em
+ * qualquer chamada que não passe por aqui.
+ */
+export async function reversePrizeDeliveryAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      raffleId: z.string().uuid(),
+      positionId: z.string().uuid(),
+      /**
+       * O motivo NÃO é validado aqui quanto ao tamanho: vazio vira `''` e a recusa
+       * vem do domínio, com a mensagem que explica por que ele é exigido. Validar nos
+       * dois lugares deixaria duas mensagens diferentes para a mesma regra.
+       */
+      reason: z.string().max(300).optional(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      raffleId: formData.get('raffleId'),
+      positionId: formData.get('positionId'),
+      reason: (formData.get('reason') as string) ?? '',
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para desfazer a entrega.' };
+  }
+
+  const auth = await guard(parsed.data.tenantSlug);
+  if (!auth.ok) return auth.state;
+
+  const result = await reversePrizeDelivery({
+    tenantId: auth.tenantId,
+    raffleId: parsed.data.raffleId,
+    positionId: parsed.data.positionId,
+    actorId: auth.userId,
+    reason: parsed.data.reason ?? '',
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`));
+  // A publicação mostra a retirada do prêmio: desfazer a entrega muda o que o
+  // público vê no resultado publicado.
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/eventos`), 'layout');
+
+  return result.ok
+    ? {
+        ok: true,
+        message: `Entrega de ${result.userName} desfeita. O motivo ficou na trilha de auditoria.`,
         data: { positionId: result.positionId },
       }
     : { ok: false, code: result.code, message: result.message };

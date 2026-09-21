@@ -90,18 +90,20 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 17 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera e a sala de uma atividade aberta não limita o público do evento |
+| E. Jornada do participante | 18 | 3 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento e não há tela para autorizar o nome no resultado público |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
-| G. Sorteios | 6 | 3 | Médio — o sorteio está completo; falta o descarte de uma entrega registrada por engano |
+| G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **47** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **42** | **13** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+3+17+5+6+4+1 = 47), e não a subtração do
+> O total é a **soma das tabelas de tema** (4+5+2+3+18+5+0+4+1 = 42 — o tema G ficou
+> vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
 > acrescentou G8–G13, a FASE 17 acrescentou
-> E9–E13, a **FASE 21 quitou C4–C5 e acrescentou C6–C7**, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
+> E9–E13, a **FASE 21 quitou C4–C5 e acrescentou C6–C7**, a **FASE 22 quitou G8–G13 e
+> acrescentou E35**, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
 > acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, o E31 e o E32,
 > que a **revisão** da FASE 4 declarou, o E33, que a **primeira revisão** da FASE 3 declarou, e
 > o E34, que a **segunda revisão** da FASE 3 (ciclo de vida da sala) declarou).
@@ -195,6 +197,7 @@
 | E32 | **A trilha do rascunho não pode ser trocada pela interface** | FASE 4 (revisão, ADR-123) | Título, resumo, palavras-chave e idioma são editáveis; a trilha ficou de fora porque trocá-la muda a rubrica de avaliação, o requisito de versão cega e a fila de revisores (decisão do comitê) | Quem escolheu a trilha errada precisa excluir o rascunho e recomeçar — a edição cobre o texto, não a classificação | P | Sim |
 | E33 | **Não há lista de espera no nível do EVENTO** | FASE 3 (revisão, ADR-124/125) | A fila existe por ATIVIDADE (com vaga e promoção automática); a inscrição no evento, criada nesta revisão, consome a lotação do evento e, quando ela acaba, **recusa** em vez de enfileirar — quem não coube não entra em fila nenhuma | Evento lotado perde o interessado: não há como saber quem esperava nem promover ninguém quando uma vaga abre; a organização só descobre a demanda por fora | M | Sim |
 | E34 | **A sala de uma atividade ABERTA não limita o público do evento** | FASE 3 (revisão da sala, ADR-135) | O teto da sala é aplicado na reserva de vaga das atividades com inscrição própria. Atividade ABERTA recebe automaticamente quem se inscreveu no evento (ADR-124) e não tem fila: aplicar o teto ali significaria negar acesso em silêncio a quem já está inscrito. Hoje o painel **avisa** quando o público do evento excede a sala (`activity-room-overflow`), mas não bloqueia nem redistribui | O público pode passar do que a sala comporta e a organização só descobre pelo aviso da tela — a decisão (sala maior, atividade com vagas ou limite no evento) fica com quem organiza | M | Sim |
+| E35 | **Não há tela para autorizar o nome no resultado público** | FASE 22 (novo, ADR-139) | `User.isPublicProfile` existe, o domínio o respeita (nome completo × mascarado) e o padrão passou a ser NÃO publicar — o campo nasceu `true` e o efeito era o oposto do documentado. Falta o caminho de interface para quem QUER se identificar | Quem gostaria de aparecer com o nome completo no resultado do sorteio não tem como pedir: depende de SQL. O sentido atual é o seguro (mascara mais), mas a escolha fica inacessível | P | Sim |
 
 ### F. Gamificação
 
@@ -210,12 +213,12 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| G8 | **Desfazer uma entrega registrada por engano** | FASE 16 (novo) | O recibo de entrega é imutável por decisão (ADR-086); corrigir exige SQL | Um clique errado no balcão fica registrado até alguém corrigir no banco | P | Sim |
-| G9 | **Busca e filtro no histórico de sorteios** | FASE 16 (novo) | A paginação existe (G6); filtrar por status/período ainda não | Evento com muitos sorteios exige navegar página a página | P | Sim |
-| G10 | **Premiar mais de um revisor pela tela** | FASE 16 (novo) | `awardTopReviewers` aceita `top` N, mas o painel fixa 1 | Premiar os 3 primeiros exige chamada direta ao serviço | P | Sim |
-| G11 | **Página própria do resultado publicado** | FASE 16 (novo) | A seção na página do evento resolve a divulgação; não há página nem feed por sorteio | Quem acompanha um sorteio específico navega até o evento | M | Decorrente |
-| G12 | **Rotação do segredo do cofre de sementes** | FASE 16 (novo) | A chave de selagem é derivada de `BETTER_AUTH_SECRET`; não há versão de chave | Trocar o segredo invalida a abertura de sementes ainda seladas | M | Decorrente |
-| G13 | **Prévia ao vivo por evento em vez de polling** | FASE 16 (novo) | Polling de 5s por tela aberta (ADR-090); SSE/WebSocket é a evolução | 12 requisições/min por tela; número pode atrasar segundos em rede lenta | M | Decorrente |
+| ~~G8~~ | ~~**Desfazer uma entrega registrada por engano**~~ | FASE 16 | **Quitado na FASE 22**: `reversePrizeDelivery` limpa o recibo e guarda as duas pontas na trilha, com motivo obrigatório (ADR-137) | — | — | — |
+| ~~G9~~ | ~~**Busca e filtro no histórico de sorteios**~~ | FASE 16 | **Quitado na FASE 22**: filtro por situação e período no `where` do banco, no fuso da instituição, com o recorte no endereço | — | — | — |
+| ~~G10~~ | ~~**Premiar mais de um revisor pela tela**~~ | FASE 16 | **Quitado na FASE 22**: campo numérico com teto no domínio (`MAX_REVIEWER_AWARDS`) e o corte dito antes do clique | — | — | — |
+| ~~G11~~ | ~~**Página própria do resultado publicado**~~ | FASE 16 | **Quitado na FASE 22**: `/t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>`, com a prova da semente e 404 para o resto | — | — | — |
+| ~~G12~~ | ~~**Rotação do segredo do cofre de sementes**~~ | FASE 16 | **Quitado na FASE 22**: `RAFFLE_SEED_KEYS` versionado, versão gravada no sorteio e situação do chaveiro na tela (ADR-138) | — | — | — |
+| ~~G13~~ | ~~**Prévia ao vivo por evento em vez de polling**~~ | FASE 16 | **Quitado na FASE 22**: a rota existente negocia SSE e mantém o polling como caminho de volta (ADR-138) | — | — | — |
 
 ### H. Design e acessibilidade
 
@@ -249,7 +252,7 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | **F19 — Gamificação avançada** | Trocas/crafting, níveis de carta, temporadas, ranking por evento, antifraude de proximidade | F2–F6 | Mecânicas novas; depende de dados reais de uso para calibrar economia |
 | **F20 — Observabilidade de segunda ordem** | Trace distribuído, coletor/alerta, adoção do `logger` nos serviços, agendamento da manutenção de partições, política de retenção | B6–B9 | A FASE 13 entregou o sinal; esta fase faz alguém **reagir** a ele |
 | ~~**F21 — Ciclo de vida do membro e storage**~~ | Remover/editar papel de membro pela UI e aplicar a quota de armazenamento | C4, C5 | **Concluída como FASE 21** — `docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`. Fechou o que a FASE 14 declarou em aberto: a plataforma vinculava, mas ninguém removia pela interface, e a quota de storage era registrada e não aplicada. Declarou C6–C7 |
-| **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio | G8–G11 | Itens que só aparecem DEPOIS de operar sorteio de verdade: nasceram da FASE 16 e são baratos |
+| **F22 — Operação de palco** | Desfazer entrega registrada, busca no histórico, premiar N revisores, página pública do sorteio, chave do cofre versionada, prévia ao vivo | G8–G13 | **Concluída como FASE 22** — `docs/fase-22-operacao-de-palco.md`. As seis dívidas do tema de sorteios foram quitadas; a fase declarou **E35** (não há tela para a pessoa autorizar o nome no resultado público) |
 | ~~**F23 — Conteúdo e mídia**~~ | Prévia da página, upload na galeria, reuso de patrocinador entre eventos, versões da página, publicação agendada | E9–E13 | **Concluída como FASE 23** — `docs/fase-23-conteudo-e-midia.md`. A página pública virou componente compartilhado, e o histórico exigiu a primeira tabela nova desde a FASE 16 |
 | ~~**F24 — Mídia e agendamento**~~ | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | **Concluída como FASE 24** — `docs/fase-24-midia-e-agendamento.md`. O bucket deixou de ser a biblioteca: a imagem passou a ter registro, com reaproveitamento por checksum e exclusão que confere o uso |
 | ~~**F25 — Portal do palestrante**~~ | Perfil do palestrante, convite e vínculo de conta, portal com posse, materiais com visibilidade, vitrine e certificado | E21–E24 (escopo definido pelo humano) | **Concluída como FASE 25** — `docs/fase-25-portal-do-palestrante.md`. O palestrante deixou de ser uma linha da atividade e passou a ser uma pessoa da instituição, com portal próprio |
@@ -404,6 +407,32 @@ na **seção 20** do documento da fase, com os ADRs 134 a 136:
 Declarou **uma** dívida nova, o **E34**: a sala de uma atividade ABERTA não limita o público do
 evento — o painel avisa, e a decisão fica com quem organiza (negar acesso em silêncio a quem já está
 inscrito seria pior).
+
+### Fase de operação de palco executada na FASE 22 (concluído)
+
+As **seis** dívidas do tema de sorteios (G8–G13) foram implementadas na FASE 22 — o que só aparece
+depois de operar sorteio de verdade:
+
+1. **G8** — desfazer a entrega registrada por engano deixou de exigir SQL: `reversePrizeDelivery`
+   limpa o RECIBO (a posição sorteada continua existindo) e guarda as duas pontas na trilha, com
+   **motivo obrigatório** (ADR-137);
+2. **G9** — o histórico é filtrável por situação e período, no **fuso da instituição**, com o
+   recorte no `where` do banco e no endereço (compartilhável e sobrevive ao recarregar);
+3. **G10** — o painel de reconhecimento premia N revisores, com o teto no domínio e o corte do
+   ranking dito **antes** do clique;
+4. **G11** — o resultado publicado ganhou **endereço próprio**
+   (`/t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>`), com a prova da semente e 404 para todo o
+   resto;
+5. **G12** — a chave do cofre de sementes passou a ser **versionada** (`RAFFLE_SEED_KEYS`), com a
+   versão gravada no sorteio: girar a chave não invalida mais compromisso publicado (ADR-138);
+6. **G13** — a prévia ao vivo deixou de ser polling: a rota existente **negocia SSE** e mantém o
+   JSON e o polling como caminho de volta declarado (ADR-138).
+
+O registro completo (ADRs 137–139, lições 31–34 e evidências) está em
+[`docs/fase-22-operacao-de-palco.md`](fase-22-operacao-de-palco.md). A fase declarou **uma** dívida
+nova, o **E35** — e, no caminho, corrigiu um defeito de privacidade que a FASE 16 não pegou: o
+consentimento de perfil público (`User.isPublicProfile`) nascia **ligado**, então o nome dos
+ganhadores saía completo no resultado público contra a regra documentada (ADR-139).
 
 ### Fase de comunicação executada na FASE 15 (concluído)
 

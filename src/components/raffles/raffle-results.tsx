@@ -1,11 +1,13 @@
+import Link from 'next/link';
 import { Trophy } from 'lucide-react';
 
 import { Section } from '@/components/events/theme-scope';
+import { tenantPath } from '@/domain/tenancy/resolution';
 import type { PublicRaffleResult } from '@/lib/raffles/raffle-service';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  RESULTADO PÚBLICO DOS SORTEIOS (FASE 16, item G5)
+ *  RESULTADO PÚBLICO DOS SORTEIOS (FASE 16, item G5 · FASE 22, item G11)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE A SEÇÃO EXISTE, E POR QUE ELA NÃO É UM BLOCO DA LANDING PAGE
@@ -26,9 +28,20 @@ import type { PublicRaffleResult } from '@/lib/raffles/raffle-service';
  *  consentiu com publicação de nome na internet. Junto do nome vai a PROVA (hash do
  *  resultado, compromisso e semente) — publicar só o nome transformaria o sorteio em
  *  promessa, e promessa não se confere.
+ *
+ *  Cada resultado leva à PÁGINA PRÓPRIA do sorteio (FASE 22): a seção é a divulgação
+ *  de todos, e o endereço de um só é o que se projeta no telão e se compartilha depois.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-export function RaffleResults({ results }: { results: readonly PublicRaffleResult[] }) {
+export function RaffleResults({
+  results,
+  tenantSlug,
+  eventSlug,
+}: {
+  results: readonly PublicRaffleResult[];
+  tenantSlug: string;
+  eventSlug: string;
+}) {
   if (results.length === 0) return null;
 
   return (
@@ -115,6 +128,14 @@ export function RaffleResults({ results }: { results: readonly PublicRaffleResul
                   </p>
                 ) : null}
               </div>
+
+              <Link
+                href={tenantPath(tenantSlug, `/eventos/${eventSlug}/sorteios/${raffle.id}`)}
+                data-testid={`public-raffle-link-${raffle.id}`}
+                className="inline-block text-sm font-medium underline underline-offset-4"
+              >
+                Página do sorteio →
+              </Link>
             </li>
           ))}
         </ul>

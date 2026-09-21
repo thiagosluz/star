@@ -24,6 +24,7 @@ import { setCardPinned } from '@/lib/gamification/card-service';
 import { adjustXp } from '@/lib/gamification/xp-service';
 import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { awardTopReviewers } from '@/lib/gamification/achievement-service';
+import { MAX_REVIEWER_AWARDS } from '@/domain/raffles/stage-rules';
 
 export interface GamificationActionState {
   ok: boolean;
@@ -374,7 +375,12 @@ export async function grantCardAction(
 const topReviewerSchema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
   eventId: z.string().uuid(),
-  top: z.coerce.number().int().min(1).max(20).default(1),
+  /**
+   * Quantos premiar. O teto vem do DOMÍNIO (`MAX_REVIEWER_AWARDS`): a carta de
+   * destaque existe por ser escassa, e um limite escrito no schema e outro na tela
+   * divergiriam no primeiro ajuste (FASE 22, item G10).
+   */
+  top: z.coerce.number().int().min(1).max(MAX_REVIEWER_AWARDS).default(1),
 });
 
 /**

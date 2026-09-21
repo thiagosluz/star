@@ -55,6 +55,13 @@ import {
   type RaffleWinnerKind,
 } from '@/domain/raffles/raffle-rules';
 import { createRaffleSeed, sealSeed, unsealSeed } from '@/lib/raffles/seed-vault';
+import { LEGACY_SEED_KEY_VERSION } from '@/domain/raffles/seed-key-rules';
+import {
+  evaluateDeliveryReversal,
+  rafflePublicationState,
+  type RaffleHistoryFilter,
+  type RaffleStatus,
+} from '@/domain/raffles/stage-rules';
 
 export type RaffleErrorCode =
   | 'NOT_FOUND'
@@ -64,6 +71,10 @@ export type RaffleErrorCode =
   | 'CANCELED'
   | 'NOT_DRAWN'
   | 'ALREADY_DELIVERED'
+  /** FASE 22 (G8): desfazer entrega — a posição não tem entrega registrada. */
+  | 'NOT_DELIVERED'
+  /** FASE 22 (G8): desfazer entrega — o motivo é obrigatório. */
+  | 'REASON_REQUIRED'
   | 'INTERNAL';
 
 export type RaffleResult<T> =
@@ -98,6 +109,8 @@ interface RaffleConfigRow {
   seedCommitment: string | null;
   seedSealed: string | null;
   seedRevealed: string | null;
+  /** Versão da chave do cofre que selou a semente (FASE 22, item G12). */
+  seedKeyVersion: number;
   resultVersion: number;
   allowPriorEventWinners: boolean;
   status: string;
@@ -128,6 +141,7 @@ async function loadRaffle(tx: TxClient, tenantId: string, raffleId: string): Pro
       seedCommitment: true,
       seedSealed: true,
       seedRevealed: true,
+      seedKeyVersion: true,
       resultVersion: true,
       allowPriorEventWinners: true,
       status: true,
@@ -345,7 +359,6 @@ export async function createRaffle(
   const seed = createRaffleSeed();
   const commitment = seedCommitment(seed);
   const sealed = sealSeed(seed);
-
   try {
     return await withTenant(input.tenantId, async (tx) => {
       const event = await tx.event.findFirst({
@@ -411,7 +424,13 @@ export async function createRaffle(
           // O compromisso só existe quando o cofre está configurado; sem ele o
           // sorteio roda com o gerador do sistema e a tela diz que não há prova.
           seedCommitment: sealed ? commitment : null,
-          seedSealed: sealed,
+          seedSealed: sealed?.sealed ?? null,
+          /**
+           * A VERSÃO vai junto do selo, sempre (FASE 22). Gravar o selo sem a versão
+           * faria a abertura usar a chave ATUAL — o defeito que girar a chave
+           * provocava: o selo antigo deixaria de abrir.
+           */
+          seedKeyVersion: sealed?.keyVersion ?? LEGACY_SEED_KEY_VERSION,
           status: 'DRAFT',
           createdById: input.actorId,
         },
@@ -435,6 +454,7 @@ export async function createRaffle(
             // O COMPROMISSO entra na trilha: é a prova de que ele existia antes da
             // apuração, com data e autor. A semente, não.
             seedCommitment: { from: null, to: sealed ? commitment : null },
+            seedKeyVersion: { from: null, to: sealed?.keyVersion ?? null },
           },
         },
         tx,
@@ -594,7 +614,7 @@ export async function drawRaffle(input: {
        *  sistema e o resultado continua auditável por hash, mas não reproduzível —
        *  e a resposta diz qual dos dois aconteceu.
        */
-      const revealedSeed = unsealSeed(raffle.seedSealed);
+      const revealedSeed = unsealSeed(raffle.seedSealed, raffle.seedKeyVersion);
       const random = revealedSeed
         ? createSeededRandomInt(revealedSeed)
         : (input.randomInt ?? ((max: number) => randomInt(0, max)));
@@ -783,6 +803,8 @@ export interface RaffleSummary {
   resultVersion: number;
   seedCommitment: string | null;
   seedRevealed: string | null;
+  /** Versão da chave do cofre que selou a semente (FASE 22, item G12). */
+  seedKeyVersion: number;
   drawVersion: number;
   createdByName: string | null;
   winners: {
@@ -808,20 +830,39 @@ export interface RaffleList {
 }
 
 /**
- * Histórico paginado dos sorteios do evento (item G6).
+ * Histórico paginado dos sorteios do evento (item G6), com busca (item G9).
  *
  * Antes havia um teto fixo de 100 e o começo da lista desaparecia sem aviso em
  * eventos com muitos sorteios. Agora a página é explícita e o total vem junto, para
  * que a tela possa mostrar "página 2 de 4" em vez de fingir que acabou.
+ *
+ * O filtro (FASE 22) entra no `where` do banco, e não na lista já carregada: filtrar
+ * em memória daria uma página com 3 itens e "página 1 de 7", porque a contagem e o
+ * recorte teriam sido calculados sobre conjuntos diferentes.
  */
 export async function listRaffles(
   tenantId: string,
   eventId: string,
-  options: { page?: number; pageSize?: number } = {},
+  options: { page?: number; pageSize?: number; filter?: RaffleHistoryFilter } = {},
 ): Promise<RaffleResult<RaffleList>> {
   try {
+    const where = {
+      tenantId,
+      eventId,
+      deletedAt: null,
+      ...(options.filter?.status ? { status: options.filter.status } : {}),
+      ...(options.filter?.from || options.filter?.to
+        ? {
+            createdAt: {
+              ...(options.filter?.from ? { gte: options.filter.from } : {}),
+              ...(options.filter?.to ? { lte: options.filter.to } : {}),
+            },
+          }
+        : {}),
+    };
+
     const data = await withTenant(tenantId, async (tx) => {
-      const total = await tx.raffle.count({ where: { tenantId, eventId, deletedAt: null } });
+      const total = await tx.raffle.count({ where });
       const pagination = resolveRafflePage({
         page: options.page,
         pageSize: options.pageSize,
@@ -829,7 +870,7 @@ export async function listRaffles(
       });
 
       const rows = await tx.raffle.findMany({
-        where: { tenantId, eventId, deletedAt: null },
+        where,
         orderBy: [{ createdAt: 'desc' }],
         skip: pagination.skip,
         take: pagination.pageSize,
@@ -854,6 +895,7 @@ export async function listRaffles(
           resultVersion: true,
           seedCommitment: true,
           seedRevealed: true,
+          seedKeyVersion: true,
           drawVersion: true,
           activity: { select: { title: true } },
           createdBy: { select: { name: true } },
@@ -902,6 +944,7 @@ export async function listRaffles(
         resultVersion: row.resultVersion,
         seedCommitment: row.seedCommitment,
         seedRevealed: row.seedRevealed,
+        seedKeyVersion: row.seedKeyVersion,
         drawVersion: row.drawVersion,
         createdByName: row.createdBy?.name ?? null,
         winners: row.winners.map((winner) => ({
@@ -1059,6 +1102,129 @@ export async function markPrizeDelivered(input: {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Desfazer a entrega do prêmio (FASE 22, item G8)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface ReversedDelivery {
+  raffleId: string;
+  positionId: string;
+  userName: string;
+  /** Quando a entrega desfeita havia sido registrada. */
+  previousDeliveredAt: Date;
+  previousDeliveredByName: string | null;
+  reason: string;
+}
+
+/**
+ * Desfaz o registro de entrega de UMA posição sorteada.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O RECIBO PRECISOU DEIXAR DE SER IMUTÁVEL
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 16 gravou a entrega como registro imutável (ADR-086), e a intenção estava
+ *  certa: um recibo que pode ser reescrito em silêncio não serve como recibo. O que
+ *  faltou foi o outro lado do balcão — alguém marca "entregue" na posição errada (o
+ *  nome parecido, a lista fora de ordem), e a única saída era SQL. No dia do evento
+ *  isso é uma fila parada.
+ *
+ *  A correção mantém a intenção: **o que se desfaz é o REGISTRO DE ENTREGA, não o
+ *  sorteio**. A pessoa continua sendo a ganhadora daquela posição; o prêmio volta a
+ *  constar como não retirado; e os DOIS fatos ficam na trilha — a entrega original
+ *  (com autor e horário) e a reversão (com autor, horário e MOTIVO). Nada é apagado,
+ *  e a pergunta "por que esta entrega foi desfeita?" tem resposta no sistema.
+ *
+ *  O motivo é obrigatório (`evaluateDeliveryReversal`): é o único campo que impede a
+ *  reversão de virar um clique reflexo capaz de apagar um fato consumado.
+ */
+export async function reversePrizeDelivery(input: {
+  tenantId: string;
+  raffleId: string;
+  positionId: string;
+  actorId: string;
+  reason: string;
+}): Promise<RaffleResult<ReversedDelivery>> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const raffle = await loadRaffle(tx, input.tenantId, input.raffleId);
+
+      if (!raffle) {
+        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Sorteio não encontrado.' };
+      }
+
+      const position = await tx.raffleWinner.findFirst({
+        where: { id: input.positionId, raffleId: raffle.id, tenantId: input.tenantId },
+        select: {
+          id: true,
+          userId: true,
+          deliveredAt: true,
+          deliveryNote: true,
+          user: { select: { name: true } },
+          deliveredBy: { select: { name: true } },
+        },
+      });
+
+      if (!position) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Posição sorteada não encontrada neste sorteio.',
+        };
+      }
+
+      const decision = evaluateDeliveryReversal({
+        deliveredAt: position.deliveredAt,
+        reason: input.reason,
+      });
+
+      if (!decision.allowed) {
+        return { ok: false as const, code: decision.code, message: decision.message };
+      }
+
+      const previousDeliveredAt = position.deliveredAt!;
+
+      await tx.raffleWinner.update({
+        where: { id: position.id },
+        data: { deliveredAt: null, deliveredById: null, deliveryNote: null },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'rafflePrize',
+          entityId: position.id,
+          changes: {
+            /**
+             * Os campos nomeiam o que aconteceu, e não "de → para" genérico: quem lê
+             * a trilha meses depois precisa distinguir uma ENTREGA de uma REVERSÃO
+             * sem cruzar duas linhas. O motivo vai junto porque é ele que explica.
+             */
+            entregaDesfeitaEm: { from: previousDeliveredAt.toISOString(), to: null },
+            entreguePorAnteriormente: { from: position.deliveredBy?.name ?? null, to: null },
+            observacaoDaEntregaAnterior: { from: position.deliveryNote, to: null },
+            motivoDaReversao: { from: null, to: decision.reason },
+          },
+        },
+        tx,
+      );
+
+      return {
+        ok: true as const,
+        raffleId: raffle.id,
+        positionId: position.id,
+        userName: position.user?.name ?? 'Participante',
+        previousDeliveredAt,
+        previousDeliveredByName: position.deliveredBy?.name ?? null,
+        reason: decision.reason,
+      };
+    });
+  } catch (error) {
+    console.error(`[raffles] falha ao desfazer entrega: ${errorMessage(error)}`);
+    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível desfazer a entrega.' };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Visibilidade do resultado (item G5)
 // ───────────────────────────────────────────────────────────────────────────────
 /**
@@ -1211,6 +1377,106 @@ export async function listPublicRaffleResults(
   } catch (error) {
     console.error(`[raffles] falha ao carregar resultados públicos: ${errorMessage(error)}`);
     return [];
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Página pública de UM sorteio (FASE 22, item G11)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O resultado publicado de UM sorteio, para a página própria dele.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UMA LEITURA PRÓPRIA, E NÃO UM `find` NA LISTA DO EVENTO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `listPublicRaffleResults` traz os 20 últimos do evento: serve à seção da página
+ *  pública, não a um endereço que alguém projeta no telão e compartilha. Aqui o
+ *  recorte é UM sorteio, e o que se ganha é poder dizer POR QUE ele não aparece:
+ *  `null` significa "não existe ou não está publicado", e a página pública responde
+ *  404 nos dois casos — porque um endereço que explica "este sorteio existe, mas não
+ *  está publicado" já é informação demais para quem não organiza (a mesma decisão do
+ *  material de palestrante na FASE 25: 404 nunca, lá porque o rascunho não é
+ *  informação de quem não organiza; aqui, porque o resultado não é).
+ *
+ *  A leitura traz os TITULARES e os SUPLENTES separados, com o nome mascarado por
+ *  padrão (`publicWinnerName`) — quem se credenciou não consentiu em ter o nome
+ *  publicado, e quem tem perfil público aparece inteiro.
+ */
+export async function getPublicRaffleResult(
+  tenantId: string,
+  eventId: string,
+  raffleId: string,
+): Promise<PublicRaffleResult | null> {
+  try {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.raffle.findFirst({
+        where: { id: raffleId, tenantId, eventId, deletedAt: null },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          drawnAt: true,
+          createdAt: true,
+          status: true,
+          isPublic: true,
+          resultHash: true,
+          seedCommitment: true,
+          seedRevealed: true,
+          winners: {
+            orderBy: { position: 'asc' },
+            select: {
+              position: true,
+              kind: true,
+              user: { select: { name: true, isPublicProfile: true } },
+            },
+          },
+        },
+      }),
+    );
+
+    if (!row) return null;
+
+    /**
+     * A publicação EXIGE as duas condições (apurado + publicado). O estado é
+     * calculado no domínio, e não com um `if` local, porque a tela de administração
+     * usa a MESMA função para explicar por que o endereço público ainda não responde.
+     */
+    const state = rafflePublicationState({ isPublic: row.isPublic, status: row.status as RaffleStatus });
+
+    if (state !== 'PUBLISHED') return null;
+
+    const mapped = row.winners.map((winner) => {
+      const publicProfile = winner.user?.isPublicProfile ?? false;
+
+      return {
+        position: winner.position,
+        kind: winner.kind,
+        name: publicWinnerName({
+          name: winner.user?.name ?? 'Participante',
+          publicProfile,
+        }),
+        masked: !publicProfile,
+      };
+    });
+
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      drawnAt: row.drawnAt ?? row.createdAt,
+      resultHash: row.resultHash,
+      seedCommitment: row.seedCommitment,
+      seedRevealed: row.seedRevealed,
+      winners: mapped
+        .filter((winner) => winner.kind === 'WINNER')
+        .map(({ position, name, masked }) => ({ position, name, masked })),
+      alternates: mapped
+        .filter((winner) => winner.kind === 'ALTERNATE')
+        .map(({ position, name, masked }) => ({ position, name, masked })),
+    };
+  } catch (error) {
+    console.error(`[raffles] falha ao carregar resultado público do sorteio: ${errorMessage(error)}`);
+    return null;
   }
 }
 

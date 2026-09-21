@@ -94,6 +94,7 @@ function RaffleRow({
   drawAction,
   cancelAction,
   deliverAction,
+  reverseAction,
   visibilityAction,
 }: {
   raffle: RaffleItem;
@@ -102,6 +103,7 @@ function RaffleRow({
   drawAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   cancelAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   deliverAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  reverseAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   visibilityAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
 }) {
   const [drawState, drawFormAction] = useActionState<RaffleActionState | null, FormData>(drawAction, null);
@@ -113,12 +115,17 @@ function RaffleRow({
     deliverAction,
     null,
   );
+  const [reverseState, reverseFormAction] = useActionState<RaffleActionState | null, FormData>(
+    reverseAction,
+    null,
+  );
   const [visibilityState, visibilityFormAction] = useActionState<RaffleActionState | null, FormData>(
     visibilityAction,
     null,
   );
   const [showCancel, setShowCancel] = useState(false);
   const [delivering, setDelivering] = useState<string | null>(null);
+  const [reversing, setReversing] = useState<string | null>(null);
 
   const state = cancelState;
   const winners = raffle.winners.filter((winner) => winner.kind === 'WINNER');
@@ -157,13 +164,66 @@ function RaffleRow({
         <span className="code-data text-muted-foreground">{winner.minutes} min</span>
 
         {winner.deliveredAtLabel ? (
-          <span
-            className="text-success-strong"
-            data-testid={`delivered-${winner.id}`}
-            title={winner.deliveryNote ?? undefined}
-          >
-            entregue {winner.deliveredAtLabel}
-            {winner.deliveredByName ? ` · ${winner.deliveredByName}` : ''}
+          <span className="flex items-center gap-2">
+            <span
+              className="text-success-strong"
+              data-testid={`delivered-${winner.id}`}
+              title={winner.deliveryNote ?? undefined}
+            >
+              entregue {winner.deliveredAtLabel}
+              {winner.deliveredByName ? ` · ${winner.deliveredByName}` : ''}
+            </span>
+
+            {/**
+             * ── DESFAZER A ENTREGA (FASE 22, item G8) ────────────────────────────
+             * O recibo é imutável por decisão, mas o ERRO de balcão acontece: o nome
+             * parecido, a linha fora de ordem. Antes, corrigir exigia SQL. Aqui a
+             * correção pede o MOTIVO antes de acontecer — é ele que entra na trilha
+             * junto com a entrega desfeita, e é ele que impede o clique reflexo de
+             * apagar um fato consumado.
+             */}
+            {raffle.status === 'DRAWN' ? (
+              reversing === winner.id ? (
+                <form action={reverseFormAction} className="flex items-center gap-1">
+                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                  <input type="hidden" name="eventId" value={eventId} />
+                  <input type="hidden" name="raffleId" value={raffle.id} />
+                  <input type="hidden" name="positionId" value={winner.id} />
+                  <input
+                    name="reason"
+                    required
+                    minLength={5}
+                    maxLength={300}
+                    placeholder="Motivo da reversão (obrigatório)"
+                    aria-label={`Motivo para desfazer a entrega de ${winner.userName}`}
+                    className="w-56 rounded-md border border-border bg-background px-2 py-0.5 text-xs"
+                  />
+                  <button
+                    type="submit"
+                    data-testid={`confirm-reversal-${winner.id}`}
+                    className="rounded-md border border-destructive/50 px-2 py-0.5 text-xs font-medium text-destructive"
+                  >
+                    Desfazer entrega
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReversing(null)}
+                    className="px-1 text-xs text-muted-foreground hover:underline"
+                  >
+                    cancelar
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setReversing(winner.id)}
+                  data-testid={`reverse-delivery-${winner.id}`}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                >
+                  Desfazer
+                </button>
+              )
+            ) : null}
           </span>
         ) : raffle.status === 'DRAWN' ? (
           delivering === winner.id ? (
@@ -356,6 +416,16 @@ function RaffleRow({
         </p>
       ) : null}
 
+      {reverseState ? (
+        <p
+          role={reverseState.ok ? 'status' : 'alert'}
+          data-testid={`reversal-feedback-${raffle.id}`}
+          className={`text-xs ${reverseState.ok ? 'text-success-strong' : 'text-destructive'}`}
+        >
+          {reverseState.message}
+        </p>
+      ) : null}
+
       {visibilityState ? (
         <p
           role={visibilityState.ok ? 'status' : 'alert'}
@@ -388,7 +458,10 @@ export function RaffleHistory({
   drawAction,
   cancelAction,
   deliverAction,
+  reverseAction,
   visibilityAction,
+  filter,
+  filterQuery,
 }: {
   raffles: readonly RaffleItem[];
   tenantSlug: string;
@@ -399,23 +472,106 @@ export function RaffleHistory({
   drawAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   cancelAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   deliverAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  reverseAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   visibilityAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  /** Filtro ativo, para a tela dizer o que está sendo mostrado (FASE 22, item G9). */
+  filter: { status: string; from: string; to: string; active: boolean; description: string };
+  /** O filtro serializado, para a paginação não perdê-lo. */
+  filterQuery: string;
 }) {
+  const basePath = `/t/${tenantSlug}/administracao/eventos/${eventId}/sorteios`;
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  BUSCA NO HISTÓRICO (FASE 22, item G9)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Um formulário GET, e não uma Server Action: o filtro é ESTADO DO ENDEREÇO. Quem
+   *  filtra consegue compartilhar o link, voltar pelo navegador e recarregar sem
+   *  perder o recorte — coisas que uma action com estado em memória não dariam. A
+   *  conversão das datas é do servidor, no fuso da instituição.
+   */
+  const filterForm = (
+    <form method="get" action={basePath} className="flex flex-wrap items-end gap-2" data-testid="raffle-filter">
+      <label className="space-y-1 text-xs">
+        <span className="block text-muted-foreground">Situação</span>
+        <select
+          name="situacao"
+          defaultValue={filter.status}
+          data-testid="raffle-filter-status"
+          className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+        >
+          <option value="ALL">Todas</option>
+          <option value="DRAFT">Não apurado</option>
+          <option value="DRAWN">Apurado</option>
+          <option value="CANCELED">Cancelado</option>
+        </select>
+      </label>
+
+      <label className="space-y-1 text-xs">
+        <span className="block text-muted-foreground">Criado de</span>
+        <input
+          type="date"
+          name="de"
+          defaultValue={filter.from}
+          data-testid="raffle-filter-from"
+          className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+        />
+      </label>
+
+      <label className="space-y-1 text-xs">
+        <span className="block text-muted-foreground">até</span>
+        <input
+          type="date"
+          name="ate"
+          defaultValue={filter.to}
+          data-testid="raffle-filter-to"
+          className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+        />
+      </label>
+
+      <button
+        type="submit"
+        data-testid="raffle-filter-apply"
+        className="rounded-md border border-border px-3 py-1 text-xs hover:bg-muted"
+      >
+        Filtrar
+      </button>
+
+      {filter.active ? (
+        <a href={basePath} data-testid="raffle-filter-clear" className="px-1 py-1 text-xs underline">
+          limpar
+        </a>
+      ) : null}
+    </form>
+  );
+
   if (raffles.length === 0) {
     return (
-      <p
-        className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
-        data-testid="raffles-empty"
-      >
-        Nenhum sorteio neste evento ainda. Configure e execute o primeiro acima.
-      </p>
+      <div className="space-y-3">
+        {filterForm}
+
+        <p
+          className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
+          data-testid="raffles-empty"
+        >
+          {filter.active
+            ? `Nenhum sorteio para este filtro (${filter.description}).`
+            : 'Nenhum sorteio neste evento ainda. Configure e execute o primeiro acima.'}
+        </p>
+      </div>
     );
   }
 
-  const basePath = `/t/${tenantSlug}/administracao/eventos/${eventId}/sorteios`;
-
   return (
     <div className="space-y-3">
+      {filterForm}
+
+      {filter.active ? (
+        <p className="text-xs text-muted-foreground" data-testid="raffle-filter-summary">
+          Filtrando por {filter.description}.
+        </p>
+      ) : null}
+
       <ul className="space-y-3" data-testid="raffle-history">
         {raffles.map((raffle) => (
           <RaffleRow
@@ -426,6 +582,7 @@ export function RaffleHistory({
             drawAction={drawAction}
             cancelAction={cancelAction}
             deliverAction={deliverAction}
+            reverseAction={reverseAction}
             visibilityAction={visibilityAction}
           />
         ))}
@@ -449,7 +606,7 @@ export function RaffleHistory({
           <span className="flex items-center gap-2">
             {page > 1 ? (
               <a
-                href={`${basePath}?pagina=${page - 1}`}
+                href={`${basePath}?pagina=${page - 1}${filterQuery}`}
                 data-testid="raffle-page-prev"
                 className="rounded-md border border-border px-2 py-1 hover:bg-muted"
               >
@@ -458,7 +615,7 @@ export function RaffleHistory({
             ) : null}
             {page < totalPages ? (
               <a
-                href={`${basePath}?pagina=${page + 1}`}
+                href={`${basePath}?pagina=${page + 1}${filterQuery}`}
                 data-testid="raffle-page-next"
                 className="rounded-md border border-border px-2 py-1 hover:bg-muted"
               >

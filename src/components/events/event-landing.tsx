@@ -290,7 +290,7 @@ export function EventLanding({
           Aparece só quando a instituição publicou algum resultado (opt-in por
           sorteio) — e depois do conteúdo, porque é a informação do FIM do evento.
         */}
-        <RaffleResults results={publicRaffles} />
+        <RaffleResults results={publicRaffles} tenantSlug={tenantSlug} eventSlug={event.slug} />
 
         {/*
           ── PÁGINA VAZIA, E A TELA DIZ ISSO (FASE 23) ─────────────────────────

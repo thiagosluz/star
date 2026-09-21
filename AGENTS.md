@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 23 e 25 (F15 e F21 entregues; a F18+ é a próxima)
-Testes ................. 1414 (Vitest: unit + integração) + 89 (Playwright E2E)
-ADRs ................... 136 (numeração GLOBAL e sequencial — a próxima é ADR-137)
+Fases concluídas ........ 1 a 17, 21, 22, 23 e 25 (F15, F21 e F22 entregues; a F18+ é a próxima)
+Testes ................. 1454 (Vitest: unit + integração) + 94 (Playwright E2E)
+ADRs ................... 139 (numeração GLOBAL e sequencial — a próxima é ADR-140)
 Permissões ............. 58 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 37 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1414+ testes passando
+npm test              # esperado: 1454+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 89+ testes passando
+npm run test:e2e      # esperado: 94+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -124,56 +124,15 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
+> **A tabela COMPLETA — 61 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
+> no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
+> seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
+> renumere. **Antes de mexer numa área, procure ali o que já quebrou nela.** Abaixo ficam as
+> mais recentes, que são as que uma sessão nova tem mais chance de repetir.
+
 | # | Armadilha | Regra |
 |---|---|---|
-| 1 | `.env` define `NODE_ENV=development`, carregado pelo Next no build | Use **`npm run build`** (aplica `cross-env NODE_ENV=production`); `npx next build` direto quebra em `/_global-error` |
-| 2 | Tabela nova com `tenantId` nasce **sem policy** (fail-closed: a app não lê nada) | Rode `npm run db:rls` e depois `npm run db:verify` (o provisionamento descobre tabelas por introspecção desde a FASE 8) |
-| 3 | Build falho + Compose preserva o container antigo → rota nova responde 404 com processo "saudável" | Confirme a imagem recriada **e** o build bem-sucedido antes do E2E |
-| 4 | Arquivo `'use server'` exportando função não-async | `tsc` e ESLint **não** pegam; só o `next build` recusa ("Server Actions must be async functions") |
-| 5 | React 19 **reseta o formulário** depois de uma action — **inclusive quando ela devolve ERRO** | Se duas ações compartilham o formulário (conferir → executar), ou se a action pode falhar com o autor no meio da digitação, os campos precisam ser **controlados**. Com campo não controlado, quem esquece a terceira palavra-chave e vê "revise os dados" perde título e resumo junto com o erro — o caso real da FASE 4: a correção custava reescrever tudo. Em E2E, `toHaveValue(...)` depois da recusa é o que prende isso |
-| 6 | `zod` valida objeto de forma **tudo-ou-nada** | Um campo inválido descarta os válidos: valide campo a campo quando quiser preservar o resto |
-| 7 | `unknown`/objeto simples não é aceito como JSON do Prisma | Faça o cast explícito (`as unknown as object`) ao gravar em colunas `Json` |
-| 8 | `lastIndexOf('xref')` acha o `xref` dentro de `startxref` | Em análise de formato, ancore a busca (`\nxref\n`) |
-| 9 | Múltiplos cadastros no mesmo contexto de navegador E2E reutilizam a sessão | `page.request.post('/api/auth/sign-out')` antes de cada login |
-| 10 | Rate limiter do Better Auth é em memória/por processo | `RATE_LIMIT_ENABLED=false` no container para os E2E |
-| 11 | `docker compose ps` esconde erro de build quando a saída é filtrada | Nunca filtre (`Select-Object -Last 3`) a saída de um `--build` |
-| 12 | Contagens escritas em prosa envelhecem (o doc da F2 dizia "50 permissões"; o código tinha 52 desde então) | **Confira no código**: `npx tsx -e "import {ALL_PERMISSIONS} from '@/domain/rbac/permissions'; console.log(ALL_PERMISSIONS.length)"` |
-| 13 | No Next.js 16 `revalidateTag(tag)` exige 2 argumentos (o segundo é um perfil de `cacheLife`) | Use `revalidateTag(tag, 'max')` e `revalidatePath()` das telas afetadas |
-| 14 | O Next.js empacota Proxy, páginas e Server Actions em **bundles separados**: cada um tem a própria instância dos módulos, então um `Map` de cache invalidado em uma Server Action **não** alcança o Proxy | Não coloque decisão de acesso em cache de módulo. O status do tenant é relido a cada resolução (`tenant-resolver.ts`); o cache guarda só a identidade, e vive no `globalThis` para ser um só por processo |
-| 15 | `unstable_cache` **serializa** o valor: uma `Date` pode voltar como string | Cacheie números/strings (ex.: `getTime()`) e converta na leitura — `getTime()` em string estoura só em produção |
-| 16 | Diagnóstico de depuração deixado na interface: a página pública exibia `cap=… mem=… can=…` para qualquer visitante | Estado interno vai para atributos `data-*`, nunca para texto visível; o teste E2E lê atributo com `evaluate`, não `innerText` |
-| 17 | Dois cenários E2E com o mesmo `label` colidem no slug da instituição (`tenants_slug_key`) | Rótulo ÚNICO por cenário (`publica-inscricao`, não `publica`) |
-| 18 | Cor e tamanho escritos à mão em componente (`text-gray-500`, `#4F46E5`, `text-[13px]`) sobrevivem a qualquer revisão e apodrecem o visual | **Antes de qualquer tela nova:** leia `docs/design-system.md`, importe de `@/components/ui` e rode `npx vitest run tests/unit/design-system-guard.test.ts` — a trava reprova paleta crua, hexadecimal e tamanho arbitrário |
-| 19 | Comentário de bloco contendo `/t/*/admin`: a sequência `*/` **fecha o comentário** e o resto vira código (`TS1161: Unterminated regular expression literal`) | Nunca escreva `*/` dentro de comentário; em texto use `/t/<curinga>/admin` |
-| 20 | `PATH_TENANT_PREFIX` vale `'/t'` (**com barra** — é prefixo de path), não `'t'` | Ao comparar com um SEGMENTO de URL, remova a barra (`PATH_TENANT_PREFIX.replace(/^\//, '')`); comparar `'t' === '/t'` é sempre falso e falha em silêncio |
-| 21 | O PostgreSQL **não aceita parâmetro** em DDL: `CREATE TABLE … PARTITION OF … FOR VALUES FROM ($1) TO ($2)` falha com "bind message supplies 2 parameters, but prepared statement requires 0" | Interpole o limite de partição como literal (`'2026-11-01'`), gerado de uma `Date` calculada no processo |
-| 22 | Consulta de introspecção filtrando `relkind = 'r'` **ignora tabela particionada** (`relkind = 'p'`) — o contrato passou a acusar `audit_logs` como ausente e o loop de RLS deixou de cobrir o pai | Use `relkind IN ('r','p') AND NOT c.relispartition` para tabelas-base e verifique as partições separadamente (`relispartition`) |
-| 23 | `tenants` tem policy `USING (true)` **por desenho** (a resolução de slug → id acontece antes de existir contexto) | Um teste de isolamento que lê `tenants` **não prova nada**: use uma tabela de tenant de verdade (ex.: `events."tenantId"`) como leitura discriminante |
-| 24 | `tenant:read` **não** significa "pode ver tudo da instituição": o papel `PARTICIPANT` tem essa permissão (precisa ler evento e inscrição) | Antes de guardar uma tela com `tenant:read`, pergunte se o público do evento pode ver aquilo. Lista de equipe, papéis e e-mails pedem a permissão da seção de administração |
-| 25 | Variável de módulo preenchida no primeiro teste E2E **não existe** no teste seguinte (o worker pode ser recriado) e o sintoma é um `500` com `invalid input syntax for type uuid: "undefined"` | Em E2E, o estado durável é o BANCO: resolva a entidade pelo slug a cada uso (`findUniqueOrThrow`) em vez de guardar o id numa `let` |
-| 26 | **Um teste E2E que falha reinicia o worker**: `beforeAll` roda DE NOVO e recria o fixture, então o teste seguinte opera numa instituição vazia e falha por um motivo que não é o dele | Corrija o PRIMEIRO teste que falhou (o resto é cascata) e confirme com um log temporário do estado do banco (`count` = 0 vs `count` global > 0) antes de suspeitar do código de produção |
-| 27 | Ao mudar o **conteúdo assinado** por hash (payload de auditoria, documento canônico), toda verificação antiga passa a acusar adulteração | Versione o payload (`resultVersion`/`validationVersion`), grave a versão junto do hash e reconstrua na versão certa — teste de integração que remonta o payload deve ler a versão do BANCO |
-| 28 | Parâmetro com nome ambíguo (`winnerId` para uma LINHA enquanto a tela manda o id da PESSOA) produz `NOT_FOUND` silencioso | Nomeie pelo que a coluna É (`positionId`) e deixe o teste de integração cruzar o que a UI envia com o que o serviço procura |
-| 29 | Assertiva de E2E do tipo "o último bloco do tipo X está visível" passa apontando para o elemento ANTIGO quando já existe um do mesmo tipo na tela — o teste edita o item errado e a falha só aparece 60 s depois, num locator que parece correto | Ao adicionar um item novo numa lista que já tem itens do mesmo tipo, espere pela CONTAGEM (`toHaveCount(anterior + 1)`) antes de usar `.last()`. Visibilidade não prova que o item novo existe |
-| 30 | `<input type="color">` **não tem estado vazio**: um campo não preenchido envia `#000000` | Para cor OPCIONAL, use campo de texto com amostra; vazio significa "usar o token do sistema". O seletor nativo só serve quando a cor é obrigatória |
-| 31 | Trocar a ordem de duas linhas num índice único (`(submissionId, authorOrder)`) viola a restrição **no meio** da operação — o PostgreSQL verifica a unicidade a cada `UPDATE` | Substitua o conjunto inteiro na mesma transação (`deleteMany` + `createMany`) em vez de atualizar linha a linha; e preserve os vínculos que seriam perdidos na recriação |
-| 32 | Campo opcional de formulário chega como STRING VAZIA, não como ausente: `z.email()` recusa `'  '`, e `?? null` APAGA o valor gravado quando a tela mostra o dado mascarado | Trate vazio como ausente na entrada (`optionalText`) e defina a semântica da escrita: `undefined` = preservar o valor atual, `''` = limpar |
-| 33 | O Playwright **dispensa diálogos automaticamente** quando ninguém os trata, e um `window.confirm` dispensado devolve `false` | **O sistema não usa mais `window.confirm`** (revisão de UI, fora da numeração de fases): confirmação de ação sem volta é `ConfirmDialog` de `@/components/ui` — botão que abre, diálogo com a consequência escrita, botão que nomeia a ação. No E2E: clique em `<testid>-open` e depois em `<testid>-confirm-confirm` (`page.on('dialog')` desapareceu das specs). A armadilha continua valendo para qualquer diálogo nativo que apareça: ele é dispensado em silêncio e a ação nunca chega ao servidor |
-| 34 | `setInputFiles` num input de arquivo ESCONDIDO cujo `onChange` depende de um clique anterior (índice da linha) não dispara nada | Reproduza o fluxo real: `page.waitForEvent('filechooser')` + clique no botão + `chooser.setFiles(...)`. Definir o arquivo direto pula o estado que o clique monta |
-| 35 | Editar uma migração **depois de aplicada** quebra `prisma migrate dev` ("modified after it was applied") mesmo com o banco correto — o ledger guarda o checksum do conteúdo original | Nunca edite migração aplicada: corrija com migração nova. Para um banco de desenvolvimento fora de sincronia, `migrate deploy` aplica o que falta e `prisma migrate reset --force` reaplica a cadeia inteira, realinhando o ledger (e provando que ela funciona do zero) |
-| 36 | Estado derivado de dois campos (`isPublished` + `publishAt`) precisa de uma regra que LIMPE o segundo | Se "despublicar" só desmarca o primeiro, o segundo (data já vencida) republica no instante seguinte. Encode a transição numa função pura com teste — e faça a tela dizer que a data foi limpa |
-| 37 | A armadilha 34 tem um GÊMEO: assumir que todo input de arquivo é escondido. O `AssetUploader` tem o `<input type="file">` **visível** (escolhe e depois envia), então `waitForEvent('filechooser')` **nunca** dispara e o teste morre no timeout de 60 s | Antes de escrever o E2E de upload, olhe o componente: input visível → `setInputFiles` direto no input; input escondido acionado por clique → `filechooser`. Não existe "o jeito certo" único, e o erro aparece longe da causa |
-| 38 | `new Date('2027-03-10T18:00')` de um `<input type="datetime-local">` **usa o fuso do PROCESSO** (UTC no container): a data gravada sai deslocada em horas, sem erro nenhum, e o teste que só compara "existe uma data" passa | Converta explicitamente no fuso da ENTIDADE (aqui, `Event.timezone`) com `zonedWallTimeToInstant`, em **duas passagens** — o deslocamento depende do instante, que depende do deslocamento, e é isso que faz o horário de verão funcionar. Faça o caminho de volta e o teste conferir o INSTANTE gravado |
-| 39 | Referência por **URL** não tem chave estrangeira: o banco não sabe que uma imagem está em uso, então `DELETE` do registro + do objeto deixa a página pública com ícone quebrado e nenhum erro no log | Se a referência é uma URL (campo livre, conteúdo de bloco, coluna sem FK), a exclusão precisa **procurar o uso** antes — e recusar explicando ONDE. Varra por listagem (uso calculado uma vez) e extraia as URLs do conteúdo em vez de varrer bloco a bloco |
-| 40 | Revalidar o caminho ERRADO depois de uma Server Action: a action gravava e dizia "cadastrado", mas a lista aberta continuava vazia (o RSC em cache do caminho atual não é invalidado por `revalidatePath` de OUTRO caminho) | Revalide o **segmento** que contém a tela e as irmãs dela: `revalidatePath(tenantPath(slug, '/administracao'), 'layout')`. Caminho exato só quando existe uma única tela afetada |
-| 41 | Chamar um serviço que abre a PRÓPRIA transação de dentro de um `withTenant` que ainda não commitou: o serviço (em outra conexão) não enxerga o dado recém-criado e devolve `NOT_FOUND` — o sintoma é um vínculo que simplesmente não existe, sem erro | `READ COMMITTED` não mostra transação aberta. Monte em transações SEPARADAS: crie as entidades, saia, e só então chame o serviço que lê o que foi criado. Vale para fixtures de teste e para serviços compostos |
-| 42 | `Field` (o primitivo de formulário) associa o rótulo por `htmlFor={name}`, e o controle precisa do `id` correspondente (`{...fieldAria('nome')}`): sem isso o rótulo não foca o campo e `getByLabel` **nunca** resolve no E2E. Duas telas na mesma página com o mesmo `name` geram `id` duplicado e o locator fica ambíguo | Use `fieldAria(name)` em todo controle dentro de um `Field`; quando precisar de `id` diferente do `name` do formulário (ou houver mais de um formulário igual na tela), passe `id` explícito único e um `name` de `Field` também único |
-| 43 | O `ConfirmDialog` montado SEMPRE (só escondendo o `<dialog>` fechado) quebra testes que já existiam: o elemento fechado segue no DOM com `aria-labelledby` apontando para o título ("Remover o bloco 'Texto'?") e `getByLabel('Texto')` passa a casar com DOIS elementos — `strict mode violation`, porque locator por nome acessível **não** filtra elemento invisível. E, ao corrigir para montar só quando aberto, o efeito que chama `showModal()` com lista de dependências VAZIA nunca roda: o `Modal` fica montado (devolve `null`), o efeito roda no primeiro render com `ref.current === null`, e o diálogo aparece sem o atributo `open` — invisível, sem erro no console e com a ação nunca chegando ao servidor | `Modal` devolve `null` quando fechado (o painel nasce junto com a abertura) e o efeito de `showModal()` **depende de `open`**, com `close()` no cleanup devolvendo o foco ao gatilho. Diagnóstico que separa os dois casos: o `outerHTML` do `<dialog>` no relatório do Playwright — sem `open` = o efeito não abriu |
-| 44 | **Menu e página decidiam a mesma permissão com predicados diferentes.** O menu usava `can(permissão, { scope: 'TENANT' })` para TODO item — e `can()` recusa permissão `:own` sem `ownerId` (fail-closed, invariante nº 4). Resultado: o grupo "Minha participação" era descartado INTEIRO, para qualquer papel, e o palestrante não tinha porta para o próprio portal. Nenhum teste olhava o menu (o E2E navegava por URL direta) e o sintoma foi um relato de uso: "não achei a opção de mudar meus dados" — com o formulário existindo, completo, na tela | Item de menu com permissão `:own` é decidido por `holdsPermission` — o MESMO predicado de `requirePersonalPage` (a posse é conferida no dado, a cada leitura e escrita). Item institucional continua por `can()` no escopo da instituição, com `scopes` explícito no item cuja página aceita mais de um escopo (`Credenciamento` aceita `EVENT`). Menu e página têm de concordar nos DOIS sentidos: link que só redireciona e recurso inalcançável são o mesmo defeito — e recurso novo sem item de menu é a regra nº 1 de `docs/design-system.md` |
-| 45 | **O E2E se sincronizava pelo elemento que o fluxo MOSTRAVA** ("Rascunho criado"): quando a criação passou a redirecionar direto para a submissão, esse cartão deixou de existir, e a leitura seguinte do banco — feita logo depois do clique — rodou antes de a Server Action terminar e estourou com "No record was found for a query" | Em E2E, a sincronização vem de um elemento que o servidor só renderiza DEPOIS de gravar: espere pelo sinal da PÁGINA DE DESTINO (aqui, o aviso `draft-created` que depende de `?novo=1`) e só então consulte o banco — o clique resolve quando o navegador DISPARA a action, não quando ela termina |
-| 46 | **Regra obrigatória validada em UM único ponto do ciclo**: título, resumo, palavras-chave (3 a 8 distintas) e idioma eram checados SÓ no envio. O rascunho era salvo com uma palavra-chave, e o autor só descobria no fim — com "a submissão está incompleta" e sem ter onde corrigir (a tela de detalhe era só leitura). A dica do campo dizia a regra que ninguém aplicava | Toda regra que impede a CONCLUSÃO de um fluxo tem de valer em cada passo que a torna verdadeira: a criação passou a usar a MESMA função do envio (`validateSubmissionContent`), a edição também, e a lista gravada é a normalizada (`normalizeKeywords`) — a contagem da tela usa a função do domínio, não uma segunda cópia da regra |
-| 47 | **`<input type="datetime-local">` tem precisão de MINUTO**, e o formulário de edição de atividade devolveu "a atividade precisa acontecer dentro do período do evento" para uma atividade que estava claramente dentro dele: ela fora criada no MESMO instante do início do evento (+30 dias), com segundos e milissegundos, e o valor do campo (truncado para o minuto) caía ~30 s ANTES da abertura. A tela mostrava o horário certo — a diferença era invisível | Ao editar por formulário um registro cujo horário tem segundos, espere o arredondamento: em teste, crie o dado com folga (dia seguinte) ou compare o INSTANTE gravado, não o texto. É o mesmo cuidado da armadilha 38, do lado do formulário |
-| 48 | **`/signup` com sessão ativa redireciona** (a pessoa já está dentro) e a tela de cadastro não existe — o E2E que tentava criar o SEGUNDO usuário pela interface morria esperando o campo "Nome completo", com o sintoma parecendo problema de formulário | Para mais de um usuário na mesma jornada, cadastre pela API (`/api/auth/sign-up/email`) — padrão das outras specs — ou saia antes (`/api/auth/sign-out`, armadilha 9). A tela de cadastro tem cenário próprio e não é o que os testes de jornada medem |
 | 49 | **O BullMQ RECUSA `jobId` com `:`** (`Custom Id cannot contain :` — o `:` é separador de chave no Redis, e só passa id de três segmentos). O `add` lança, o `catch` do enqueue interpreta como "fila indisponível" e a operação cai no caminho INLINE — funcionando, devagar e **em silêncio**. Foi assim que a fila de certificados ficou SEIS FASES sem enfileirar nada (`certificate:<uuid>` desde a FASE 6), com o E2E que documenta "o worker gera o arquivo" passando porque inline também emite | `jobId` usa hífen (`certificate-<id>`, `email-<id>`), e o teste de integração afirma `queued === true` — sem essa asserção, a degradação silenciosa volta sem ninguém notar |
 | 50 | **Variável já exportada no shell VENCE o `.env`**: `dotenv` não sobrescreve o que já existe no ambiente. O envio real falhou com "the eventflow.test domain is not verified" mesmo com o `.env` correto — o valor antigo estava no processo | Ao investigar "o `.env` não está sendo lido", imprima `process.env.A_VARIAVEL` **antes** de culpar o arquivo; e passe o valor explícito no comando (`$env:EMAIL_FROM=...`) quando quiser garantir o que está testando |
 | 51 | **Painel que abre para BAIXO a partir do último elemento de uma barra lateral de altura total** nasce fora da tela em 720 px de altura: o Playwright reprova com "element is outside of the viewport" (116 tentativas) e, na prática, a troca de instituição parece travada. O sintoma apareceu quando um item de menu a mais tornou a navegação mais alta | O seletor de contexto vive no RODAPÉ do shell: o painel abre para CIMA (`bottom-full mb-2`). E o contêiner rolável da navegação precisa de `min-h-0` — sem ele, `flex-1 overflow-y-auto` não encolhe abaixo do conteúdo e empurra o rodapé para fora da tela |
@@ -182,6 +141,11 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 54 | Uma migração nova nasceu com carimbo **anterior** ao das duas últimas já aplicadas (`20260919141704` contra `20260920140000`): o relógio da máquina estava em 19/09 e as anteriores foram nomeadas à mão com data à frente | O Prisma ordena as migrações **pelo NOME do diretório**, não pela data de criação. Uma migração que ordena "no meio" do histórico já aplicado confunde o `migrate`/`deploy` | Renomeie o diretório para um carimbo maior que o da última aplicada (`20260921100000_...`). **A ordem é o nome** — e ele precisa ser maior que o de tudo o que já foi aplicado |
 | 55 | A mesma instrução `UPDATE activities SET "confirmedCount" = "confirmedCount" + 1 WHERE ... capacity ...` estava escrita à mão em **quatro** pontos do serviço de inscrição | Quando a SALA passou a ser um teto, a regra mudou em um ponto e três ficaram para trás — em silêncio, porque o caminho testado era o outro. Cópia de regra é regra que diverge | As quatro viraram constantes nomeadas no domínio (`RESERVE_ACTIVITY_SEAT_SQL`, `RESERVE_OPEN_ACTIVITY_SEAT_SQL`, `RESERVE_EVENT_SEAT_SQL`), e a ausência de predicado na atividade ABERTA ficou explícita num nome próprio. Teste de integração prende o caso central (atividade ilimitada numa sala de 2 confirma exatamente 2) |
 | 56 | O E2E corrigia um campo e reenviava o formulário logo depois de uma recusa — e a segunda submissão levava o valor **ANTIGO** (`80` em vez de `30`), com o teste falhando por um motivo que não era o dele | A armadilha 5 tem um GÊMEO: o reset do React 19 é **assíncrono**. Preencher um campo enquanto o formulário está sendo reiniciado é corrida — o valor escrito pode ser revertido pelo reset que ainda não chegou | Depois de uma recusa, **recomece de uma tela limpa** (`page.reload()`) em vez de corrigir por cima. É determinístico e o teste passa a medir o que quer medir. E, ao recarregar, lembre que os `<details>` voltam FECHADOS: reabra a seção antes de clicar dentro dela |
+| 57 | O teste unitário reprovou o rótulo do filtro de histórico: quem filtrava `criado até 18/10` lia **"criado até 19/10"** | O fim do dia LOCAL é 02:59:59Z do dia SEGUINTE, e o rótulo formatava o INSTANTE em UTC. A conversão estava certa para a consulta e errada para o texto: o dado certo, exibido de volta, contradizia o campo que a pessoa acabou de preencher | Guarde o **texto digitado** junto do instante (`fromDay`/`toDay`) e formate o texto. **Instante para consultar, texto para exibir** — o mesmo cuidado vale para qualquer campo de data convertido a fuso |
+| 58 | O teste de integração da página pública reprovou: o nome do ganhador saía COMPLETO no resultado público, contra a regra documentada ("mascarado por padrão") | `User.isPublicProfile` nasce `true` desde a migração inicial e **nenhum** caminho do sistema escreve a coluna — todo mundo "consentiu" sem escolher. O defeito sobreviveu porque a fixture da fase anterior **gravava o valor que o domínio esperava** (`isPublicProfile: false`), então o default do banco nunca foi exercitado | O padrão passou a `false`, as linhas existentes foram normalizadas e a migração explica por quê (ADR-139). **Fixture que escreve o valor esperado esconde o default do banco**: crie a entidade pelo caminho normal quando o que está em teste for justamente o padrão |
+| 59 | Um sorteio selado na versão 1 da chave não abria mais a semente depois de a chave girar — e a apuração **acontecia do mesmo jeito** | A versão não era gravada: a abertura usava a chave ATUAL. Como o cofre não falha alto (cai para o gerador do sistema, para não travar o palco), a degradação era silenciosa — o sorteio saía sem a prova de commit-reveal | A coluna `raffles."seedKeyVersion"` grava a versão no ato do selo, e `sealSeed` devolve **selo E versão na mesma estrutura**: gravar um sem o outro deixou de ser expressável. Teste de integração prende o giro com a versão antiga ainda declarada |
+| 60 | Sem chave de cofre válida o sorteio continuava apurando, e o operador só descobria que a prova tinha se perdido **no meio da apresentação** | O cofre degrada em silêncio por decisão (não travar o palco), mas a degradação só aparecia no resultado — e configuração que degrada em silêncio não tem onde ser vista | A tela de sorteios passou a mostrar a **situação do chaveiro** (versão em uso, versões disponíveis e problemas de formatação) ANTES da apuração. Mesma lição do e-mail da FASE 15: degradação declarada precisa de um lugar na tela |
+| 61 | **O build da imagem TRAVAVA no estágio do worker** (dez minutos no mesmo passo) e, quando destravava, o `next build` caía com "Failed to fetch Inter from Google Fonts" | O passo de build **não alcança o registro npm** (um `wget` ao `registry.npmjs.org` dentro de um `RUN` estoura o tempo, embora funcione de um `docker run` comum); `npx` e o Prisma sondam a rede antes de rodar; e o `npm install tsx` do worker, além de instalar, **consertava** o `node_modules` parcial do `.next/standalone` — traço do Next sem `ioredis`, com `bullmq` pela metade e `dotenv` sem `package.json` | O build não depende mais da rede: o `tsx` é **copiado** do estágio `deps`, o worker usa a **árvore de produção completa** (`npm prune --omit=dev --offline`, que só REMOVE), o Prisma é chamado por caminho com `CHECKPOINT_DISABLE=1`, e uma **prova de boot** no build recusa `ERR_MODULE_NOT_FOUND`. As fontes do `next/font` seguem sendo a única dependência externa: **repetir o build é a resposta, não mexer no código** |
 
 ---
 
@@ -296,6 +260,33 @@ silêncio (ADR-136).
 **Atividade ABERTA é a exceção deliberada:** ela recebe quem se inscreveu no evento e não tem
 fila, então o teto da sala não a bloqueia — o painel **avisa** quando o público excede a sala
 (dívida E34). Negar acesso em silêncio a quem já está inscrito seria pior que o aviso.
+
+### Operação de palco (FASE 22)
+
+O sorteio ganhou o que a OPERAÇÃO pede — e o tema de sorteios fechou: as seis dívidas
+(G8–G13) foram quitadas.
+
+```
+Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
+                           → filtro do histórico, "Desfazer" entrega, situação do chaveiro
+Resultado público ....... /t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>
+Prévia ao vivo .......... GET /api/events/<eventId>/raffle-live (JSON **ou** SSE)
+Reconhecimento .......... mesmo painel do evento → quantos revisores premiar
+```
+
+Quatro regras que quebram fácil: **desfazer entrega limpa o RECIBO, não o sorteio** — a
+posição continua sendo a ganhadora, e a trilha guarda as duas pontas com o **motivo
+obrigatório** (ADR-137); **o filtro do histórico é o dia da INSTITUIÇÃO** (armadilha 38) e
+o rótulo usa o TEXTO digitado, porque o fim do dia local cai no dia seguinte em UTC
+(armadilha 57); **a chave do cofre tem VERSÃO** (`RAFFLE_SEED_KEYS`, a maior é a atual) e a
+abertura usa a versão GRAVADA no sorteio — sem isso, girar a chave apagava a prova de todo
+o histórico (ADR-138); e **a prévia ao vivo negocia o transporte** na mesma rota (SSE com o
+polling como caminho de volta declarado em `data-transport`).
+
+**Privacidade:** `User.isPublicProfile` nasceu `true` e ninguém podia escolher — o nome dos
+ganhadores saía COMPLETO no resultado público, contra a regra documentada. O padrão passou a
+`false` e as linhas existentes foram normalizadas (ADR-139, armadilha 58). Falta a tela para
+quem QUER se identificar (dívida E35).
 
 ### Sorteios (FASE 16)
 
@@ -604,6 +595,7 @@ tests/{unit,integration,e2e}
 | 24 | Mídia e agendamento (E14–E17: biblioteca de mídia com reaproveitamento por checksum e exclusão que confere o uso, sincronia do patrocinador copiado, janela de exibição com `unpublishAt`, data agendada no fuso do evento) | ✅ |
 | 25 | Portal do palestrante (E21–E24: perfil do palestrante como pessoa da instituição, convite por token hasheado e vínculo de conta em dois caminhos, portal com posse verificada no banco, materiais com visibilidade por visitante, vitrine com foto e bio, certificado `SPEAKER` com carga apurada) — **+ revisão pós-entrega**: o item de menu voltou a aparecer para as permissões pessoais e o convite pendente virou porta de entrada do portal (ADR-119/120, §10 do doc) | ✅ |
 | 21 | Ciclo de vida do membro e storage (C4, C5: troca de papéis e remoção lógica do membro pela tela de equipe com posse do OWNER protegida, quota de **armazenamento aplicada de verdade** em todo envio — submissão, mídia e material de palestrante — medida sobre tudo o que a instituição guarda) | ✅ |
+| 22 | Operação de palco (G8–G13: **desfazer** a entrega com motivo na trilha, filtro do histórico por situação e período, premiar N revisores, **endereço próprio** do resultado publicado, chave do cofre **versionada** e prévia ao vivo por SSE com polling de volta) — **+ correção de privacidade**: o consentimento de perfil público passou a nascer DESLIGADO (ADR-139) | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -612,11 +604,14 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, soma das
-tabelas de tema — o levantamento original menos o que as FASES 12, 13, 14, 15, 16, 17, 21,
-23 e 24 quitaram, mais o que cada uma declarou de novo: a FASE 15 quitou os sete itens de
+**Dívidas técnicas:** o levantamento consolidado (**42 itens abertos**, soma das
+tabelas de tema — o tema G ficou ZERADO na FASE 22 — o levantamento original menos o que
+as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23 e 24 quitaram, mais o que cada uma declarou de
+novo: a FASE 15 quitou os sete itens de
 comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
-(reconciliação banco × bucket e acesso de participante perdido na remoção); a FASE 25
+(reconciliação banco × bucket e acesso de participante perdido na remoção); **a FASE 22
+quitou G8–G13 e declarou o E35** (não há tela para a pessoa autorizar o nome no resultado
+público); a FASE 25
 declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
 declararam o E31 e o E32, a **primeira** revisão da FASE 3 declarou o E33 e a **segunda**
 declarou o E34 (a sala de uma atividade ABERTA não limita o público do evento: o painel
@@ -626,8 +621,8 @@ fases candidatas numeradas como as fases que serão entregues — ~~F15 Comunica
 (entregue) · ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e
 patrocínio~~ (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20
 Observabilidade de segunda ordem · ~~F21 Ciclo de vida do membro e storage~~ (entregue) ·
-F22 Operação de
-palco · ~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
+~~F22 Operação de palco~~ (entregue) ·
+~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
 ~~F25 Portal do palestrante~~ (entregue) · F26 Acervo de mídia: miniaturas, busca e
 sincronia em lote · F27 Material e convite do palestrante · F28 Entrega de e-mail de
 segunda ordem) está em
@@ -639,7 +634,10 @@ ordem sugerida.
 
 ## 10. Primeira ação de uma sessão nova
 
-1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md` e o documento da **última fase entregue** (`docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`; a referência de comunicação é `docs/fase-15-comunicacao.md`).
+1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
+   `docs/armadilhas.md` (a tabela COMPLETA das 61 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-22-operacao-de-palco.md`; a referência de comunicação é
+   `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →

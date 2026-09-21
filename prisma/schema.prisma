@@ -445,6 +445,13 @@ model Raffle {
   seedSealed     String? @db.Text
   seedRevealed   String? @db.VarChar(128)
 
+  /// Versão da chave do cofre usada para SELAR a semente (FASE 22, item G12).
+  ///
+  /// A abertura usa ESTA versão, não a atual: girar a chave (`RAFFLE_SEED_KEYS`) não
+  /// invalida o compromisso de sorteios já selados. `0` = chave legada, derivada de
+  /// `BETTER_AUTH_SECRET` — o valor de todo sorteio criado antes desta fase.
+  seedKeyVersion Int @default(0)
+
   /// Versão do conteúdo canônico assinado (1 = só titulares; 2 = suplentes, peso e
   /// papel por posição). Guardada porque o payload de auditoria é reconstruído a
   /// partir dela — subir a versão não pode invalidar o hash de apurações antigas.
@@ -629,13 +636,22 @@ model User {
   passwordHash String? @db.VarChar(255)
 
   /// Perfil público gamificado.
-  publicHandle    String? @unique @db.VarChar(63)
-  bio             String? @db.VarChar(1000)
-  headline        String? @db.VarChar(160)
-  country         String? @db.VarChar(2)
-  orcidId         String? @db.VarChar(19)
-  lattesId        String? @db.VarChar(32)
-  isPublicProfile Boolean @default(true)
+  publicHandle String? @unique @db.VarChar(63)
+  bio          String? @db.VarChar(1000)
+  headline     String? @db.VarChar(160)
+  country      String? @db.VarChar(2)
+  orcidId      String? @db.VarChar(19)
+  lattesId     String? @db.VarChar(32)
+
+  /// O nome pode aparecer COMPLETO em resultado público (sorteio) — consentimento.
+  ///
+  /// O padrão é `false`, e isso é a regra, não um detalhe: publicar "Fulano ganhou o
+  /// notebook" na internet é exposição que ninguém consentiu ao se credenciar. O
+  /// resultado público mascara o nome (`Ana Souza` → `Ana S.`) e só mostra inteiro
+  /// para quem tem este campo ligado. Até a FASE 22 a coluna nascia `true`, e o
+  /// efeito era o OPOSTO do documentado: todo mundo tinha o nome publicado por um
+  /// consentimento que nunca deu (ver ADR-139).
+  isPublicProfile Boolean @default(false)
 
   twoFactorEnabled Boolean   @default(false)
   banned           Boolean   @default(false)
