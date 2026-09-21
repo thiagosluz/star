@@ -279,17 +279,19 @@ npm run db:migrate:status    → 22 migrations found · Database schema is up to
 npm run db:verify            → Contrato íntegro.
 npm run db:verify:isolation  → 9/9 verificações passaram.
 npm run db:partitions        → partições do mês atual e dos seguintes em dia
-npm run test:e2e             → 94 passed
+npm run test:e2e             → 94 passed (94 ✓ · 0 falhas)
+npx playwright test tests/e2e/raffle-end-to-end.spec.ts
+                             → 9 passed (1.0m), incluindo os 5 da operação de palco
 ```
 
 As imagens foram reconstruídas e os containers RECRIADOS — a prova é o ID, não a data:
 
 ```text
 docker compose build worker   → "grafo de módulos do worker carregado por inteiro" (prova de boot no build)
-docker inspect eventflow-web --format '{{.Image}}'  → sha256:9e1b525d… = eventflow/web:local
-docker exec eventflow-web grep -rl x-accel-buffering .next                  → .next/server/chunks/_0lexm0m._.js
-docker exec eventflow-web grep -rl data-transport .next/static/chunks       → 174zkbhj-6w34.js
-curl -H 'Accept: text/event-stream' …/raffle-live?tenantSlug=ufba-demo      → content-type: text/event-stream
+docker inspect eventflow-web --format '{{.Image}}'  → sha256:02d5bb9b… = eventflow/web:local
+docker exec eventflow-web grep -rl x-accel-buffering .next                 → .next/server/chunks/_0lexm0m._.js
+docker exec eventflow-web grep -rl 'Nenhum revisor atingiu' .next/static   → .next/static/chunks/2szwak6gpphtg.js
+curl -H 'Accept: text/event-stream' …/raffle-live?tenantSlug=ufba-demo     → content-type: text/event-stream
                                                                               x-accel-buffering: no
                                                                               event: live  (primeira amostra)
 ```

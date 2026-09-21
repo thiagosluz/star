@@ -375,10 +375,21 @@ describe('apuração', () => {
 
     const recomputed = hashResult(
       buildResultPayload({
-        // A VERSÃO vem do que está gravado no sorteio (FASE 16): o payload ganhou
-        // suplentes e peso por minutos, e reconstruir na versão errada acusaria
-        // "resultado adulterado" em uma apuração íntegra.
-        validationVersion: raffle.resultVersion === 2 ? 2 : 1,
+        /**
+         * A VERSÃO vem do que está gravado na RODADA (FASE 16, ampliada nas FASES 29 e
+         * 30): o payload ganhou suplentes e peso por minutos (v2), a lista publicada
+         * (v3) e o número da rodada (v4) — reconstruir na versão errada acusaria
+         * "resultado adulterado" em uma apuração íntegra.
+         */
+        validationVersion:
+          raffle.resultVersion === 4
+            ? 4
+            : raffle.resultVersion === 3
+              ? 3
+              : raffle.resultVersion === 2
+                ? 2
+                : 1,
+        roundNumber: raffle.rounds[raffle.rounds.length - 1]?.roundNumber ?? 1,
         raffleId: raffle.id,
         tenantId,
         eventId,
@@ -390,6 +401,10 @@ describe('apuração', () => {
         alternatesCount: raffle.alternatesCount,
         weightByMinutes: raffle.weightByMinutes,
         allowPriorEventWinners: raffle.allowPriorEventWinners,
+        // Na versão 3 a LISTA assinada é a lista de elegíveis: em número, é o
+        // `eligibleCount` gravado na mesma apuração.
+        poolHash: raffle.poolHash,
+        poolCount: raffle.eligibleCount,
         eligibleCount: raffle.eligibleCount,
         drawnAt: raffle.drawnAt!.toISOString(),
         winners: raffle.winners.map((winner) => ({
@@ -407,7 +422,15 @@ describe('apuração', () => {
     expect(
       verifyResult(
         {
-          validationVersion: raffle.resultVersion === 2 ? 2 : 1,
+          validationVersion:
+            raffle.resultVersion === 4
+              ? 4
+              : raffle.resultVersion === 3
+                ? 3
+                : raffle.resultVersion === 2
+                  ? 2
+                  : 1,
+          roundNumber: raffle.rounds[raffle.rounds.length - 1]?.roundNumber ?? 1,
           raffleId: raffle.id,
           tenantId,
           eventId,
@@ -419,6 +442,8 @@ describe('apuração', () => {
           alternatesCount: raffle.alternatesCount,
           weightByMinutes: raffle.weightByMinutes,
           allowPriorEventWinners: raffle.allowPriorEventWinners,
+          poolHash: raffle.poolHash,
+          poolCount: raffle.eligibleCount,
           eligibleCount: raffle.eligibleCount,
           drawnAt: raffle.drawnAt!.toISOString(),
           winners: raffle.winners.map((winner) => ({
@@ -445,8 +470,14 @@ describe('apuração', () => {
 
     expect(again.ok).toBe(false);
     if (!again.ok) {
-      expect(again.code).toBe('ALREADY_DRAWN');
-      expect(again.message).toMatch(/já foi apurado/i);
+      /**
+       * Desde a FASE 30 não existe "o sorteio já foi apurado": existe "não há rodada
+       * preparada". A rodada 1 foi apurada, e apurar de novo exige PREPARAR a próxima
+       * — que é o que a mensagem diz, em vez de um "já foi apurado" que a operação
+       * leria como "não dá mais para sortear neste evento".
+       */
+      expect(again.code).toBe('NO_PENDING_ROUND');
+      expect(again.message).toMatch(/prepara/i);
     }
 
     // Nenhum vencedor novo foi gravado.
@@ -487,7 +518,9 @@ describe('apuração', () => {
 
     expect(successes).toHaveLength(1);
     expect(failures).toHaveLength(1);
-    if (!failures[0]!.ok) expect(failures[0]!.code).toBe('ALREADY_DRAWN');
+    // A segunda encontra a rodada já apurada e é recusada SEM sortear (FASE 30: a
+    // apuração é da RODADA, então o motivo é "prepare a próxima").
+    if (!failures[0]!.ok) expect(failures[0]!.code).toBe('NO_PENDING_ROUND');
 
     const winners = await withTenant(tenantId, (tx) =>
       tx.raffleWinner.findMany({
@@ -686,22 +719,79 @@ describe('cancelamento e auditoria', () => {
     if (!result.ok) expect(result.message).toMatch(/público/i);
   });
 
-  it('a trilha de auditoria registra a criação e a apuração com os vencedores', async () => {
-    const audit = await listAuditLog(tenantId, { limit: 100 });
-    const entries = audit.filter((entry) => entry.entityType === 'raffle');
+  it('a trilha de auditoria registra a criação, a rodada e a apuração', async () => {
+    /**
+     * Cenário PRÓPRIO (armadilha 62): depender do que as provas anteriores deixaram
+     * faria este teste medir a trilha de outro sorteio — ou de nenhum —, porque a
+     * listagem é limitada às últimas entradas da instituição.
+     */
+    const created = await createRaffle({
+      tenantId,
+      eventId,
+      actorId,
+      title: `Trilha do sorteio ${randomUUID().slice(0, 6)}`,
+      scope: 'EVENT',
+      minAttendanceMinutes: 0,
+      winnersCount: 1,
+      prizeTitle: 'Caneca do evento',
+      allowPriorEventWinners: true,
+    });
 
-    expect(entries.length).toBeGreaterThanOrEqual(2);
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
 
-    const creation = entries.find((entry) => entry.action === 'CREATE');
+    const round = await withTenant(tenantId, (tx) =>
+      tx.raffleRound.findFirstOrThrow({
+        where: { raffleId: created.raffleId },
+        select: { id: true },
+      }),
+    );
+
+    const drawn = await drawRaffle({ tenantId, raffleId: created.raffleId, actorId });
+    expect(drawn.ok).toBe(true);
+
+    const audit = await listAuditLog(tenantId, { limit: 50 });
+
+    /**
+     * ── A APURAÇÃO É DA RODADA (FASE 30) ────────────────────────────────────────
+     * O hash do resultado, a lista publicada e o compromisso vivem no registro da
+     * RODADA (`entityType: raffleRound`); o registro do sorteio guarda a transição de
+     * estado. Procurar o hash no registro do sorteio não acharia nada — e era o que
+     * este teste fazia antes das rodadas.
+     */
+    const roundEntries = audit.filter(
+      (entry) => entry.entityType === 'raffleRound' && entry.entityId === round.id,
+    );
+
+    const prepared = roundEntries.find((entry) => entry.action === 'CREATE');
+    expect(prepared).toBeDefined();
+    expect(JSON.stringify(prepared?.changes)).toMatch(/seedCommitment/);
+
+    const drawnEntry = roundEntries.find(
+      (entry) => entry.action === 'UPDATE' && entry.changes.resultHash,
+    );
+
+    expect(drawnEntry).toBeDefined();
+    expect(String(drawnEntry!.changes.resultHash?.to)).toHaveLength(64);
+
+    // A criação do SORTEIO continua na trilha, com os campos de negócio.
+    const creation = audit.find(
+      (entry) =>
+        entry.entityType === 'raffle' && entry.entityId === created.raffleId && entry.action === 'CREATE',
+    );
+
     expect(creation?.actorName).toBe('Organizadora dos Sorteios');
     expect(Object.keys(creation?.changes ?? {})).toContain('winnersCount');
 
-    const drawn = entries.find(
-      (entry) => entry.action === 'UPDATE' && (entry.changes as Record<string, unknown>).resultHash,
-    );
-
-    expect(drawn).toBeDefined();
-    expect(JSON.stringify(drawn?.changes)).toMatch(/DRAWN/);
+    /**
+     * O registro da apuração descreve o MOMENTO: quem ganhou, em que posições, com que
+     * lista e com que semente. É o que permite responder "por que fulano ganhou?"
+     * meses depois sem varrer o banco.
+     */
+    expect(String(drawnEntry!.changes.winners?.to)).toMatch(/1º/);
+    expect(String(drawnEntry!.changes.poolHash?.to)).toHaveLength(64);
+    expect(String(drawnEntry!.changes.seedRevealed?.to).length).toBeGreaterThan(0);
+    expect(Number(drawnEntry!.changes.roundNumber?.to)).toBe(1);
   });
 });
 

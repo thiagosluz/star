@@ -53,17 +53,23 @@ export interface AttendanceSample {
   status: string;
 }
 
-/** Participante elegível, com a evidência que o qualificou. */
-export interface EligibleParticipant {
-  userId: string;
-  userName: string;
-  /** Total de minutos considerados no escopo do sorteio. */
-  minutes: number;
-  /** Presenças que compuseram o total. */
-  attendanceIds: string[];
-  /** Presença mais relevante (maior tempo), usada como referência. */
-  referenceAttendanceId: string | null;
-}
+/**
+ * As peças PURAS da seleção (participante, sorteio uniforme e ponderado) vivem em
+ * `draw-selection.ts` desde a FASE 29, porque a auditoria pública as roda também no
+ * NAVEGADOR — e este arquivo importa `node:crypto`, que não atravessa para o
+ * cliente. O reexport mantém o caminho histórico (`raffle-rules`) válido para
+ * quem já importava daqui.
+ */
+import type { EligibleParticipant } from '@/domain/raffles/draw-selection';
+
+export {
+  participantWeight,
+  reproduceFromPool,
+  selectWeightedWinners,
+  selectWinners,
+} from '@/domain/raffles/draw-selection';
+
+export type { EligibleParticipant, RafflePoolEntry } from '@/domain/raffles/draw-selection';
 
 export interface RaffleConfig {
   scope: RaffleScope;
@@ -109,6 +115,16 @@ export interface EligibilityInput {
   timeZone: string;
   /** Quem já ganhou sorteio anterior NESTE evento (quando a flag está desligada). */
   priorWinnerIds?: readonly string[];
+  /**
+   * Quem já ganhou uma RODADA ANTERIOR deste mesmo sorteio (FASE 30).
+   *
+   * Este filtro NÃO depende de flag e não é o mesmo que `priorWinnerIds`: quem já
+   * saiu na rodada 1 não concorre na 2 — é o que "cada pessoa ganha uma vez" quer
+   * dizer num sorteio com vários momentos. O banco também garante isso (índice
+   * único por sorteio), mas a lista do telão precisa da MESMA regra: um nome que
+   * aparece na rolagem e não podia concorrer é uma promessa falsa.
+   */
+  sameRaffleWinnerIds?: readonly string[];
 }
 
 export interface EligibilityResult {
@@ -146,7 +162,7 @@ export function referenceDayKey(referenceDate: Date, timeZone: string): string {
 //  Validação da configuração
 // ───────────────────────────────────────────────────────────────────────────────
 export interface ConfigValidation {
-  valid: boolean
+  valid: boolean;
   errors: string[];
 }
 
@@ -264,7 +280,10 @@ export function matchesScope(
     const target = referenceDayKey(config.referenceDate, timeZone);
 
     if (key !== target) {
-      return { matches: false, reason: `Presença no dia ${key}, e o sorteio é do dia ${target}.` };
+      return {
+        matches: false,
+        reason: `Presença no dia ${key}, e o sorteio é do dia ${target}.`,
+      };
     }
 
     return { matches: true, reason: null };
@@ -288,6 +307,7 @@ export function matchesScope(
 export function evaluateEligibility(input: EligibilityInput): EligibilityResult {
   const { config, timeZone } = input;
   const priorWinners = new Set(input.priorWinnerIds ?? []);
+  const sameRaffleWinners = new Set(input.sameRaffleWinnerIds ?? []);
 
   const byUser = new Map<string, EligibleParticipant>();
   const rejected = new Map<string, string>();
@@ -316,6 +336,19 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
      */
     if (!config.allowPriorEventWinners && priorWinners.has(sample.userId)) {
       rejected.set(sample.userId, 'Já foi sorteado neste evento.');
+      continue;
+    }
+
+    /**
+     * ───────────────────────────────────────────────────────────────────────────
+     *  QUEM JÁ GANHOU NESTE SORTEIO NÃO VOLTA (FASE 30)
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O filtro vem ANTES de somar minutos: a pessoa sai da rodada 2 pelo que fez na
+     *  rodada 1, e o motivo dito na tela é esse — não "pouco tempo de presença", que
+     *  seria uma explicação errada sobre um fato correto.
+     */
+    if (sameRaffleWinners.has(sample.userId)) {
+      rejected.set(sample.userId, 'Já ganhou uma rodada anterior deste sorteio.');
       continue;
     }
 
@@ -373,114 +406,11 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
     eligible,
     rejected: [...rejected.entries()].map(([userId, reason]) => ({
       userId,
-      userName:
-        input.attendances.find((sample) => sample.userId === userId)?.userName ?? 'Participante',
+      userName: input.attendances.find((sample) => sample.userId === userId)?.userName ?? 'Participante',
       reason,
     })),
     inspectedAttendances,
   };
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Amostragem sem reposição
-// ───────────────────────────────────────────────────────────────────────────────
-/**
- * Sorteia `count` participantes distintos.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  FISHER-YATES COM FONTE CRIPTOGRÁFICA
- *  ─────────────────────────────────────────────────────────────────────────────
- *  A amostragem é SEM REPOSIÇÃO por construção: cada índice já usado sai do
- *  intervalo de sorteio, então ninguém pode ser sorteado duas vezes — a
- *  propriedade não depende de checagem posterior.
- *
- *  O gerador é injetado (`randomInt`) exatamente como no sorteio de cartas da
- *  FASE 5: em produção é `crypto.randomInt`; nos testes é uma sequência fixa. Sem
- *  isso, testar distribuição e ordem seria impossível.
- *
- *  Quando faltam elegíveis, o sorteio entrega o que existe — e o chamador informa
- *  quantos foram sorteados de fato, em vez de falhar e não sortear ninguém.
- */
-export function selectWinners(
-  pool: readonly EligibleParticipant[],
-  count: number,
-  randomInt: (max: number) => number,
-): EligibleParticipant[] {
-  const remaining = [...pool];
-  const winners: EligibleParticipant[] = [];
-  const target = Math.min(Math.max(0, Math.floor(count)), remaining.length);
-
-  for (let index = 0; index < target; index += 1) {
-    const draw = randomInt(remaining.length - index);
-    const picked = index + Math.max(0, Math.min(draw, remaining.length - index - 1));
-
-    [remaining[index], remaining[picked]] = [remaining[picked]!, remaining[index]!];
-    winners.push(remaining[index]!);
-  }
-
-  return winners;
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Amostragem ponderada por minutos (item G3)
-// ───────────────────────────────────────────────────────────────────────────────
-/**
- * Peso de um participante no sorteio ponderado.
- *
- * O peso é o tempo assistido, com piso 1: quem é elegível com `0` minuto (só
- * possível quando o piso de minutos é zero) continua concorrendo, com chance
- * mínima. Zerar o peso o excluiria — e excluir não é o que "ponderado" significa:
- * quem está na lista de elegíveis concorre.
- */
-export function participantWeight(participant: EligibleParticipant): number {
-  return Math.max(1, Math.floor(participant.minutes));
-}
-
-/**
- * Sorteia `count` participantes com chance PROPORCIONAL aos minutos assistidos.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE NÃO REUSAR O FISHER-YATES
- * ─────────────────────────────────────────────────────────────────────────────
- *  O embaralhamento uniforme dá a todos a mesma chance, que é exatamente o que a
- *  ponderação precisa desfazer. Aqui cada retirada sorteia um ponto no intervalo
- *  `[0, somaDosPesos)` e percorre a soma acumulada: um participante com o dobro do
- *  tempo ocupa o dobro do intervalo, e portanto tem o dobro da chance.
- *
- *  A retirada é SEM REPOSIÇÃO: quem sai não volta para a próxima rodada, então a
- *  soma é recalculada e ninguém é sorteado duas vezes. Empates de peso são
- *  resolvidos pela ordem do `pool` (que já vem ordenada por nome), e é por isso que
- *  o resultado é reproduzível a partir da mesma semente.
- */
-export function selectWeightedWinners(
-  pool: readonly EligibleParticipant[],
-  count: number,
-  randomInt: (max: number) => number,
-): EligibleParticipant[] {
-  const remaining = [...pool];
-  const winners: EligibleParticipant[] = [];
-  const target = Math.min(Math.max(0, Math.floor(count)), remaining.length);
-
-  for (let index = 0; index < target; index += 1) {
-    const total = remaining.reduce((sum, participant) => sum + participantWeight(participant), 0);
-    // `randomInt(total)` devolve `[0, total)`; o acumulado encontra o dono do ponto.
-    let point = Math.max(0, Math.min(randomInt(total), total - 1));
-    let picked = remaining.length - 1;
-
-    for (let position = 0; position < remaining.length; position += 1) {
-      point -= participantWeight(remaining[position]!);
-
-      if (point < 0) {
-        picked = position;
-        break;
-      }
-    }
-
-    const [chosen] = remaining.splice(picked, 1);
-    winners.push(chosen!);
-  }
-
-  return winners;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -595,11 +525,7 @@ export interface RafflePage {
  * A regra de recorte é a mesma do diretório público (FASE 9); quando a paginação
  * transversal entrar no levantamento (item E2), as duas passam a usar uma função só.
  */
-export function resolveRafflePage(input: {
-  page?: number;
-  pageSize?: number;
-  total: number;
-}): RafflePage {
+export function resolveRafflePage(input: { page?: number; pageSize?: number; total: number }): RafflePage {
   const pageSize = Math.min(
     Math.max(1, Math.floor(input.pageSize ?? RAFFLE_PAGE_SIZE)),
     MAX_RAFFLE_PAGE_SIZE,
@@ -628,8 +554,30 @@ export function resolveRafflePage(input: {
  *  Por isso o payload é versionado: quem apurou antes continua verificável pela
  *  versão 1, quem apura agora usa a 2, e `verifyResult` reconstrói o payload na
  *  versão CERTA a partir do que está gravado no sorteio.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A VERSÃO SUBIU DE NOVO (FASE 29, versão 3)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A auditoria conferível precisava amarrar a ENTRADA do sorteio ao resultado: sem
+ *  isso, trocar a lista de elegíveis depois da apuração deixaria o hash do resultado
+ *  intacto, e a página pública prometia uma reprodução que ninguém podia conferir.
+ *  A versão 3 acrescenta `poolHash` (SHA-256 da lista publicada) e `poolCount` ao
+ *  conteúdo assinado — mudar a lista, a ordem ou os minutos de alguém passa a mudar
+ *  o hash do resultado. A 2 e a 1 seguem verificáveis, cada uma com o seu formato.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  E DE NOVO (FASE 30, versão 4): o documento passou a ser POR RODADA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Cada apuração é um momento próprio, com o seu compromisso e a sua semente — e o
+ *  documento assinado passou a declarar QUAL momento ele descreve (`roundNumber`).
+ *  Sem isso, dois documentos de rodadas diferentes seriam indistinguíveis, e trocar
+ *  um pelo outro (o resultado da rodada 2 no lugar da 1) conferiria perfeitamente.
+ *
+ *  O PRÊMIO NÃO ENTRA AQUI de propósito: ele é anúncio, e corrigir uma vírgula no
+ *  texto do prêmio não pode invalidar um resultado já publicado (ADR-145). O que é
+ *  assinado é o que DECIDE o sorteio: semente, lista, minutos e posições.
  */
-export const RESULT_PAYLOAD_VERSION = 2;
+export const RESULT_PAYLOAD_VERSION = 4;
 
 export interface RaffleResultWinner {
   position: number;
@@ -640,12 +588,14 @@ export interface RaffleResultWinner {
 }
 
 export interface RaffleResultPayload {
-  validationVersion: 1 | 2;
+  validationVersion: 1 | 2 | 3 | 4;
   raffleId: string;
   tenantId: string;
   eventId: string;
+  /** Presente a partir da versão 4: qual MOMENTO este documento descreve. */
+  roundNumber?: number;
   scope: RaffleScope;
-  activityId: string | null
+  activityId: string | null;
   referenceDate: string | null;
   minAttendanceMinutes: number;
   winnersCount: number;
@@ -654,6 +604,10 @@ export interface RaffleResultPayload {
   alternatesCount?: number;
   /** Presente a partir da versão 2. */
   weightByMinutes?: boolean;
+  /** Presente a partir da versão 3: SHA-256 da lista publicada (a entrada do sorteio). */
+  poolHash?: string | null;
+  /** Presente a partir da versão 3: quantos elegíveis a lista tinha. */
+  poolCount?: number;
   eligibleCount: number;
   drawnAt: string;
   winners: RaffleResultWinner[];
@@ -669,15 +623,20 @@ export interface RaffleResultPayload {
  * Na versão 2, cada vencedor também declara `kind` (titular ou suplente): promover
  * um suplente a titular depois mudaria o hash, que é exatamente o que a auditoria
  * precisa impedir.
+ *
+ * Na versão 3, `poolHash` e `poolCount` entram ANTES dos vencedores: a lista é a
+ * entrada do sorteio, e o documento assinado passa a dizer com que entrada o
+ * resultado foi produzido — é o que permite a quem audita refazer a conta.
  */
 export function buildResultPayload(input: RaffleResultPayload): string {
   const ordered: RaffleResultPayload =
-    input.validationVersion === 2
+    input.validationVersion === 4
       ? {
-          validationVersion: 2,
+          validationVersion: 4,
           raffleId: input.raffleId,
           tenantId: input.tenantId,
           eventId: input.eventId,
+          roundNumber: input.roundNumber ?? 1,
           scope: input.scope,
           activityId: input.activityId,
           referenceDate: input.referenceDate,
@@ -686,6 +645,8 @@ export function buildResultPayload(input: RaffleResultPayload): string {
           allowPriorEventWinners: input.allowPriorEventWinners,
           alternatesCount: input.alternatesCount ?? 0,
           weightByMinutes: input.weightByMinutes ?? false,
+          poolHash: input.poolHash ?? null,
+          poolCount: input.poolCount ?? 0,
           eligibleCount: input.eligibleCount,
           drawnAt: input.drawnAt,
           winners: input.winners.map((winner) => ({
@@ -695,25 +656,73 @@ export function buildResultPayload(input: RaffleResultPayload): string {
             kind: winner.kind ?? 'WINNER',
           })),
         }
-      : {
-          validationVersion: 1,
-          raffleId: input.raffleId,
-          tenantId: input.tenantId,
-          eventId: input.eventId,
-          scope: input.scope,
-          activityId: input.activityId,
-          referenceDate: input.referenceDate,
-          minAttendanceMinutes: input.minAttendanceMinutes,
-          winnersCount: input.winnersCount,
-          allowPriorEventWinners: input.allowPriorEventWinners,
-          eligibleCount: input.eligibleCount,
-          drawnAt: input.drawnAt,
-          winners: input.winners.map((winner) => ({
-            position: winner.position,
-            userId: winner.userId,
-            minutes: winner.minutes,
-          })),
-        };
+      : input.validationVersion === 3
+        ? {
+            validationVersion: 3,
+            raffleId: input.raffleId,
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            scope: input.scope,
+            activityId: input.activityId,
+            referenceDate: input.referenceDate,
+            minAttendanceMinutes: input.minAttendanceMinutes,
+            winnersCount: input.winnersCount,
+            allowPriorEventWinners: input.allowPriorEventWinners,
+            alternatesCount: input.alternatesCount ?? 0,
+            weightByMinutes: input.weightByMinutes ?? false,
+            poolHash: input.poolHash ?? null,
+            poolCount: input.poolCount ?? 0,
+            eligibleCount: input.eligibleCount,
+            drawnAt: input.drawnAt,
+            winners: input.winners.map((winner) => ({
+              position: winner.position,
+              userId: winner.userId,
+              minutes: winner.minutes,
+              kind: winner.kind ?? 'WINNER',
+            })),
+          }
+        : input.validationVersion === 2
+          ? {
+              validationVersion: 2,
+              raffleId: input.raffleId,
+              tenantId: input.tenantId,
+              eventId: input.eventId,
+              scope: input.scope,
+              activityId: input.activityId,
+              referenceDate: input.referenceDate,
+              minAttendanceMinutes: input.minAttendanceMinutes,
+              winnersCount: input.winnersCount,
+              allowPriorEventWinners: input.allowPriorEventWinners,
+              alternatesCount: input.alternatesCount ?? 0,
+              weightByMinutes: input.weightByMinutes ?? false,
+              eligibleCount: input.eligibleCount,
+              drawnAt: input.drawnAt,
+              winners: input.winners.map((winner) => ({
+                position: winner.position,
+                userId: winner.userId,
+                minutes: winner.minutes,
+                kind: winner.kind ?? 'WINNER',
+              })),
+            }
+          : {
+              validationVersion: 1,
+              raffleId: input.raffleId,
+              tenantId: input.tenantId,
+              eventId: input.eventId,
+              scope: input.scope,
+              activityId: input.activityId,
+              referenceDate: input.referenceDate,
+              minAttendanceMinutes: input.minAttendanceMinutes,
+              winnersCount: input.winnersCount,
+              allowPriorEventWinners: input.allowPriorEventWinners,
+              eligibleCount: input.eligibleCount,
+              drawnAt: input.drawnAt,
+              winners: input.winners.map((winner) => ({
+                position: winner.position,
+                userId: winner.userId,
+                minutes: winner.minutes,
+              })),
+            };
 
   return JSON.stringify(ordered);
 }
@@ -771,8 +780,7 @@ export function evaluateReadiness(
   const shortfall = Math.max(0, wanted - eligibleCount);
   const winnersDrawn = Math.min(eligibleCount, Math.max(0, winnersCount));
   const alternatesToDraw = Math.max(0, willDraw - winnersDrawn);
-  const alternatesSuffix =
-    alternatesCount > 0 ? ` + ${alternatesToDraw} suplente(s)` : '';
+  const alternatesSuffix = alternatesCount > 0 ? ` + ${alternatesToDraw} suplente(s)` : '';
 
   if (eligibleCount === 0) {
     return {

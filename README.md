@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 22, 23, 24 e 25 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1454 testes** unitários/integração · **94 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29 e 30 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1531 testes** unitários/integração · **97 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -51,6 +51,8 @@ avaliação por pares e gamificação.
 | **Painel administrativo** | Eventos, salas, programação, trilhas, cartas, missões e certificados pela interface, com trilha de auditoria |
 | **Sorteios** | Sorteio por evento, dia ou atividade, elegível apenas por **presença real**, com amostragem criptográfica, **suplentes**, **chance proporcional ao tempo de presença**, hash auditável, **prova de commit-reveal** (semente comprometida na criação e revelada na apuração), **registro de entrega do prêmio**, publicação opcional do resultado com nome mascarado, histórico paginado e prévia que acompanha o credenciamento ao vivo |
 | **Operação de palco** | O sorteio no dia do evento: **desfazer** uma entrega marcada por engano exigindo o **motivo** (a posição continua sendo a ganhadora e a trilha guarda as duas pontas), **filtrar o histórico** por situação e período no fuso da instituição, **premiar N revisores** com o corte do ranking dito antes do clique, **endereço próprio** do resultado publicado (para projetar e compartilhar, com a prova da semente), **chave do cofre versionada** que gira sem invalidar compromisso publicado e **prévia ao vivo por SSE** — uma conexão por tela, com o polling mantido como caminho de volta declarado |
+| **Palco e auditoria** | O sorteio no telão e a conferência pública: página de **palco** com o compromisso da semente visível ANTES da apuração, contagem de elegíveis ao vivo e revelação automática (com efeitos próprios, sem dependência nova); **link copiável + QR Code** na tela de sorteios; e **auditoria** que publica a lista de elegíveis na ordem do sorteio, assina o hash dela no resultado e refaz as três contas (semente, lista e reprodução) **no navegador de quem lê** — além da receita para conferir fora do site |
+| **Sorteio ao vivo, em rodadas** | O sorteio deixou de ser um momento só: cada **rodada** tem o próprio compromisso de semente, o próprio **prêmio** (título e descrição) e o próprio **patrocinador** — anunciados no telão e no resultado, e **fora** do documento assinado (corrigir o texto do prêmio não invalida resultado publicado). **"Criar para o palco"** cria o sorteio sem apurar, para o telão existir antes do anúncio; **"Preparar próxima rodada"** publica um compromisso novo (revelar a semente de uma rodada não entrega as seguintes) e **"Sortear a rodada N"** apura. As **posições continuam** entre as rodadas (a entrega do prêmio é por posição) e **quem ganhou não concorre de novo** — no domínio, com o motivo dito na tela. O telão **rola uma roleta** com os nomes reais da lista publicada e para no ganhador; a auditoria e o resultado público passaram a ser **por rodada** |
 | **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
 | **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
 | **Operação e segurança** | Rate limit do login contado no **Redis** (vale entre instâncias), métricas no formato **Prometheus** em `/api/metrics` com token, log estruturado com redação de senha/e-mail, RLS criada pela própria migração, `audit_logs` **particionada por mês** e pool de conexões com **PgBouncer** em modo transação |
@@ -390,8 +392,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1454 testes (60 arquivos) — unit + integração com banco real
-npm run test:e2e          # 94 testes E2E contra o container de produção
+npm test                  # 1531 testes (64 arquivos) — unit + integração com banco real
+npm run test:e2e          # 97 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -439,13 +441,15 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-15-comunicacao.md`](docs/fase-15-comunicacao.md) | **Comunicação:** e-mail transacional pelo Resend atrás de um driver com o padrão em NÃO enviar, fila `emails` com 5 tentativas, **outbox** que guarda o que saiu, 8 templates em funções puras, **convite de equipe** com token hasheado e vínculo no aceite, avisos de avaliação/prazo/carta/certificado e verificação de e-mail sem bloquear o login | ADR-127 … 130 |
 | [`docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`](docs/fase-21-ciclo-de-vida-do-membro-e-storage.md) | **Ciclo de vida do membro e armazenamento:** trocar papéis e remover membro pela tela de equipe (remoção lógica, concessões revogadas, guardas de posse própria e de último proprietário) e a **quota de armazenamento aplicada** em todo envio — submissão, mídia e material de palestrante — medida sobre **tudo** o que a instituição guarda, bloqueando só o upload novo e **nunca** a emissão de certificado | ADR-131 … 133 |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 46 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 44 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
 | [`docs/fase-25-portal-do-palestrante.md`](docs/fase-25-portal-do-palestrante.md) | Portal do palestrante: o palestrante passa a ser **pessoa da instituição** (`speaker_profiles`) com perfil e vínculo de conta por **convite hasheado**, **portal** com posse verificada no banco, **materiais** com visibilidade por visitante (401/403/404), **vitrine** com foto e bio, ficha individual e **certificado de palestrante** que exige evento encerrado e credenciamento. A **revisão pós-entrega** (§10) abriu as portas que faltavam: o menu voltou a mostrar os itens pessoais e o convite pendente virou entrada do portal | ADR-113 … 120 |
 | [`docs/fase-24-midia-e-agendamento.md`](docs/fase-24-midia-e-agendamento.md) | Mídia e agendamento: **biblioteca de mídia** (tabela `media_assets` com RLS, reaproveitamento por checksum e exclusão que **confere o uso**), **sincronia** do patrocinador copiado a partir da origem, **janela de exibição** (`unpublishAt` decidido na leitura) e a data agendada interpretada no **fuso do evento** | ADR-107 … 112 |
 | [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
 | [`docs/fase-17-pagina-publica-e-patrocinio.md`](docs/fase-17-pagina-publica-e-patrocinio.md) | Página pública montada pelo organizador: editor de blocos validados por tipo, tema visual, capa e logotipo por upload direto ao storage, cadastro de cotas e patrocinadores com limite de vagas e documento fiscal mascarado, e edição de coautores com ordem de crédito — tudo sem uma única migração | ADR-092 … 099 |
 | [`docs/fase-22-operacao-de-palco.md`](docs/fase-22-operacao-de-palco.md) | **Operação de palco:** desfazer a entrega do prêmio **com motivo na trilha**, filtro do histórico por situação e período no fuso da instituição, premiação de **N revisores**, **endereço próprio** do resultado publicado com a prova da semente, chave do cofre **versionada** (`RAFFLE_SEED_KEYS`, girar não invalida compromisso) e prévia ao vivo por **SSE** com polling de volta. Inclui a correção de privacidade do consentimento de nome público | ADR-137 … 139 |
-| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 61 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
+| [docs/fase-29-palco-e-auditoria.md](docs/fase-29-palco-e-auditoria.md) | **Palco e auditoria do sorteio:** o **telão** público (compromisso da semente ANTES da apuração, contagem ao vivo por SSE e revelação automática com confetes próprios), **link + QR** do telão na tela de sorteios, a **lista publicada** (ordem, código opaco e minutos) gravada na apuração e assinada no resultado (payload v3) e a **auditoria** que refaz as contas no navegador de quem lê — com a receita para conferir fora do site | ADR-140 … 143 |
+| [docs/fase-30-sorteio-ao-vivo-em-rodadas.md](docs/fase-30-sorteio-ao-vivo-em-rodadas.md) | **Sorteio ao vivo, em rodadas:** cada apuração é um MOMENTO com o próprio compromisso de semente, prêmio, patrocinador e resultado assinado (payload v4); **"Criar para o palco"** faz o telão existir ANTES da apuração; a **roleta** passa os nomes reais da lista publicada e para no ganhador; quem ganhou uma rodada não concorre nas seguintes; auditoria e resultado público **por rodada** | ADR-144 … 147 |
+| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 63 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
@@ -453,7 +457,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **139 decisões** registradas até aqui.
+> são **143 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -507,9 +511,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              1027 testes de regra pura e de formato (sem banco)
-├── integration/       427 testes com banco, Redis e storage reais
-└── e2e/               94 testes Playwright contra o container
+├── unit/              1054 testes de regra pura e de formato (sem banco)
+├── integration/       439 testes com banco, Redis e storage reais
+└── e2e/               97 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -726,13 +730,37 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     **avisa** quando o público do evento excede a capacidade da sala, com os dois números, e a
     decisão (sala maior, atividade com vagas ou limite no evento) fica com quem organiza.
 
+30. **A lista auditável do sorteio não pode ser comprometida antes da apuração (FASE 29, dívida
+    E36).** O compromisso assina a **semente**, publicada na criação; a lista de elegíveis só
+    existe no momento da apuração, porque o credenciamento continua aberto até lá. A auditoria
+    prova que a semente foi fixada antes, que a lista publicada gerou o resultado gravado e que
+    nada mudou depois — e **declara na própria página** que não prova a autenticidade da lista
+    contra quem tem acesso ao banco. Fechar isso exigiria notarização externa do compromisso ou
+    congelar o credenciamento antes do sorteio, o que descaracterizaria o sorteio por presença
+    real.
+31. **O telão fica no ar desde a criação do sorteio (FASE 29, dívida E37).** O endereço do palco
+    (`.../sorteios/<id>/palco`) responde desde a criação e mostra o título do prêmio, para que o
+    organizador teste o telão antes do evento e projete o **mesmo link** no dia. Não há
+    interruptor para manter o palco desligado até a hora do anúncio: quem tem o link (um UUID
+    não enumerável, com `noindex`) vê o título antes da apuração.
+32. **O prêmio anunciado de uma rodada não pode ser corrigido pela tela (FASE 30, dívida E38).**
+    O prêmio e o patrocinador ficam FORA do documento assinado justamente para que corrigir o
+    texto não invalide um resultado publicado — mas não há caminho de escrita: a rodada é
+    imutável, e um typo no telão ou no resultado só sai com SQL. Falta uma ação de edição que
+    grave o antes e o depois na trilha (o hash do resultado não muda).
+33. **A roleta do telão tem duração fixa e não pode ser repetida nem desligada (FASE 30, dívida
+    E39).** A animação roda quando o telão percebe a apuração ao vivo (~3 s) e quem abre o link
+    depois vê o resultado direto — decisão consciente, mas sem controle: uma projeção que
+    reinicia no meio do anúncio perde a roleta, e o operador não tem como repeti-la nem
+    apresentá-la sem animação.
 ---
 
 **Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — verificar um
 domínio no Resend para o e-mail chegar a qualquer destinatário (D7, que é operação de conta e
 destrava o uso real), PKCS#7 e antivírus para uso institucional (F18) — e depois a
 reconciliação entre banco e bucket e o acesso de participante na remoção (C6 e C7, que a
-FASE 21 declarou), a operação de palco dos sorteios (F22), o segundo grau do acervo de mídia
+FASE 21 declarou), o consentimento de perfil público (E35), a autenticidade da lista auditável
+do sorteio (E36), o interruptor do telão (E37), a edição do prêmio anunciado de uma rodada (E38) e o controle da roleta do telão (E39), o segundo grau do acervo de mídia
 (F26: miniaturas, busca e sincronia em lote), o material/convite do palestrante (F27, que
 agora só precisa do template) e a entrega de e-mail de segunda ordem (F28: webhooks e
 preferências).

@@ -415,3 +415,86 @@
   --input: #3a3d47;
   --ring: #c3c0ff;
 }
+
+/* ── 7. Palco do sorteio (FASE 29) ─────────────────────────────────────────────
+   O telão é lido a metros de distância: aqui a tipografia cresce com a TELA
+   (clamp com vw), e não com a escala do painel administrativo. As classes moram
+   no arquivo de tokens porque tamanho de fonte pertence ao sistema — o teste de
+   design proíbe `text-[…]` arbitrário dentro do componente.                     */
+.ef-stage-title {
+  font-size: clamp(2.25rem, 5.5vw, 4.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.ef-stage-winner {
+  font-size: clamp(1.75rem, 4.5vw, 3.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ef-stage-count {
+  font-size: clamp(3rem, 9vw, 8rem);
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ef-stage-eyebrow {
+  font-size: clamp(0.75rem, 1.4vw, 1.125rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Revelação escalonada: cada posição entra um pouco depois da anterior. */
+@keyframes ef-stage-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ef-stage-reveal {
+  animation: ef-stage-reveal 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── 7.1 A ROLETA (FASE 30) ────────────────────────────────────────────────────
+   O nome que passa na tela durante o anúncio: entra de baixo com desfoque e sai
+   por cima, como uma lista girando. A troca do TEXTO é do componente (o intervalo
+   desacelera); aqui mora só o efeito de cada troca.                              */
+@keyframes ef-stage-roll {
+  from {
+    opacity: 0;
+    transform: translateY(0.5em);
+    filter: blur(0.35em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.ef-stage-roll {
+  animation: ef-stage-roll 180ms ease-out both;
+}
+
+/* Quem pediu menos movimento recebe a revelação SEM movimento (o confete não
+   anima: quem decide é o componente, lendo a mesma media query).               */
+@media (prefers-reduced-motion: reduce) {
+  .ef-stage-reveal {
+    animation: none;
+  }
+
+  .ef-stage-roll {
+    animation: none;
+  }
+}

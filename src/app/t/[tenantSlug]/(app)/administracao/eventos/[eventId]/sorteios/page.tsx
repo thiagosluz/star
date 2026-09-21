@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, History, KeyRound, ShieldCheck, Trophy } from 'lucide-react';
+import QRCode from 'qrcode';
+import { ArrowLeft, History, KeyRound, MonitorPlay, ShieldCheck, Trophy } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RAFFLE_SCOPE_LABELS } from '@/domain/raffles/raffle-rules';
+import { lastDrawnRound, pendingRound } from '@/domain/raffles/round-rules';
 import {
   describeRaffleHistoryFilter,
   parseRaffleHistoryFilter,
@@ -14,14 +16,24 @@ import {
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listRaffles } from '@/lib/raffles/raffle-service';
 import { seedVaultStatus } from '@/lib/raffles/seed-vault';
+import {
+  raffleAuditPath,
+  raffleAuditUrl,
+  raffleStagePath,
+  raffleStageUrl,
+} from '@/lib/raffles/stage-links';
 import { withTenant } from '@/lib/db/tenant-client';
 import { RaffleConsole } from '@/components/raffles/raffle-console';
 import { RaffleHistory } from '@/components/raffles/raffle-history';
+import { StageLinkPanel, type StageLinkRaffle } from '@/components/raffles/stage-link-panel';
 import {
   cancelRaffleAction,
   createAndDrawRaffleAction,
+  createRaffleForStageAction,
   drawRaffleAction,
+  drawRoundAction,
   markPrizeDeliveredAction,
+  prepareRoundAction,
   previewRaffleAction,
   reversePrizeDeliveryAction,
   setRaffleVisibilityAction,
@@ -76,7 +88,7 @@ export default async function RafflesPage({
     timeZone: event.timezone,
   });
 
-  const [rafflesResult, activities] = await Promise.all([
+  const [rafflesResult, activities, sponsors, stageRaffleRows] = await Promise.all([
     listRaffles(tenantId, eventId, {
       page: Number(pagina ?? 1) || 1,
       filter: filterResult.ok ? filterResult.filter : undefined,
@@ -89,10 +101,79 @@ export default async function RafflesPage({
         select: { id: true, title: true, startsAt: true },
       }),
     ),
+    /**
+     * Os patrocinadores do evento alimentam o campo opcional "quem deu o prêmio"
+     * (FASE 30). Vêm TODOS, inclusive os ocultos na página pública: quem deu o brinde
+     * é escolha da organização, e o patrocinador oculto continua sendo patrocinador.
+     */
+    withTenant(tenantId, (tx) =>
+      tx.sponsor.findMany({
+        where: { tenantId, eventId },
+        orderBy: { name: 'asc' },
+        take: 100,
+        select: { id: true, name: true },
+      }),
+    ),
+    /**
+     * Os sorteios do PALCO, sem o filtro do histórico e sem a paginação: o link que o
+     * organizador vai projetar não pode desaparecer porque ele acabou de filtrar o
+     * histórico por "apurado" ou está na página 2.
+     *
+     * As RODADAS vêm junto porque desde a FASE 30 é a rodada que carrega o compromisso
+     * do momento — as colunas de semente em `raffles` são legado congelado e ficariam
+     * vazias aqui, mostrando "sem compromisso" para um sorteio que tem um.
+     */
+    withTenant(tenantId, (tx) =>
+      tx.raffle.findMany({
+        where: { tenantId, eventId, deletedAt: null, status: { not: 'CANCELED' } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          rounds: {
+            orderBy: { roundNumber: 'asc' },
+            select: { roundNumber: true, seedCommitment: true, prizeTitle: true, drawnAt: true },
+          },
+        },
+      }),
+    ),
   ]);
 
   const raffles = rafflesResult.ok ? rafflesResult.raffles : [];
   const vault = seedVaultStatus();
+
+  /**
+   * O QR Code é gerado AQUI, no servidor: o projeto já usa `qrcode` nos certificados,
+   * e um serviço externo de QR faria o endereço do evento sair para terceiros.
+   */
+  const stageLinks: StageLinkRaffle[] = await Promise.all(
+    stageRaffleRows.map(async (row) => {
+      const identifiers = { tenantSlug, eventSlug: event.slug, raffleId: row.id };
+      const stageUrl = raffleStageUrl(identifiers);
+
+      /**
+       * A rodada em cartaz: a que está preparada (é ela que o telão anuncia antes da
+       * apuração) ou, sem nenhuma pendente, a última apurada.
+       */
+      const headline = pendingRound(row.rounds) ?? lastDrawnRound(row.rounds);
+
+      return {
+        raffleId: row.id,
+        title: row.title,
+        status: row.status as StageLinkRaffle['status'],
+        stagePath: raffleStagePath(identifiers),
+        stageUrl,
+        auditPath: raffleAuditPath(identifiers),
+        auditUrl: raffleAuditUrl(identifiers),
+        qrDataUrl: await QRCode.toDataURL(stageUrl, { margin: 1, width: 220 }),
+        roundNumber: headline?.roundNumber ?? null,
+        prizeTitle: headline?.prizeTitle ?? null,
+        seedCommitment: headline?.seedCommitment ?? null,
+      };
+    }),
+  );
 
   const filter = filterResult.ok ? filterResult.filter : null;
   const filterActive = filter !== null && raffleFilterIsActive(filter);
@@ -159,9 +240,31 @@ export default async function RafflesPage({
           title: activity.title,
           startsAt: activity.startsAt.toISOString(),
         }))}
+        sponsors={sponsors.map((sponsor) => ({ id: sponsor.id, name: sponsor.name }))}
         previewAction={previewRaffleAction}
         drawAction={createAndDrawRaffleAction}
+        stageAction={createRaffleForStageAction}
       />
+
+      {/**
+       * ── PALCO E AUDITORIA (FASE 29) ────────────────────────────────────────────
+       * O endereço do telão nasce junto com o sorteio, e é aqui que o organizador
+       * pega o que vai projetar: link copiável, QR Code para a câmera do computador
+       * da projeção e o endereço da auditoria para quem quiser conferir as contas.
+       */}
+      <section className="space-y-4" aria-labelledby="palco">
+        <h2 id="palco" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <MonitorPlay className="size-4" aria-hidden />
+          Palco e auditoria
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          O telão mostra o compromisso da semente e a contagem ao vivo enquanto o público espera, e se
+          revela sozinho quando a apuração acontece. O endereço é o mesmo desde a criação do sorteio —
+          teste antes do evento e projete no dia.
+        </p>
+
+        <StageLinkPanel raffles={stageLinks} vaultConfigured={vault.configured} />
+      </section>
 
       <section className="space-y-4" aria-labelledby="historico">
         <h2 id="historico" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
@@ -172,10 +275,13 @@ export default async function RafflesPage({
         <RaffleHistory
           tenantSlug={tenantSlug}
           eventId={eventId}
+          sponsors={sponsors.map((sponsor) => ({ id: sponsor.id, name: sponsor.name }))}
           page={rafflesResult.ok ? rafflesResult.page : 1}
           totalPages={rafflesResult.ok ? rafflesResult.totalPages : 1}
           total={rafflesResult.ok ? rafflesResult.total : raffles.length}
           drawAction={drawRaffleAction}
+          prepareAction={prepareRoundAction}
+          drawRoundAction={drawRoundAction}
           cancelAction={cancelRaffleAction}
           deliverAction={markPrizeDeliveredAction}
           reverseAction={reversePrizeDeliveryAction}
@@ -210,9 +316,28 @@ export default async function RafflesPage({
             seedCommitment: raffle.seedCommitment,
             seedRevealed: raffle.seedRevealed,
             createdByName: raffle.createdByName,
+            rounds: raffle.rounds.map((round) => ({
+              id: round.id,
+              roundNumber: round.roundNumber,
+              state: round.state,
+              prizeTitle: round.prizeTitle,
+              prizeDescription: round.prizeDescription,
+              sponsorName: round.sponsorName,
+              winnersCount: round.winnersCount,
+              alternatesCount: round.alternatesCount,
+              eligibleCount: round.eligibleCount,
+              resultHash: round.resultHash,
+              poolHash: round.poolHash,
+              seedCommitment: round.seedCommitment,
+              seedRevealed: round.seedRevealed,
+              drawnAtLabel: round.drawnAt
+                ? round.drawnAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                : null,
+            })),
             winners: raffle.winners.map((winner) => ({
               id: winner.id,
               position: winner.position,
+              roundNumber: winner.roundNumber,
               userId: winner.userId,
               userName: winner.userName,
               minutes: winner.minutes,

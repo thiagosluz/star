@@ -28,8 +28,9 @@ import { RAFFLE_SCOPES, type RaffleScope } from '@/domain/raffles/raffle-rules';
 import {
   cancelRaffle,
   createRaffle,
-  drawRaffle,
+  drawRound,
   markPrizeDelivered,
+  prepareRound,
   previewEligibility,
   reversePrizeDelivery,
   setRaffleVisibility,
@@ -189,29 +190,39 @@ export async function previewRaffleAction(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  Criação + apuração em um passo (o fluxo da tela)
+//  Criação do sorteio — com ou sem apuração imediata (FASE 30)
 // ───────────────────────────────────────────────────────────────────────────────
-const drawSchema = previewSchema.extend({
+/**
+ * O prêmio e o patrocinador são ANÚNCIO, não entrada do sorteio (ADR-145): não entram
+ * no documento assinado, e corrigir o texto do prêmio não invalida um resultado já
+ * publicado. Por isso a validação aqui é de tamanho; a normalização é do domínio.
+ */
+const prizeFields = {
+  prizeTitle: z.string().trim().max(200).optional(),
+  prizeDescription: z.string().trim().max(600).optional(),
+  sponsorId: z.string().uuid().optional(),
+};
+
+const raffleConfigSchema = previewSchema.extend({
   title: z.string().trim().min(3, 'Dê um nome ao sorteio (mínimo 3 caracteres).').max(200),
   description: z.string().trim().max(2000).optional(),
   isPublic: z.coerce.boolean().optional().default(false),
+  ...prizeFields,
 });
 
+type RaffleConfigInput = z.infer<typeof raffleConfigSchema>;
+
 /**
- * Cria e apura o sorteio de uma vez.
+ * Lê a configuração do formulário em UM lugar só.
  *
- * É o fluxo real do palco: o organizador define o recorte, confere a prévia e
- * executa. As duas operações continuam separadas no serviço (a criação grava o
- * `DRAFT` com a configuração), mas a tela não obriga a dois envios.
- *
- * O COMPROMISSO da semente (FASE 16) nasce na criação — antes de existir elegível —
- * e volta na resposta para que a tela possa exibi-lo junto do resultado.
+ * O console tem dois botões — "Sortear agora" e "Criar para o palco" — sobre o MESMO
+ * formulário. Ler os campos duas vezes faria os dois caminhos divergirem no dia em que
+ * um campo novo entrasse em apenas um deles (armadilha 55).
  */
-export async function createAndDrawRaffleAction(
-  _prev: RaffleActionState | null,
+function readRaffleConfig(
   formData: FormData,
-): Promise<RaffleActionState> {
-  const parsed = drawSchema.safeParse({
+): { ok: true; data: RaffleConfigInput } | { ok: false; state: RaffleActionState } {
+  const parsed = raffleConfigSchema.safeParse({
     tenantSlug: formData.get('tenantSlug'),
     eventId: formData.get('eventId'),
     title: formData.get('title'),
@@ -225,48 +236,134 @@ export async function createAndDrawRaffleAction(
     weightByMinutes: formData.get('weightByMinutes') === 'on',
     allowPriorEventWinners: formData.get('allowPriorEventWinners') === 'on',
     isPublic: formData.get('isPublic') === 'on',
+    prizeTitle: (formData.get('prizeTitle') as string) || undefined,
+    prizeDescription: (formData.get('prizeDescription') as string) || undefined,
+    sponsorId: (formData.get('sponsorId') as string) || undefined,
   });
 
   if (!parsed.success) {
     return {
       ok: false,
-      code: 'INVALID_INPUT',
-      message: 'Verifique os dados do sorteio.',
-      details: parsed.error.issues.map((issue) => issue.message),
+      state: {
+        ok: false,
+        code: 'INVALID_INPUT',
+        message: 'Verifique os dados do sorteio.',
+        details: parsed.error.issues.map((issue) => issue.message),
+      },
     };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  return { ok: true, data: parsed.data };
+}
+
+/** A criação em si — usada pelos dois caminhos (apurar agora ou deixar para o palco). */
+async function createFromConfig(
+  config: RaffleConfigInput,
+  auth: { tenantId: string; userId: string },
+) {
+  return createRaffle({
+    tenantId: auth.tenantId,
+    eventId: config.eventId,
+    actorId: auth.userId,
+    title: config.title,
+    description: config.description ?? null,
+    scope: config.scope,
+    referenceDate: toDateOnly(config.referenceDate ?? null),
+    activityId: config.activityId ?? null,
+    minAttendanceMinutes: config.minAttendanceMinutes,
+    winnersCount: config.winnersCount,
+    alternatesCount: config.alternatesCount,
+    weightByMinutes: config.weightByMinutes,
+    isPublic: config.isPublic,
+    allowPriorEventWinners: config.allowPriorEventWinners,
+    prizeTitle: config.prizeTitle ?? null,
+    prizeDescription: config.prizeDescription ?? null,
+    sponsorId: config.sponsorId ?? null,
+  });
+}
+
+/**
+ * Cria o sorteio, prepara a rodada 1 e NÃO apura.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE CAMINHO PASSOU A EXISTIR (FASE 30)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O console só sabia criar E apurar de uma vez. O telão, então, nascia mostrando um
+ *  resultado já apurado: não havia como projetá-lo ANTES — que é justamente o que se
+ *  faz no dia do evento, com o público chegando e o compromisso na tela. Aqui o
+ *  sorteio nasce em rascunho, com a rodada 1 preparada (semente selada, compromisso
+ *  publicado na trilha) e o telão tem o que mostrar: o compromisso e a contagem ao
+ *  vivo, até alguém apurar.
+ */
+export async function createRaffleForStageAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const config = readRaffleConfig(formData);
+  if (!config.ok) return config.state;
+
+  const auth = await guard(config.data.tenantSlug);
   if (!auth.ok) return auth.state;
 
-  const created = await createRaffle({
-    tenantId: auth.tenantId,
-    eventId: parsed.data.eventId,
-    actorId: auth.userId,
-    title: parsed.data.title,
-    description: parsed.data.description ?? null,
-    scope: parsed.data.scope,
-    referenceDate: toDateOnly(parsed.data.referenceDate ?? null),
-    activityId: parsed.data.activityId ?? null,
-    minAttendanceMinutes: parsed.data.minAttendanceMinutes,
-    winnersCount: parsed.data.winnersCount,
-    alternatesCount: parsed.data.alternatesCount,
-    weightByMinutes: parsed.data.weightByMinutes,
-    isPublic: parsed.data.isPublic,
-    allowPriorEventWinners: parsed.data.allowPriorEventWinners,
-  });
+  const created = await createFromConfig(config.data, auth);
+
+  revalidatePath(
+    tenantPath(config.data.tenantSlug, `/administracao/eventos/${config.data.eventId}/sorteios`),
+  );
 
   if (!created.ok) {
     return { ok: false, code: created.code, message: created.message, details: created.details };
   }
 
-  const drawn = await drawRaffle({
+  return {
+    ok: true,
+    message:
+      'Sorteio criado com a rodada 1 preparada e o compromisso da semente já publicado. Projete o telão: ele mostra o compromisso e a contagem ao vivo até você apurar.',
+    data: {
+      raffleId: created.raffleId,
+      roundNumber: 1,
+      status: 'DRAFT',
+      seedCommitment: created.seedCommitment,
+      awaitingDraw: true,
+    },
+  };
+}
+
+/**
+ * Cria e apura o sorteio de uma vez.
+ *
+ * É o fluxo de quem já está com o público na frente e quer o resultado agora. As duas
+ * operações continuam separadas no serviço (a criação grava o `DRAFT` com a rodada 1),
+ * mas a tela não obriga a dois envios.
+ *
+ * O COMPROMISSO da semente (FASE 16) nasce na criação — antes de existir elegível — e
+ * volta na resposta para que a tela possa exibi-lo junto do resultado.
+ */
+export async function createAndDrawRaffleAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const config = readRaffleConfig(formData);
+  if (!config.ok) return config.state;
+
+  const auth = await guard(config.data.tenantSlug);
+  if (!auth.ok) return auth.state;
+
+  const created = await createFromConfig(config.data, auth);
+
+  if (!created.ok) {
+    return { ok: false, code: created.code, message: created.message, details: created.details };
+  }
+
+  const drawn = await drawRound({
     tenantId: auth.tenantId,
     raffleId: created.raffleId,
     actorId: auth.userId,
   });
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`));
+  revalidatePath(
+    tenantPath(config.data.tenantSlug, `/administracao/eventos/${config.data.eventId}/sorteios`),
+  );
 
   if (!drawn.ok) {
     /**
@@ -312,9 +409,23 @@ export async function createAndDrawRaffleAction(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  Apuração de um sorteio já configurado
+//  Rodadas: preparar e apurar em MOMENTOS separados (FASE 30)
 // ───────────────────────────────────────────────────────────────────────────────
-export async function drawRaffleAction(
+/**
+ * Prepara a PRÓXIMA rodada: nova semente, novo compromisso, novo prêmio.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A RODADA PRECISA SER PREPARADA, E NÃO SÓ APURADA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A apuração REVELA a semente. Se a rodada 2 usasse a mesma semente da 1, quem
+ *  lesse a revelação da primeira saberia os ganhadores da segunda antes do anúncio —
+ *  no palco, com a plateia olhando. Preparar publica um compromisso NOVO (e o telão o
+ *  exibe) antes de existir resultado.
+ *
+ *  O prêmio e o patrocinador entram aqui porque é o momento do ANÚNCIO: a lista de
+ *  quem concorre ainda vai ser calculada na apuração.
+ */
+export async function prepareRoundAction(
   _prev: RaffleActionState | null,
   formData: FormData,
 ): Promise<RaffleActionState> {
@@ -323,11 +434,80 @@ export async function drawRaffleAction(
       tenantSlug: z.string().trim().min(1).max(63),
       eventId: z.string().uuid(),
       raffleId: z.string().uuid(),
+      winnersCount: z.coerce.number().int().min(1).max(500).optional(),
+      alternatesCount: z.coerce.number().int().min(0).max(500).optional(),
+      ...prizeFields,
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
       eventId: formData.get('eventId'),
       raffleId: formData.get('raffleId'),
+      winnersCount: formData.get('winnersCount') || undefined,
+      alternatesCount: formData.get('alternatesCount') || undefined,
+      prizeTitle: (formData.get('prizeTitle') as string) || undefined,
+      prizeDescription: (formData.get('prizeDescription') as string) || undefined,
+      sponsorId: (formData.get('sponsorId') as string) || undefined,
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Verifique os dados da próxima rodada.' };
+  }
+
+  const auth = await guard(parsed.data.tenantSlug);
+  if (!auth.ok) return auth.state;
+
+  const result = await prepareRound({
+    tenantId: auth.tenantId,
+    raffleId: parsed.data.raffleId,
+    actorId: auth.userId,
+    winnersCount: parsed.data.winnersCount,
+    alternatesCount: parsed.data.alternatesCount,
+    prizeTitle: parsed.data.prizeTitle ?? null,
+    prizeDescription: parsed.data.prizeDescription ?? null,
+    sponsorId: parsed.data.sponsorId ?? null,
+  });
+
+  revalidatePath(
+    tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`),
+  );
+
+  if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+  return {
+    ok: true,
+    message: `Rodada ${result.roundNumber} preparada: o compromisso da semente já está publicado e o telão pode anunciá-la.`,
+    data: {
+      raffleId: result.raffleId,
+      roundId: result.roundId,
+      roundNumber: result.roundNumber,
+      seedCommitment: result.seedCommitment,
+    },
+  };
+}
+
+/**
+ * Apura UMA rodada do sorteio (a preparada, quando nenhuma é indicada).
+ *
+ * `roundId` é opcional e existe para que a tela possa apurar uma rodada específica do
+ * histórico sem depender de "qual está pendente" — mas o caminho normal do palco é
+ * apurar a que foi anunciada.
+ */
+export async function drawRoundAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      raffleId: z.string().uuid(),
+      roundId: z.string().uuid().optional(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      raffleId: formData.get('raffleId'),
+      roundId: (formData.get('roundId') as string) || undefined,
     });
 
   if (!parsed.success) {
@@ -337,13 +517,20 @@ export async function drawRaffleAction(
   const auth = await guard(parsed.data.tenantSlug);
   if (!auth.ok) return auth.state;
 
-  const drawn = await drawRaffle({
+  const drawn = await drawRound({
     tenantId: auth.tenantId,
     raffleId: parsed.data.raffleId,
+    roundId: parsed.data.roundId,
     actorId: auth.userId,
   });
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`));
+  const eventPath = tenantPath(
+    parsed.data.tenantSlug,
+    `/administracao/eventos/${parsed.data.eventId}/sorteios`,
+  );
+  revalidatePath(eventPath);
+  // O telão e o resultado público leem a apuração: apurar é publicar para eles.
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   if (!drawn.ok) {
     return { ok: false, code: drawn.code, message: drawn.message };
@@ -359,13 +546,18 @@ export async function drawRaffleAction(
      */
     message:
       drawn.alternatesDrawn > 0
-        ? `${drawn.winnersDrawn} titular(es) e ${drawn.alternatesDrawn} suplente(s) sorteados entre ${drawn.eligibleCount} elegíveis.`
-        : `${drawn.winnersDrawn} vencedor(es) sorteados entre ${drawn.eligibleCount} elegíveis.`,
+        ? `Rodada ${drawn.roundNumber}: ${drawn.winnersDrawn} titular(es) e ${drawn.alternatesDrawn} suplente(s) entre ${drawn.eligibleCount} elegíveis.`
+        : `Rodada ${drawn.roundNumber}: ${drawn.winnersDrawn} vencedor(es) entre ${drawn.eligibleCount} elegíveis.`,
     data: {
       raffleId: drawn.raffleId,
+      roundId: drawn.roundId,
+      roundNumber: drawn.roundNumber,
       eligibleCount: drawn.eligibleCount,
+      inspectedAttendances: drawn.inspectedAttendances,
       resultHash: drawn.resultHash,
+      drawnAt: drawn.drawnAt.toISOString(),
       shortfall: drawn.shortfall,
+      firstPosition: drawn.firstPosition,
       winners: drawn.winners,
       winnersDrawn: drawn.winnersDrawn,
       alternatesDrawn: drawn.alternatesDrawn,
@@ -377,8 +569,24 @@ export async function drawRaffleAction(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  Entrega do prêmio (FASE 16, item G2)
+//  Apuração de um sorteio já configurado (compatibilidade)
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Apura a rodada preparada de um sorteio — o mesmo que `drawRoundAction` sem `roundId`.
+ *
+ * Continua existindo porque a tela de histórico chama por este nome desde a FASE 22, e
+ * o comportamento (apurar o que está pendente) é exatamente o que ela quer.
+ */
+export async function drawRaffleAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  return drawRoundAction(_prev, formData);
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Entrega do prêmio (FASE 16, item G2)
+// ─────────────────────────────────────────────────────────────────────────────
 export async function markPrizeDeliveredAction(
   _prev: RaffleActionState | null,
   formData: FormData,

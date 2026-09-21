@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23 e 25 (F15, F21 e F22 entregues; a F18+ é a próxima)
-Testes ................. 1454 (Vitest: unit + integração) + 94 (Playwright E2E)
-ADRs ................... 139 (numeração GLOBAL e sequencial — a próxima é ADR-140)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29 e 30 (F15, F21, F22, F29 e F30 entregues; a F18+ é a próxima)
+Testes ................. 1531 (Vitest: unit + integração) + 97 (Playwright E2E)
+ADRs ................... 147 (numeração GLOBAL e sequencial — a próxima é ADR-148)
 Permissões ............. 58 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 37 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 38 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1454+ testes passando
+npm test              # esperado: 1531+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 94+ testes passando
+npm run test:e2e      # esperado: 97+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -124,7 +124,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 61 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 66 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
 > no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
 > seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
@@ -146,6 +146,11 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 59 | Um sorteio selado na versão 1 da chave não abria mais a semente depois de a chave girar — e a apuração **acontecia do mesmo jeito** | A versão não era gravada: a abertura usava a chave ATUAL. Como o cofre não falha alto (cai para o gerador do sistema, para não travar o palco), a degradação era silenciosa — o sorteio saía sem a prova de commit-reveal | A coluna `raffles."seedKeyVersion"` grava a versão no ato do selo, e `sealSeed` devolve **selo E versão na mesma estrutura**: gravar um sem o outro deixou de ser expressável. Teste de integração prende o giro com a versão antiga ainda declarada |
 | 60 | Sem chave de cofre válida o sorteio continuava apurando, e o operador só descobria que a prova tinha se perdido **no meio da apresentação** | O cofre degrada em silêncio por decisão (não travar o palco), mas a degradação só aparecia no resultado — e configuração que degrada em silêncio não tem onde ser vista | A tela de sorteios passou a mostrar a **situação do chaveiro** (versão em uso, versões disponíveis e problemas de formatação) ANTES da apuração. Mesma lição do e-mail da FASE 15: degradação declarada precisa de um lugar na tela |
 | 61 | **O build da imagem TRAVAVA no estágio do worker** (dez minutos no mesmo passo) e, quando destravava, o `next build` caía com "Failed to fetch Inter from Google Fonts" | O passo de build **não alcança o registro npm** (um `wget` ao `registry.npmjs.org` dentro de um `RUN` estoura o tempo, embora funcione de um `docker run` comum); `npx` e o Prisma sondam a rede antes de rodar; e o `npm install tsx` do worker, além de instalar, **consertava** o `node_modules` parcial do `.next/standalone` — traço do Next sem `ioredis`, com `bullmq` pela metade e `dotenv` sem `package.json` | O build não depende mais da rede: o `tsx` é **copiado** do estágio `deps`, o worker usa a **árvore de produção completa** (`npm prune --omit=dev --offline`, que só REMOVE), o Prisma é chamado por caminho com `CHECKPOINT_DISABLE=1`, e uma **prova de boot** no build recusa `ERR_MODULE_NOT_FOUND`. As fontes do `next/font` seguem sendo a única dependência externa: **repetir o build é a resposta, não mexer no código** |
+| 62 | **Um teste E2E falhou e os três seguintes falharam com sintomas sem relação com ele** ("não há lista publicada", "o painel não lista sorteio nenhum", contagem de elegíveis zerada) | **Depois de um teste que falha, o Playwright reinicia o worker** — e o sufixo único do arquivo (`RUN_ID`) é gerado no carregamento do módulo. O worker novo roda o `beforeAll` outra vez e cria uma fixture NOVA (instituição, evento e contas diferentes), **sem os dados que os cenários anteriores deixaram** | Cenário E2E que precisa de dado **monta o próprio dado**, ou afirma a premissa em voz alta (a falha então diz o que faltou). E, ao depurar, imprima o IDENTIFICADOR (`eventId`, `tenantId`), não o conteúdo: quando dois testes seguidos discordam sobre o banco, o que mudou foi o contexto |
+| 63 | O telão do sorteio ficou 30 s em "aguardando" **com o sorteio já apurado no banco**, sem receber nenhum evento | A rota do fluxo calculava o estado uma vez, na abertura da conexão, e só reamostrava a contagem de elegíveis: o cliente recebia para sempre a fotografia do carregamento | O estado passou a ser **relido a cada amostra**, e o fluxo para de amostrar quando o sorteio deixa de ser rascunho. **Fluxo ao vivo que reporta um campo que não relê não é ao vivo** |
+| 64 | **`npx prettier --write` reescreveu o estilo de um arquivo inteiro** (`raffle-service.ts`): ~2.000 linhas de diff, aspas simples virando duplas e objeto de uma linha virando sete | O repositório **não tem configuração de prettier**, então o comando aplicou o PADRÃO da ferramenta (aspas duplas, largura 80) sobre um projeto que usa outro estilo. O formatador do projeto é o **ESLint** (`npm run lint`) — o prettier nunca fez parte da esteira | Se a intenção é formatar, use **as flags do projeto** (`npx prettier --single-quote --print-width 110 <arquivo>`) e **confira o diff**: o jeito barato de descobrir o estilo real é formatar a versão do `HEAD` do mesmo arquivo com as flags candidatas e contar as linhas que mudam (com essas, foram 3 em vez de 2.000) |
+| 65 | A auditoria de um sorteio novo mostrava **"Trilha: —"** na rodada 1: sem data e sem autor do compromisso | A página lê a procedência do compromisso no registro `CREATE` da **RODADA**, mas a rodada 1 nasce em `createRaffle`, e aquele caminho gravava só o registro do SORTEIO — o registro da rodada existia apenas para as rodadas criadas depois, por `prepareRound`. A prova existia; a procedência dela, não | Quando uma entidade nova passa a ser a fonte de um dado (o compromisso saiu da raffle para a rodada), **todos os caminhos que criam essa entidade precisam gravar o registro dela** — inclusive o mais antigo, que é o que ninguém revisita. Teste de integração prende `commitmentRecordedAt`/`commitmentRecordedBy` de cada rodada |
+| 66 | O E2E do telão passava, e **a funcionalidade que ele descrevia não existia na interface**: o sorteio só era alcançável já apurado | O cenário montava o rascunho por escrita direta no banco (`tx.raffle.create({ status: 'DRAFT' })`) e testava a PÁGINA — o **caminho que produz aquele estado** (um botão que cria sem apurar) não existia, e nenhum teste olhava para ele | Cenário que precisa de um estado deve produzi-lo **pelo caminho que a pessoa usa** quando é esse caminho que está sob suspeita. Fixture por escrita direta isola a tela, mas **não é evidência de que a tela é alcançável** — e o buraco entre "a página funciona" e "dá para chegar nela" é onde o produto fica sem a funcionalidade |
 
 ---
 
@@ -260,6 +265,63 @@ silêncio (ADR-136).
 **Atividade ABERTA é a exceção deliberada:** ela recebe quem se inscreveu no evento e não tem
 fila, então o teto da sala não a bloqueia — o painel **avisa** quando o público excede a sala
 (dívida E34). Negar acesso em silêncio a quem já está inscrito seria pior que o aviso.
+
+### Palco e auditoria (FASE 29)
+
+O sorteio deixou de ser uma promessa auditável: a **lista publicada** passou a ser
+gravada e assinada, o **telão** mostra o compromisso antes da apuração e a **auditoria**
+refaz as contas no navegador de quem lê.
+
+```
+Telão ................... /t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>/palco
+Auditoria ............... /t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>/auditoria
+Ao vivo (público) ....... GET /api/t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>/ao-vivo (JSON **ou** SSE)
+Link + QR do telão ...... /t/<slug>/administracao/eventos/<eventId>/sorteios → "Palco e auditoria"
+Conferir fora do site ... npx tsx prisma/scripts/audit-raffle.ts --semente <hex> --lista lista.json
+```
+
+Cinco regras que quebram fácil: **a seleção do sorteio vive em `draw-selection.ts`, sem
+import de runtime**, e é ela que o servidor E o navegador usam — reimplementar no cliente
+faria a auditoria validar outra regra; **o documento canônico da lista é
+`[{ index, code, minutes }]`** (o `userId` fica fora do hash: não decide o sorteio);
+**o payload do resultado é versão 4 desde a FASE 30**, com o hash da lista e o NÚMERO DA
+RODADA assinados (a 3, a 2 e a 1 seguem verificáveis, cada uma no seu formato); **o código público (`P-…`) é derivado de
+(sorteio, participante)** e é o que liga a linha da lista à posição do ganhador; e **a
+auditoria declara o que NÃO prova** — o compromisso amarra a semente, não a lista, porque
+o credenciamento continua até a apuração (dívida E36). O telão é público desde a criação
+(dívida E37) e **não relaxa a privacidade**: o nome chega mascarado do servidor.
+
+### Sorteio ao vivo, em rodadas (FASE 30)
+
+O sorteio deixou de ser UM momento: cada apuração é uma **rodada**, com o próprio
+compromisso de semente, o próprio prêmio, o próprio patrocinador e o próprio resultado
+assinado. Quem ganhou uma rodada não concorre nas seguintes.
+
+```
+Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
+                           → "Criar para o palco" (não apura), "Preparar próxima rodada",
+                             "Sortear a rodada N" e a lista de rodadas do sorteio
+Telão ................... mesmo endereço: anuncia a rodada em cartaz, ROLA a roleta com
+                           os nomes da lista publicada e para no ganhador
+Auditoria ............... uma seção por rodada (compromisso, lista e reprodução de cada)
+```
+
+Cinco regras que quebram fácil: **cada rodada tem a PRÓPRIA semente** — revelar a da rodada
+1 entregaria os ganhadores da 2 a quem lesse o telão (ADR-144); **as POSIÇÕES continuam entre
+as rodadas** (a rodada 2 entrega a 2ª posição do sorteio, e a entrega do prêmio é por
+`positionId` desde a FASE 16); **o prêmio e o patrocinador são ANÚNCIO e ficam FORA do
+documento assinado** — corrigir o texto não pode invalidar um resultado publicado (ADR-145),
+e há teste unitário prendendo isso; **a roleta é apresentação, não sorteio**: ela passa os
+nomes REAIS da lista publicada daquela rodada, depois de o servidor assinar o resultado
+(ADR-146), e uma rodada sem lista publicada revela direto em vez de inventar nomes; e **uma
+rodada preparada por vez** — dois compromissos no ar deixariam o telão sem saber o que
+anunciar.
+
+A rodada 1 do histórico foi **copiada** pela migração para `raffle_rounds`, com os mesmos
+valores que estavam em `raffles`: as colunas de semente/lista do sorteio são **legado
+congelado** desde então, e a fonte de verdade é a rodada. O fluxo ao vivo assina por RODADA
+(`pendingRound`/`lastDrawnRound`), porque o status do sorteio fica `DRAWN` para sempre depois
+da primeira apuração.
 
 ### Operação de palco (FASE 22)
 
@@ -596,6 +658,8 @@ tests/{unit,integration,e2e}
 | 25 | Portal do palestrante (E21–E24: perfil do palestrante como pessoa da instituição, convite por token hasheado e vínculo de conta em dois caminhos, portal com posse verificada no banco, materiais com visibilidade por visitante, vitrine com foto e bio, certificado `SPEAKER` com carga apurada) — **+ revisão pós-entrega**: o item de menu voltou a aparecer para as permissões pessoais e o convite pendente virou porta de entrada do portal (ADR-119/120, §10 do doc) | ✅ |
 | 21 | Ciclo de vida do membro e storage (C4, C5: troca de papéis e remoção lógica do membro pela tela de equipe com posse do OWNER protegida, quota de **armazenamento aplicada de verdade** em todo envio — submissão, mídia e material de palestrante — medida sobre tudo o que a instituição guarda) | ✅ |
 | 22 | Operação de palco (G8–G13: **desfazer** a entrega com motivo na trilha, filtro do histórico por situação e período, premiar N revisores, **endereço próprio** do resultado publicado, chave do cofre **versionada** e prévia ao vivo por SSE com polling de volta) — **+ correção de privacidade**: o consentimento de perfil público passou a nascer DESLIGADO (ADR-139) | ✅ |
+| 29 | Palco público e auditoria do sorteio (**telão** com compromisso antes da apuração, contagem ao vivo e revelação automática; **link + QR** na tela de sorteios; **lista publicada** gravada na apuração e assinada no resultado (payload v3); **auditoria** que refaz as contas no navegador e receita para conferir fora do site) — escopo definido pelo humano | ✅ |
+| 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) — escopo definido pelo humano; **+ revisão da FASE 29**: o telão só era alcançável já apurado, e o E2E montava o rascunho por escrita direta | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -604,14 +668,16 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**42 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**, soma das
 tabelas de tema — o tema G ficou ZERADO na FASE 22 — o levantamento original menos o que
-as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23 e 24 quitaram, mais o que cada uma declarou de
+as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29 e 30 quitaram, mais o que cada uma declarou de
 novo: a FASE 15 quitou os sete itens de
 comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
 (reconciliação banco × bucket e acesso de participante perdido na remoção); **a FASE 22
 quitou G8–G13 e declarou o E35** (não há tela para a pessoa autorizar o nome no resultado
-público); a FASE 25
+público); **as FASES 29 e 30 não quitaram item deste levantamento** (o escopo veio do
+humano) e declararam o **E36** (a lista auditável não pode ser comprometida antes da apuração) e o
+**E37** (não há interruptor para manter o telão fora do ar), o **E38** (o prêmio anunciado de uma rodada não pode ser corrigido pela tela) e o **E39** (a roleta não pode ser repetida nem desligada pelo operador); a FASE 25
 declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
 declararam o E31 e o E32, a **primeira** revisão da FASE 3 declarou o E33 e a **segunda**
 declarou o E34 (a sala de uma atividade ABERTA não limita o público do evento: o painel
@@ -625,7 +691,7 @@ Observabilidade de segunda ordem · ~~F21 Ciclo de vida do membro e storage~~ (e
 ~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
 ~~F25 Portal do palestrante~~ (entregue) · F26 Acervo de mídia: miniaturas, busca e
 sincronia em lote · F27 Material e convite do palestrante · F28 Entrega de e-mail de
-segunda ordem) está em
+segunda ordem · ~~F29 Palco público e auditoria do sorteio~~ (entregue) · ~~F30 Sorteio ao vivo, em rodadas~~ (entregue)) está em
 **`docs/dividas-tecnicas.md`**.
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
 ordem sugerida.
@@ -635,8 +701,8 @@ ordem sugerida.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 61 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-22-operacao-de-palco.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 66 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-30-sorteio-ao-vivo-em-rodadas.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

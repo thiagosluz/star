@@ -33,6 +33,7 @@
     "db:seed:dev": "tsx prisma/seed-dev-users.ts",
     "db:setup": "npm run db:migrate && npm run db:rls && npm run db:verify && npm run db:verify:isolation && npm run db:seed",
     "db:setup:dev": "npm run db:setup && npm run db:seed:dev",
+    "raffle:audit": "tsx prisma/scripts/audit-raffle.ts",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:reset": "docker compose down -v",

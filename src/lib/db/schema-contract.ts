@@ -78,6 +78,11 @@ export const TENANT_SCOPED_TABLES = [
   'raffles',
   'raffle_winners',
   /**
+   * FASE 30 — rodadas de apuração. Cada momento do sorteio é uma linha aqui, com o
+   * próprio compromisso, lista e resultado; a tabela nasce sob RLS como as demais.
+   */
+  'raffle_rounds',
+  /**
    * FASE 15 — comunicação. As duas tabelas entram aqui mesmo com semânticas
    * diferentes: `email_messages` tem `tenantId` NULO nas mensagens de PLATAFORMA
    * (verificação de e-mail, redefinição de senha), e a policy faz exatamente o que

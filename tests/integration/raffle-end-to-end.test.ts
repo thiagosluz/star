@@ -326,14 +326,20 @@ describe('G4 — commit-reveal da semente', () => {
 
     expect(created.seedCommitment).toMatch(/^[a-f0-9]{64}$/);
 
-    const sealed = await adminPrisma.raffle.findUniqueOrThrow({
-      where: { id: created.raffleId },
+    /**
+     * A prova vive na RODADA desde a FASE 30 — o selo, o compromisso, a revelação e a
+     * versão do documento. As colunas equivalentes em `raffles` são legado congelado:
+     * um sorteio novo as deixa em `null`, e ler a raffle aqui mediria o campo errado.
+     */
+    const sealed = await adminPrisma.raffleRound.findFirstOrThrow({
+      where: { raffleId: created.raffleId },
+      orderBy: { roundNumber: 'desc' },
       select: { seedSealed: true, seedCommitment: true, seedRevealed: true, resultVersion: true },
     });
 
     expect(sealed.seedSealed).not.toBeNull();
     expect(sealed.seedRevealed).toBeNull();
-    expect(sealed.resultVersion).toBe(1); // ainda não apurado
+    expect(sealed.resultVersion).toBe(4); // ainda não apurado: a versão já é a corrente
 
     const drawn = await drawRaffle({ tenantId, raffleId: created.raffleId, actorId });
 
@@ -345,13 +351,17 @@ describe('G4 — commit-reveal da semente', () => {
     // A semente revelada confere com o compromisso publicado antes.
     expect(verifySeed(drawn.seedRevealed!, created.seedCommitment!)).toBe(true);
 
-    const stored = await adminPrisma.raffle.findUniqueOrThrow({
-      where: { id: created.raffleId },
-      select: { seedRevealed: true, resultVersion: true },
+    const stored = await adminPrisma.raffleRound.findFirstOrThrow({
+      where: { raffleId: created.raffleId },
+      orderBy: { roundNumber: 'desc' },
+      select: { seedRevealed: true, resultVersion: true, drawnAt: true },
     });
 
     expect(stored.seedRevealed).toBe(drawn.seedRevealed);
-    expect(stored.resultVersion).toBe(2);
+    expect(stored.drawnAt).not.toBeNull();
+    // A apuração grava na versão CORRENTE do payload — a 4 desde a FASE 30, que
+    // declara também QUAL rodada o documento descreve.
+    expect(stored.resultVersion).toBe(4);
   });
 
   it('a apuração com semente é reproduzível (mesma semente ⇒ mesmo resultado)', async () => {
@@ -494,7 +504,14 @@ describe('G3 — peso por minutos (ligação ponta a ponta)', () => {
 
     const raffle = list.raffles.find((entry) => entry.id === created.raffleId)!;
     expect(raffle.weightByMinutes).toBe(true);
-    expect(raffle.resultVersion).toBe(2);
+    // A versão do documento é a da RODADA que o resumo destaca (FASE 30).
+    expect(raffle.resultVersion).toBe(4);
+    // A lista publicada acompanha o resultado: sem ela não há o que reproduzir.
+    expect(raffle.poolHash).toHaveLength(64);
+    // E o resumo lista a rodada apurada, com o prêmio anunciado nela.
+    expect(raffle.rounds).toHaveLength(1);
+    expect(raffle.rounds[0]?.state).toBe('DRAWN');
+    expect(raffle.winners.every((winner) => winner.roundNumber === 1)).toBe(true);
   });
 });
 

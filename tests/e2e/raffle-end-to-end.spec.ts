@@ -21,6 +21,13 @@
  *      9. G13 — a prévia ao vivo chega por SSE, e a tela diz por qual transporte;
  *     10. G10 — premiar N revisores, com o corte do ranking dito ANTES do clique.
  *
+ *  A FASE 29 fechou o arquivo com o PALCO e a AUDITORIA:
+ *     11. o telão mostra o compromisso e a contagem, e se revela sozinho quando a
+ *         apuração acontece (com a página aberta);
+ *     12. a auditoria reproduz o resultado e confere os dois hashes NO NAVEGADOR;
+ *     13. a tela de sorteios entrega o link e o QR do telão — e o compromisso
+ *         aparece desde a criação, não só depois de apurar.
+ *
  *  A ordem importa (a publicação depende da apuração, e os cenários da FASE 22
  *  dependem do sorteio já apurado) e o arquivo roda com um worker: cada cenário usa
  *  o estado deixado pelo anterior, como na vida real.
@@ -99,6 +106,41 @@ async function addAttendance(userId: string, minutes: number): Promise<void> {
       },
     });
   });
+}
+
+/**
+ * Uma pessoa credenciada NOVA, criada pelo cenário que precisa dela.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O CENÁRIO NÃO REAPROVEITA QUEM O ARQUIVO JÁ CREDENCIOU (armadilha 62)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O sorteio do painel **exclui quem já ganhou neste evento** (e o padrão da tela é
+ *  não permitir). Um cenário que dependesse das duas pessoas do `beforeAll` mediria
+ *  "0 elegíveis" depois de qualquer rodada anterior — e falharia por um motivo que não
+ *  é o dele (foi o que aconteceu na primeira execução da FASE 30: o telão nunca
+ *  revelou porque a apuração foi recusada por falta de elegíveis).
+ */
+async function createCredentialedPerson(name: string): Promise<string> {
+  const userId = randomUUID();
+
+  await e2eDb.user.create({
+    data: { id: userId, name, email: `palco.${RUN_ID}.${userId.slice(0, 8)}@example.test` },
+  });
+
+  await e2eDb.userTenantProfile.create({
+    data: {
+      id: randomUUID(),
+      tenantId,
+      userId,
+      status: 'ACTIVE',
+      kind: 'PARTICIPANT',
+      joinedAt: new Date(),
+    },
+  });
+
+  await addAttendance(userId, 60);
+
+  return userId;
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -231,13 +273,19 @@ test.describe('sorteios de ponta a ponta', () => {
 
     // O banco confirma a apuração com as duas posições.
     const raffle = await e2eDb.raffle.findFirstOrThrow({
-      where: { tenantId, eventId },
-      select: { id: true, status: true, seedCommitment: true, seedRevealed: true },
+      where: { tenantId, eventId, title: `Sorteio F16 ${RUN_ID}` },
+      select: {
+        id: true,
+        status: true,
+        // A prova vive na RODADA desde a FASE 30 (as colunas da raffle são legado).
+        rounds: { select: { seedCommitment: true, seedRevealed: true, drawnAt: true } },
+      },
     });
 
     expect(raffle.status).toBe('DRAWN');
-    expect(raffle.seedCommitment).not.toBeNull();
-    expect(raffle.seedRevealed).not.toBeNull();
+    expect(raffle.rounds[0]?.seedCommitment).not.toBeNull();
+    expect(raffle.rounds[0]?.seedRevealed).not.toBeNull();
+    expect(raffle.rounds[0]?.drawnAt).not.toBeNull();
 
     const positions = await e2eDb.raffleWinner.findMany({
       where: { raffleId: raffle.id },
@@ -602,5 +650,327 @@ test.describe('operação de palco (FASE 22)', () => {
     await field.fill('5');
     await expect(page.getByTestId('reviewer-award-capped')).toContainText(/ranking tem 1/i);
     await expect(section).toContainText(/serão premiados 1/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+test.describe('palco e auditoria (FASE 29 · rodadas na FASE 30)', () => {
+
+  test('o telão anuncia a rodada, rola a roleta e se revela sozinho', async ({ page }) => {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O SORTEIO NASCE PELA TELA, EM RASCUNHO — e é isso que a FASE 30 consertou
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O telão "nascia sorteado": a única porta do console criava E apurava, então a
+     *  página que existe para ser projetada ANTES do anúncio nunca aparecia nesse
+     *  estado na vida real. Aqui o sorteio é criado por "Criar para o palco" e o telão
+     *  é aberto em outra aba ANTES de qualquer apuração — como no dia do evento.
+     *
+     *  O cenário também prova a ROLETA: a apuração acontece com a parede aberta, e a
+     *  tela passa por `SORTEANDO` (com nomes reais da lista publicada) antes de
+     *  revelar. O resultado é assinado pelo servidor ANTES da animação — ela é o
+     *  suspense do anúncio, não o sorteio.
+     */
+    await signInAs(page, adminEmail);
+
+    /**
+     * DUAS pessoas novas: a rodada 1 sorteia uma e a rodada 2 sorteia a outra (quem
+     * ganhou a primeira sai do páreo — ADR-147). Sem isso, a segunda apuração seria
+     * recusada por falta de elegíveis.
+     */
+    await createCredentialedPerson(`Palco Um ${RUN_ID}`);
+    await createCredentialedPerson(`Palco Dois ${RUN_ID}`);
+
+    const titulo = `Palco F30 ${RUN_ID}`;
+    const premio = 'Fone bluetooth';
+
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/sorteios`);
+
+    const form = page.getByTestId('raffle-form');
+    await form.getByLabel('Título do sorteio').fill(titulo);
+    await form.getByLabel('Quantos vencedores').fill('1');
+    await form.getByTestId('raffle-prize-title').fill(premio);
+
+    await page.getByTestId('create-raffle-for-stage').click();
+
+    const criado = page.getByTestId('raffle-stage-created');
+    await expect(criado).toBeVisible({ timeout: 20_000 });
+    await expect(criado).toContainText(/rodada 1 preparada/i);
+
+    const sorteio = await e2eDb.raffle.findFirstOrThrow({
+      where: { tenantId, eventId, title: titulo },
+      select: { id: true, status: true, rounds: { select: { seedCommitment: true } } },
+    });
+
+    /**
+     * O sorteio está em RASCUNHO e a rodada 1 tem compromisso: é esse estado que o
+     * telão precisa exibir na parede enquanto o público chega.
+     */
+    expect(sorteio.status).toBe('DRAFT');
+    expect(sorteio.rounds[0]?.seedCommitment).toMatch(/^[a-f0-9]{64}$/);
+
+    const stagePath = `/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}/sorteios/${sorteio.id}/palco`;
+
+    /** O telão é público: a parede do evento não tem sessão. */
+    const stagePage = await page.context().newPage();
+    await stagePage.goto(stagePath);
+
+    const stage = stagePage.getByTestId('raffle-stage');
+    await expect(stage).toHaveAttribute('data-stage-state', 'AGUARDANDO');
+    await expect(stagePage.getByTestId('stage-title')).toContainText(titulo);
+    await expect(stagePage.getByTestId('stage-round-announce')).toContainText('Rodada 1');
+    await expect(stagePage.getByTestId('stage-round-announce')).toContainText(premio);
+
+    /** O compromisso ANTES da apuração: é o que dá sentido ao commit-reveal. */
+    await expect(stagePage.getByTestId('stage-commitment')).toContainText(
+      sorteio.rounds[0]!.seedCommitment!,
+    );
+    await expect(stagePage.getByTestId('stage-eligible')).toBeVisible();
+    await expect(stage).toHaveAttribute('data-transport', 'sse', { timeout: 20_000 });
+
+    // ── A apuração acontece com a parede aberta: ela percebe e roda a roleta ──
+    /**
+     * O clique é escopado à LINHA do sorteio deste cenário: a tela é um histórico, e
+     * outros sorteios em rascunho existem no mesmo evento (o seletor global casaria com
+     * mais de um botão).
+     */
+    const linha = page.getByTestId(`raffle-${sorteio.id}`);
+    await linha.getByTestId('draw-existing').click();
+
+    /**
+     * O retorno vem da LINHA do histórico (é lá que o botão vive) — e a prova da
+     * semente, que estava selada no compromisso, passa a mostrar a revelação no mesmo
+     * lugar. O painel do console é de OUTRA action (a que cria e apura de uma vez).
+     */
+    await expect(linha.getByTestId(`draw-feedback-${sorteio.id}`)).toContainText(/vencedor/i, {
+      timeout: 30_000,
+    });
+    await expect(linha.getByTestId(`seed-proof-${sorteio.id}`)).toContainText(/revelada/i);
+
+    /**
+     * A ROLETA: enquanto o público vê os nomes passando, o resultado já está gravado e
+     * assinado. O que a tela mostra no fim é o que o banco decidiu.
+     */
+    await expect(stage).toHaveAttribute('data-stage-state', 'SORTEANDO', { timeout: 30_000 });
+    await expect(stagePage.getByTestId('stage-roll')).toBeVisible();
+
+    await expect(stage).toHaveAttribute('data-stage-state', 'REVELADO', { timeout: 30_000 });
+    await expect(stagePage.getByTestId('stage-winner-1')).toBeVisible();
+    await expect(stagePage.getByTestId('stage-confetti')).toHaveAttribute('data-active', 'true');
+    await expect(stagePage.getByTestId('stage-audit-link')).toBeVisible();
+
+    // ── A SEGUNDA RODADA: outro prêmio, outro momento, posições que continuam ──
+    const linhas = page.getByTestId(`raffle-rounds-${sorteio.id}`);
+    await expect(linhas).toContainText(/Rodadas \(1\)/);
+
+    await page.getByTestId(`prepare-prize-title-${sorteio.id}`).fill('Vale-presente');
+    await page.getByTestId(`prepare-round-${sorteio.id}`).click();
+
+    const preparada = page.getByTestId(`round-prepare-feedback-${sorteio.id}`);
+    await expect(preparada).toContainText(/Rodada 2 preparada/i, { timeout: 20_000 });
+    await expect(linha.getByTestId('raffle-round-2')).toContainText('Vale-presente');
+    await expect(linha.getByTestId('raffle-round-2')).toContainText(/aguardando apuração/i);
+
+    /** A parede volta a ANUNCIAR — agora o prêmio da rodada 2. */
+    await expect(stage).toHaveAttribute('data-stage-state', 'AGUARDANDO', { timeout: 30_000 });
+    await expect(stagePage.getByTestId('stage-round-announce')).toContainText('Rodada 2');
+    await expect(stagePage.getByTestId('stage-round-announce')).toContainText('Vale-presente');
+    /** E o que já foi sorteado continua na parede. */
+    await expect(stagePage.getByTestId('stage-previous-rounds')).toContainText('Rodada 1');
+
+    await page.getByTestId('draw-round-2').click();
+
+    /**
+     * O banco confirma a segunda rodada ANTES da tela: se a apuração recusou (por
+     * exemplo, sem elegíveis), a falha diz isso aqui em vez de aparecer como "a
+     * posição 2 não apareceu no telão".
+     *
+     * O que se afirma é a ESTRUTURA (número da rodada, quantos titulares, apurada) — e
+     * não a contagem de elegíveis, que depende de quem os outros cenários credenciaram.
+     */
+    await expect
+      .poll(
+        async () => {
+          const rounds = await e2eDb.raffleRound.findMany({
+            where: { raffleId: sorteio.id },
+            orderBy: { roundNumber: 'asc' },
+            select: { roundNumber: true, winnersCount: true, drawnAt: true },
+          });
+
+          return rounds.map(
+            (round) => `${round.roundNumber}:${round.winnersCount}:${round.drawnAt ? 'drawn' : 'pending'}`,
+          );
+        },
+        { timeout: 30_000 },
+      )
+      .toEqual(['1:1:drawn', '2:1:drawn']);
+
+    const posicoes = await e2eDb.raffleWinner.findMany({
+      where: { raffleId: sorteio.id },
+      orderBy: { position: 'asc' },
+      select: { position: true, roundNumber: true },
+    });
+
+    /** As POSIÇÕES continuam: a segunda rodada entrega a 2ª posição do sorteio. */
+    expect(posicoes).toEqual([
+      { position: 1, roundNumber: 1 },
+      { position: 2, roundNumber: 2 },
+    ]);
+
+    await expect(stage).toHaveAttribute('data-stage-state', 'REVELADO', { timeout: 30_000 });
+    await expect(stagePage.getByTestId('stage-winner-2')).toBeVisible({ timeout: 30_000 });
+
+    await stagePage.close();
+  });
+
+  test('a auditoria reproduz o resultado RODADA A RODADA', async ({ page }) => {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  ESTE CENÁRIO MONTA O PRÓPRIO SORTEIO (não herda o dos cenários anteriores)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Duas razões, as duas aprendidas na depuração da FASE 29:
+     *
+     *   1. o que se audita aqui é a CADEIA COMPLETA — compromisso, semente, lista e
+     *      resultado —, e ela precisa ser produzida pelo caminho real (a tela), não
+     *      por uma fixture que grava o que o teste espera;
+     *   2. **depois de um teste que falha, o Playwright reinicia o worker** e o
+     *      `RUN_ID` do arquivo muda: os cenários seguintes passam a rodar sobre uma
+     *      fixture NOVA. Um cenário que dependesse do sorteio apurado por outro teste
+     *      falharia por um motivo que não é o dele — foi exatamente o que aconteceu
+     *      (a falha apareceu como "não há lista publicada" quando o problema era o
+     *      worker ter recomeçado).
+     *
+     * A pessoa credenciada aqui é NOVA, e não uma das duas do arquivo: o sorteio do
+     * painel não permite quem já ganhou neste evento, então depender de alguém que
+     * pode ter ganhado antes tornaria o cenário dependente da semente sorteada nos
+     * cenários anteriores.
+     */
+    await createCredentialedPerson(`Conferente F29 ${RUN_ID}`);
+
+    await signInAs(page, adminEmail);
+
+    const titulo = `Auditoria F29 ${RUN_ID}`;
+
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/sorteios`);
+
+    const form = page.getByTestId('raffle-form');
+    await form.getByLabel('Título do sorteio').fill(titulo);
+    await form.getByLabel('Quantos vencedores').fill('1');
+    await page.getByTestId('draw-raffle').click();
+
+    /**
+     * A apuração terminou quando a SEMENTE está revelada — é dela que a auditoria
+     * vive, e é o sinal que não depende de o sorteio ter suplentes (o cenário pede um
+     * titular só, então não há o rótulo "suplente" para esperar).
+     */
+    await expect(page.getByTestId('raffle-result')).toContainText(/semente revelada/i, {
+      timeout: 30_000,
+    });
+
+    const auditado = await e2eDb.raffle.findFirstOrThrow({
+      where: { tenantId, eventId, title: titulo },
+      select: { id: true, title: true, rounds: { select: { roundNumber: true, poolHash: true } } },
+    });
+
+    // A lista publicada vive na RODADA desde a FASE 30.
+    expect(auditado.rounds[0]?.poolHash).not.toBeNull();
+    const poolHash = auditado.rounds[0]!.poolHash!;
+
+    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await page.goto(
+      `/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}/sorteios/${auditado.id}/auditoria`,
+    );
+
+    await expect(page.getByTestId('audit-title')).toContainText(auditado.title);
+    /** Uma seção por RODADA: é ela que se confere, não "o sorteio". */
+    await expect(page.getByTestId('audit-rounds').locator('[data-testid^="audit-round-"]').first()).toBeVisible();
+    await expect(page.getByTestId('audit-round-1')).toBeVisible();
+    await expect(page.getByTestId('audit-commitment-1')).not.toContainText('sem compromisso');
+    await expect(page.getByTestId('audit-pool-hash-1')).toContainText(poolHash);
+    await expect(page.getByTestId('audit-round-title-1')).toContainText('surpresa');
+
+    /** A lista publicada está na página, na ordem do sorteio. */
+    await expect(page.getByTestId('audit-pool-entry-1-1')).toBeVisible();
+    await expect(page.getByTestId('audit-pool-code-1-1')).toContainText(/^P-/);
+
+    /** O veredito do SERVIDOR (a página responde sem JavaScript). */
+    await expect(page.getByTestId('audit-server-verdict-1')).toHaveAttribute('data-confirmed', 'true');
+
+    /** E a conferência NO NAVEGADOR: os dois hashes e a reprodução. */
+    await page.getByTestId('audit-run-checks-1').click();
+
+    await expect(page.getByTestId('audit-seed-check-1').locator('[data-ok]')).toHaveAttribute(
+      'data-ok',
+      'true',
+      { timeout: 20_000 },
+    );
+    await expect(page.getByTestId('audit-pool-check-1').locator('[data-ok]')).toHaveAttribute(
+      'data-ok',
+      'true',
+    );
+    await expect(page.getByTestId('audit-browser-verdict-1')).toHaveAttribute('data-confirmed', 'true');
+    await expect(page.getByTestId('audit-positions-1').locator('[data-position-status]').first()).toHaveAttribute(
+      'data-position-status',
+      'CONFIRMED',
+    );
+  });
+
+  test('a tela de sorteios entrega o link do telão, o QR e o endereço da auditoria', async ({ page }) => {
+    /**
+     * O sorteio é criado AQUI, pelo caminho real ("Criar para o palco"), em vez de
+     * reaproveitar o de outro cenário: além de o painel precisar de pelo menos um
+     * sorteio, é este o estado que interessa — o endereço do telão precisa existir
+     * ANTES da apuração, e o compromisso DA RODADA precisa estar visível nesse
+     * momento (FASE 30: é a rodada que carrega o compromisso, não o sorteio).
+     */
+    await signInAs(page, adminEmail);
+
+    const titulo = `Links F30 ${RUN_ID}`;
+
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/sorteios`);
+
+    const form = page.getByTestId('raffle-form');
+    await form.getByLabel('Título do sorteio').fill(titulo);
+    await page.getByTestId('raffle-prize-title').fill('Caneca do evento');
+    await page.getByTestId('create-raffle-for-stage').click();
+
+    await expect(page.getByTestId('raffle-stage-created')).toBeVisible({ timeout: 20_000 });
+
+    const draft = await e2eDb.raffle.findFirstOrThrow({
+      where: { tenantId, eventId, title: titulo },
+      select: { id: true, status: true, rounds: { select: { seedCommitment: true } } },
+    });
+
+    const draftId = draft.id;
+    const commitment = draft.rounds[0]!.seedCommitment!;
+
+    const painel = page.getByTestId('stage-links');
+    await expect(painel).toBeVisible();
+    await expect(painel.getByTestId(`stage-link-${draftId}`)).toBeVisible();
+
+    await expect(page.getByTestId(`stage-url-${draftId}-value`)).toContainText(
+      `/eventos/${EVENT_SLUG}/sorteios/${draftId}/palco`,
+    );
+    await expect(page.getByTestId(`audit-url-${draftId}-value`)).toContainText(
+      `/eventos/${EVENT_SLUG}/sorteios/${draftId}/auditoria`,
+    );
+
+    // O QR é uma imagem embutida (gerada no servidor, sem serviço externo).
+    await expect(page.getByTestId(`stage-qr-${draftId}`)).toHaveAttribute(
+      'src',
+      /^data:image\/png;base64,/,
+    );
+
+    /**
+     * E o compromisso da RODADA aparece ANTES da apuração — o defeito que a FASE 29
+     * fechou, agora lido do lugar certo. O rascunho recém-criado é o mais recente do
+     * evento, então está na primeira página do histórico, com a semente ainda selada.
+     */
+    await expect(page.getByTestId(`seed-proof-${draftId}`)).toContainText(commitment);
+    await expect(page.getByTestId(`seed-proof-${draftId}`)).toContainText('ainda selada');
+
+    // O painel do palco também diz QUAL rodada está em cartaz e com que prêmio.
+    await expect(page.getByTestId(`stage-link-${draftId}`)).toContainText(/compromisso da rodada 1/);
+    await expect(page.getByTestId(`stage-link-${draftId}`)).toContainText('Caneca do evento');
   });
 });

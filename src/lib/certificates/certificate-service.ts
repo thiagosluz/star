@@ -64,17 +64,17 @@ export type CertificateResult<T> =
   | ({ ok: true } & T)
   | { ok: false; code: CertificateErrorCode; message: string; details?: readonly string[] };
 
+import { publicBaseUrl } from '@/lib/public-url';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Configuração de exibição
 // ───────────────────────────────────────────────────────────────────────────────
-/** Base pública usada para montar a URL que vai no QR Code. */
-export function publicBaseUrl(): string {
-  return (
-    process.env.APP_URL?.replace(/\/+$/, '') ??
-    process.env.BETTER_AUTH_URL?.replace(/\/+$/, '') ??
-    'http://localhost:3000'
-  );
-}
+/**
+ * A base pública virou módulo próprio na FASE 29 (`src/lib/public-url.ts`), porque o
+ * telão do sorteio também precisa de endereço absoluto — e duas cópias da mesma
+ * precedência de variáveis divergiriam. O reexport mantém os consumidores daqui.
+ */
+export { publicBaseUrl };
 
 export function validationUrlFor(code: string): string {
   return `${publicBaseUrl()}/validar/${code}`;

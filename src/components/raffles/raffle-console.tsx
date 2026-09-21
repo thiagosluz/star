@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Dices, Eye, Loader2, Radio, Sparkles, Trophy, UserCheck, Users } from 'lucide-react';
+import { Dices, Eye, Loader2, MonitorPlay, Radio, Sparkles, Trophy, UserCheck, Users } from 'lucide-react';
 
 import type { RaffleActionState } from '@/app/actions/raffle-actions';
 import { celebrate } from '@/components/gamification/celebration';
@@ -318,14 +318,18 @@ export function RaffleConsole({
   tenantSlug,
   eventId,
   activities,
+  sponsors,
   previewAction,
   drawAction,
+  stageAction,
 }: {
   tenantSlug: string;
   eventId: string;
   activities: readonly { id: string; title: string; startsAt: string }[];
+  sponsors: readonly { id: string; name: string }[];
   previewAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   drawAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  stageAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
 }) {
   /**
    * ─────────────────────────────────────────────────────────────────────────────
@@ -352,6 +356,9 @@ export function RaffleConsole({
     weightByMinutes: false,
     allowPriorEventWinners: false,
     isPublic: false,
+    prizeTitle: '',
+    prizeDescription: '',
+    sponsorId: '',
   });
 
   const update = (patch: Partial<typeof form>) => setForm((previous) => ({ ...previous, ...patch }));
@@ -386,6 +393,10 @@ export function RaffleConsole({
   );
   const [drawState, drawFormAction] = useActionState<RaffleActionState | null, FormData>(
     drawAction,
+    null,
+  );
+  const [stageState, stageFormAction] = useActionState<RaffleActionState | null, FormData>(
+    stageAction,
     null,
   );
 
@@ -539,6 +550,72 @@ export function RaffleConsole({
           </label>
         </div>
 
+        {/*
+          ── PRÊMIO DA RODADA (FASE 30) ─────────────────────────────────────────
+          Opcional e ANUNCIADO, não sorteado: o prêmio e o patrocinador não entram na
+          conta que decide quem ganha (ADR-145). Serve para o telão dizer o que está
+          sendo sorteado e para o balcão saber o que entregar. Corrigir o texto depois
+          não invalida o resultado já publicado.
+        */}
+        <fieldset className="space-y-3 rounded-lg border border-border p-3">
+          <legend className="px-1 text-xs font-medium">Prêmio desta rodada (opcional)</legend>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1 text-xs font-medium">
+              O que está sendo sorteado
+              <input
+                name="prizeTitle"
+                maxLength={200}
+                value={form.prizeTitle}
+                onChange={(event) => update({ prizeTitle: event.target.value })}
+                placeholder="Fone bluetooth"
+                aria-label="Prêmio"
+                data-testid="raffle-prize-title"
+                className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+              />
+            </label>
+
+            <label className="block space-y-1 text-xs font-medium">
+              Patrocinador do prêmio
+              <select
+                name="sponsorId"
+                value={form.sponsorId}
+                onChange={(event) => update({ sponsorId: event.target.value })}
+                aria-label="Patrocinador do prêmio"
+                data-testid="raffle-prize-sponsor"
+                className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+              >
+                <option value="">Sem patrocinador informado</option>
+                {sponsors.map((sponsor) => (
+                  <option key={sponsor.id} value={sponsor.id}>
+                    {sponsor.name}
+                  </option>
+                ))}
+              </select>
+              {sponsors.length === 0 ? (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Este evento ainda não tem patrocinadores cadastrados.
+                </span>
+              ) : null}
+            </label>
+
+            <label className="block space-y-1 text-xs font-medium sm:col-span-2">
+              Detalhe do prêmio (o telão mostra junto do nome)
+              <textarea
+                name="prizeDescription"
+                maxLength={600}
+                rows={2}
+                value={form.prizeDescription}
+                onChange={(event) => update({ prizeDescription: event.target.value })}
+                placeholder="Uma unidade, retirada no balcão do evento"
+                aria-label="Detalhe do prêmio"
+                data-testid="raffle-prize-description"
+                className="block w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+              />
+            </label>
+          </div>
+        </fieldset>
+
         <label className="flex items-start gap-2 text-xs">
           <input
             type="checkbox"
@@ -611,8 +688,47 @@ export function RaffleConsole({
               <DrawButton formAction={drawFormAction} />
             </span>
           </span>
+
+          {/*
+            ── CRIAR PARA O PALCO (FASE 30) ──────────────────────────────────────
+            O mesmo formulário, sem apurar. Era o caminho que faltava: o telão nascia
+            já com resultado porque a única porta criava E apurava. Aqui o sorteio
+            nasce em rascunho, com a rodada 1 preparada, e o telão tem o que mostrar
+            antes do anúncio.
+          */}
+          <span className="inline-flex">
+            <span className="contents">
+              <StageButton formAction={stageFormAction} />
+            </span>
+          </span>
         </div>
+
+        <p className="text-xs text-muted-foreground">
+          <strong>Sortear agora</strong> cria e apura na mesma hora.{' '}
+          <strong>Criar para o palco</strong> cria o sorteio e deixa a rodada aguardando: o telão mostra
+          o compromisso e a contagem ao vivo até você apurar (ou até preparar a próxima rodada).
+        </p>
       </form>
+
+      {/* ── Sorteio criado aguardando a apuração ────────────────────────────── */}
+      {stageState ? (
+        <div
+          role={stageState.ok ? 'status' : 'alert'}
+          data-testid="raffle-stage-created"
+          className={`space-y-2 rounded-lg border p-4 text-sm ${
+            stageState.ok ? 'border-primary/40 bg-surface-low' : 'border-destructive/40'
+          }`}
+        >
+          <p className={stageState.ok ? 'font-medium' : 'font-medium text-destructive'}>
+            {stageState.message}
+          </p>
+          {stageState.ok && typeof stageState.data?.seedCommitment === 'string' ? (
+            <p className="break-all code-data text-xs text-muted-foreground">
+              compromisso (sha256 da semente desta rodada): {String(stageState.data.seedCommitment)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* ── Prévia ────────────────────────────────────────────────────────── */}
       {previewState ? (
@@ -756,6 +872,34 @@ function DrawButton({
         <Dices className="size-4" aria-hidden />
       )}
       {pending ? 'Sorteando…' : 'Sortear agora'}
+    </button>
+  );
+}
+
+/**
+ * Botão "Criar para o palco" (FASE 30).
+ *
+ * Cria o sorteio com a rodada 1 preparada e NÃO apura — é o caminho de quem vai
+ * projetar o telão antes do anúncio. Precisa de `useFormStatus` pelo mesmo motivo do
+ * `DrawButton`: o estado "criando…" é do formulário, não da página.
+ */
+function StageButton({ formAction }: { formAction: (formData: FormData) => void }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      formAction={formAction}
+      data-testid="create-raffle-for-stage"
+      disabled={pending}
+      className="inline-flex items-center gap-2 rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary transition hover:bg-primary/10 disabled:opacity-60"
+    >
+      {pending ? (
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+      ) : (
+        <MonitorPlay className="size-4" aria-hidden />
+      )}
+      {pending ? 'Criando…' : 'Criar para o palco'}
     </button>
   );
 }

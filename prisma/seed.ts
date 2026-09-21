@@ -1021,6 +1021,14 @@ async function main() {
    * torna o resultado da demonstração verificável: quem conferir a lista de
    * elegíveis verá exatamente uma pessoa, e ela é o vencedor.
    */
+  /**
+   * ── O PRÊMIO É ANUNCIADO NA RODADA (FASE 30) ────────────────────────────────
+   * O sorteio deixou de ser "uma apuração": cada MOMENTO tem o próprio prêmio, o
+   * próprio compromisso de semente e o próprio resultado assinado. O dado de
+   * demonstração já nasce com o prêmio anunciado, que é o que o telão mostra antes
+   * de o público ver qualquer nome (o patrocinador do prêmio é opcional e é escolhido
+   * na tela — aqui os patrocinadores do evento nascem mais adiante no seed).
+   */
   const sorteioDemo = await createRaffle({
     tenantId: ufbaId,
     eventId: congressoUfba,
@@ -1032,6 +1040,8 @@ async function main() {
     minAttendanceMinutes: 120,
     winnersCount: 1,
     allowPriorEventWinners: true,
+    prizeTitle: 'Kit de brindes do congresso',
+    prizeDescription: 'Uma unidade, retirada no balcão da organização durante o evento.',
   });
 
   let sorteioRealizado = 'não configurado';

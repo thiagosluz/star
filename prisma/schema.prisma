@@ -453,9 +453,31 @@ model Raffle {
   seedKeyVersion Int @default(0)
 
   /// Versão do conteúdo canônico assinado (1 = só titulares; 2 = suplentes, peso e
-  /// papel por posição). Guardada porque o payload de auditoria é reconstruído a
-  /// partir dela — subir a versão não pode invalidar o hash de apurações antigas.
+  /// papel por posição; 3 = com a lista publicada). Guardada porque o payload de
+  /// auditoria é reconstruído a partir dela — subir a versão não pode invalidar o
+  /// hash de apurações antigas.
   resultVersion Int @default(1)
+
+  /// ─── Lista publicada (FASE 29) ──────────────────────────────────────────────
+  /// A entrada do sorteio, exatamente como a apuração a consumiu:
+  /// `[{ index, code, minutes }]`, na ordem usada. Nula em apuração anterior à
+  /// FASE 29 — a página de auditoria diz isso em vez de fingir lista vazia.
+  ///
+  /// O `code` (`P-…`) é derivado de sorteio + participante: a conferência pública
+  /// não precisa do `userId`, e o mesmo código aparece no resultado, de modo que
+  /// cada pessoa consegue se localizar na lista.
+  poolSnapshot Json?
+
+  /// SHA-256 do documento canônico da lista. Entra no payload do resultado desde a
+  /// versão 3 — mexer na lista passa a mudar o hash do RESULTADO.
+  ///
+  /// ─── LEGADO CONGELADO (FASE 30) ──────────────────────────────────────────────
+  /// A partir da FASE 30 a apuração acontece em RODADAS, e é a rodada
+  /// (`raffle_rounds`) que guarda compromisso, semente, lista e hash. Estas colunas
+  /// ficam apenas com o que já estava gravado: a migração copiou cada sorteio para a
+  /// sua rodada 1 e o código novo NÃO escreve mais aqui. A leitura (auditoria, tela,
+  /// resultado público) vem das rodadas — uma fonte de verdade só.
+  poolHash String? @db.Char(64)
 
   createdById String @db.Uuid
 
@@ -468,6 +490,9 @@ model Raffle {
   activity  Activity?      @relation(fields: [activityId], references: [id], onDelete: SetNull)
   createdBy User           @relation("RaffleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   winners   RaffleWinner[]
+  /// Rodadas do sorteio (FASE 30): cada apuração é um MOMENTO próprio, com o seu
+  /// compromisso, a sua lista e o seu resultado.
+  rounds    RaffleRound[]
 
   @@index([tenantId, eventId, status])
   @@index([tenantId, eventId, drawnAt])
@@ -486,7 +511,14 @@ model RaffleWinner {
   userId   String @db.Uuid
 
   /// Ordem em que foi sorteado (1 = primeiro).
+  ///
+  /// A POSIÇÃO É DO SORTEIO, não da rodada (FASE 30): o segundo momento continua a
+  /// numeração do primeiro, e é por isso que a entrega do prêmio (registrada por
+  /// posição) atravessa as rodadas sem precisar mudar de regra.
   position Int
+
+  /// Rodada que sorteou esta posição (FASE 30). `1` para tudo o que veio antes.
+  roundNumber Int @default(1)
 
   /// Titular do prêmio ou reserva (FASE 16).
   kind RaffleWinnerKind @default(WINNER)
@@ -498,25 +530,97 @@ model RaffleWinner {
 
   /// ─── Entrega do prêmio (FASE 16, item G2) ───────────────────────────────────
   /// Sem isso, "quem já retirou" ficava na memória de quem estava no balcão.
-  deliveredAt  DateTime? @db.Timestamptz(6)
-  deliveredById String?  @db.Uuid
-  deliveryNote String?   @db.VarChar(300)
+  deliveredAt   DateTime? @db.Timestamptz(6)
+  deliveredById String?   @db.Uuid
+  deliveryNote  String?   @db.VarChar(300)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  raffle     Raffle      @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  attendance Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
-  deliveredBy User?      @relation("RafflePrizeDeliveredBy", fields: [deliveredById], references: [id], onDelete: SetNull)
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  raffle      Raffle      @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance  Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  deliveredBy User?       @relation("RafflePrizeDeliveredBy", fields: [deliveredById], references: [id], onDelete: SetNull)
 
   /// A ANTIDUPLICAÇÃO É GARANTIDA PELO BANCO: o mesmo participante não pode
   /// aparecer duas vezes no mesmo sorteio, mesmo que a aplicação falhe.
+  ///
+  /// Ela vale para o SORTEIO INTEIRO, não por rodada (FASE 30): quem ganhou na
+  /// primeira rodada sai do páreo das seguintes, e a garantia continua sendo do banco.
   @@unique([raffleId, userId])
   /// Duas pessoas não podem ocupar a mesma posição.
   @@unique([raffleId, position])
   @@index([tenantId, userId])
+  @@index([raffleId, roundNumber])
   @@map("raffle_winners")
+}
+
+/// ───────────────────────────────────────────────────────────────────────────────
+///  RODADA DE APURAÇÃO (FASE 30)
+/// ───────────────────────────────────────────────────────────────────────────────
+///  Cada APURAÇÃO é um momento: o sorteio nasce com a rodada 1 (compromisso
+///  publicado, semente selada) e cada nova rodada é preparada — e comprometida —
+///  ANTES de acontecer, para que o telão possa publicar o compromisso enquanto o
+///  público espera.
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE A SEMENTE É POR RODADA, E NÃO UMA DO SORTEIO
+///  ─────────────────────────────────────────────────────────────────────────────
+///  A semente é REVELADA na apuração. Se todas as rodadas usassem a mesma, quem
+///  lesse a revelação da primeira calcularia os ganhadores das seguintes — no palco,
+///  com a plateia olhando. Cada rodada tem o seu trio (compromisso, selo, revelação)
+///  e é, sozinha, reproduzível.
+model RaffleRound {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  raffleId String @db.Uuid
+
+  /// 1, 2, 3… — único por sorteio. É a ordem dos momentos.
+  roundNumber Int
+
+  /// ─── Prêmio anunciado neste momento (opcional) ──────────────────────────────
+  ///  NÃO entra no conteúdo assinado de propósito: o prêmio é anúncio, e corrigir
+  ///  uma vírgula no texto não pode invalidar um resultado já publicado (ADR-145).
+  prizeTitle       String? @db.VarChar(200)
+  prizeDescription String? @db.Text
+  /// Patrocinador que deu o prêmio (opcional). `SET NULL`: apagar o patrocinador
+  /// não pode apagar o resultado.
+  sponsorId        String? @db.Uuid
+
+  /// ─── Commit-reveal DESTA rodada ─────────────────────────────────────────────
+  seedCommitment String? @db.Char(64)
+  seedSealed     String? @db.Text
+  seedRevealed   String? @db.VarChar(128)
+  seedKeyVersion Int     @default(0)
+
+  /// ─── Lista publicada e resultado DESTA rodada ───────────────────────────────
+  poolSnapshot Json?
+  poolHash     String? @db.Char(64)
+
+  resultHash    String? @db.Char(64)
+  /// Versão do documento assinado: 1–3 nas rodadas herdadas, 4 nas novas.
+  resultVersion Int     @default(4)
+
+  winnersCount    Int
+  alternatesCount Int @default(0)
+  /// Quantas pessoas concorriam NESTA rodada (o total do sorteio menos quem já ganhou).
+  eligibleCount   Int @default(0)
+
+  drawnAt DateTime? @db.Timestamptz(6)
+
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  raffle    Raffle   @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  sponsor   Sponsor? @relation("RaffleRoundSponsor", fields: [sponsorId], references: [id], onDelete: SetNull)
+  createdBy User     @relation("RaffleRoundCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([raffleId, roundNumber])
+  @@index([tenantId, raffleId, drawnAt])
+  @@index([sponsorId])
+  @@map("raffle_rounds")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -608,6 +712,7 @@ model Tenant {
   /// FASE 15 — comunicação.
   emailMessages     EmailMessage[]
   tenantInvitations TenantInvitation[]
+  raffleRounds      RaffleRound[]
 
   @@index([status])
   @@index([deletedAt])
@@ -690,31 +795,33 @@ model User {
   conflictsAgainstMe   ReviewerConflictDeclaration[] @relation("ConflictWithUser")
 
   /// Sorteios que esta pessoa criou — FASE 8.
-  rafflesCreated Raffle[]       @relation("RaffleCreatedBy")
+  rafflesCreated        Raffle[]           @relation("RaffleCreatedBy")
+  /// Rodadas de sorteio que esta pessoa preparou/apurou — FASE 30.
+  raffleRoundsCreated   RaffleRound[]      @relation("RaffleRoundCreatedBy")
   /// Sorteios em que esta pessoa foi sorteada — FASE 8.
-  raffleWins     RaffleWinner[]
+  raffleWins            RaffleWinner[]
   /// Prêmios de sorteio que esta pessoa ENTREGOU — FASE 16.
-  rafflePrizesDelivered RaffleWinner[] @relation("RafflePrizeDeliveredBy")
+  rafflePrizesDelivered RaffleWinner[]     @relation("RafflePrizeDeliveredBy")
   /// Versões de página pública que esta pessoa gravou — FASE 23.
-  eventPageVersions EventPageVersion[] @relation("EventPageVersionCreatedBy")
+  eventPageVersions     EventPageVersion[] @relation("EventPageVersionCreatedBy")
   /// Imagens que esta pessoa enviou — FASE 24.
-  mediaAssetsUploaded MediaAsset[] @relation("MediaAssetUploadedBy")
+  mediaAssetsUploaded   MediaAsset[]       @relation("MediaAssetUploadedBy")
 
   /// Perfis de palestrante reivindicados por esta pessoa — FASE 25.
-  speakerProfiles SpeakerProfile[] @relation("SpeakerProfileUser")
+  speakerProfiles          SpeakerProfile[]  @relation("SpeakerProfileUser")
   /// Perfis de palestrante que esta pessoa cadastrou como organizadora — FASE 25.
-  speakerProfilesCreated SpeakerProfile[] @relation("SpeakerProfileCreatedBy")
+  speakerProfilesCreated   SpeakerProfile[]  @relation("SpeakerProfileCreatedBy")
   /// Materiais de palestrante que esta pessoa enviou — FASE 25.
   speakerMaterialsUploaded SpeakerMaterial[] @relation("SpeakerMaterialUploadedBy")
 
   /// E-mails transacionais endereçados a esta pessoa — FASE 15.
-  emailMessages EmailMessage[] @relation("EmailMessageToUser")
+  emailMessages        EmailMessage[]     @relation("EmailMessageToUser")
   /// E-mails transacionais que esta pessoa disparou — FASE 15.
-  emailMessagesCreated EmailMessage[] @relation("EmailMessageCreatedBy")
+  emailMessagesCreated EmailMessage[]     @relation("EmailMessageCreatedBy")
   /// Convites de equipe que esta pessoa enviou — FASE 15.
-  invitationsSent TenantInvitation[] @relation("TenantInvitationInvitedBy")
+  invitationsSent      TenantInvitation[] @relation("TenantInvitationInvitedBy")
   /// Convites de equipe que esta pessoa aceitou — FASE 15.
-  invitationsAccepted TenantInvitation[] @relation("TenantInvitationAcceptedBy")
+  invitationsAccepted  TenantInvitation[] @relation("TenantInvitationAcceptedBy")
 
   @@index([email])
   @@index([deletedAt])
@@ -1089,14 +1196,14 @@ model Activity {
   event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
   room   Room?  @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
-  registrations   Registration[]
-  attendances     Attendance[]
-  submissions     Submission[]
-  speakers        ActivitySpeaker[]
-  roleAssignments RoleAssignment[]
-  certificates    Certificate[]
-  xpTransactions  XpTransaction[]
-  raffles         Raffle[]
+  registrations    Registration[]
+  attendances      Attendance[]
+  submissions      Submission[]
+  speakers         ActivitySpeaker[]
+  roleAssignments  RoleAssignment[]
+  certificates     Certificate[]
+  xpTransactions   XpTransaction[]
+  raffles          Raffle[]
   /// Materiais de apoio publicados pelos palestrantes desta atividade — FASE 25.
   speakerMaterials SpeakerMaterial[]
 
@@ -1224,16 +1331,16 @@ model SpeakerProfile {
 
   /// O palestrante confirmou os próprios dados? Perfil não confirmado ainda é
   /// exibido (a instituição o cadastrou), mas o portal o convida a revisar.
-  isConfirmed Boolean @default(false)
+  isConfirmed  Boolean @default(false)
   /// Aparece na vitrine pública? Falso esconde sem apagar — o palestrante pode
   /// pedir para sair da página sem que a instituição perca o cadastro.
-  isPublic    Boolean @default(true)
+  isPublic     Boolean @default(true)
   /// Ordem na vitrine (menor primeiro). A ordem na AGENDA é do vínculo.
-  displayOrder Int    @default(0)
+  displayOrder Int     @default(0)
 
-  createdById String? @db.Uuid
-  createdAt   DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+  createdById String?   @db.Uuid
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt   DateTime? @db.Timestamptz(6)
 
   tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1264,17 +1371,17 @@ model SpeakerProfile {
 ///  na atividade, o próprio palestrante e a equipe) ou `PRIVATE` (só o palestrante e
 ///  a equipe).
 model SpeakerMaterial {
-  id                String @id @default(uuid(7)) @db.Uuid
-  tenantId          String @db.Uuid
-  activityId        String @db.Uuid
-  speakerProfileId  String @db.Uuid
+  id               String @id @default(uuid(7)) @db.Uuid
+  tenantId         String @db.Uuid
+  activityId       String @db.Uuid
+  speakerProfileId String @db.Uuid
 
   title       String  @db.VarChar(200)
   description String? @db.VarChar(600)
   /// `SLIDES` | `HANDOUT` | `LINK` | `ARTICLE` | `OTHER` (ver domínio).
   kind        String  @db.VarChar(32)
   /// `PUBLIC` | `ATTENDEES_ONLY` | `PRIVATE`.
-  visibility  String  @db.VarChar(24) @default("PRIVATE")
+  visibility  String  @default("PRIVATE") @db.VarChar(24)
 
   /// Arquivo enviado (upload direto ao storage). Nulo quando é link externo.
   storageBucket String? @db.VarChar(120)
@@ -1287,10 +1394,10 @@ model SpeakerMaterial {
   /// Endereço público. Para link externo é o destino; para arquivo é a URL do objeto.
   url String? @db.VarChar(1024)
 
-  displayOrder Int     @default(0)
-  uploadedById String? @db.Uuid
-  createdAt    DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+  displayOrder Int       @default(0)
+  uploadedById String?   @db.Uuid
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt    DateTime? @db.Timestamptz(6)
 
   tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1347,8 +1454,8 @@ model EventPage {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event    Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
   blocks   PageBlock[]
   versions EventPageVersion[]
 
@@ -1398,9 +1505,9 @@ model MediaAsset {
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event      Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  uploadedBy User?     @relation("MediaAssetUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event      Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  uploadedBy User?  @relation("MediaAssetUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, objectKey])
   @@index([tenantId, createdAt])
@@ -1435,10 +1542,10 @@ model EventPageVersion {
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  page   EventPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page      EventPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
   /// Autor da alteração (nulo se a conta for removida — a versão permanece).
-  createdBy User?  @relation("EventPageVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy User?     @relation("EventPageVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, pageId, createdAt])
   @@index([createdById])
@@ -1547,13 +1654,15 @@ model Sponsor {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event  Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tier   SponsorTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event        Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tier         SponsorTier?  @relation(fields: [tierId], references: [id], onDelete: SetNull)
   /// Cadastro do qual este foi copiado.
-  source Sponsor?     @relation("SponsorCopiedFrom", fields: [sourceSponsorId], references: [id], onDelete: SetNull)
+  source       Sponsor?      @relation("SponsorCopiedFrom", fields: [sourceSponsorId], references: [id], onDelete: SetNull)
   /// Cópias geradas a partir deste cadastro.
-  copies Sponsor[]    @relation("SponsorCopiedFrom")
+  copies       Sponsor[]     @relation("SponsorCopiedFrom")
+  /// Rodadas de sorteio cujo prêmio este patrocinador deu — FASE 30.
+  raffleRounds RaffleRound[] @relation("RaffleRoundSponsor")
 
   @@unique([tenantId, slug])
   @@index([tenantId, eventId, isActive])
@@ -2514,7 +2623,7 @@ model TenantInvitation {
   tenantId String @db.Uuid
 
   /// Endereço convidado, normalizado (minúsculas, sem espaços).
-  email String @db.VarChar(320)
+  email String  @db.VarChar(320)
   /// Papel que será concedido no aceite (escopo TENANT — ver `roleAllowedInScope`).
   role  RoleKey
 
@@ -2523,7 +2632,7 @@ model TenantInvitation {
   /// SHA-256 do código entregue por e-mail. O código em claro NÃO é gravado:
   /// vazamento do banco não vira convite utilizável (mesma decisão do convite de
   /// palestrante, ADR-114).
-  tokenHash String  @db.Char(64)
+  tokenHash String   @db.Char(64)
   expiresAt DateTime @db.Timestamptz(6)
 
   /// Recado opcional do convidante, exibido na página de aceite.
@@ -2541,9 +2650,9 @@ model TenantInvitation {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invitedBy User?  @relation("TenantInvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
-  acceptedBy User? @relation("TenantInvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy  User?  @relation("TenantInvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedBy User?  @relation("TenantInvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, createdAt])
   /// A busca do aceite é SEMPRE por hash (o código em claro não existe no banco).
@@ -2596,4 +2705,3 @@ model AuditLog {
   @@index([userId, createdAt])
   @@map("audit_logs")
 }
-

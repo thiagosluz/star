@@ -227,15 +227,27 @@ test.describe('sorteio por presença real', () => {
         select: {
           status: true,
           eligibleCount: true,
-          resultHash: true,
+          /**
+           * O resultado assinado vive na RODADA desde a FASE 30 — as colunas
+           * equivalentes em `raffles` são legado congelado e ficam nulas num sorteio
+           * novo (ler a raffle aqui mediria o campo errado).
+           */
+          rounds: {
+            orderBy: { roundNumber: 'asc' },
+            select: { roundNumber: true, resultHash: true, seedCommitment: true },
+          },
           winners: { select: { position: true, userId: true, attendanceMinutes: true } },
         },
       });
     });
 
+    const round = stored.rounds[0]!;
+
     expect(stored.status).toBe('DRAWN');
     expect(stored.eligibleCount).toBe(1);
-    expect(stored.resultHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(round.roundNumber).toBe(1);
+    expect(round.seedCommitment).toMatch(/^[a-f0-9]{64}$/);
+    expect(round.resultHash).toMatch(/^[a-f0-9]{64}$/);
     expect(stored.winners).toHaveLength(1);
     expect(stored.winners[0]?.userId).toBe(completo.id);
     expect(stored.winners[0]?.attendanceMinutes).toBe(240);
@@ -248,7 +260,7 @@ test.describe('sorteio por presença real', () => {
     await expect(history).toContainText('Sorteio de brindes da abertura');
     await expect(history).toContainText('Presente Completo');
     await expect(history).toContainText(/Apurado/i);
-    await expect(history).toContainText(String(stored.resultHash));
+    await expect(history).toContainText(String(round.resultHash));
   });
 
   test('BLOQUEIA o sorteio quando ninguém cumpre o piso e mantém para conferência', async ({ page }) => {

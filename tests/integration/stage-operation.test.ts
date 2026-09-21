@@ -473,8 +473,9 @@ describe('G12 — versão da chave do cofre', () => {
     if (!created.ok) throw new Error(created.message);
 
     const row = await withTenant(tenantId, (tx) =>
-      tx.raffle.findFirst({
-        where: { id: created.raffleId },
+      tx.raffleRound.findFirst({
+        where: { raffleId: created.raffleId },
+        orderBy: { roundNumber: 'desc' },
         select: { seedKeyVersion: true, seedSealed: true },
       }),
     );
@@ -503,7 +504,11 @@ describe('G12 — versão da chave do cofre', () => {
     if (!created.ok) throw new Error(created.message);
 
     const row = await withTenant(tenantId, (tx) =>
-      tx.raffle.findFirst({ where: { id: created.raffleId }, select: { seedKeyVersion: true } }),
+      tx.raffleRound.findFirst({
+        where: { raffleId: created.raffleId },
+        orderBy: { roundNumber: 'desc' },
+        select: { seedKeyVersion: true },
+      }),
     );
 
     expect(row?.seedKeyVersion).toBe(2);

@@ -83,39 +83,60 @@ export function RaffleResults({
                 <p className="text-sm opacity-75">{raffle.description}</p>
               ) : null}
 
-              <ol className="grid gap-2 sm:grid-cols-2">
-                {raffle.winners.map((winner) => (
-                  <li
-                    key={`${raffle.id}-${winner.position}`}
-                    data-testid={`public-winner-${winner.position}`}
-                    data-masked={winner.masked ? 'true' : 'false'}
-                    className="flex items-center gap-3 rounded-lg border px-3 py-2"
-                    style={{ borderColor: 'color-mix(in oklab, var(--ef-text) 12%, transparent)' }}
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                      style={{ background: 'color-mix(in oklab, var(--ef-primary) 18%, transparent)' }}
-                    >
-                      {winner.position}º
-                    </span>
-                    <span className="truncate text-sm font-medium">{winner.name}</span>
-                  </li>
-                ))}
-              </ol>
+              {/**
+               * ── POR RODADA (FASE 30) ────────────────────────────────────────────
+               * Cada momento tem o seu prêmio e o seu patrocinador. Uma lista única de
+               * nomes esconderia qual prêmio cada pessoa levou — as posições continuam
+               * a numeração entre as rodadas, então a ordem sozinha não conta isso.
+               */}
+              <div className="space-y-4">
+                {raffle.rounds.map((round) => (
+                  <div key={round.roundNumber} className="space-y-2" data-testid={`public-raffle-round-${round.roundNumber}`}>
+                    <p className="text-sm font-medium">
+                      {raffle.rounds.length > 1 ? `Rodada ${round.roundNumber} — ` : ''}
+                      {round.prizeTitle ?? 'Prêmio surpresa'}
+                      {round.sponsorName ? ` · por ${round.sponsorName}` : ''}
+                    </p>
 
-              {raffle.alternates.length > 0 ? (
-                <details className="text-xs opacity-80">
-                  <summary className="cursor-pointer">
-                    {raffle.alternates.length} suplente(s) — entregam em caso de ausência
-                  </summary>
-                  <ol className="mt-2 space-y-1" data-testid={`public-alternates-${raffle.id}`}>
-                    {raffle.alternates.map((alternate) => (
-                      <li key={`${raffle.id}-alt-${alternate.position}`}>
-                        {alternate.position}º {alternate.name}
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              ) : null}
+                    <ol className="grid gap-2 sm:grid-cols-2">
+                      {round.winners.map((winner) => (
+                        <li
+                          key={`${raffle.id}-${winner.position}`}
+                          data-testid={`public-winner-${winner.position}`}
+                          data-masked={winner.masked ? 'true' : 'false'}
+                          className="flex items-center gap-3 rounded-lg border px-3 py-2"
+                          style={{ borderColor: 'color-mix(in oklab, var(--ef-text) 12%, transparent)' }}
+                        >
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                            style={{ background: 'color-mix(in oklab, var(--ef-primary) 18%, transparent)' }}
+                          >
+                            {winner.position}º
+                          </span>
+                          <span className="truncate text-sm font-medium">{winner.name}</span>
+                        </li>
+                      ))}
+                    </ol>
+
+                    {round.alternates.length > 0 ? (
+                      <details className="text-xs opacity-80">
+                        <summary className="cursor-pointer">
+                          {round.alternates.length} suplente(s) — entregam em caso de ausência
+                        </summary>
+                        <ol
+                          className="mt-2 space-y-1"
+                          data-testid={`public-alternates-${raffle.id}-${round.roundNumber}`}
+                        >
+                          {round.alternates.map((alternate) => (
+                            <li key={`${raffle.id}-alt-${alternate.position}`}>
+                              {alternate.position}º {alternate.name}
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
 
               <div className="space-y-0.5 text-xs opacity-60">
                 {raffle.resultHash ? (

@@ -86,9 +86,11 @@ export default async function PublicRaffleResultPage({
     timeStyle: 'short',
   });
 
+  const basePath = `/eventos/${event.slug}/sorteios/${raffleId}`;
+
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
-      <nav className="text-xs">
+      <nav className="flex flex-wrap items-center gap-4 text-xs">
         <Link
           href={tenantPath(tenantSlug, `/eventos/${event.slug}`)}
           className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
@@ -96,6 +98,13 @@ export default async function PublicRaffleResultPage({
         >
           <ArrowLeft className="size-3" aria-hidden />
           {event.title}
+        </Link>
+        <Link
+          href={tenantPath(tenantSlug, `${basePath}/auditoria`)}
+          className="text-muted-foreground underline underline-offset-4"
+          data-testid="raffle-result-audit-link"
+        >
+          Conferir a auditoria (semente e lista, rodada a rodada)
         </Link>
       </nav>
 
@@ -110,58 +119,113 @@ export default async function PublicRaffleResultPage({
         <p className="text-sm text-muted-foreground">
           Apurado em {drawnAtLabel} · {result.winners.length} titular(es)
           {result.alternates.length > 0 ? ` · ${result.alternates.length} suplente(s)` : ''}
+          {result.rounds.length > 1 ? ` · ${result.rounds.length} rodadas` : ''}
         </p>
         {result.description ? <p className="text-sm">{result.description}</p> : null}
       </header>
 
-      <section className="space-y-3" aria-labelledby="ganhadores">
-        <h2 id="ganhadores" className="text-lg font-semibold tracking-tight">
-          Quem ganhou
-        </h2>
+      {/**
+       * ── UMA SEÇÃO POR RODADA (FASE 30) ─────────────────────────────────────────
+       * O sorteio pode ter vários MOMENTOS, cada um com o seu prêmio e o seu
+       * patrocinador. Mostrar uma lista única de nomes esconderia qual prêmio cada
+       * pessoa levou — e as posições continuam a numeração entre as rodadas, então a
+       * ordem sozinha não conta a história.
+       */}
+      {result.rounds.map((round, index) => (
+        <section
+          key={round.roundNumber}
+          className="space-y-3"
+          aria-labelledby={`ganhadores-${round.roundNumber}`}
+          data-testid={`raffle-result-round-${round.roundNumber}`}
+        >
+          <div className="space-y-1">
+            <h2 id={`ganhadores-${round.roundNumber}`} className="text-lg font-semibold tracking-tight">
+              {result.rounds.length > 1 ? `Rodada ${round.roundNumber} — ` : 'Quem ganhou'}
+              {round.prizeTitle ?? (result.rounds.length > 1 ? 'prêmio surpresa' : 'Quem ganhou')}
+            </h2>
+            {round.prizeDescription ? (
+              <p className="text-sm text-muted-foreground">{round.prizeDescription}</p>
+            ) : null}
+            <p className="text-xs text-muted-foreground" data-testid={`raffle-result-round-sponsor-${round.roundNumber}`}>
+              {round.sponsorName ? `Prêmio oferecido por ${round.sponsorName}` : 'Sem patrocinador informado'}
+              {' · '}
+              {round.drawnAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+            </p>
+          </div>
 
-        <ol className="grid gap-2 sm:grid-cols-2" data-testid="raffle-result-winners">
-          {result.winners.map((winner) => (
-            <li
-              key={winner.position}
-              data-testid={`raffle-result-winner-${winner.position}`}
-              data-masked={winner.masked ? 'true' : 'false'}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
-            >
-              <span className="code-data flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold">
-                {winner.position}º
-              </span>
-              <span className="truncate text-sm font-medium">{winner.name}</span>
-            </li>
-          ))}
-        </ol>
+          <ol
+            className="grid gap-2 sm:grid-cols-2"
+            data-testid={
+              result.rounds.length === 1
+                ? 'raffle-result-winners'
+                : `raffle-result-round-winners-${round.roundNumber}`
+            }
+          >
+            {round.winners.map((winner) => (
+              <li
+                key={winner.position}
+                data-testid={`raffle-result-winner-${winner.position}`}
+                data-masked={winner.masked ? 'true' : 'false'}
+                className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+              >
+                <span className="code-data flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold">
+                  {winner.position}º
+                </span>
+                <span className="truncate text-sm font-medium">{winner.name}</span>
+              </li>
+            ))}
+          </ol>
 
-        {result.alternates.length > 0 ? (
-          <details className="text-xs text-muted-foreground">
-            <summary className="cursor-pointer" data-testid="raffle-result-alternates">
-              {result.alternates.length} suplente(s) — entregam em caso de ausência
-            </summary>
-            <ol className="mt-2 space-y-1">
-              {result.alternates.map((alternate) => (
-                <li key={alternate.position}>
-                  {alternate.position}º {alternate.name}
-                </li>
-              ))}
-            </ol>
+          {round.alternates.length > 0 ? (
+            <details className="text-xs text-muted-foreground">
+              <summary
+                className="cursor-pointer"
+                data-testid={
+                  result.rounds.length === 1
+                    ? 'raffle-result-alternates'
+                    : `raffle-result-round-alternates-${round.roundNumber}`
+                }
+              >
+                {round.alternates.length} suplente(s) — entregam em caso de ausência
+              </summary>
+              <ol className="mt-2 space-y-1">
+                {round.alternates.map((alternate) => (
+                  <li key={alternate.position}>
+                    {alternate.position}º {alternate.name}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
+
+          <details className="text-xs text-muted-foreground" open={index === result.rounds.length - 1}>
+            <summary className="cursor-pointer">Prova desta rodada</summary>
+            <div className="mt-2 space-y-1" data-testid={`raffle-result-round-proof-${round.roundNumber}`}>
+              {round.resultHash ? (
+                <p className="break-all code-data">resultado (SHA-256): {round.resultHash}</p>
+              ) : null}
+              {round.seedCommitment ? (
+                <p className="break-all code-data">compromisso publicado antes: {round.seedCommitment}</p>
+              ) : null}
+              {round.seedRevealed ? (
+                <p className="break-all code-data">semente revelada: {round.seedRevealed}</p>
+              ) : null}
+            </div>
           </details>
-        ) : null}
+        </section>
+      ))}
 
-        <p className="text-xs text-muted-foreground">
-          Nomes abreviados por padrão: quem se credenciou não consentiu em ter o nome publicado.
-          Quem tem perfil público aparece com o nome completo.
-        </p>
-      </section>
+      <p className="text-xs text-muted-foreground">
+        Nomes abreviados por padrão: quem se credenciou não consentiu em ter o nome publicado. Quem
+        tem perfil público aparece com o nome completo.
+      </p>
 
       {/**
        * ── A PROVA, NA MESMA PÁGINA ────────────────────────────────────────────────
-       * O compromisso foi publicado na CRIAÇÃO do sorteio (antes de existir elegível) e
-       * a semente só foi revelada na apuração. Quem quiser conferir recalcula
-       * `sha256(semente)` e compara com o compromisso; com a semente, reproduz o
-       * resultado. É o que separa "confie" de "confira".
+       * O compromisso foi publicado ANTES de cada rodada (antes de existir resultado) e
+       * a semente só foi revelada na apuração daquela rodada. Quem quiser conferir
+       * recalcula `sha256(semente)` e compara com o compromisso; com a semente,
+       * reproduz o resultado. É o que separa "confie" de "confira".
        */}
       <section className="space-y-2 rounded-xl border border-border bg-card p-4" aria-labelledby="prova">
         <h2 id="prova" className="text-sm font-semibold">
@@ -170,7 +234,9 @@ export default async function PublicRaffleResultPage({
 
         <div className="space-y-1 text-xs text-muted-foreground" data-testid="raffle-result-proof">
           {result.resultHash ? (
-            <p className="break-all code-data">resultado (SHA-256): {result.resultHash}</p>
+            <p className="break-all code-data">
+              resultado da última rodada (SHA-256): {result.resultHash}
+            </p>
           ) : null}
           {result.seedCommitment ? (
             <p className="break-all code-data">compromisso publicado: {result.seedCommitment}</p>
@@ -181,7 +247,8 @@ export default async function PublicRaffleResultPage({
           {result.seedCommitment && result.seedRevealed ? (
             <p>
               O <code>sha256</code> da semente revelada é igual ao compromisso publicado antes da
-              apuração, e o resultado se reproduz rodando o sorteio com ela.
+              apuração, e o resultado se reproduz rodando o sorteio com ela. A auditoria mostra a
+              conferência de CADA rodada, com a lista publicada daquele momento.
             </p>
           ) : (
             <p className="text-warning-strong">
