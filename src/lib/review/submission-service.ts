@@ -27,6 +27,7 @@ import { randomBytes } from 'node:crypto';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
+import { canSubmitToCall, type ProposalKind } from '@/domain/proposals/call-rules';
 import { formatBytes } from '@/domain/events/image-rules';
 import {
   BUCKETS,
@@ -53,7 +54,7 @@ import {
 import {
   DEFAULT_RUBRIC,
   canAccessSubmissionFile,
-  parseRubric,
+  resolveEffectiveRubric,
   type RubricCriterion,
   type ViewerRole,
 } from '@/domain/review/review-rules';
@@ -73,6 +74,18 @@ export type SubmissionErrorCode =
   | 'TRACK_LIMIT_REACHED'
   | 'CFP_CLOSED'
   | 'NOT_READY'
+  /**
+   * FASE 33 — a proposta veio de uma chamada, e a chamada tem as próprias recusas:
+   * não existe, não foi publicada, ainda não abriu, já encerrou, ou a pessoa já
+   * usou o limite de propostas dela NESTA chamada. E `TRACK_REQUIRED` cobre o
+   * caminho que ficou sem trilha e sem chamada (não há eixo de avaliação nenhum).
+   */
+  | 'CALL_NOT_FOUND'
+  | 'CALL_NOT_PUBLISHED'
+  | 'CALL_NOT_OPEN'
+  | 'CALL_CLOSED'
+  | 'AUTHOR_LIMIT_REACHED'
+  | 'TRACK_REQUIRED'
   /** A instituição esgotou a quota de armazenamento do plano (FASE 21). */
   | 'QUOTA_EXCEEDED'
   | 'FORBIDDEN'
@@ -134,12 +147,24 @@ export function secureProtocol(year: number): string {
 export interface CreateSubmissionInput {
   tenantId: string;
   eventId: string;
-  trackId: string;
+  /**
+   * Trilha de avaliação. OBRIGATÓRIA no trabalho científico e ausente na proposta
+   * que não tem eixo temático (palestrante, minicurso, oficina, mesa) — FASE 33.
+   */
+  trackId?: string | null;
   userId: string;
   title: string;
   abstract: string;
   keywords: readonly string[];
   language?: string;
+  /**
+   * FASE 33 — chamada de origem. Quando presente, a JANELA e o LIMITE que valem são
+   * os da chamada, e não os do evento: é a chamada que promete "até 2 propostas por
+   * pessoa, até 30/09".
+   */
+  callId?: string | null;
+  /** Campos específicos do tipo, já validados por `validateProposalData`. */
+  proposalData?: Record<string, string | number>;
 }
 
 export interface CreateSubmissionResult {
@@ -186,23 +211,93 @@ export async function createSubmission(
     }
 
     return await withTenant(input.tenantId, async (tx) => {
-      const track = await tx.track.findFirst({
-        where: { id: input.trackId, eventId: input.eventId, deletedAt: null },
-        select: {
-          id: true,
-          maxSubmissionsPerAuthor: true,
-          reviewRubric: true,
-          requiresBlindReview: true,
-        },
-      });
+      /**
+       * ── A CHAMADA DE ORIGEM (FASE 33) ───────────────────────────────────────
+       * Carregada ANTES da trilha porque ela pode TRAZER a trilha (`call.trackId`) —
+       * a chamada de artigo aponta o eixo temático, e quem propõe não escolhe trilha
+       * de novo no formulário público.
+       */
+      const call = input.callId
+        ? await tx.callForProposals.findFirst({
+            where: { id: input.callId, tenantId: input.tenantId, eventId: input.eventId, deletedAt: null },
+            select: {
+              id: true,
+              kind: true,
+              title: true,
+              isPublished: true,
+              opensAt: true,
+              closesAt: true,
+              maxSubmissionsPerAuthor: true,
+              trackId: true,
+            },
+          })
+        : null;
 
-      if (!track) {
+      if (input.callId && !call) {
+        throw new SubmissionError('CALL_NOT_FOUND', 'Chamada não encontrada neste evento.');
+      }
+
+      if (call) {
+        /**
+         * O LIMITE É O DA CHAMADA, e conta as propostas desta pessoa NESTA chamada.
+         * Contar no evento faria o limite de uma chamada consumir a cota da outra —
+         * e a mensagem que o proponente lê fala da chamada que ele abriu.
+         */
+        const authorSubmissions = await tx.submission.count({
+          where: {
+            tenantId: input.tenantId,
+            callId: call.id,
+            submittedById: input.userId,
+            deletedAt: null,
+            status: { notIn: ['WITHDRAWN', 'CANCELED', 'REJECTED'] },
+          },
+        });
+
+        const permission = canSubmitToCall({
+          call: {
+            isPublished: call.isPublished,
+            opensAt: call.opensAt,
+            closesAt: call.closesAt,
+            now: new Date(),
+            maxSubmissionsPerAuthor: call.maxSubmissionsPerAuthor,
+            title: call.title,
+          },
+          authorSubmissions,
+        });
+
+        if (!permission.ok) {
+          throw new SubmissionError(permission.code, permission.message);
+        }
+      }
+
+      const effectiveTrackId = input.trackId ?? call?.trackId ?? null;
+
+      if (!effectiveTrackId && !call) {
+        throw new SubmissionError(
+          'TRACK_REQUIRED',
+          'Selecione a trilha temática da submissão.',
+        );
+      }
+
+      const track = effectiveTrackId
+        ? await tx.track.findFirst({
+            where: { id: effectiveTrackId, eventId: input.eventId, deletedAt: null },
+            select: {
+              id: true,
+              maxSubmissionsPerAuthor: true,
+              reviewRubric: true,
+              requiresBlindReview: true,
+            },
+          })
+        : null;
+
+      if (effectiveTrackId && !track) {
         throw new SubmissionError('TRACK_NOT_FOUND', 'Trilha não encontrada.');
       }
 
-      // ── Limite de submissões por autor ─────────────────────────────────────
-      const maxPerAuthor = track.maxSubmissionsPerAuthor;
-      if (maxPerAuthor > 0) {
+      // ── Limite de submissões por autor (na trilha) ─────────────────────────
+      const maxPerAuthor = track?.maxSubmissionsPerAuthor ?? 0;
+      if (track && maxPerAuthor > 0) {
         const existing = await tx.submission.count({
           where: {
             trackId: track.id,
@@ -228,7 +323,9 @@ export async function createSubmission(
           id,
           tenantId: input.tenantId,
           eventId: input.eventId,
-          trackId: track.id,
+          trackId: track?.id ?? null,
+          callId: call?.id ?? null,
+          proposalData: (input.proposalData ?? {}) as object,
           protocol,
           title: input.title.trim(),
           abstract: input.abstract.trim(),
@@ -640,6 +737,12 @@ export async function submitSubmission(
             },
           },
           track: { select: { requiresBlindReview: true } },
+          /**
+           * A CHAMADA decide a cegueira e diz o TIPO da proposta (FASE 33): sem ela
+           * aqui, uma proposta de minicurso seria avaliada como artigo — bloqueada por
+           * não ter PDF.
+           */
+          call: { select: { kind: true, requiresBlindReview: true } },
         },
       });
 
@@ -673,8 +776,10 @@ export async function submitSubmission(
           kind: file.kind as SubmissionFileKind,
           checksum: file.checksum,
         })),
-        requiresBlindReview: submission.track?.requiresBlindReview ?? true,
+        requiresBlindReview:
+          submission.call?.requiresBlindReview ?? submission.track?.requiresBlindReview ?? true,
         authorCount: submission.authors.length,
+        proposalKind: (submission.call?.kind as ProposalKind | undefined) ?? null,
       });
 
       if (!readiness.ready) {
@@ -1003,6 +1108,11 @@ export interface SubmissionDetail {
   submittedAt: Date | null;
   trackId: string | null;
   trackName: string | null;
+  /**
+   * Chamada de origem (FASE 33). NULO = artigo submetido fora de uma chamada — e é
+   * dela que sai a rubrica própria, quando existe.
+   */
+  callId: string | null;
   requiresBlindReview: boolean;
   eventId: string;
   files: SubmissionFileView[];
@@ -1019,21 +1129,38 @@ export interface SubmissionDetail {
   decisionNotes: string | null;
 }
 
-/** Rubrica efetiva da trilha (ou a padrão, quando a trilha não define uma). */
+/**
+ * Rubrica efetiva de uma submissão: a da CHAMADA vence a da trilha (FASE 33), e sem
+ * nenhuma das duas vale a padrão.
+ *
+ * Os dois parâmetros vêm da própria submissão, e não de uma escolha do chamador: se a
+ * tela decidisse qual rubrica pedir, existiriam duas respostas para "por que critérios
+ * este parecer foi julgado?".
+ */
 export async function resolveRubric(
   tenantId: string,
-  trackId: string | null,
+  input: { trackId: string | null; callId: string | null },
 ): Promise<readonly RubricCriterion[]> {
-  if (!trackId) return DEFAULT_RUBRIC;
+  if (!input.trackId && !input.callId) return DEFAULT_RUBRIC;
 
-  const track = await withTenant(tenantId, (tx) =>
-    tx.track.findFirst({
-      where: { id: trackId },
-      select: { reviewRubric: true },
-    }),
+  const [track, call] = await withTenant(tenantId, (tx) =>
+    Promise.all([
+      input.trackId
+        ? tx.track.findFirst({ where: { id: input.trackId }, select: { reviewRubric: true } })
+        : null,
+      input.callId
+        ? tx.callForProposals.findFirst({
+            where: { id: input.callId },
+            select: { reviewRubric: true },
+          })
+        : null,
+    ]),
   );
 
-  return parseRubric(track?.reviewRubric).rubric;
+  return resolveEffectiveRubric({
+    callRubric: call?.reviewRubric,
+    trackRubric: track?.reviewRubric,
+  }).rubric;
 }
 
 /** Detalhe completo de uma submissão, sob RLS. */
@@ -1056,11 +1183,18 @@ export async function getSubmission(
         version: true,
         submittedAt: true,
         trackId: true,
+        callId: true,
         eventId: true,
         finalScore: true,
         decisionAt: true,
         decisionNotes: true,
         track: { select: { name: true, requiresBlindReview: true } },
+        /**
+         * A cegueira é da CHAMADA quando ela existe (FASE 33) — a mesma precedência
+         * que a validação de envio usa. Sem esta coluna, a tela da submissão diria
+         * "revisão aberta" para uma proposta que o revisor recebe cega.
+         */
+        call: { select: { requiresBlindReview: true } },
         files: {
           where: {
             deletedAt: null,
@@ -1109,7 +1243,9 @@ export async function getSubmission(
     submittedAt: submission.submittedAt,
     trackId: submission.trackId,
     trackName: submission.track?.name ?? null,
-    requiresBlindReview: submission.track?.requiresBlindReview ?? true,
+    callId: submission.callId,
+    requiresBlindReview:
+      submission.call?.requiresBlindReview ?? submission.track?.requiresBlindReview ?? true,
     eventId: submission.eventId,
     files: submission.files.map((file) => ({
       id: file.id,

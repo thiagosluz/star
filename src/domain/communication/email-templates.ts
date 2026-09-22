@@ -124,6 +124,40 @@ export interface EmailPayloads {
     senderName: string | null;
     inboxUrl: string;
   };
+
+  /**
+   * FASE 33 — a proposta chegou, e este é o comprovante.
+   *
+   * O PROTOCOLO é o motivo deste e-mail existir: quem propõe por um formulário
+   * público não tem painel aberto nem histórico na tela, e é com o protocolo que a
+   * pessoa pergunta pela proposta depois. Sem ele, o envio é um ato sem resposta.
+   */
+  PROPOSAL_RECEIVED: {
+    recipientName: string;
+    eventTitle: string;
+    callTitle: string;
+    callKindLabel: string;
+    proposalTitle: string;
+    protocol: string;
+    proposalsUrl: string;
+  };
+
+  /**
+   * FASE 33 — convite ao palestrante (quita a dívida E25, aberta desde a FASE 25).
+   *
+   * O convite existia como TOKEN desde o portal do palestrante e **nunca era
+   * enviado**: o organizador copiava o link e mandava por fora. Aqui o link vai no
+   * e-mail, com prazo declarado — e o aceite continua exigindo token E e-mail.
+   */
+  SPEAKER_INVITATION: {
+    recipientName: string;
+    eventTitle: string;
+    activityTitle: string | null;
+    roleLabel: string;
+    inviteUrl: string;
+    expiresInDays: number;
+    startsAtLabel: string | null;
+  };
 }
 
 export type EmailTemplateKey = keyof EmailPayloads;
@@ -138,6 +172,8 @@ export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'CARD_GRANTED',
   'CERTIFICATE_ISSUED',
   'PARTICIPANT_MESSAGE',
+  'PROPOSAL_RECEIVED',
+  'SPEAKER_INVITATION',
 ] as const);
 
 export interface RenderedEmail {
@@ -647,6 +683,103 @@ export function renderEmail<K extends EmailTemplateKey>(
         ].join('\n'),
       };
     }
+
+    case 'PROPOSAL_RECEIVED': {
+      const data = payload as EmailPayloads['PROPOSAL_RECEIVED'];
+
+      /**
+       * O PROTOCOLO fica em DESTAQUE nos detalhes, e não só no corpo: é o número
+       * que a pessoa vai procurar depois, e um número dentro de um parágrafo é o
+       * que ninguém acha.
+       */
+      return {
+        subject: `Proposta recebida: ${data.proposalTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `Protocolo ${data.protocol}`,
+          title: 'Sua proposta foi recebida',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `Recebemos a sua proposta para a chamada ${strong(data.callTitle)} (${escapeHtml(data.callKindLabel)}) do evento ${strong(data.eventTitle)}.`,
+            ),
+            paragraph('A organização vai avaliar e responder pelo e-mail cadastrado.'),
+          ],
+          details: [
+            { label: 'Protocolo', value: escapeHtml(data.protocol) },
+            { label: 'Chamada', value: escapeHtml(data.callTitle) },
+            { label: 'Tipo', value: escapeHtml(data.callKindLabel) },
+          ],
+          callToAction: { label: 'Acompanhar minhas submissões', url: data.proposalsUrl },
+          notice: 'Guarde o protocolo: é por ele que a organização localiza a sua proposta.',
+          footerNote: `Chamada de ${escapeHtml(data.callTitle)} — ${escapeHtml(data.eventTitle)}.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `Recebemos a sua proposta: ${data.proposalTitle}`,
+          `Chamada: ${data.callTitle} (${data.callKindLabel})`,
+          `Evento: ${data.eventTitle}`,
+          `Protocolo: ${data.protocol}`,
+          '',
+          'Acompanhe em:',
+          data.proposalsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'SPEAKER_INVITATION': {
+      const data = payload as EmailPayloads['SPEAKER_INVITATION'];
+
+      /**
+       * O CONVITE LEVA O LINK, e o prazo é dito em dias — o token expira, e um convite
+       * que expira sem avisar vira uma pessoa tentando aceitar e não entendendo.
+       */
+      return {
+        subject: `Convite para participar de ${data.eventTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `Convite como ${data.roleLabel}`,
+          title: 'Você foi convidado(a)',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A organização do evento ${strong(data.eventTitle)} convidou você como ${strong(data.roleLabel)}.`,
+            ),
+            ...(data.activityTitle
+              ? [markup(`Atividade: ${strong(data.activityTitle)}.`)]
+              : []),
+            paragraph(
+              'Ao aceitar, você cria o seu perfil de palestrante, pode publicar materiais de apoio e emitir o seu certificado.',
+            ),
+          ],
+          details: [
+            ...(data.activityTitle ? [{ label: 'Atividade', value: escapeHtml(data.activityTitle) }] : []),
+            ...(data.startsAtLabel ? [{ label: 'Data e horário', value: escapeHtml(data.startsAtLabel) }] : []),
+            { label: 'Papel', value: escapeHtml(data.roleLabel) },
+            { label: 'Convite válido por', value: `${data.expiresInDays} dias` },
+          ],
+          callToAction: { label: 'Aceitar o convite', url: data.inviteUrl },
+          notice:
+            'O convite é pessoal: o link identifica você e o e-mail desta conta. Não encaminhe.',
+          footerNote: `Se você não esperava este convite, basta ignorar esta mensagem.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `A organização de ${data.eventTitle} convidou você como ${data.roleLabel}.`,
+          ...(data.activityTitle ? [`Atividade: ${data.activityTitle}`] : []),
+          ...(data.startsAtLabel ? [`Data e horário: ${data.startsAtLabel}`] : []),
+          '',
+          `Aceite em até ${data.expiresInDays} dias:`,
+          data.inviteUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
   }
 }
 
@@ -664,4 +797,6 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   CARD_GRANTED: 'Carta conquistada',
   CERTIFICATE_ISSUED: 'Certificado emitido',
   PARTICIPANT_MESSAGE: 'Recado ao participante',
+  PROPOSAL_RECEIVED: 'Proposta recebida',
+  SPEAKER_INVITATION: 'Convite de palestrante',
 };

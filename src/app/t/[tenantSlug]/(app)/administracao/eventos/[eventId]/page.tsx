@@ -219,6 +219,19 @@ export default async function AdminEventDetailPage({
           >
             Palestrantes →
           </Link>
+          {/*
+            Chamadas de propostas (FASE 33): a janela única de submissão do evento
+            deu lugar a chamadas por tipo (artigo, palestrante, minicurso…), cada uma
+            com o próprio prazo. Fica ao lado da página pública porque é o bloco
+            "Chamadas de propostas" que a exibe.
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/chamadas`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="calls-link"
+          >
+            Chamadas de propostas →
+          </Link>
         </p>
       </header>
 

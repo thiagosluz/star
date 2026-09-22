@@ -69,7 +69,10 @@ export default async function ReviewSubmissionPage({
         keywords: true,
         language: true,
         trackId: true,
-        track: { select: { name: true, requiresBlindReview: true } },
+        /** A rubrica da CHAMADA vence a da trilha (FASE 33). */
+        callId: true,
+        call: { select: { reviewRubric: true } },
+        track: { select: { name: true, requiresBlindReview: true, reviewRubric: true } },
         event: { select: { title: true } },
         // A AUTORIA SÓ É CARREGADA QUANDO A REVISÃO NÃO É CEGA.
         authors: true,
@@ -115,7 +118,10 @@ export default async function ReviewSubmissionPage({
     }),
   );
 
-  const rubric = await resolveRubric(tenantId, submission.trackId);
+  const rubric = await resolveRubric(tenantId, {
+    trackId: submission.trackId,
+    callId: submission.callId,
+  });
 
   const downloadUrls = new Map<string, string>();
   for (const file of visibleFiles) {

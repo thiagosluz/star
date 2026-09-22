@@ -112,3 +112,77 @@ export async function guardAction<TState extends ActionGuardState = ActionGuardS
 
   return { ok: true, userId: user.id, tenantId: tenant.id, principal };
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Guarda de AÇÃO PÚBLICA AUTENTICADA (inscrição, proposta…)
+// ───────────────────────────────────────────────────────────────────────────────
+export type SelfServiceGuard =
+  | {
+      ok: true;
+      userId: string;
+      tenantId: string;
+      /** Sem vínculo ativo: quem decide o resto é o serviço, sob RLS. */
+      viaPublicLink: boolean;
+    }
+  | { ok: false; reason: 'NOT_AUTHENTICATED' | 'TENANT_NOT_FOUND' | 'FORBIDDEN' };
+
+/**
+ * Autoriza quem chegou por uma PÁGINA PÚBLICA — com ou sem vínculo.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A `guardAction` NÃO SERVE AQUI (FASE 33)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A `guardAction` exige vínculo ativo. Mas quem acabou de criar conta para se
+ *  inscrever num evento aberto **não tem vínculo nenhum** — é justamente o vínculo
+ *  que a inscrição vai criar. Usar a guarda comum ali recusaria o caso normal com
+ *  "você não tem vínculo ativo com esta instituição": uma mensagem sobre a coisa
+ *  errada, no momento em que a pessoa está entrando.
+ *
+ *  A regra tem dois ramos:
+ *
+ *    1. **VÍNCULO ATIVO** — vale a permissão pedida. Um patrocinador com vínculo e sem
+ *       `registration:create` NÃO se inscreve: abrir a porta para quem está fora não
+ *       reescreveu as regras de quem está dentro (decisão da FASE 10);
+ *    2. **SEM VÍNCULO ATIVO** — passa, e o SERVIÇO aplica os bloqueios (vínculo
+ *       suspenso ou removido) sob RLS, na transação do próprio fato.
+ *
+ *  Isto mora aqui, e não numa cópia por arquivo de action, porque a inscrição pública
+ *  (FASE 10) e a proposta de chamada (FASE 33) fazem exatamente a mesma pergunta — e
+ *  duas cópias da mesma autorização divergem na primeira manutenção (armadilha 55).
+ */
+export async function guardSelfServiceAction(input: {
+  tenantSlug: string;
+  permission: ActionPermission;
+}): Promise<SelfServiceGuard> {
+  const user = await getAuthenticatedUser();
+  if (!user) return { ok: false, reason: 'NOT_AUTHENTICATED' };
+
+  const tenant = await adminPrisma.tenant.findUnique({
+    where: { slug: input.tenantSlug },
+    select: { id: true },
+  });
+  if (!tenant) return { ok: false, reason: 'TENANT_NOT_FOUND' };
+
+  /**
+   * O vínculo é lido SEM filtrar `deletedAt`: quem foi removido precisa receber
+   * "acesso bloqueado" (mensagem do serviço), e não o silêncio de um vínculo
+   * inexistente. Um filtro aqui transformaria um bloqueio em "não encontrado".
+   */
+  const membership = await adminPrisma.userTenantProfile.findFirst({
+    where: { tenantId: tenant.id, userId: user.id },
+    select: { status: true, deletedAt: true },
+  });
+
+  if (membership?.status === 'ACTIVE' && membership.deletedAt === null) {
+    const principal = await loadPrincipal(user.id, tenant.id, 'ACTIVE');
+    const ownership = input.permission.endsWith(':own') ? { ownerId: user.id } : undefined;
+
+    if (!can(principal, input.permission, { scope: 'TENANT' }, ownership)) {
+      return { ok: false, reason: 'FORBIDDEN' };
+    }
+
+    return { ok: true, userId: user.id, tenantId: tenant.id, viaPublicLink: false };
+  }
+
+  return { ok: true, userId: user.id, tenantId: tenant.id, viaPublicLink: true };
+}

@@ -450,6 +450,7 @@ enum PageBlockType {
   VENUE_MAP
   REGISTRATION_CTA
   TRACKS
+  CALL_FOR_PROPOSALS
   CUSTOM_HTML
 }
 
@@ -841,6 +842,8 @@ model Tenant {
   emailMessages     EmailMessage[]
   tenantInvitations TenantInvitation[]
   raffleRounds      RaffleRound[]
+  /// FASE 33 — chamadas de propostas.
+  calls             CallForProposals[]
 
   @@index([status])
   @@index([deletedAt])
@@ -903,6 +906,8 @@ model User {
   attendances       Attendance[]
   submissions       Submission[]
   submissionAuthors SubmissionAuthor[]
+  /// Chamadas de propostas que esta pessoa criou — FASE 33.
+  callsCreated      CallForProposals[]  @relation("CallCreatedBy")
   reviews           Review[]
   reviewAssignments ReviewAssignment[]
   activitySpeakers  ActivitySpeaker[]
@@ -1217,6 +1222,8 @@ model Event {
   eventCredentials    EventCredential[]
   /// Recados ligados a este evento (opcional no recado) — FASE 32.
   participantMessages ParticipantMessage[]
+  /// Chamadas de propostas do evento — FASE 33.
+  calls               CallForProposals[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -1979,9 +1986,11 @@ model Track {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event       Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
   submissions Submission[]
+  /// Chamadas de propostas que avaliam por esta trilha — FASE 33.
+  calls       CallForProposals[]
 
   @@unique([eventId, slug])
   @@index([tenantId, eventId, isActive])
@@ -2032,15 +2041,27 @@ model Submission {
 
   metadata Json @default("{}")
 
+  /// ── Chamada de propostas (FASE 33) ──────────────────────────────────────────
+  /// NULO = artigo submetido antes das chamadas existirem (legado). A coluna é
+  /// nulável de propósito: o histórico não pode ser reescrito só porque o produto
+  /// ganhou um conceito novo.
+  callId String? @db.Uuid
+
+  /// Campos específicos do TIPO de chamada (carga horária, público-alvo, minibio…).
+  /// JSON porque o conjunto varia por tipo, e uma coluna por campo faria a tabela
+  /// crescer a cada tipo novo.
+  proposalData Json @default("{}")
+
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  track    Track?    @relation(fields: [trackId], references: [id], onDelete: SetNull)
-  activity Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
-  author   User      @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  track    Track?            @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  activity Activity?         @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  author   User              @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+  call     CallForProposals? @relation(fields: [callId], references: [id], onDelete: SetNull)
 
   authors        SubmissionAuthor[]
   files          SubmissionFile[]
@@ -2054,7 +2075,80 @@ model Submission {
   @@index([eventId, trackId, status])
   @@index([submittedById])
   @@index([tenantId, status, submittedAt])
+  @@index([tenantId, callId, status])
   @@map("submissions")
+}
+
+/// Tipo de proposta que uma chamada recebe (FASE 33).
+///
+/// Enum fixo, e não texto livre: o tipo decide quais campos o formulário pede, o
+/// tipo de ATIVIDADE que a proposta gera quando é aceita, e se a avaliação nasce
+/// cega. Um tipo livre não teria como decidir nada disso.
+enum ProposalKind {
+  PAPER
+  SPEAKER
+  MINICOURSE
+  WORKSHOP
+  ROUNDTABLE
+  POSTER
+  OTHER
+}
+
+/// Chamada de propostas do evento (FASE 33): artigo, palestrante, minicurso e afins.
+///
+/// Substitui o par "trilha + janela do evento" como unidade da chamada: cada chamada
+/// tem o PRÓPRIO tipo e a PRÓPRIA janela (o minicurso fecha antes do artigo), e a
+/// trilha continua sendo o eixo de avaliação do que é científico.
+model CallForProposals {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  kind  ProposalKind
+  slug  String       @db.VarChar(120)
+  title String       @db.VarChar(300)
+
+  /// Texto curto do bloco público e texto longo da página da chamada.
+  summary      String? @db.Text
+  /// O que o proponente precisa saber: regras, formato, critérios de seleção.
+  instructions String? @db.Text
+
+  /// Janela. NULA = sem prazo. O estado (agendada/aberta/encerrada) é CALCULADO na
+  /// leitura (`callStateOf`) — não há agendador abrindo chamada.
+  opensAt  DateTime? @db.Timestamptz(6)
+  closesAt DateTime? @db.Timestamptz(6)
+
+  /// Chamada em rascunho não aparece em lugar nenhum, nem na página pública.
+  isPublished Boolean @default(false)
+
+  /// Avaliação: cegueira e rubrica são DA CHAMADA. Sem rubrica própria, a proposta
+  /// usa a da trilha — e a padrão quando também não há trilha (palestrante).
+  requiresBlindReview Boolean @default(false)
+  reviewRubric        Json    @default("[]")
+
+  /// Limite de propostas por pessoa NESTA chamada (0 = ilimitado).
+  maxSubmissionsPerAuthor Int @default(0)
+
+  /// Trilha de avaliação. NULA para palestrante/minicurso, que não têm eixo temático.
+  trackId String? @db.Uuid
+
+  createdById String? @db.Uuid
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  track     Track? @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  createdBy User?  @relation("CallCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  submissions Submission[]
+
+  @@unique([eventId, slug])
+  @@index([tenantId, eventId, isPublished])
+  @@index([tenantId, kind])
+  @@map("call_for_proposals")
 }
 
 /// Coautoria com ordem de crédito e afiliação — base do certificado de autor.

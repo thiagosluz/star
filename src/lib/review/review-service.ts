@@ -40,7 +40,7 @@ import {
 } from '@/domain/review/affinity';
 import {
   computeWeightedScore,
-  parseRubric,
+  resolveEffectiveRubric,
   summarizeReviews,
   suggestRecommendation,
   validateScores,
@@ -693,7 +693,7 @@ export async function submitReview(
 
       const submission = await tx.submission.findFirst({
         where: { id: input.submissionId, deletedAt: null },
-        select: { id: true, trackId: true, version: true, status: true },
+        select: { id: true, trackId: true, callId: true, version: true, status: true },
       });
 
       if (!submission) {
@@ -710,10 +710,10 @@ export async function submitReview(
       }
 
       // ── Rubrica e validação das notas ─────────────────────────────────────
-      const rubric: readonly RubricCriterion[] = await resolveRubricForTx(
-        tx,
-        submission.trackId,
-      );
+      const rubric: readonly RubricCriterion[] = await resolveRubricForTx(tx, {
+        trackId: submission.trackId,
+        callId: submission.callId,
+      });
 
       const validation = validateScores(rubric, input.scores);
       if (!validation.valid) {
@@ -795,20 +795,35 @@ export async function submitReview(
   }
 }
 
-/** Resolve a rubrica usando uma transação já aberta (evita abrir outra). */
+/**
+ * Resolve a rubrica usando uma transação já aberta (evita abrir outra).
+ *
+ * A precedência é CHAMADA → TRILHA → PADRÃO (FASE 33): a proposta de uma chamada com
+ * rubrica própria é julgada pelos critérios DELA, mesmo quando a chamada aponta uma
+ * trilha para a afinidade dos revisores.
+ */
 async function resolveRubricForTx(
   tx: TxClient,
-  trackId: string | null,
+  input: { trackId: string | null; callId: string | null },
 ): Promise<readonly RubricCriterion[]> {
-  const { DEFAULT_RUBRIC: fallback } = await import('@/domain/review/review-rules');
-  if (!trackId) return fallback;
+  const { resolveEffectiveRubric } = await import('@/domain/review/review-rules');
 
-  const track = await tx.track.findFirst({
-    where: { id: trackId },
-    select: { reviewRubric: true },
-  });
+  const [track, call] = await Promise.all([
+    input.trackId
+      ? tx.track.findFirst({ where: { id: input.trackId }, select: { reviewRubric: true } })
+      : null,
+    input.callId
+      ? tx.callForProposals.findFirst({
+          where: { id: input.callId },
+          select: { reviewRubric: true },
+        })
+      : null,
+  ]);
 
-  return parseRubric(track?.reviewRubric).rubric;
+  return resolveEffectiveRubric({
+    callRubric: call?.reviewRubric,
+    trackRubric: track?.reviewRubric,
+  }).rubric;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -977,6 +992,7 @@ export async function getSubmissionReviewPanel(
           title: true,
           status: true,
           trackId: true,
+          callId: true,
           track: {
             select: {
               requiredReviews: true,
@@ -985,6 +1001,7 @@ export async function getSubmissionReviewPanel(
               rejectThreshold: true,
             },
           },
+          call: { select: { reviewRubric: true } },
           reviews: {
             where: { deletedAt: null },
             select: {
@@ -1007,7 +1024,15 @@ export async function getSubmissionReviewPanel(
         throw new ReviewError('NOT_FOUND', 'Submissão não encontrada.');
       }
 
-      const rubric = parseRubric(submission.track?.reviewRubric).rubric;
+      /**
+       * A rubrica da CHAMADA vence a da trilha (FASE 33); sem nenhuma das duas, o
+       * padrão. O quórum e os limiares continuam vindo da trilha — quando ela não
+       * existe (palestrante, minicurso), valem os padrões declarados abaixo.
+       */
+      const rubric = resolveEffectiveRubric({
+        callRubric: submission.call?.reviewRubric,
+        trackRubric: submission.track?.reviewRubric,
+      }).rubric;
 
       const reviews = submission.reviews.map((review) => ({
         reviewId: review.id,

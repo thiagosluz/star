@@ -466,6 +466,19 @@ function readBlockContent(type: PageBlockType, formData: FormData): unknown {
         ctaLabel: nullable(formData.get('ctaLabel')) ?? undefined,
       };
 
+    case 'CALL_FOR_PROPOSALS':
+      /**
+       * O bloco de chamadas não guarda as chamadas — ele guarda só o que é DECORAÇÃO
+       * (título e texto de apoio) e o filtro de exibição. O corpo vem do banco, na
+       * renderização: uma chamada copiada para dentro do bloco mentiria sobre o prazo
+       * no dia seguinte (FASE 33).
+       */
+      return {
+        title,
+        description: nullable(formData.get('description')) ?? undefined,
+        includeClosed: formData.get('includeClosed') === 'on',
+      };
+
     case 'CUSTOM_HTML':
       return { title, html: text(formData.get('html')) };
 

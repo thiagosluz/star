@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { ImageUp, Loader2, Plus, Trash2 } from 'lucide-react';
 
-import { Button, Input, Label, Textarea } from '@/components/ui';
+import { Button, Checkbox, Input, Label, Textarea } from '@/components/ui';
 import { BLOCK_DESCRIPTIONS, type PageBlockType } from '@/domain/events/landing-page';
 import { IMAGE_ACCEPT_ATTRIBUTE, MAX_IMAGE_BYTES, formatBytes } from '@/domain/events/image-rules';
 import { uploadAssetFile, type AssetUploadAction } from '@/components/admin/asset-upload';
@@ -409,6 +409,38 @@ export function BlockContentFields({
           <Shell label="Texto do botão" hint="O destino é sempre a programação do evento.">
             <Input name="ctaLabel" defaultValue={values.ctaLabel} aria-label="Texto do botão" />
           </Shell>
+        </>
+      ) : null}
+
+      {type === 'CALL_FOR_PROPOSALS' ? (
+        <>
+          <Shell
+            label="Texto de apoio"
+            hint="Uma linha explicando o que a pessoa deve fazer. Vazio usa o texto padrão."
+          >
+            <Input name="description" defaultValue={values.description} aria-label="Texto de apoio" />
+          </Shell>
+
+          {/*
+            O bloco NÃO lista as chamadas aqui: ele lê as publicadas na hora de
+            renderizar. O que se escolhe é só o recorte — e "só as que ainda dá para
+            responder" é o padrão, porque chamada encerrada no meio da lista é anúncio.
+          */}
+          <label className="flex items-start gap-2 text-sm font-medium text-foreground">
+            <Checkbox name="includeClosed" defaultChecked={values.includeClosed} />
+            <span>
+              Incluir também as chamadas encerradas
+              <span className="block text-xs font-normal text-muted-foreground">
+                Sem marcar, o bloco mostra só as abertas e as agendadas.
+              </span>
+            </span>
+          </label>
+
+          <p className="text-xs text-muted-foreground">
+            As chamadas exibidas são as <strong>publicadas</strong> no painel de chamadas do evento.
+            Para criar, editar ou publicar uma chamada, use “Chamadas de propostas” no painel do
+            evento.
+          </p>
         </>
       ) : null}
 

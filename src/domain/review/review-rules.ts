@@ -155,6 +155,37 @@ export const DEFAULT_RUBRIC: readonly RubricCriterion[] = [  {
 ];
 
 /**
+ * Rubrica EFETIVA de uma submissão: CHAMADA → TRILHA → PADRÃO.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A CHAMADA VENCE A TRILHA (FASE 33)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A chamada é o convite; a trilha é o eixo temático. Uma chamada de MINICURSO pode
+ *  apontar a trilha "Extensão" para os revisores terem afinidade com o tema, e ainda
+ *  assim julgar por critérios próprios ("viabilidade da oficina", "clareza do plano de
+ *  aula") — critérios que não fazem sentido para um artigo. Se a trilha vencesse, a
+ *  rubrica da chamada seria uma coluna que ninguém lê.
+ *
+ *  Ela é genérica de propósito: a coluna da chamada chega por parâmetro, e é esta
+ *  função que os TRÊS caminhos usam (o parecer do revisor, o painel do comitê e a
+ *  tela da submissão) — o mesmo rigor de uma única fonte de verdade do cálculo.
+ */
+export function resolveEffectiveRubric(input: {
+  callRubric: unknown;
+  trackRubric: unknown;
+}): { rubric: readonly RubricCriterion[]; source: 'CALL' | 'TRACK' | 'DEFAULT' } {
+  const fromCall = parseRubric(input.callRubric);
+
+  if (!fromCall.usedDefault) return { rubric: fromCall.rubric, source: 'CALL' };
+
+  const fromTrack = parseRubric(input.trackRubric);
+
+  if (!fromTrack.usedDefault) return { rubric: fromTrack.rubric, source: 'TRACK' };
+
+  return { rubric: DEFAULT_RUBRIC, source: 'DEFAULT' };
+}
+
+/**
  * Interpreta uma rubrica vinda do banco (coluna JSON).
  *
  * O banco devolve `JsonValue`, que é uma árvore arbitrária. Converter com `as`

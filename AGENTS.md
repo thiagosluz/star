@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29, 30, 31 e 32 (F15, F21, F22, F29, F30, F31 e F32 entregues; a F18+ é a próxima)
-Testes ................. 1638 (Vitest: unit + integração) + 107 (Playwright E2E)
-ADRs ................... 157 (numeração GLOBAL e sequencial — a próxima é ADR-158)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29, 30, 31, 32 e 33 (F15, F21, F22, F29, F30, F31, F32 e F33 entregues; a F18+ é a próxima)
+Testes ................. 1690 (Vitest: unit + integração) + 111 (Playwright E2E)
+ADRs ................... 169 (numeração GLOBAL e sequencial — a próxima é ADR-170)
 Permissões ............. 60 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 40 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 41 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1638+ testes passando
+npm test              # esperado: 1690+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 107+ testes passando
+npm run test:e2e      # esperado: 111+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -124,7 +124,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 72 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 78 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
 > no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
 > seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
@@ -133,18 +133,19 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 | # | Armadilha | Regra |
 |---|---|---|
-| 61 | **O build da imagem TRAVAVA no estágio do worker** (dez minutos no mesmo passo) e, quando destravava, o `next build` caía com "Failed to fetch Inter from Google Fonts" | O passo de build **não alcança o registro npm** (um `wget` ao `registry.npmjs.org` dentro de um `RUN` estoura o tempo, embora funcione de um `docker run` comum); `npx` e o Prisma sondam a rede antes de rodar; e o `npm install tsx` do worker, além de instalar, **consertava** o `node_modules` parcial do `.next/standalone` — traço do Next sem `ioredis`, com `bullmq` pela metade e `dotenv` sem `package.json` | O build não depende mais da rede: o `tsx` é **copiado** do estágio `deps`, o worker usa a **árvore de produção completa** (`npm prune --omit=dev --offline`, que só REMOVE), o Prisma é chamado por caminho com `CHECKPOINT_DISABLE=1`, e uma **prova de boot** no build recusa `ERR_MODULE_NOT_FOUND`. As fontes do `next/font` seguem sendo a única dependência externa: **repetir o build é a resposta, não mexer no código** |
-| 62 | **Um teste E2E falhou e os três seguintes falharam com sintomas sem relação com ele** ("não há lista publicada", "o painel não lista sorteio nenhum", contagem de elegíveis zerada) | **Depois de um teste que falha, o Playwright reinicia o worker** — e o sufixo único do arquivo (`RUN_ID`) é gerado no carregamento do módulo. O worker novo roda o `beforeAll` outra vez e cria uma fixture NOVA (instituição, evento e contas diferentes), **sem os dados que os cenários anteriores deixaram** | Cenário E2E que precisa de dado **monta o próprio dado**, ou afirma a premissa em voz alta (a falha então diz o que faltou). E, ao depurar, imprima o IDENTIFICADOR (`eventId`, `tenantId`), não o conteúdo: quando dois testes seguidos discordam sobre o banco, o que mudou foi o contexto |
-| 63 | O telão do sorteio ficou 30 s em "aguardando" **com o sorteio já apurado no banco**, sem receber nenhum evento | A rota do fluxo calculava o estado uma vez, na abertura da conexão, e só reamostrava a contagem de elegíveis: o cliente recebia para sempre a fotografia do carregamento | O estado passou a ser **relido a cada amostra**, e o fluxo para de amostrar quando o sorteio deixa de ser rascunho. **Fluxo ao vivo que reporta um campo que não relê não é ao vivo** |
-| 64 | **`npx prettier --write` reescreveu o estilo de um arquivo inteiro** (`raffle-service.ts`): ~2.000 linhas de diff, aspas simples virando duplas e objeto de uma linha virando sete | O repositório **não tem configuração de prettier**, então o comando aplicou o PADRÃO da ferramenta (aspas duplas, largura 80) sobre um projeto que usa outro estilo. O formatador do projeto é o **ESLint** (`npm run lint`) — o prettier nunca fez parte da esteira | Se a intenção é formatar, use **as flags do projeto** (`npx prettier --single-quote --print-width 110 <arquivo>`) e **confira o diff**: o jeito barato de descobrir o estilo real é formatar a versão do `HEAD` do mesmo arquivo com as flags candidatas e contar as linhas que mudam (com essas, foram 3 em vez de 2.000) |
-| 65 | A auditoria de um sorteio novo mostrava **"Trilha: —"** na rodada 1: sem data e sem autor do compromisso | A página lê a procedência do compromisso no registro `CREATE` da **RODADA**, mas a rodada 1 nasce em `createRaffle`, e aquele caminho gravava só o registro do SORTEIO — o registro da rodada existia apenas para as rodadas criadas depois, por `prepareRound`. A prova existia; a procedência dela, não | Quando uma entidade nova passa a ser a fonte de um dado (o compromisso saiu da raffle para a rodada), **todos os caminhos que criam essa entidade precisam gravar o registro dela** — inclusive o mais antigo, que é o que ninguém revisita. Teste de integração prende `commitmentRecordedAt`/`commitmentRecordedBy` de cada rodada |
-| 66 | O E2E do telão passava, e **a funcionalidade que ele descrevia não existia na interface**: o sorteio só era alcançável já apurado | O cenário montava o rascunho por escrita direta no banco (`tx.raffle.create({ status: 'DRAFT' })`) e testava a PÁGINA — o **caminho que produz aquele estado** (um botão que cria sem apurar) não existia, e nenhum teste olhava para ele | Cenário que precisa de um estado deve produzi-lo **pelo caminho que a pessoa usa** quando é esse caminho que está sob suspeita. Fixture por escrita direta isola a tela, mas **não é evidência de que a tela é alcançável** — e o buraco entre "a página funciona" e "dá para chegar nela" é onde o produto fica sem a funcionalidade |
+| 65 | A auditoria de um sorteio novo mostrava **"Trilha: —"** na rodada 1: sem data e sem autor do compromisso | A página lê a procedência do compromisso no registro `CREATE` da **RODADA**, mas a rodada 1 nasce em `createRaffle`, e aquele caminho gravava só o registro do SORTEIO. A prova existia; a procedência dela, não | Quando uma entidade nova passa a ser a fonte de um dado, **todos os caminhos que criam essa entidade precisam gravar o registro dela** — inclusive o mais antigo, que é o que ninguém revisita |
+| 66 | O E2E do telão passava, e **a funcionalidade que ele descrevia não existia na interface**: o sorteio só era alcançável já apurado | O cenário montava o rascunho por escrita direta no banco e testava a PÁGINA — o **caminho que produz aquele estado** não existia, e nenhum teste olhava para ele | Cenário que precisa de um estado deve produzi-lo **pelo caminho que a pessoa usa** quando é esse caminho que está sob suspeita. Fixture por escrita direta isola a tela, mas **não é evidência de que a tela é alcançável** |
 | 67 | **Um campo que TODO MUNDO lê e NINGUÉM escreve**: `Registration.badgeToken` era usado pela fila, pelo check-in por crachá e pelos testes, e nenhum caminho do sistema o gerava | O fluxo do crachá só funcionava com dado gravado à mão: o teste escrevia o token na fixture, o seed escrevia o token, e o produto não tinha emissão. Mesma classe do telão que nascia sorteado (66) | A FASE 31 criou a emissão real e o seed passou a usá-la. **Ao achar um campo misterioso no schema, pergunte quem ESCREVE nele** |
 | 68 | A **segunda visita** à mesma atividade não abria sessão: a pessoa saía para o almoço e a tarde dela desaparecia da conta de minutos | O caminho de entrada chamava `checkIn`, idempotente por `registration.checkedInAt` — certo para a chegada ao evento, errado para a frequência, que se repete | `checkIn` só na primeira vez; depois, a sessão é criada pelo serviço de crachá. **Comando idempotente usado para um fato que se repete tem a chave errada**: a chave da frequência é a sessão aberta |
 | 69 | **Dois nomes de segmento dinâmico no mesmo nível derrubam o build**: *"You cannot use different slug names for the same dynamic path ('eventSlug' !== 'eventId')"* | Já existia `/api/t/[tenantSlug]/eventos/[eventSlug]/...` e a rota nova nasceu com `[eventId]` ali. O erro é da árvore inteira, não da rota nova | A rota foi para o namespace da própria tela, com o evento por parâmetro validado no banco. **Antes de nomear um segmento dinâmico, olhe como o mesmo nível é nomeado no resto da árvore** |
 | 70 | `npm run lint` recusou a página com *"Cannot call impure function during render: `Date.now`"* | O React Compiler trata o corpo do Server Component como render, e a tela precisava de "agora" para sugerir a atividade em curso | O instante passou a vir do **relógio do banco** (`SELECT now()`), o mesmo que carimba as presenças. **Relógio do processo no lugar de dado** é impureza no render — e o relógio certo é o de quem grava |
 | 71 | **O crachá LEGADO deixou de ser encontrado** no balcão: o E2E da jornada da plataforma (FASE 7) reprovou dizendo que o crachá não existia, enquanto todos os testes da fase passavam | A busca montava os candidatos como `[normalizado, raw.toUpperCase()]`. Normalizar serve para o código NOVO (`CR-…`, que é nosso), mas o token da coluna antiga é **string opaca**: `badge-plat-a1b2c3` virava `BADGE-PLAT-A1B2C3` e a linha nunca casava. O caminho legado estava documentado e **nenhum teste olhava para ele** | O candidato na **caixa exata** entrou na busca, com o porquê no código, e um teste de integração novo prende o token de caixa mista — verificado nos dois sentidos: sem a correção reprova, com ela passa. **Identificador opaco não se normaliza**: a etiqueta impressa é lida letra por letra |
 | 72 | **A própria pessoa recebia "permissão negada"** ao pedir o próprio recurso: o botão "Marcar como lida" não fazia nada (nem erro na tela), e o "Gerar meu crachá" da FASE 31 estava quebrado do mesmo jeito, sem teste que clicasse nele | `guardAction` chamava `can(permissão, { scope })` **sem passar o dono** — e `can()` recusa permissão `:own` sem `ownerId` (fail-closed, invariante nº 4). A guarda de PÁGINA já resolvia isso desde a FASE 25; a de ACTION ficou com metade da lição, e o defeito era silencioso | `guardAction` passa `ownerId: user.id` para permissões `:own` (o dono do RECURSO continua sendo conferido no serviço, com o id do banco), e o cenário E2E que só olhava a tela passou a **clicar no botão**. **Guardas gêmeas precisam da mesma regra, e botão sem clique é caminho sem teste** |
+| 73 | **A tabela nova existia, `db:verify` dizia "Contrato íntegro" e TODA escrita falhava**: `The column call_for_proposals.deletedAt does not exist in the current database` | A migração foi escrita À MÃO (armadilha 53) e a coluna `deletedAt` não entrou no `CREATE TABLE` — mas o `schema.prisma` e todas as consultas a usam. O contrato de schema confere `tenantId` + RLS, **não a forma da tabela**; o Prisma Client é gerado do MODELO, então `tsc` também não vê. Nenhum teste tocava a tabela | Migração corretiva, e o **primeiro teste de integração da fase** é quem pega essa classe. **Migração à mão se confere coluna a coluna contra o modelo** — contrato de schema não é verificação de forma |
+| 74 | O formulário público aceitava resumo de **30 caracteres** e a recusa vinha no fim ("Revise os dados da submissão"), com o texto digitado perdido (armadilha 5) | `minLength={30}`/`maxLength={6000}` escritos à mão na tela, enquanto o domínio exige **150 a 5000**: duas cópias da mesma regra, e a da tela era a errada | Os limites vieram do DOMÍNIO (`MIN_ABSTRACT_LENGTH`, `MIN_KEYWORDS`…). **Número de validação não se digita na tela**: importe a constante de quem decide |
+| 75 | **Uma coluna que o schema promete e ninguém lê**: `call_for_proposals.reviewRubric` existia, estava documentada, e o painel do comitê continuava julgando pela rubrica da TRILHA — sem nenhum caminho que escrevesse a coluna | O inverso da armadilha 67, e igualmente silencioso: os testes passavam porque a trilha respondia. A coluna nasceu de um ADR ("rubrica própria da chamada") e ficou sem quem a escrevesse e sem quem a lesse | `resolveEffectiveRubric` (CHAMADA → TRILHA → PADRÃO) nos três caminhos, `reviewRubric` no `saveCall` e o editor de rubrica no painel da chamada. **Coluna que participa de uma regra precisa de caminho que ESCREVE e de caminho que LÊ** |
+| 76 | **O painel desaparecia sem confirmação depois do aceite**: o organizador clicava em "Registrar aceite", a decisão era gravada, a atividade criada e o convite enviado — e a tela removia o painel, sem mensagem nenhuma | A action revalidava `/comite/<id>` (a PRÓPRIA rota do painel). Como o painel só existia enquanto a proposta não tinha decisão, o `revalidatePath` fez o Server Component reler o status (`ACCEPTED`) e desmontar o painel, levando junto o estado de sucesso do `useActionState`. O E2E da fase pegou. Tirar o `revalidatePath` **sozinho não resolve**: a página também é re-renderizada pelo servidor depois de qualquer Server Action | A action deixou de revalidar a rota do painel (a página pública do evento continua revalidada, outra rota) **e** o painel passou a renderizar o estado "já decidida" (situação, data, caminho da programação). **Revalidar a rota cujo render depende do estado que a action acabou de mudar apaga o retorno da própria action**: quando o feedback vive no cliente, ou a página não se atualiza sozinha, ou o componente precisa saber se explicar no estado novo |
+| 78 | **A roleta do telão às vezes não rodava**: a parede ia de "aguardando" direto para o ganhador, sem suspense — de forma intermitente, e sempre com o resultado certo gravado. O E2E da roleta (FASE 29/30) falhou com o telão já em `REVELADO`, tendo passado na execução anterior | O aviso ao vivo chega por SSE e o modelo da página só é relido no `router.refresh()` agendado **250 ms** depois; nessa janela o componente ainda tinha a rodada **ANUNCIADA**, e `rollNames` sai da lista publicada, que só é gravada na APURAÇÃO. Sem nomes, o efeito caía no ramo "sem lista publicada: revela direto", feito para o histórico antigo. Quando o `refresh` vencia a corrida, a roleta acontecia — daí a intermitência | O efeito passou a distinguir **"não há lista publicada"** (rodada apurada sem `poolSnapshot`: revela direto) de **"a lista ainda não chegou"** (a rodada em cartaz é o ANÚNCIO, `drawnAtIso` nulo: pede a releitura e ESPERA). **Estado que depende de um dado que chega depois precisa de uma condição explícita de "ainda não chegou"**: tratar "ausente" e "atrasado" como a mesma coisa entrega o resultado certo e a experiência errada |
 
 ---
 
@@ -307,7 +308,9 @@ as rodadas** (a rodada 2 entrega a 2ª posição do sorteio, e a entrega do prê
 documento assinado** — corrigir o texto não pode invalidar um resultado publicado (ADR-145),
 e há teste unitário prendendo isso; **a roleta é apresentação, não sorteio**: ela passa os
 nomes REAIS da lista publicada daquela rodada, depois de o servidor assinar o resultado
-(ADR-146), e uma rodada sem lista publicada revela direto em vez de inventar nomes; e **uma
+(ADR-146), e **a lista nasce na APURAÇÃO** — enquanto o telão ainda tem em mãos a rodada
+anunciada ele ESPERA a releitura em vez de revelar sem roleta (a rodada apurada sem lista,
+do histórico antigo, é que revela direto, em vez de inventar nomes — armadilha 78); e **uma
 rodada preparada por vez** — dois compromissos no ar deixariam o telão sem saber o que
 anunciar.
 
@@ -381,6 +384,39 @@ denominador, e a tela mostra "—" em vez de inventar 0% para quem não teve opo
 A visão geral é a única tela que usa `tenant:analytics:read`, permissão que existia desde a
 FASE 2 sem consumidor. E a guarda das Server Actions passou a tratar permissão `:own`
 (armadilha 72).
+
+### Chamadas de propostas (FASE 33)
+
+A chamada deixou de ser UMA (a janela do evento) e de servir só ao artigo: cada chamada tem
+tipo, texto, janela, cegueira, rubrica e limite por autor próprios — e a proposta entra pelo
+MESMO motor de avaliação da FASE 4.
+
+```
+Painel .................. /t/<slug>/administracao/eventos/<eventId>/chamadas
+                           → criar/editar/publicar/despublicar/excluir (event:manage),
+                             rubrica própria da chamada, e as propostas recebidas
+Formulário público ...... /t/<slug>/eventos/<eventSlug>/chamada/<callSlug>
+                           → ler é público; enviar exige sessão (login/signup com volta)
+Bloco na página ......... "Chamadas de propostas" no editor de blocos (FASE 17)
+Aceite .................. /t/<slug>/comite/<submissionId> → "Protocolo de aceite"
+```
+
+Cinco regras que quebram fácil: **a chamada é ENTIDADE, não trilha** (a trilha é o eixo
+temático e é permanente; a chamada é temporária e pode não ter tema — ADR-158); **a
+precedência da rubrica e da cegueira é CHAMADA → TRILHA → PADRÃO**
+(`resolveEffectiveRubric`), usada pelos três caminhos — sem ela a rubrica da chamada seria
+coluna sem leitor (armadilha 75); **fora da ciência (`PAPER`/`POSTER` são científicos)
+trilha não é obrigatória e "sem arquivo" é AVISO, não bloqueio** (ADR-162); **a proposta É
+uma `Submission`** (`callId` nulável + `proposalData` JSON) e o **limite por autor conta
+NESTA chamada** (ADR-161/164); e **o aceite registra a decisão pelo motor do comitê e trata
+criar a atividade e convidar o palestrante como ESCOLHAS do organizador** — a atividade
+nasce com a carga horária DECLARADA na proposta e a agenda é da organização, e a falha dela
+não desfaz a decisão (vira aviso) — ADR-165/166. O convite por e-mail quita a dívida
+**E25** (ADR-167).
+
+A página pública lê a chamada na RENDERIZAÇÃO (o bloco guarda só decoração e o filtro
+"incluir encerradas"), pela mesma razão dos blocos de agenda e de trilhas: uma chamada
+copiada para dentro do bloco mentiria sobre o prazo no dia seguinte (ADR-168).
 
 ### Operação de palco (FASE 22)
 
@@ -570,7 +606,7 @@ o HTML e o texto de cada mensagem **antes** da entrega.
 
 ```
 Fila e entrega .......... src/lib/communication/{mailer,email-queue,email-service}.ts
-Templates (9) ........... src/domain/communication/email-templates.ts   (funções puras)
+Templates (11) .......... src/domain/communication/email-templates.ts   (funções puras)
 Convite de equipe ....... /t/<slug>/administracao/equipe   → /t/<slug>/convite?codigo=<TOKEN>
 Caixa de saída .......... /t/<slug>/administracao/comunicacao   (communication:read)
 Confirmação de e-mail ... /verificacao  (destino do link; sem login)
@@ -628,12 +664,14 @@ do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **lega
 Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, 4 atividades, 1 trilha com
 rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, 2 certificados
 emitidos (códigos impressos no fim do seed), **1 sorteio apurado**, **1 página pública
-publicada** (5 blocos, tema próprio, 1 cota com 2 patrocinadores), **11 versões no
+publicada** (6 blocos, tema próprio, 1 cota com 2 patrocinadores), **11 versões no
 histórico** dessa página, a página do simpósio com **janela completa de exibição**
 (entra no ar em 7 dias, sai em 21 — datas no fuso `America/Bahia` do evento) e o
 **acervo de mídia** da instituição com as imagens de capa, logotipos e galeria
-registradas, e **1 palestrante** (Bruno, no minicurso de Rust) com perfil, vínculo com a
-atividade, conta vinculada e um material público de apoio. Percursos em `README.md` §6.
+registradas, **1 palestrante** (Bruno, no minicurso de Rust) com perfil, vínculo com a
+atividade, conta vinculada e um material público de apoio, e **2 chamadas de propostas
+publicadas** (palestrantes, sem trilha, e minicursos, com rubrica própria) com **1 proposta
+recebida** (protocolo impresso no fim do seed). Percursos em `README.md` §6.
 
 ---
 
@@ -721,6 +759,7 @@ tests/{unit,integration,e2e}
 | 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) — escopo definido pelo humano; **+ revisão da FASE 29**: o telão só era alcançável já apurado, e o E2E montava o rascunho por escrita direta | ✅ |
 | 31 | Credenciamento e frequência por crachá (**um código por pessoa** no evento, com o **contexto da leitura** decidindo o fato; **área de crachás** com emissão individual e em massa e **folha A4** em PDF com QR + código + nome; **crachá online** do participante; **modo monitor** com câmera (API nativa + decodificador local), leitor USB e digitação; **chegada ≠ frequência**, com sessão por visita e minutos com teto no fim da atividade) — escopo definido pelo humano | ✅ |
 | 32 | Central do participante e inteligência da instituição (**diretório** de todos os participantes da instituição — união de vínculo e inscrição —, **ficha 360** com eventos, frequência, certificados, cartas, XP e comunicação, **recado** por e-mail e mensagem na **caixa de entrada** do participante, **panorama** com taxa de comparecimento e série por evento no fuso da instituição, e **exportação em CSV** com trilha; abertura de ficha auditada e e-mail mascarado na lista) — escopo definido pelo humano | ✅ |
+| 33 | Chamadas de propostas (**chamada como entidade** com tipo, janela, cegueira, **rubrica própria** — precedência CHAMADA → TRILHA → PADRÃO — e limite por autor POR CHAMADA; a proposta **é uma submissão** com campos por tipo e o **formulário é público**; bloco **"Chamadas de propostas"** posicionado pelo organizador na página; **protocolo de aceite** em que a decisão é do comitê e **criar a atividade** e **convidar o palestrante** são escolhas do organizador — o convite por e-mail quita a dívida **E25**) — escopo definido pelo humano | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -729,16 +768,16 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**52 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**53 itens abertos**, soma das
 tabelas de tema — o tema G ficou ZERADO na FASE 22 — o levantamento original menos o que
-as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29, 30, 31 e 32 quitaram, mais o que cada uma declarou de
+as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29, 30, 31, 32 e 33 quitaram, mais o que cada uma declarou de
 novo: a FASE 15 quitou os sete itens de
 comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
 (reconciliação banco × bucket e acesso de participante perdido na remoção); **a FASE 22
 quitou G8–G13 e declarou o E35** (não há tela para a pessoa autorizar o nome no resultado
 público); **as FASES 29, 30 e 31 não quitaram item deste levantamento** (o escopo veio do
 humano) e declararam o **E36** (a lista auditável não pode ser comprometida antes da apuração) e o
-**E37** (não há interruptor para manter o telão fora do ar), o **E38** (o prêmio anunciado de uma rodada não pode ser corrigido pela tela) e o **E39** (a roleta não pode ser repetida nem desligada pelo operador), o **E40** (o credenciamento não funciona sem rede), o **E41** (a impressão é folha A4 para recortar), o **E42** (o crachá não tem identidade visual do evento) e o **E43** (o botão único do balcão fecha a presença na segunda leitura: não há como pedir "só entrada" na tela); a FASE 25
+**E37** (não há interruptor para manter o telão fora do ar), o **E38** (o prêmio anunciado de uma rodada não pode ser corrigido pela tela) e o **E39** (a roleta não pode ser repetida nem desligada pelo operador), o **E40** (o credenciamento não funciona sem rede), o **E41** (a impressão é folha A4 para recortar), o **E42** (o crachá não tem identidade visual do evento) e o **E43** (o botão único do balcão fecha a presença na segunda leitura: não há como pedir "só entrada" na tela); **a FASE 32 declarou o E44 e o E45**; **a FASE 33 QUITOU o E25** (o convite de palestrante passou a sair por e-mail) **e declarou o E46** (a proposta não aceita anexo) **e o E47** (o proponente não é avisado da decisão); a FASE 25
 declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
 declararam o E31 e o E32, a **primeira** revisão da FASE 3 declarou o E33 e a **segunda**
 declarou o E34 (a sala de uma atividade ABERTA não limita o público do evento: o painel
@@ -762,8 +801,8 @@ ordem sugerida.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 72 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-32-central-do-participante.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 78 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-33-chamadas-de-propostas.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

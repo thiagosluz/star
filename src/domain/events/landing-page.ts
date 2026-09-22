@@ -193,6 +193,7 @@ export const PAGE_BLOCK_TYPES = [
   'VENUE_MAP',
   'REGISTRATION_CTA',
   'TRACKS',
+  'CALL_FOR_PROPOSALS',
   'CUSTOM_HTML',
 ] as const;
 
@@ -249,6 +250,7 @@ export const RECOMMENDED_BLOCK_ORDER: readonly PageBlockType[] = [
   'HERO',
   'RICH_TEXT',
   'TRACKS',
+  'CALL_FOR_PROPOSALS',
   'SPEAKERS',
   'SCHEDULE',
   'VENUE_MAP',
@@ -272,6 +274,7 @@ export const BLOCK_LABELS: Record<PageBlockType, string> = {
   VENUE_MAP: 'Localização',
   REGISTRATION_CTA: 'Chamada para inscrição',
   TRACKS: 'Trilhas temáticas',
+  CALL_FOR_PROPOSALS: 'Chamadas de propostas',
   CUSTOM_HTML: 'HTML personalizado',
 };
 
@@ -365,6 +368,16 @@ export const blockContentSchemas: Record<PageBlockType, z.ZodType> = {
     ctaLabel: labelSchema.optional(),
   }),
   TRACKS: z.object({ title: labelSchema.optional() }),
+  CALL_FOR_PROPOSALS: z.object({
+    title: labelSchema.optional(),
+    description: z.string().trim().max(600).optional(),
+    /**
+     * O bloco mostra por padrão apenas o que ainda dá para responder (aberta e
+     * agendada). Chamada encerrada que continua na lista é ANÚNCIO — e quem escolhe
+     * anunciar o histórico é o organizador, não o bloco.
+     */
+    includeClosed: z.boolean().default(false),
+  }),
   CUSTOM_HTML: z.object({
     title: labelSchema.optional(),
     /** Renderizado como TEXTO — ver `SANDBOXED_BLOCK_TYPES`. */
@@ -385,6 +398,8 @@ export const BLOCK_DESCRIPTIONS: Record<PageBlockType, string> = {
   VENUE_MAP: 'Local, endereço e link da transmissão online.',
   REGISTRATION_CTA: 'Chamada para ação de inscrição.',
   TRACKS: 'Trilhas temáticas da chamada de trabalhos.',
+  CALL_FOR_PROPOSALS:
+    'Chamadas de propostas publicadas (palestrantes, minicursos, artigos, mesas…), cada uma com o prazo e o link do formulário. Você escolhe onde o bloco fica.',
   CUSTOM_HTML: 'Bloco de código exibido como TEXTO, por segurança. HTML não é interpretado.',
 };
 
@@ -412,6 +427,7 @@ export const DEFAULT_BLOCK_CONTENT: Record<PageBlockType, unknown> = {
   VENUE_MAP: {},
   REGISTRATION_CTA: {},
   TRACKS: {},
+  CALL_FOR_PROPOSALS: { includeClosed: false },
   CUSTOM_HTML: { html: '' },
 };
 
@@ -571,6 +587,8 @@ export function summarizeBlockContent(type: PageBlockType, content: unknown): st
       return title || 'Palestrantes das atividades';
     case 'TRACKS':
       return title || 'Trilhas da chamada de trabalhos';
+    case 'CALL_FOR_PROPOSALS':
+      return title || 'Chamadas de propostas publicadas';
     case 'SPONSORS':
       return title || 'Patrocinadores por cota';
     case 'COUNTDOWN':

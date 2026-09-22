@@ -22,6 +22,8 @@ import type {
   PublicEventDetail,
 } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { CALL_STATE_LABELS } from '@/domain/proposals/call-rules';
+import type { CallView } from '@/lib/proposals/call-service';
 import { Section, SectionHeading } from '@/components/events/theme-scope';
 import { SpeakerGallery } from '@/components/events/speaker-gallery';
 
@@ -587,6 +589,96 @@ function TracksBlock({
 }
 
 /**
+ * Chamadas de propostas publicadas (FASE 33).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O BLOCO NÃO DEIXA O ORGANIZADOR ESCREVER A CHAMADA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O corpo do bloco é o DADO REAL da chamada (tipo, texto, prazo e estado), lido do
+ *  banco na hora da renderização — mesma decisão do bloco de agenda. Uma chamada
+ *  escrita à mão na página continuaria anunciando "prazo até 30/11" em dezembro, e o
+ *  visitante só descobriria depois de preencher o formulário inteiro. O que o
+ *  organizador escolhe aqui é onde o bloco fica e o que ele diz por cima.
+ *
+ *  O estado (aberta, agendada, encerrada) vem CALCULADO do servidor, no relógio do
+ *  banco: o bloco não decide prazo, só o mostra.
+ */
+function CallsBlock({
+  calls,
+  content,
+  tenantSlug,
+  eventSlug,
+}: {
+  calls: readonly CallView[];
+  content: unknown;
+  tenantSlug: string;
+  eventSlug: string;
+}) {
+  const includeClosed =
+    typeof content === 'object' && content !== null
+      ? (content as Record<string, unknown>).includeClosed === true
+      : false;
+
+  const visible = includeClosed
+    ? calls
+    : calls.filter((call) => call.state === 'OPEN' || call.state === 'SCHEDULED');
+
+  if (visible.length === 0) return null;
+
+  const title = readString(content, 'title');
+  const description = readString(content, 'description');
+
+  return (
+    <Section id="chamadas">
+      <SectionHeading
+        eyebrow="Chamadas abertas"
+        title={title ?? 'Chamadas de propostas'}
+        description={
+          description ?? 'Escolha a chamada, leia as orientações e envie sua proposta.'
+        }
+      />
+      <ul className="grid gap-3 sm:grid-cols-2" data-testid="event-calls">
+        {visible.map((call) => (
+          <li key={call.id} className="ef-card flex flex-col gap-3 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-medium">{call.title}</p>
+              <span className="ef-badge shrink-0">{CALL_STATE_LABELS[call.state]}</span>
+            </div>
+
+            <p className="text-xs opacity-60">{call.kindLabel}</p>
+
+            {call.summary ? (
+              <p className="text-sm opacity-80">{call.summary}</p>
+            ) : null}
+
+            <p className="flex flex-wrap items-center gap-3 text-xs opacity-70">
+              <span className="flex items-center gap-1.5">
+                <CalendarDays className="size-3.5" aria-hidden />
+                {call.windowLabel}
+              </span>
+              {call.countdown && call.state === 'OPEN' ? (
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Clock className="size-3.5" aria-hidden />
+                  {call.countdown}
+                </span>
+              ) : null}
+            </p>
+
+            <Link
+              href={tenantPath(tenantSlug, `/eventos/${eventSlug}/chamada/${call.slug}`)}
+              className="ef-button mt-auto self-start"
+            >
+              {call.state === 'OPEN' ? 'Enviar proposta' : 'Ver detalhes'}
+              <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/**
  * Chamada para ação de inscrição (FASE 17).
  *
  * O texto é do organizador; o BOTÃO é da plataforma. Deixar o organizador informar
@@ -642,6 +734,8 @@ export interface BlockRendererProps {
    * tempo (contagem regressiva) recebem daqui para permanecerem puros.
    */
   now: number;
+  /** Chamadas publicadas do evento (FASE 33) — lidas pelo bloco de chamadas. */
+  publicCalls: readonly CallView[];
 }
 
 /** Traduz um bloco do banco no componente correspondente. */
@@ -651,6 +745,7 @@ export function BlockRenderer({
   event,
   tenantSlug,
   now,
+  publicCalls,
 }: BlockRendererProps) {
   switch (type) {
     case 'RICH_TEXT':
@@ -685,6 +780,15 @@ export function BlockRenderer({
       );
     case 'TRACKS':
       return <TracksBlock tracks={event.tracks} content={content} />;
+    case 'CALL_FOR_PROPOSALS':
+      return (
+        <CallsBlock
+          calls={publicCalls}
+          content={content}
+          tenantSlug={tenantSlug}
+          eventSlug={event.slug}
+        />
+      );
     case 'REGISTRATION_CTA':
       return (
         <RegistrationCtaBlock

@@ -433,6 +433,43 @@ async function attemptRegistration(
 //  Vínculo do participante (inscrição pública)
 // ───────────────────────────────────────────────────────────────────────────────
 /**
+ * Dá vínculo de participante a quem chegou por um caminho PÚBLICO.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO É EXPORTADO (FASE 33)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A inscrição pública (FASE 10) e a submissão de proposta pela chamada (FASE 33)
+ *  fazem a MESMA pergunta: "esta pessoa, que acabou de criar conta, pode passar a
+ *  participar desta instituição pública?". A resposta é uma regra só
+ *  (`evaluateParticipantLink` + `kindAfterPublicRegistration`, em
+ *  `src/domain/tenancy/membership-rules.ts`) — e uma segunda cópia dela faria a
+ *  proposta aceitar quem a inscrição recusa, ou o contrário, sem ninguém notar
+ *  (armadilha 55).
+ *
+ *  Roda na transação do CHAMADOR, de propósito: o vínculo nasce junto com o fato que
+ *  o justificou (a inscrição ou a proposta), e não numa transação paralela que
+ *  poderia sobreviver a uma falha.
+ */
+export async function linkParticipantIfEligible(
+  tx: TxClient,
+  input: { tenantId: string; userId: string; eventIsPublic: boolean },
+): Promise<{ linked: boolean; blocked: boolean; message: string | null }> {
+  const decision = await decideParticipantLink(tx, input);
+
+  if (decision.action === 'BLOCKED') {
+    return { linked: false, blocked: true, message: decision.message ?? null };
+  }
+
+  const linked = await applyParticipantLink(tx, {
+    tenantId: input.tenantId,
+    userId: input.userId,
+    decision,
+  });
+
+  return { linked, blocked: false, message: null };
+}
+
+/**
  * Descobre o que fazer com o vínculo de quem está se inscrevendo.
  *
  * Roda sob RLS, dentro da transação da inscrição: os dois vínculos possíveis
@@ -444,8 +481,7 @@ async function attemptRegistration(
 async function decideParticipantLink(
   tx: TxClient,
   input: { tenantId: string; userId: string; eventIsPublic: boolean },
-): Promise<ParticipantLinkDecision> {
-  const membership = await tx.userTenantProfile.findFirst({
+): Promise<ParticipantLinkDecision> {  const membership = await tx.userTenantProfile.findFirst({
     where: { tenantId: input.tenantId, userId: input.userId },
     select: { status: true, deletedAt: true },
   });

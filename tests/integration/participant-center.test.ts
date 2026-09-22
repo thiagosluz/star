@@ -587,6 +587,29 @@ describe('caixa de entrada do participante', () => {
 describe('inteligência da instituição', () => {
   const now = new Date('2026-09-21T15:00:00.000Z');
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE OS RECADOS SÃO RECARIMBADOS ANTES DESTE BLOCO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `sendParticipantMessage` carimba `sentAt` com o RELÓGIO REAL, enquanto este
+   *  arquivo fixa `now` em 21/09/2026 para montar as janelas do painel. Enquanto a
+   *  execução acontece no dia 21 (fuso da instituição), o recado cai dentro da janela
+   *  "até o fim do dia 21"; depois da meia-noite ele cai FORA — e a asserção de recados
+   *  falha sem nenhuma linha de código ter mudado. O teste media a hora do relógio em
+   *  vez do produto (armadilha 77).
+   *
+   *  Fixar o carimbo num instante dentro da janela é o que torna a fixture determinística:
+   *  o que está sob teste é a AGREGAÇÃO por período, não quando o e-mail foi enfileirado.
+   */
+  beforeAll(async () => {
+    await withTenant(tenantId, (tx) =>
+      tx.participantMessage.updateMany({
+        where: { tenantId },
+        data: { sentAt: new Date('2026-09-21T14:00:00.000Z') },
+      }),
+    );
+  });
+
   it('apura totais e a série por evento, com a taxa de comparecimento', async () => {
     const result = await getInstitutionIntelligence({ tenantId, range: 'ALL', now });
 

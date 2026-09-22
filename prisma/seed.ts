@@ -46,6 +46,8 @@ import {
 } from '../src/lib/admin/landing-service';
 import { saveSponsor, saveSponsorTier } from '../src/lib/admin/sponsor-service';
 import { sendParticipantMessage } from '../src/lib/participants/message-service';
+import { saveCall, setCallPublished } from '../src/lib/proposals/call-service';
+import { submitProposal } from '../src/lib/proposals/proposal-service';
 import { closeEmailQueue } from '../src/lib/communication/email-queue';
 import {
   attachSpeakerAccount,
@@ -1170,6 +1172,13 @@ async function main() {
           description: 'As inscrições estão abertas e as vagas são limitadas por atividade.',
         },
       },
+      /**
+       * O bloco de chamadas (FASE 33) entra na página de demonstração para o caminho
+       * inteiro ficar visível: painel → chamada publicada → bloco na página pública →
+       * formulário aberto. As chamadas são criadas mais abaixo, e o bloco lê o banco
+       * na renderização — a ordem do seed não importa.
+       */
+      { type: 'CALL_FOR_PROPOSALS', content: { title: 'Chamadas abertas', includeClosed: false } },
       { type: 'SPONSORS', content: {} },
     ];
 
@@ -1406,6 +1415,132 @@ async function main() {
 
   console.log(`  ✓ palestrantes: ${palestranteDemo}`);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CHAMADAS DE PROPOSTAS (FASE 33)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Duas chamadas, e a escolha delas é o ponto da fase:
+   *
+   *    • a de PALESTRANTES fica publicada e ABERTA, sem trilha — o caso que antes não
+   *      tinha onde acontecer (a janela do evento era uma só e servia ao artigo);
+   *    • a de MINICURSOS já recebeu uma proposta de demonstração, com os campos do
+   *      TIPO preenchidos (carga horária e público-alvo), para o painel ter o que
+   *      mostrar e o protocolo de aceite poder ser exercitado.
+   *
+   *  A proposta nasce pelo SERVIÇO real (`submitProposal`): o vínculo de participante,
+   *  o protocolo e o e-mail de confirmação saem do mesmo caminho que a pessoa usaria.
+   *  O autor é o Diego — que existe para exercitar RBAC e não tem vínculo prévio com a
+   *  instituição, então a demonstração mostra o vínculo nascendo da proposta.
+   */
+  let chamadasDemo = 'não configuradas';
+
+  const chamadaPalestrantes = await saveCall({
+    tenantId: ufbaId,
+    eventId: congressoUfba,
+    actorId: ana,
+    kind: 'SPEAKER',
+    slug: 'chamada-palestrantes',
+    title: 'Chamada para palestrantes',
+    summary: 'Traga uma palestra de 50 minutos sobre tecnologia, educação ou inovação.',
+    instructions:
+      'Queremos propostas de palestras ligadas ao uso de tecnologia na educação, na saúde ou no ' +
+      'setor público. Conte quem você é, o tema que pretende abordar e a sua disponibilidade.',
+    opensAt: days(-10),
+    closesAt: days(21),
+    maxSubmissionsPerAuthor: 2,
+  });
+
+  const chamadaMinicursos = await saveCall({
+    tenantId: ufbaId,
+    eventId: congressoUfba,
+    actorId: ana,
+    kind: 'MINICOURSE',
+    slug: 'chamada-minicursos',
+    title: 'Chamada para minicursos',
+    summary: 'Quatro horas de mão na massa, com turma reduzida.',
+    instructions:
+      'Minicursos acontecem na tarde do segundo dia, em salas com até 40 lugares. Informe a carga ' +
+      'horária pretendida e para quem o minicurso é destinado.',
+    opensAt: days(-10),
+    closesAt: days(21),
+    trackId: trilhaTecnologia,
+    /**
+     * Rubrica PRÓPRIA da chamada (FASE 33) — e a demonstração da precedência: a
+     * chamada aponta a trilha (para a afinidade dos revisores) e julga por critérios
+     * de OFICINA, que não fariam sentido para um artigo. Sem esta coluna preenchida,
+     * o caminho "chamada → painel do comitê" mostraria a rubrica da trilha e ninguém
+     * veria que a da chamada existe.
+     */
+    reviewRubric: [
+      {
+        key: 'feasibility',
+        label: 'Viabilidade do minicurso',
+        weight: 2,
+        maxScore: 10,
+        description: 'Cabe em quatro horas, com o material e a turma previstos.',
+      },
+      {
+        key: 'lesson_plan',
+        label: 'Clareza do plano de aula',
+        weight: 2,
+        maxScore: 10,
+        description: 'Objetivos, sequência didática e forma de avaliação.',
+      },
+      {
+        key: 'audience_fit',
+        label: 'Adequação ao público',
+        weight: 1,
+        maxScore: 10,
+        description: 'O pré-requisito declarado combina com o público-alvo.',
+      },
+    ],
+  });
+
+  if (chamadaPalestrantes.ok && chamadaMinicursos.ok) {
+    await setCallPublished({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      callId: chamadaPalestrantes.callId,
+      actorId: ana,
+      isPublished: true,
+    });
+
+    await setCallPublished({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      callId: chamadaMinicursos.callId,
+      actorId: ana,
+      isPublished: true,
+    });
+
+    const propostaDemo = await submitProposal({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      callId: chamadaMinicursos.callId,
+      userId: diego,
+      title: 'Minicurso de análise de dados com planilhas abertas',
+      abstract:
+        'Um minicurso prático de análise de dados usando apenas ferramentas abertas: leitura de ' +
+        'planilhas públicas, limpeza, gráficos e publicação do resultado. A turma monta um painel ' +
+        'com dados reais de educação do próprio município, do arquivo bruto à conclusão.',
+      keywords: ['dados abertos', 'planilhas', 'educação'],
+      data: {
+        workloadMinutes: 240,
+        targetAudience: 'Servidores públicos e estudantes de graduação',
+        prerequisites: 'Nenhum. Levar notebook.',
+      },
+      tenantSlug: 'ufba-demo',
+    });
+
+    chamadasDemo = propostaDemo.ok
+      ? '2 chamadas publicadas · 1 proposta de minicurso (protocolo ' + propostaDemo.protocol + ')'
+      : `2 chamadas publicadas; proposta falhou: ${propostaDemo.message}`;
+  } else {
+    chamadasDemo = 'falhou: não foi possível criar as chamadas';
+  }
+
+  console.log(`  ✓ chamadas de propostas: ${chamadasDemo}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1459,6 +1594,11 @@ async function main() {
   console.log(`    http://localhost:3000/t/ufba-demo/palestrante     (bruno@example.test)`);
   console.log(`    .../administracao/eventos/<id>/palestrantes       (cadastro e convite)`);
   console.log(`    ${palestranteDemo}`);
+  console.log(`\n  Chamadas de propostas (FASE 33):`);
+  console.log(`    Painel:    /t/ufba-demo/administracao/eventos/<id>/chamadas`);
+  console.log(`    Público:   /t/ufba-demo/eventos/congresso-2026/chamada/chamada-palestrantes`);
+  console.log(`    ${chamadasDemo}`);
+  console.log(`    O aceite (com atividade e convite) fica no painel do comitê de cada proposta.`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

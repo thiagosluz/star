@@ -17,6 +17,7 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import type { PublicEventDetail } from '@/lib/events/event-repository';
 import type { PublicRaffleResult } from '@/lib/raffles/raffle-service';
 import { BlockRenderer } from '@/components/events/block-renderer';
+import type { CallView } from '@/lib/proposals/call-service';
 import { RaffleResults } from '@/components/raffles/raffle-results';
 import { Section, ThemeScope } from '@/components/events/theme-scope';
 
@@ -66,6 +67,7 @@ export function EventLanding({
   tenantName,
   now,
   publicRaffles,
+  publicCalls,
   preview,
 }: {
   event: PublicEventDetail;
@@ -74,6 +76,12 @@ export function EventLanding({
   /** Instante resolvido UMA vez pelo chamador (componente de renderização é puro). */
   now: Date;
   publicRaffles: PublicRaffleResult[];
+  /**
+   * Chamadas de propostas PUBLICADAS (FASE 33). Chegam prontas — com estado, prazo e
+   * contagem calculados no servidor — porque o bloco de chamadas é só apresentação:
+   * quem decide se uma chamada está aberta é o domínio, no relógio do banco.
+   */
+  publicCalls: readonly CallView[];
   /** Presente apenas na pré-visualização do rascunho. */
   preview?: EventLandingPreviewInfo;
 }) {
@@ -250,6 +258,7 @@ export function EventLanding({
               event={event}
               tenantSlug={tenantSlug}
               now={now.getTime()}
+              publicCalls={publicCalls}
             />
           ))
         ) : (
@@ -271,6 +280,7 @@ export function EventLanding({
               event={event}
               tenantSlug={tenantSlug}
               now={now.getTime()}
+              publicCalls={publicCalls}
             />
 
             {event.sponsors.length > 0 ? (
@@ -280,6 +290,7 @@ export function EventLanding({
                 event={event}
                 tenantSlug={tenantSlug}
                 now={now.getTime()}
+                publicCalls={publicCalls}
               />
             ) : null}
           </>

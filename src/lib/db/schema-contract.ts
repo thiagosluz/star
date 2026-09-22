@@ -97,6 +97,13 @@ export const TENANT_SCOPED_TABLES = [
    */
   'participant_messages',
   /**
+   * FASE 33 — chamada de propostas do evento. Cada chamada tem o próprio TIPO e a
+   * própria JANELA (o minicurso fecha antes do artigo), e a proposta continua sendo
+   * uma linha de `submissions` — que já está aqui. A `trackId` é opcional:
+   * palestrante e minicurso não têm eixo temático.
+   */
+  'call_for_proposals',
+  /**
    * FASE 15 — comunicação. As duas tabelas entram aqui mesmo com semânticas
    * diferentes: `email_messages` tem `tenantId` NULO nas mensagens de PLATAFORMA
    * (verificação de e-mail, redefinição de senha), e a policy faz exatamente o que

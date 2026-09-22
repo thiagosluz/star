@@ -1,15 +1,22 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Ban, ShieldCheck, Star, UserPlus } from 'lucide-react';
+import { Ban, CalendarPlus, ShieldCheck, Star, UserPlus } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { getRequestContext } from '@/lib/auth/session';
+import { can } from '@/domain/rbac/authorization';
 import { buildAssignmentBoard, getSubmissionReviewPanel } from '@/lib/review/review-service';
 import { AFFINITY_BAND_LABELS } from '@/domain/review/affinity';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from '@/domain/events/activity-rules';
+import { getAdminEvent } from '@/lib/admin/catalog-service';
+import { getAcceptanceContext } from '@/lib/proposals/acceptance-service';
+import { acceptProposalAction } from '@/app/actions/call-actions';
 import { assignReviewerAction, recordDecisionAction } from '@/app/actions/review-actions';
 import { DecisionForm } from '@/components/review/decision-form';
 import { AssignReviewerButton } from '@/components/review/assign-reviewer-button';
+import { ProposalAcceptancePanel } from '@/components/proposals/proposal-acceptance-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +51,6 @@ export default async function ChairSubmissionPage({
     buildAssignmentBoard(tenantId, submissionId),
     getSubmissionReviewPanel(tenantId, submissionId),
   ]);
-
   if (!boardResult.ok && boardResult.code === 'NOT_FOUND') notFound();
   if (!panelResult.ok && panelResult.code === 'NOT_FOUND') notFound();
 
@@ -62,6 +68,40 @@ export default async function ChairSubmissionPage({
   }
 
   const assignedIds = new Set(board.assigned.map((a) => a.reviewerId));
+
+  /**
+   * ── O protocolo de aceite (FASE 33) ─────────────────────────────────────────
+   * A leitura do contexto é SEPARADA do painel do comitê porque só a proposta de
+   * chamada tem o que ele mostra (tipo da atividade, carga horária declarada,
+   * proponente, evento e fuso). A permissão é conferida aqui — como no painel do
+   * evento — para a tela não oferecer um botão que a action recusaria.
+   */
+  const context = await getRequestContext();
+  const canDecide = can(context?.principal ?? null, PERMISSIONS.SUBMISSION_DECIDE, {
+    scope: 'TENANT',
+  });
+
+  const acceptance = canDecide ? await getAcceptanceContext({ tenantId, submissionId }) : null;
+  const acceptanceContext = acceptance?.ok ? acceptance.context : null;
+
+  /** Já decidida: o aceite não se repete — a decisão está na auditoria. */
+  const isDecided = panel.status === 'ACCEPTED' || panel.status === 'REJECTED';
+
+  /** Opções do formulário de aceite: tipo de atividade e salas do evento. */
+  const event = acceptanceContext ? await getAdminEvent(tenantId, acceptanceContext.eventId) : null;
+
+  const activityTypeOptions = ACTIVITY_TYPES.map((type) => ({
+    value: type,
+    label: ACTIVITY_TYPE_LABELS[type],
+  }));
+
+  const roomOptions = [
+    { value: '', label: 'Sem sala definida' },
+    ...(event?.rooms ?? []).map((room) => ({
+      value: room.id,
+      label: room.capacity === null ? room.name : `${room.name} (${room.capacity} lugares)`,
+    })),
+  ];
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -303,6 +343,57 @@ export default async function ChairSubmissionPage({
           action={recordDecisionAction}
         />
       </section>
+
+      {/*
+        ── PROTOCOLO DE ACEITE (FASE 33) ───────────────────────────────────────
+        Aparece só para a proposta que VEIO DE UMA CHAMADA: submissão de artigo não tem
+        tipo de atividade nem proponente a convidar.
+
+        ─────────────────────────────────────────────────────────────────────────
+        POR QUE A SEÇÃO CONTINUA NA TELA DEPOIS DA DECISÃO (armadilha 76)
+        ─────────────────────────────────────────────────────────────────────────
+        A primeira versão escondia a seção quando a proposta já tinha decisão. O efeito
+        era o pior possível: o organizador clicava em "Registrar aceite", o Server
+        Component re-renderizava com o status novo, a seção desaparecia — e o retorno da
+        própria ação ia junto, sem nenhuma confirmação na tela. Agora o painel recebe a
+        situação atual e MOSTRA o que aconteceu; decidir de novo não é oferecido porque
+        o status decidido troca o formulário por um aviso (e o motor de decisão recusaria
+        a transição de qualquer forma).
+      */}
+      {acceptanceContext ? (
+        <section className="space-y-4 rounded-lg border border-border bg-card p-5">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
+            <CalendarPlus className="size-4" aria-hidden />
+            Protocolo de aceite
+          </h2>
+
+          <p className="text-xs text-muted-foreground">
+            Registrar o aceite é a decisão do comitê (a mesma permissão, o mesmo motor de
+            quórum e a mesma trilha). Criar a atividade na programação e convidar o
+            proponente são escolhas SUAS, marcadas abaixo.
+          </p>
+
+          <ProposalAcceptancePanel
+            tenantSlug={tenantSlug}
+            eventSlug={acceptanceContext.eventSlug}
+            eventId={acceptanceContext.eventId}
+            submissionId={submissionId}
+            eventTimeZone={acceptanceContext.eventTimeZone}
+            kindLabel={acceptanceContext.kindLabel}
+            callTitle={acceptanceContext.callTitle}
+            proposedTitle={acceptanceContext.proposedTitle}
+            workloadMinutes={acceptanceContext.workloadMinutes}
+            authorName={acceptanceContext.authorName}
+            authorEmail={acceptanceContext.authorEmail}
+            activityType={acceptanceContext.activityType}
+            activityTypeOptions={activityTypeOptions}
+            roomOptions={roomOptions}
+            decidedStatus={isDecided ? acceptanceContext.status : null}
+            decidedAt={isDecided ? acceptanceContext.decidedAt : null}
+            action={acceptProposalAction}
+          />
+        </section>
+      ) : null}
     </main>
   );
 }

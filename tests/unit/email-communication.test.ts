@@ -125,13 +125,31 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     senderName: 'Administradora do Evento',
     inboxUrl: 'http://localhost:3000/t/ufba/minhas-mensagens',
   },
+  PROPOSAL_RECEIVED: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    callTitle: 'Chamada de minicursos',
+    callKindLabel: 'Minicurso',
+    proposalTitle: 'Introdução a Rust para cientistas de dados',
+    protocol: '2026-AB12',
+    proposalsUrl: 'http://localhost:3000/t/ufba/submissoes',
+  },
+  SPEAKER_INVITATION: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    activityTitle: 'Introdução a Rust para cientistas de dados',
+    roleLabel: 'Minicurso',
+    inviteUrl: 'http://localhost:3000/t/ufba/palestrante/convite?codigo=abc123',
+    expiresInDays: 14,
+    startsAtLabel: '01/10/2026 às 14:00',
+  },
 };
 
 const CONTEXT = { brandName: 'Universidade Federal da Bahia' };
 
 describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', () => {
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(9);
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(11);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();

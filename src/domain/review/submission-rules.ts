@@ -24,6 +24,7 @@
  *  camada para uma regra que protege o sistema.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { isScientific, type ProposalKind } from '@/domain/proposals/call-rules';
 
 export type SubmissionStatus =
   | 'DRAFT'
@@ -425,6 +426,17 @@ export interface SubmissionReadinessInput {
   requiresBlindReview: boolean;
   /** Ao menos um autor precisa ter sido informado. */
   authorCount: number;
+  /**
+   * FASE 33 — o TIPO da chamada de origem, quando a proposta veio de uma.
+   *
+   * Ausente/nulo = submissão científica das fases anteriores (trilha e PDF
+   * obrigatórios). Preenchido com um tipo NÃO científico (palestrante, minicurso,
+   * oficina, mesa), a trilha temática deixa de ser exigida e o arquivo passa a ser
+   * OPCIONAL — quem propõe um minicurso descreve a proposta, não anexa um artigo.
+   *
+   * O que é científico NÃO afrouxa: `PAPER` e `POSTER` continuam exigindo os dois.
+   */
+  proposalKind?: ProposalKind | null;
 }
 
 export interface SubmissionReadiness {
@@ -459,7 +471,20 @@ export function evaluateSubmissionReadiness(
   }
 
   if (!input.trackId) {
-    blockers.push('Selecione a trilha temática da submissão.');
+    /**
+     * A TRILHA É DO TRABALHO CIENTÍFICO (FASE 33).
+     *
+     * Ela é o eixo de avaliação por pares — quem avalia um artigo precisa saber a
+     * que chamada temática ele responde. Uma proposta de palestrante ou de
+     * minicurso não tem eixo temático: exigir trilha dela obrigaria a inventar uma
+     * trilha "geral" só para o formulário passar, e a avaliação da programação
+     * passaria a ter uma trilha que não significa nada.
+     */
+    const scientific = input.proposalKind == null || isScientific(input.proposalKind);
+
+    if (scientific) {
+      blockers.push('Selecione a trilha temática da submissão.');
+    }
   }
 
   if (input.authorCount === 0) {
@@ -470,6 +495,7 @@ export function evaluateSubmissionReadiness(
   const confirmed = input.files.filter((file) => file.checksum !== null);
   const hasBlind = confirmed.some((file) => file.kind === 'BLIND_PDF');
   const hasIdentified = confirmed.some((file) => file.kind === 'IDENTIFIED_PDF');
+  const scientific = input.proposalKind == null || isScientific(input.proposalKind);
 
   if (input.requiresBlindReview) {
     if (!hasBlind) {
@@ -485,7 +511,23 @@ export function evaluateSubmissionReadiness(
       );
     }
   } else if (!hasBlind && !hasIdentified) {
-    blockers.push('Anexe o arquivo do trabalho em PDF.');
+    /**
+     * SEM ARQUIVO PRINCIPAL: bloqueio para o científico, AVISO para a proposta de
+     * programação — e para ela, qualquer anexo confirmado já conta.
+     *
+     * Um artigo sem PDF não tem o que ser avaliado (e um anexo suplementar não é o
+     * artigo). Um minicurso proposto sem material de apoio é uma proposta completa —
+     * e se ele anexou QUALQUER coisa (material, slides, programação), não há nem o
+     * que avisar. Transformar isso em bloqueio faria a chamada de minicurso exigir
+     * um PDF que ninguém pediu.
+     */
+    if (scientific) {
+      blockers.push('Anexe o arquivo do trabalho em PDF.');
+    } else if (confirmed.length === 0) {
+      warnings.push(
+        'Nenhum arquivo anexado. Você pode enviar a proposta assim e combinar o material depois.',
+      );
+    }
   }
 
   return {

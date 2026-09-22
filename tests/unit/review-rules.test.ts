@@ -16,6 +16,7 @@ import {
   computeWeightedScore,
   parseRubric,
   redactForBlindReview,
+  resolveEffectiveRubric,
   suggestRecommendation,
   summarizeReviews,
   validateRubric,
@@ -130,6 +131,50 @@ describe('parseRubric() — JSON do banco', () => {
       { key: 'a', label: 'A', weight: 1, maxScore: 10, description: 'Detalhe' },
     ]);
     expect(result.rubric[0]?.description).toBe('Detalhe');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('resolveEffectiveRubric() — precedência CHAMADA → TRILHA → PADRÃO', () => {
+  const callRubric = [
+    { key: 'feasibility', label: 'Viabilidade da oficina', weight: 2, maxScore: 10 },
+    { key: 'plan', label: 'Clareza do plano de aula', weight: 1, maxScore: 10 },
+  ];
+
+  it('a rubrica da CHAMADA vence a da trilha', () => {
+    const result = resolveEffectiveRubric({ callRubric, trackRubric: rubric });
+
+    expect(result.source).toBe('CALL');
+    expect(result.rubric.map((criterion) => criterion.key)).toEqual(['feasibility', 'plan']);
+  });
+
+  it('sem rubrica na chamada, vale a da trilha', () => {
+    const result = resolveEffectiveRubric({ callRubric: [], trackRubric: rubric });
+
+    expect(result.source).toBe('TRACK');
+    expect(result.rubric).toEqual(rubric);
+  });
+
+  it('sem nenhuma das duas, vale a padrão', () => {
+    const result = resolveEffectiveRubric({ callRubric: null, trackRubric: undefined });
+
+    expect(result.source).toBe('DEFAULT');
+    expect(result.rubric).toEqual(DEFAULT_RUBRIC);
+  });
+
+  it('rubrica de chamada MALFORMADA cai para a trilha, e não para o padrão', () => {
+    /**
+     * O caso que separa "não configurou" de "configurou errado": a chamada tem uma
+     * rubrica quebrada e a trilha tem uma boa. Cair direto no padrão jogaria fora uma
+     * configuração válida da trilha por causa de um erro em outro lugar.
+     */
+    const result = resolveEffectiveRubric({
+      callRubric: [{ key: 'a', label: 'A', weight: 0, maxScore: 10 }],
+      trackRubric: rubric,
+    });
+
+    expect(result.source).toBe('TRACK');
+    expect(result.rubric).toEqual(rubric);
   });
 });
 

@@ -723,4 +723,77 @@ describe('evaluateSubmissionReadiness()', () => {
     expect(result.ready).toBe(false);
     expect(result.blockers.length).toBeGreaterThanOrEqual(4);
   });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  PROPOSTA DE PROGRAMAÇÃO (FASE 33)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A mesma máquina de prontidão serve artigo e minicurso — e é ela que precisa
+   *  saber a diferença, não um `if` no serviço. Sem trilha e sem PDF, o que bloqueia
+   *  um artigo não pode bloquear uma proposta de palestra.
+   */
+  describe('proposta que não é científica', () => {
+    it('NÃO exige trilha nem arquivo, mas avisa sobre o arquivo', () => {
+      const result = evaluateSubmissionReadiness({
+        ...base,
+        trackId: null,
+        files: [],
+        requiresBlindReview: false,
+        proposalKind: 'MINICOURSE',
+      });
+
+      expect(result.ready).toBe(true);
+      expect(result.blockers).toHaveLength(0);
+      expect(result.warnings.join(' ')).toMatch(/nenhum arquivo/i);
+    });
+
+    it('com arquivo anexado, nem o aviso aparece', () => {
+      const result = evaluateSubmissionReadiness({
+        ...base,
+        trackId: null,
+        files: [{ kind: 'SUPPLEMENTARY', checksum: 'b'.repeat(64) }],
+        requiresBlindReview: false,
+        proposalKind: 'WORKSHOP',
+      });
+
+      expect(result.ready).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('o ARTIGO continua exigindo trilha e PDF — o afrouxamento é só do que não é científico', () => {
+      const paper = evaluateSubmissionReadiness({
+        ...base,
+        trackId: null,
+        files: [],
+        requiresBlindReview: false,
+        proposalKind: 'PAPER',
+      });
+      const poster = evaluateSubmissionReadiness({
+        ...base,
+        trackId: null,
+        files: [],
+        requiresBlindReview: false,
+        proposalKind: 'POSTER',
+      });
+
+      expect(paper.ready).toBe(false);
+      expect(paper.blockers.join(' ')).toMatch(/trilha/i);
+      expect(poster.ready).toBe(false);
+      expect(poster.blockers.join(' ')).toMatch(/trilha/i);
+    });
+
+    it('sem autores continua bloqueando, seja artigo ou minicurso', () => {
+      const result = evaluateSubmissionReadiness({
+        ...base,
+        trackId: null,
+        files: [],
+        requiresBlindReview: false,
+        authorCount: 0,
+        proposalKind: 'SPEAKER',
+      });
+
+      expect(result.ready).toBe(false);
+      expect(result.blockers.join(' ')).toMatch(/autor/i);
+    });
+  });
 });

@@ -7,6 +7,7 @@ import { PUBLICATION_STATE_LABELS } from '@/domain/events/landing-page';
 import { getEventForPreview } from '@/lib/events/event-repository';
 import { getLandingForEdit } from '@/lib/admin/landing-service';
 import { listPublicRaffleResults } from '@/lib/raffles/raffle-service';
+import { listPublicCalls } from '@/lib/proposals/call-service';
 import { EventLanding } from '@/components/events/event-landing';
 
 export const metadata = { title: 'Pré-visualização da página' };
@@ -57,6 +58,13 @@ export default async function EventLandingPreviewPage({
   const publicRaffles = await listPublicRaffleResults(tenantId, event.id);
   const now = new Date();
 
+  /**
+   * A prévia mostra as chamadas PUBLICADAS — as mesmas que o visitante verá. Aqui não
+   * há versão "de rascunho" do bloco: publicar a chamada é o ato que a torna visível, e
+   * antecipá-la na prévia faria o organizador aprovar uma página que não existe.
+   */
+  const calls = await listPublicCalls({ tenantId, eventId: event.id, now });
+
   const state = landing?.page?.publicationState ?? 'DRAFT';
   const scheduledFor = landing?.page?.publishAt ?? null;
 
@@ -74,6 +82,7 @@ export default async function EventLandingPreviewPage({
       tenantName={tenantName}
       now={now}
       publicRaffles={publicRaffles}
+      publicCalls={calls.ok ? calls.calls : []}
       preview={{
         publicationLabel,
         editorHref: tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`),

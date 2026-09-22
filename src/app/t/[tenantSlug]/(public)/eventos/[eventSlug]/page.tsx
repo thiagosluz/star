@@ -5,6 +5,7 @@ import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository'
 import { buildEventMetadata } from '@/domain/events/landing-page';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { listPublicRaffleResults } from '@/lib/raffles/raffle-service';
+import { listPublicCalls } from '@/lib/proposals/call-service';
 import { EventLanding } from '@/components/events/event-landing';
 
 export const dynamic = 'force-dynamic';
@@ -79,6 +80,13 @@ export default async function PublicEventPage({
 
   const publicRaffles = await listPublicRaffleResults(tenant.tenantId, event.id);
 
+  /**
+   * As chamadas PUBLICADAS (FASE 33). A leitura é do servidor e traz o estado de cada
+   * uma já decidido — o bloco da página só desenha, e por isso a chamada encerrada não
+   * continua anunciando prazo.
+   */
+  const calls = await listPublicCalls({ tenantId: tenant.tenantId, eventId: event.id, now });
+
   return (
     <EventLanding
       event={event}
@@ -86,6 +94,7 @@ export default async function PublicEventPage({
       tenantName={tenant.name}
       now={now}
       publicRaffles={publicRaffles}
+      publicCalls={calls.ok ? calls.calls : []}
     />
   );
 }

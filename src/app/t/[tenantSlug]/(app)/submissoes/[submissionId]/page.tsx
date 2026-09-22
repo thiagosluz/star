@@ -71,7 +71,10 @@ export default async function SubmissionDetailPage({
 
   if (!submission) notFound();
 
-  const rubric = await resolveRubric(tenantId, submission.trackId);
+  const rubric = await resolveRubric(tenantId, {
+    trackId: submission.trackId,
+    callId: submission.callId,
+  });
   const editable = isEditableByAuthor(submission.status as SubmissionStatus);
   /**
    * Só o RASCUNHO pode ser excluído (revisão da FASE 4). A decisão é do domínio —

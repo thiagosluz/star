@@ -24,6 +24,8 @@ export interface BlockContentValues {
   ctaLabel: string;
   tierId: string;
   html: string;
+  /** Bloco de chamadas (FASE 33): incluir também as chamadas encerradas. */
+  includeClosed: boolean;
   faq: { question: string; answer: string }[];
   gallery: { url: string; caption: string }[];
 }
@@ -63,6 +65,7 @@ export function blockContentToValues(
     ctaLabel: text('ctaLabel'),
     tierId: text('tierId'),
     html: text('html'),
+    includeClosed: content.includeClosed === true,
     faq: type === 'FAQ' ? (faq.length > 0 ? faq : [{ question: '', answer: '' }]) : [],
     gallery:
       type === 'GALLERY' ? (gallery.length > 0 ? gallery : [{ url: '', caption: '' }]) : [],

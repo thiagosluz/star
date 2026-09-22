@@ -306,6 +306,29 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
     const names = round?.rollNames ?? [];
 
     /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A LISTA PUBLICADA DA RODADA SÓ NASCE NA APURAÇÃO (defeito real, FASE 33)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O aviso ao vivo chega pelo SSE, e o modelo da página só é relido no `refresh`
+     *  agendado 250 ms depois. Nessa janela o telão ainda tem em mãos a rodada
+     *  ANUNCIADA — cuja lista publicada não existe, porque ela é gravada na apuração —,
+     *  e revelar aqui era revelar SEM roleta: a parede pulava de "aguardando" para o
+     *  ganhador sempre que o evento ao vivo vencia o `refresh`. Foi intermitente por
+     *  isso (a bateria da FASE 33 pegou: a assertiva de `SORTEANDO` do E2E falhou com o
+     *  telão já em `REVELADO`), e quem está na plateia via o suspense desaparecer em
+     *  algumas apurações e não em outras.
+     *
+     *  Enquanto a rodada em cartaz for o ANÚNCIO (`drawnAtIso` nulo), não há o que
+     *  revelar: pede a releitura e espera. O efeito roda de novo quando o modelo chegar
+     *  com a rodada apurada — e aí a roleta acontece de verdade.
+     */
+    if (round && round.drawnAtIso === null) {
+      const retry = setTimeout(() => router.refresh(), 300);
+
+      return () => clearTimeout(retry);
+    }
+
+    /**
      * Sem lista publicada (rodada antiga) ou com a preferência de menos movimento, não
      * há roleta: revela direto. A revelação vai por TIMER porque `setState` síncrono
      * dentro do efeito provoca render em cascata — o React Compiler recusa, e o motivo
@@ -348,7 +371,7 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
     timer = setTimeout(tick, delay);
 
     return () => clearTimeout(timer);
-  }, [rolling, model.currentRound]);
+  }, [rolling, model.currentRound, router]);
 
   const openFullscreen = () => {
     void document.documentElement.requestFullscreen?.().catch(() => {

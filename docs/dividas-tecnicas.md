@@ -9,7 +9,9 @@
 > Atualizado após a **FASE 12** (8 itens), a **FASE 13** (A1, B1, B2, B3, B4), a
 > **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
 > **FASE 23** (E9–E13), a **FASE 24** (E14–E17), a **FASE 25** (escopo próprio: E21–E24), a
-> **FASE 15** (D1–D6 + A5) e a **FASE 21** (C4–C5), com as **revisões pós-entrega** da FASE 25
+> **FASE 15** (D1–D6 + A5) e a **FASE 21** (C4–C5), a **FASE 29**, a **FASE 30**, a **FASE 31**,
+> a **FASE 32** e a **FASE 33** (que quitou o E25 e declarou E46–E47), com as **revisões
+> pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
@@ -79,6 +81,7 @@
 | **D5 — Notificação de conquista/carta** | F5 | **FASE 15** — `notifyCardGranted` no ponto único do motor de recompensas (`grantCardForTrigger`), celebrando apenas carta NOVA (duplicata aumenta quantidade e não é conquista) |
 | **D6 — Notificação de certificado emitido** | F6 | **FASE 15** — `notifyCertificateIssued` em `generateCertificate` (vale para a emissão inline e para o worker), com código de validação e link de conferência pública |
 | **A5 — Verificação de e-mail** | F2 | **FASE 15** — `emailVerification.sendOnSignUp` envia a confirmação no cadastro (token de 24 h), página `/verificacao` para o resultado e aviso no shell com reenvio; `requireEmailVerification` continua **false** de propósito, e a decisão está travada por teste |
+| **E25 — Convite de palestrante não saía por e-mail** | FASE 25 | **FASE 33** — o protocolo de aceite gera o convite e enfileira o template `SPEAKER_INVITATION` (link do portal, validade de 14 dias, `dedupeKey` por perfil × data de expiração). A esteira de e-mail da FASE 15 já existia: o que faltava era o template e o gatilho |
 
 ---
 
@@ -90,14 +93,14 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 28 | 6 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, o convite de palestrante é manual (e, sem verificação de e-mail, a entrada por ele se apoia no endereço da conta), não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, não há interruptor para manter o telão fora do ar, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, a roleta do telão não pode ser repetida nem desligada, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino e o recado é mão única |
+| E. Jornada do participante | 29 | 7 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, não há interruptor para manter o telão fora do ar, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, a roleta do telão não pode ser repetida nem desligada, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo e o proponente não é avisado da decisão |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **52** | **15** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **53** | **16** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+3+28+5+0+4+1 = 52 — o tema G ficou
+> O total é a **soma das tabelas de tema** (4+5+2+3+29+5+0+4+1 = 53 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -110,6 +113,11 @@
 > E37**, que a FASE 29 declarou — esta última sem quitar nenhuma dívida anterior: o escopo
 > dela veio do humano, e o que ela fechou foi um defeito de honestidade na auditoria, não um
 > item deste levantamento).
+>
+> **A FASE 33** (chamadas de propostas) veio do humano e **QUITOU o E25**: o convite de palestrante
+> passou a sair por e-mail (template `SPEAKER_INVITATION`, disparado pelo protocolo de aceite). Ela
+> declarou o **E46** (a proposta não aceita anexo) e o **E47** (o proponente não é avisado da
+> decisão). O consolidado passa de 52 para **53**.
 >
 > **A FASE 32** (central do participante e inteligência da instituição) veio do humano e **não
 > quitou item deste levantamento**: ela deu à instituição a visão da PESSOA (diretório, ficha 360,
@@ -211,7 +219,6 @@
 | E18 | **Miniaturas no acervo de mídia** | FASE 24 (novo) | A lista do acervo carrega a imagem INTEIRA para desenhar um quadrado pequeno; falta gerar (ou servir) uma miniatura | Acervo com 20 fotos de 3 MB baixa dezenas de MB só para abrir a tela | M | Sim |
 | E19 | **Busca e filtro no acervo de mídia** | FASE 24 (novo) | A listagem traz as 200 mais recentes, sem filtro por tipo, evento ou "em uso" (a tela mostra o uso, não filtra por ele) | Acervo grande exige rolar e comparar a olho | P | Sim |
 | E20 | **Sincronizar todas as cópias de uma vez** | FASE 24 (novo) | A sincronia é por patrocinador (ADR-111); falta aplicar a mesma origem a todas as cópias de uma vez | Instituição com muitas edições sincroniza uma cópia por vez | M | Sim |
-| E25 | **Convite de palestrante não sai por e-mail** | FASE 25 (novo) | O código de convite é entregue à mão: a plataforma não tem provedor de e-mail (dívida D1/F15) | Evento com 40 palestrantes exige 40 entregas manuais | M | Sim |
 | E26 | **Integridade do upload confere só o tamanho quando o storage não reporta checksum** | FASE 25 (novo) | O `PUT` assinado não inclui `x-amz-meta-sha256`; `verifyStoredObject` cai no tamanho (mesmo caminho desde a FASE 4) | Um objeto trocado por outro de MESMO tamanho passaria — hoje nenhum caminho do sistema o produz | M | Sim |
 | E27 | **Foto do palestrante só entra por upload** | FASE 25 (novo) | Não há campo de URL para quem hospeda a foto fora (decisão de segurança: a esteira valida a assinatura real) | Quem tem a foto em outro site precisa baixá-la e enviá-la | P | Sim |
 | E28 | **Convite em lote / reenvio automático** | FASE 25 (novo) | Cada convite é gerado por palestrante, e regerar invalida o anterior (ADR-114) | Turma grande de convidados exige repetir o fluxo | M | Sim |
@@ -232,6 +239,8 @@
 | E44 | **O arquivo exportado não tem prazo nem controle de destino** | FASE 32 (novo, ADR-157) | O CSV sai com e-mail completo (é o insumo da ação) e passa a viver em pasta compartilhada, e-mail e pen drive. A trilha registra QUEM exportou e quantas linhas, mas não impede que o arquivo circule anos depois | É a maior superfície de vazamento da fase: o registro protege a instituição contra o esquecimento, não contra a cópia. O caminho é marca d'água com autor e data no arquivo, prazo de validade declarado na tela e uma política de retenção combinada com a instituição | M | Sim |
 | E45 | **O recado é mão única: não há resposta nem thread** | FASE 32 (novo, ADR-156) | O participante recebe e lê (a ficha mostra "não lido"), mas não responde pela plataforma, e quem enviou não vê "respondeu". "Não lido" não é o mesmo que "não recebido" | A instituição fala e não ouve: dúvida sobre credenciamento vira ligação para a secretaria, fora do registro. O caminho é a resposta na própria caixa de entrada (uma thread por mensagem) e o indicador de resposta na ficha | M | Sim |
 | E39 | **A roleta tem duração fixa e não pode ser reexecutada nem desligada** | FASE 30 (novo, ADR-146) | A animação roda quando o telão percebe a apuração ao vivo, por ~3 s, e quem abre o link depois vê o resultado direto (decisão consciente). Não há controle para repetir a roleta (telão recarregado no meio do anúncio) nem para apresentá-la sem animação | O suspense do anúncio é o que o pedido queria, e o operador não tem como ajustá-lo ao palco: uma projeção que reinicia perde a roleta, e não há como forçá-la de novo | P | Sim |
+| E46 | **A proposta de uma chamada não aceita anexo** | FASE 33 (novo, ADR-161/162) | O formulário público pede texto e os campos do TIPO (carga horária, público-alvo, minibiografia), e não tem upload — diferente da submissão de artigo, que anexa o PDF. A prontidão fora da ciência trata "sem arquivo" como AVISO, e o caminho de upload existe (FASE 23/24, com quota e assinatura real do arquivo) | A organização decide sobre um resumo de 150 caracteres e uma minibiografia, sem o plano de aula nem o currículo que costumam acompanhar a proposta — e a decisão fica mais pobre justamente nas chamadas em que ela é mais subjetiva. O caminho é reusar `requestUploadAction`/`confirmUploadAction` no formulário público, com visibilidade decidida como no material do palestrante | M | Sim |
+| E47 | **O proponente não é avisado da decisão (aceite ou recusa)** | FASE 33 (novo, ADR-165) | `recordDecision` grava situação, nota e auditoria, e nenhum e-mail sai; o proponente descobre o resultado entrando na plataforma com o protocolo em mãos. A esteira de e-mail existe (FASE 15) e a proposta já tem o template `PROPOSAL_RECEIVED` | Expectativa quebrada no ponto mais sensível: a pessoa enviou uma proposta e ficou sem resposta — e um e-mail de recusa bem escrito é metade do trabalho de organizar uma chamada. O caminho é um template `PROPOSAL_DECIDED`, disparado por `recordDecision` fora da transação, com `dedupeKey` por proposta × decisão e o parecer resumido quando houver | P | Sim |
 
 ### F. Gamificação
 
@@ -291,12 +300,13 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | ~~**F24 — Mídia e agendamento**~~ | Biblioteca de mídia, vínculo de patrocinador entre eventos, janela de exibição, fuso do agendamento | E14–E17 | **Concluída como FASE 24** — `docs/fase-24-midia-e-agendamento.md`. O bucket deixou de ser a biblioteca: a imagem passou a ter registro, com reaproveitamento por checksum e exclusão que confere o uso |
 | ~~**F25 — Portal do palestrante**~~ | Perfil do palestrante, convite e vínculo de conta, portal com posse, materiais com visibilidade, vitrine e certificado | E21–E24 (escopo definido pelo humano) | **Concluída como FASE 25** — `docs/fase-25-portal-do-palestrante.md`. O palestrante deixou de ser uma linha da atividade e passou a ser uma pessoa da instituição, com portal próprio |
 | **F26 — Acervo de mídia (segunda ordem)** | Miniaturas, busca e filtro no acervo, sincronia em lote | E18–E20 | O que a FASE 24 declarou em aberto: são melhorias de USO do acervo, não requisitos — cabem como carona na F21 (entregue) ou num mutirão de meio dia |
-| **F27 — Material e convite do palestrante** | Convite por e-mail, integridade forte no upload, foto por URL, convite em lote, colunas legadas | E25–E29 (+ E30) | O que a FASE 25 declarou em aberto (e a revisão dela, o E30). A **FASE 15 entregou a esteira de e-mail**, então E25/E28 agora só precisam do template e do gatilho; a verificação de e-mail também já existe como caminho de confirmação do E30 — o que falta nele é o bloqueio de login |
+| **F27 — Material e convite do palestrante** | Convite por e-mail, integridade forte no upload, foto por URL, convite em lote, colunas legadas | E26–E29 (+ E30) | O que a FASE 25 declarou em aberto (e a revisão dela, o E30). **O E25 foi quitado na FASE 33** (o convite de palestrante passou a sair por e-mail no protocolo de aceite); o **E28** (convite em lote) segue aberto e usa a mesma esteira. A verificação de e-mail já existe como caminho de confirmação do E30 — o que falta nele é o bloqueio de login |
 | **F28 — Entrega de e-mail de segunda ordem** | Domínio verificado no provedor, webhook de entrega (bounce/reclamação), preferências e opt-out | D7, D8, D9 | O que a FASE 15 declarou em aberto. D7 é operação de conta (verificar domínio e trocar `EMAIL_FROM`); D8 e D9 são produto e cabem juntos num mutirão |
 | ~~**F29 — Palco público e auditoria do sorteio**~~ | Página de telão do sorteio com efeitos, link e QR na tela de sorteios, lista publicada assinada no resultado e auditoria que qualquer pessoa confere | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 29** — `docs/fase-29-palco-e-auditoria.md`. Fechou um defeito de honestidade da FASE 22 (a página prometia uma reprodução que ninguém podia conferir) e declarou **E36** e **E37** |
 | ~~**F30 — Sorteio ao vivo, em rodadas**~~ | Rodadas no mesmo sorteio (cada uma com o próprio compromisso, prêmio e resultado assinado), "criar para o palco", roleta com os nomes reais no telão e prêmio/patrocinador por momento | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 30** — `docs/fase-30-sorteio-ao-vivo-em-rodadas.md`. Revisou a FASE 29 (o telão só era alcançável com o resultado já apurado) e declarou **E38** e **E39** |
 | ~~**F31 — Credenciamento e frequência por crachá**~~ | Leitura de QR pela câmera, área de crachás com emissão individual e em massa, etiqueta com QR + código + nome, crachá online do participante e a separação entre credenciamento e frequência | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 31** — `docs/fase-31-credenciamento-e-frequencia.md`. O crachá passou a existir de verdade (a coluna era lida por todos e escrita por ninguém) e declarou **E40**, **E41** e **E42** |
 | ~~**F32 — Central do participante e inteligência da instituição**~~ | Diretório de participantes atravessando todos os eventos, ficha 360 (eventos, frequência, certificados, cartas, XP e comunicação), recado por e-mail **e** mensagem na caixa de entrada, panorama com a vida da instituição por período e por evento, e exportação em CSV | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 32** — `docs/fase-32-central-do-participante.md`. Deu à instituição a visão da PESSOA (até aqui só havia listas por evento), corrigiu uma recusa silenciosa na guarda das Server Actions e declarou **E44** e **E45** |
+| ~~**F33 — Chamadas de propostas**~~ | Chamadas por tipo (palestrante, minicurso, oficina, mesa…), formulário público de proposta, bloco na página do evento e protocolo de aceite | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 33** — `docs/fase-33-chamadas-de-propostas.md`. Quitou o **E25** (o convite de palestrante passou a sair por e-mail) e declarou **E46** (a proposta não aceita anexo) e **E47** (o proponente não é avisado da decisão) |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo (atividade e evento), `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2, E33 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)
@@ -387,8 +397,9 @@ convite por token hasheado, reivindicação em dois caminhos, portal com posse v
 materiais com visibilidade decidida por visitante (401/403/404), vitrine pública com foto e bio, e
 certificado `SPEAKER` que exige evento encerrado e credenciamento registrado. O registro está em
 [`docs/fase-25-portal-do-palestrante.md`](fase-25-portal-do-palestrante.md), que declara as dívidas
-novas da fase (E25–E29) e a fronteira que ela **não** cruzou: o convite é entregue à mão porque não
-há canal de e-mail (F15 pendente).
+novas da fase (E25–E29) e a fronteira que ela **não** cruzou: o convite era entregue à mão porque não
+havia canal de e-mail naquele momento (a FASE 15 chegou depois, e a **FASE 33 quitou o E25** — o
+convite passou a sair por e-mail no protocolo de aceite).
 
 ### Revisão da FASE 25 executada depois da entrega (concluído)
 
