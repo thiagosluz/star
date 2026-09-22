@@ -116,13 +116,22 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     certificateUrl: 'http://localhost:3000/t/ufba/certificados',
     validationUrl: 'http://localhost:3000/validar/CERT-ABC12345',
   },
+  PARTICIPANT_MESSAGE: {
+    recipientName: 'Ana Souza',
+    tenantName: 'Universidade Federal da Bahia',
+    subject: 'Credenciamento abre às 8h',
+    body: 'Chegue com o QR Code em mãos.\n\nEquipe da organização.',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    senderName: 'Administradora do Evento',
+    inboxUrl: 'http://localhost:3000/t/ufba/minhas-mensagens',
+  },
 };
 
 const CONTEXT = { brandName: 'Universidade Federal da Bahia' };
 
 describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', () => {
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(8);
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(9);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();

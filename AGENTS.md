@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29, 30 e 31 (F15, F21, F22, F29, F30 e F31 entregues; a F18+ é a próxima)
-Testes ................. 1587 (Vitest: unit + integração) + 102 (Playwright E2E)
-ADRs ................... 152 (numeração GLOBAL e sequencial — a próxima é ADR-153)
-Permissões ............. 58 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 39 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 25, 29, 30, 31 e 32 (F15, F21, F22, F29, F30, F31 e F32 entregues; a F18+ é a próxima)
+Testes ................. 1638 (Vitest: unit + integração) + 107 (Playwright E2E)
+ADRs ................... 157 (numeração GLOBAL e sequencial — a próxima é ADR-158)
+Permissões ............. 60 (11 papéis, 4 escopos)
+Tabelas de tenant ...... 40 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,7 +98,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1587+ testes passando
+npm test              # esperado: 1638+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro."
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
@@ -111,7 +111,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 102+ testes passando
+npm run test:e2e      # esperado: 107+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -124,7 +124,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 71 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 72 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
 > no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
 > seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
@@ -133,18 +133,6 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 | # | Armadilha | Regra |
 |---|---|---|
-| 49 | **O BullMQ RECUSA `jobId` com `:`** (`Custom Id cannot contain :` — o `:` é separador de chave no Redis, e só passa id de três segmentos). O `add` lança, o `catch` do enqueue interpreta como "fila indisponível" e a operação cai no caminho INLINE — funcionando, devagar e **em silêncio**. Foi assim que a fila de certificados ficou SEIS FASES sem enfileirar nada (`certificate:<uuid>` desde a FASE 6), com o E2E que documenta "o worker gera o arquivo" passando porque inline também emite | `jobId` usa hífen (`certificate-<id>`, `email-<id>`), e o teste de integração afirma `queued === true` — sem essa asserção, a degradação silenciosa volta sem ninguém notar |
-| 50 | **Variável já exportada no shell VENCE o `.env`**: `dotenv` não sobrescreve o que já existe no ambiente. O envio real falhou com "the eventflow.test domain is not verified" mesmo com o `.env` correto — o valor antigo estava no processo | Ao investigar "o `.env` não está sendo lido", imprima `process.env.A_VARIAVEL` **antes** de culpar o arquivo; e passe o valor explícito no comando (`$env:EMAIL_FROM=...`) quando quiser garantir o que está testando |
-| 51 | **Painel que abre para BAIXO a partir do último elemento de uma barra lateral de altura total** nasce fora da tela em 720 px de altura: o Playwright reprova com "element is outside of the viewport" (116 tentativas) e, na prática, a troca de instituição parece travada. O sintoma apareceu quando um item de menu a mais tornou a navegação mais alta | O seletor de contexto vive no RODAPÉ do shell: o painel abre para CIMA (`bottom-full mb-2`). E o contêiner rolável da navegação precisa de `min-h-0` — sem ele, `flex-1 overflow-y-auto` não encolhe abaixo do conteúdo e empurra o rodapé para fora da tela |
-| 52 | **Regra que depende de um dado que NÃO entra na função.** `planRoleChange` recebia `string[]` de NOMES de papel para reescrever os papéis da equipe — e `REVIEWER` concedido por **EVENTO** tem o mesmo nome do papel de instituição. Um chamador que esquecesse de filtrar o escopo revogaria a avaliação de uma trilha, **em silêncio**: para o domínio eram dois nomes iguais. Foi o teste unitário que reprovou, não a produção | Quando a decisão depende de um atributo (aqui, o `scope`), ele entra na ASSINATURA (`RoleRef = { role, scope }`), e o que não pertence ao conjunto fica fora **por construção**. Documentar "o chamador deve filtrar" deixa o defeito invisível para todo teste que não repita o filtro |
-| 53 | **`prisma migrate dev` propôs uma migração DESTRUTIVA** para uma mudança de uma coluna: derrubava quatro índices criados à mão (`event_pages_tenantId_eventId_unpublishAt_idx`, `raffle_winners_raffleId_kind_idx`, `raffles_eventId_isPublic_status_idx`, `registrations_event_origin_idx`) e alterava defaults de seis tabelas alheias | O projeto tem **DDL escrito à mão** (índices parciais, policies, partições) que o `schema.prisma` não declara. O Prisma compara o schema com o banco, vê o que não conhece e propõe REMOVER — a migração de uma coluna virava faxina | **Leia o SQL gerado antes de aplicar.** Crie com `--create-only`, confira linha por linha e aplique com `npm run db:migrate:deploy`. Num projeto com DDL manual, `migrate dev` não é seguro por padrão — e a migração à mão é o caminho normal aqui |
-| 54 | Uma migração nova nasceu com carimbo **anterior** ao das duas últimas já aplicadas (`20260919141704` contra `20260920140000`): o relógio da máquina estava em 19/09 e as anteriores foram nomeadas à mão com data à frente | O Prisma ordena as migrações **pelo NOME do diretório**, não pela data de criação. Uma migração que ordena "no meio" do histórico já aplicado confunde o `migrate`/`deploy` | Renomeie o diretório para um carimbo maior que o da última aplicada (`20260921100000_...`). **A ordem é o nome** — e ele precisa ser maior que o de tudo o que já foi aplicado |
-| 55 | A mesma instrução `UPDATE activities SET "confirmedCount" = "confirmedCount" + 1 WHERE ... capacity ...` estava escrita à mão em **quatro** pontos do serviço de inscrição | Quando a SALA passou a ser um teto, a regra mudou em um ponto e três ficaram para trás — em silêncio, porque o caminho testado era o outro. Cópia de regra é regra que diverge | As quatro viraram constantes nomeadas no domínio (`RESERVE_ACTIVITY_SEAT_SQL`, `RESERVE_OPEN_ACTIVITY_SEAT_SQL`, `RESERVE_EVENT_SEAT_SQL`), e a ausência de predicado na atividade ABERTA ficou explícita num nome próprio. Teste de integração prende o caso central (atividade ilimitada numa sala de 2 confirma exatamente 2) |
-| 56 | O E2E corrigia um campo e reenviava o formulário logo depois de uma recusa — e a segunda submissão levava o valor **ANTIGO** (`80` em vez de `30`), com o teste falhando por um motivo que não era o dele | A armadilha 5 tem um GÊMEO: o reset do React 19 é **assíncrono**. Preencher um campo enquanto o formulário está sendo reiniciado é corrida — o valor escrito pode ser revertido pelo reset que ainda não chegou | Depois de uma recusa, **recomece de uma tela limpa** (`page.reload()`) em vez de corrigir por cima. É determinístico e o teste passa a medir o que quer medir. E, ao recarregar, lembre que os `<details>` voltam FECHADOS: reabra a seção antes de clicar dentro dela |
-| 57 | O teste unitário reprovou o rótulo do filtro de histórico: quem filtrava `criado até 18/10` lia **"criado até 19/10"** | O fim do dia LOCAL é 02:59:59Z do dia SEGUINTE, e o rótulo formatava o INSTANTE em UTC. A conversão estava certa para a consulta e errada para o texto: o dado certo, exibido de volta, contradizia o campo que a pessoa acabou de preencher | Guarde o **texto digitado** junto do instante (`fromDay`/`toDay`) e formate o texto. **Instante para consultar, texto para exibir** — o mesmo cuidado vale para qualquer campo de data convertido a fuso |
-| 58 | O teste de integração da página pública reprovou: o nome do ganhador saía COMPLETO no resultado público, contra a regra documentada ("mascarado por padrão") | `User.isPublicProfile` nasce `true` desde a migração inicial e **nenhum** caminho do sistema escreve a coluna — todo mundo "consentiu" sem escolher. O defeito sobreviveu porque a fixture da fase anterior **gravava o valor que o domínio esperava** (`isPublicProfile: false`), então o default do banco nunca foi exercitado | O padrão passou a `false`, as linhas existentes foram normalizadas e a migração explica por quê (ADR-139). **Fixture que escreve o valor esperado esconde o default do banco**: crie a entidade pelo caminho normal quando o que está em teste for justamente o padrão |
-| 59 | Um sorteio selado na versão 1 da chave não abria mais a semente depois de a chave girar — e a apuração **acontecia do mesmo jeito** | A versão não era gravada: a abertura usava a chave ATUAL. Como o cofre não falha alto (cai para o gerador do sistema, para não travar o palco), a degradação era silenciosa — o sorteio saía sem a prova de commit-reveal | A coluna `raffles."seedKeyVersion"` grava a versão no ato do selo, e `sealSeed` devolve **selo E versão na mesma estrutura**: gravar um sem o outro deixou de ser expressável. Teste de integração prende o giro com a versão antiga ainda declarada |
-| 60 | Sem chave de cofre válida o sorteio continuava apurando, e o operador só descobria que a prova tinha se perdido **no meio da apresentação** | O cofre degrada em silêncio por decisão (não travar o palco), mas a degradação só aparecia no resultado — e configuração que degrada em silêncio não tem onde ser vista | A tela de sorteios passou a mostrar a **situação do chaveiro** (versão em uso, versões disponíveis e problemas de formatação) ANTES da apuração. Mesma lição do e-mail da FASE 15: degradação declarada precisa de um lugar na tela |
 | 61 | **O build da imagem TRAVAVA no estágio do worker** (dez minutos no mesmo passo) e, quando destravava, o `next build` caía com "Failed to fetch Inter from Google Fonts" | O passo de build **não alcança o registro npm** (um `wget` ao `registry.npmjs.org` dentro de um `RUN` estoura o tempo, embora funcione de um `docker run` comum); `npx` e o Prisma sondam a rede antes de rodar; e o `npm install tsx` do worker, além de instalar, **consertava** o `node_modules` parcial do `.next/standalone` — traço do Next sem `ioredis`, com `bullmq` pela metade e `dotenv` sem `package.json` | O build não depende mais da rede: o `tsx` é **copiado** do estágio `deps`, o worker usa a **árvore de produção completa** (`npm prune --omit=dev --offline`, que só REMOVE), o Prisma é chamado por caminho com `CHECKPOINT_DISABLE=1`, e uma **prova de boot** no build recusa `ERR_MODULE_NOT_FOUND`. As fontes do `next/font` seguem sendo a única dependência externa: **repetir o build é a resposta, não mexer no código** |
 | 62 | **Um teste E2E falhou e os três seguintes falharam com sintomas sem relação com ele** ("não há lista publicada", "o painel não lista sorteio nenhum", contagem de elegíveis zerada) | **Depois de um teste que falha, o Playwright reinicia o worker** — e o sufixo único do arquivo (`RUN_ID`) é gerado no carregamento do módulo. O worker novo roda o `beforeAll` outra vez e cria uma fixture NOVA (instituição, evento e contas diferentes), **sem os dados que os cenários anteriores deixaram** | Cenário E2E que precisa de dado **monta o próprio dado**, ou afirma a premissa em voz alta (a falha então diz o que faltou). E, ao depurar, imprima o IDENTIFICADOR (`eventId`, `tenantId`), não o conteúdo: quando dois testes seguidos discordam sobre o banco, o que mudou foi o contexto |
 | 63 | O telão do sorteio ficou 30 s em "aguardando" **com o sorteio já apurado no banco**, sem receber nenhum evento | A rota do fluxo calculava o estado uma vez, na abertura da conexão, e só reamostrava a contagem de elegíveis: o cliente recebia para sempre a fotografia do carregamento | O estado passou a ser **relido a cada amostra**, e o fluxo para de amostrar quando o sorteio deixa de ser rascunho. **Fluxo ao vivo que reporta um campo que não relê não é ao vivo** |
@@ -156,6 +144,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 69 | **Dois nomes de segmento dinâmico no mesmo nível derrubam o build**: *"You cannot use different slug names for the same dynamic path ('eventSlug' !== 'eventId')"* | Já existia `/api/t/[tenantSlug]/eventos/[eventSlug]/...` e a rota nova nasceu com `[eventId]` ali. O erro é da árvore inteira, não da rota nova | A rota foi para o namespace da própria tela, com o evento por parâmetro validado no banco. **Antes de nomear um segmento dinâmico, olhe como o mesmo nível é nomeado no resto da árvore** |
 | 70 | `npm run lint` recusou a página com *"Cannot call impure function during render: `Date.now`"* | O React Compiler trata o corpo do Server Component como render, e a tela precisava de "agora" para sugerir a atividade em curso | O instante passou a vir do **relógio do banco** (`SELECT now()`), o mesmo que carimba as presenças. **Relógio do processo no lugar de dado** é impureza no render — e o relógio certo é o de quem grava |
 | 71 | **O crachá LEGADO deixou de ser encontrado** no balcão: o E2E da jornada da plataforma (FASE 7) reprovou dizendo que o crachá não existia, enquanto todos os testes da fase passavam | A busca montava os candidatos como `[normalizado, raw.toUpperCase()]`. Normalizar serve para o código NOVO (`CR-…`, que é nosso), mas o token da coluna antiga é **string opaca**: `badge-plat-a1b2c3` virava `BADGE-PLAT-A1B2C3` e a linha nunca casava. O caminho legado estava documentado e **nenhum teste olhava para ele** | O candidato na **caixa exata** entrou na busca, com o porquê no código, e um teste de integração novo prende o token de caixa mista — verificado nos dois sentidos: sem a correção reprova, com ela passa. **Identificador opaco não se normaliza**: a etiqueta impressa é lida letra por letra |
+| 72 | **A própria pessoa recebia "permissão negada"** ao pedir o próprio recurso: o botão "Marcar como lida" não fazia nada (nem erro na tela), e o "Gerar meu crachá" da FASE 31 estava quebrado do mesmo jeito, sem teste que clicasse nele | `guardAction` chamava `can(permissão, { scope })` **sem passar o dono** — e `can()` recusa permissão `:own` sem `ownerId` (fail-closed, invariante nº 4). A guarda de PÁGINA já resolvia isso desde a FASE 25; a de ACTION ficou com metade da lição, e o defeito era silencioso | `guardAction` passa `ownerId: user.id` para permissões `:own` (o dono do RECURSO continua sendo conferido no serviço, com o id do banco), e o cenário E2E que só olhava a tela passou a **clicar no botão**. **Guardas gêmeas precisam da mesma regra, e botão sem clique é caminho sem teste** |
 
 ---
 
@@ -363,6 +352,36 @@ local (Firefox e Safari não têm `BarcodeDetector`), com o leitor USB e a digit
 caminhos de volta; e quem esquece de registrar a saída é fechado no **fim da atividade** pela
 varredura do worker (ou pelo botão do painel), com o MESMO número sempre.
 
+### Central do participante (FASE 32)
+
+A instituição só via pessoas **por evento**; esta fase deu a visão da PESSOA — e um canal de
+comunicação com ela dentro da plataforma.
+
+```
+Diretório ............... /t/<slug>/participantes?busca=&evento=&certificado=1&presente=1&pagina=
+                           → abrir ficha · enviar recado (seleção) · exportar CSV
+Ficha 360 ............... /t/<slug>/participantes/<userId>
+Panorama ................ /t/<slug>/panorama?periodo=ALL|30D|90D|YEAR|CUSTOM&de=&ate=
+Caixa de entrada ........ /t/<slug>/minhas-mensagens        (participante)
+Exportação CSV .......... /api/t/<slug>/participantes/exportar?<mesmos filtros>
+```
+
+Cinco regras que quebram fácil: **quem é participante é uma UNIÃO** (vínculo `PARTICIPANT` ∪
+qualquer inscrição) — olhar só um lado esconde gente real —, e a ficha confere o pertencimento
+antes de ler qualquer seção (o `user` é global: a RLS não o protege); **a leitura da ficha entra
+na trilha** (`AuditAction.READ`, criada aqui) e o e-mail sai **mascarado na lista**, completo só
+na ficha, que é a decisão de olhar uma pessoa; **o recado é o FATO e o e-mail é consequência** —
+a mensagem nasce em `participant_messages` e o e-mail sai pelo outbox com `dedupeKey` derivado do
+ID DA MENSAGEM, então falha de provedor não apaga a comunicação e dois recados com o mesmo
+assunto continuam sendo dois fatos; **a caixa de entrada é aberta por POSSE** (o `userId` vem da
+sessão, nunca do formulário) enquanto ENVIAR exige `participant:message` no escopo da
+instituição; e **`null` não é `0`** — taxa de comparecimento e média de minutos vêm `null` sem
+denominador, e a tela mostra "—" em vez de inventar 0% para quem não teve oportunidade.
+
+A visão geral é a única tela que usa `tenant:analytics:read`, permissão que existia desde a
+FASE 2 sem consumidor. E a guarda das Server Actions passou a tratar permissão `:own`
+(armadilha 72).
+
 ### Operação de palco (FASE 22)
 
 O sorteio ganhou o que a OPERAÇÃO pede — e o tema de sorteios fechou: as seis dívidas
@@ -551,7 +570,7 @@ o HTML e o texto de cada mensagem **antes** da entrega.
 
 ```
 Fila e entrega .......... src/lib/communication/{mailer,email-queue,email-service}.ts
-Templates (8) ........... src/domain/communication/email-templates.ts   (funções puras)
+Templates (9) ........... src/domain/communication/email-templates.ts   (funções puras)
 Convite de equipe ....... /t/<slug>/administracao/equipe   → /t/<slug>/convite?codigo=<TOKEN>
 Caixa de saída .......... /t/<slug>/administracao/comunicacao   (communication:read)
 Confirmação de e-mail ... /verificacao  (destino do link; sem login)
@@ -701,6 +720,7 @@ tests/{unit,integration,e2e}
 | 29 | Palco público e auditoria do sorteio (**telão** com compromisso antes da apuração, contagem ao vivo e revelação automática; **link + QR** na tela de sorteios; **lista publicada** gravada na apuração e assinada no resultado (payload v3); **auditoria** que refaz as contas no navegador e receita para conferir fora do site) — escopo definido pelo humano | ✅ |
 | 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) — escopo definido pelo humano; **+ revisão da FASE 29**: o telão só era alcançável já apurado, e o E2E montava o rascunho por escrita direta | ✅ |
 | 31 | Credenciamento e frequência por crachá (**um código por pessoa** no evento, com o **contexto da leitura** decidindo o fato; **área de crachás** com emissão individual e em massa e **folha A4** em PDF com QR + código + nome; **crachá online** do participante; **modo monitor** com câmera (API nativa + decodificador local), leitor USB e digitação; **chegada ≠ frequência**, com sessão por visita e minutos com teto no fim da atividade) — escopo definido pelo humano | ✅ |
+| 32 | Central do participante e inteligência da instituição (**diretório** de todos os participantes da instituição — união de vínculo e inscrição —, **ficha 360** com eventos, frequência, certificados, cartas, XP e comunicação, **recado** por e-mail e mensagem na **caixa de entrada** do participante, **panorama** com taxa de comparecimento e série por evento no fuso da instituição, e **exportação em CSV** com trilha; abertura de ficha auditada e e-mail mascarado na lista) — escopo definido pelo humano | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -709,9 +729,9 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**50 itens abertos**, soma das
+**Dívidas técnicas:** o levantamento consolidado (**52 itens abertos**, soma das
 tabelas de tema — o tema G ficou ZERADO na FASE 22 — o levantamento original menos o que
-as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29, 30 e 31 quitaram, mais o que cada uma declarou de
+as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29, 30, 31 e 32 quitaram, mais o que cada uma declarou de
 novo: a FASE 15 quitou os sete itens de
 comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
 (reconciliação banco × bucket e acesso de participante perdido na remoção); **a FASE 22
@@ -742,8 +762,8 @@ ordem sugerida.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 71 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-31-credenciamento-e-frequencia.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 72 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-32-central-do-participante.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

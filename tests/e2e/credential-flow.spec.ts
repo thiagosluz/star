@@ -370,6 +370,22 @@ test.describe('credenciamento e frequência por crachá', () => {
     });
 
     await expect(codeCell).toContainText(badge.code);
+
+    /**
+     * O BOTÃO "GERAR MEU CRACHÁ" PRECISA SER CLICADO (FASE 32).
+     *
+     * Ele ficou sem cobertura até aqui: o cenário só olhava a tela, que já chega
+     * pronta do servidor. E era justamente a action por trás dele que estava
+     * QUEBRADA — `guardAction` não passava o dono para uma permissão `:own`, então a
+     * própria pessoa recebia "permissão negada" ao pedir o próprio crachá. O defeito
+     * foi encontrado pelo E2E da FASE 32 (que usa a mesma guarda) e é este clique que
+     * impede a volta dele.
+     */
+    await page.getByTestId('own-badge-generate').click();
+
+    await expect(page.getByText(`Seu crachá está pronto: ${badge.code}`)).toBeVisible({
+      timeout: 20_000,
+    });
   });
 
   test('o crachá revogado identifica a pessoa e NÃO registra presença', async ({ page }) => {

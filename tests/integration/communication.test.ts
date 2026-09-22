@@ -280,7 +280,17 @@ describe('outbox e entrega', () => {
       tx.emailMessage.findUniqueOrThrow({ where: { id: queued.emailMessageId as string } }),
     );
 
-    expect(stored.status).toBe('QUEUED');
+    /**
+     * O QUE ESTA ASSERÇÃO PRENDE é o registro do outbox no ato do enfileiramento — o
+     * HTML que saiu é o do ENVIO, e não o de um template re-renderizado depois.
+     *
+     * O estado é `QUEUED` **ou** `SENT` desde a FASE 32: com o worker no ar (o
+     * container do `docker compose --profile app`), ele pode entregar a mensagem entre
+     * o enfileiramento e esta linha — e o teste passava ou falhava conforme a máquina
+     * estivesse ocupada. A corrida não é do produto: o fato é o mesmo nos dois estados,
+     * e o que este teste mede é o CONTEÚDO gravado antes da entrega.
+     */
+    expect(['QUEUED', 'SENT']).toContain(stored.status);
     expect(stored.html).toContain('Cartógrafa do Cerrado');
     expect(stored.text).toContain('Cartógrafa do Cerrado');
     expect(stored.payload).toMatchObject({ cardName: 'Cartógrafa do Cerrado' });

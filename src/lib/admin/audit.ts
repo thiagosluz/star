@@ -40,6 +40,14 @@ export type AuditActionName =
   | 'LOGIN'
   | 'LOGOUT'
   | 'EXPORT'
+  /**
+   * FASE 32 — leitura de dado pessoal agregado (a ficha do participante).
+   *
+   * A trilha nasceu sabendo registrar escrita. Consultar o histórico de uma pessoa é
+   * um acesso que a instituição precisa poder conferir depois, e sem ação própria
+   * esse acesso ficaria invisível.
+   */
+  | 'READ'
   | 'PERMISSION_CHANGE'
   | 'IMPERSONATE';
 

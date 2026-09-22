@@ -134,6 +134,28 @@ export const PERMISSIONS = {
   // ── Conteúdo / Landing page ─────────────────────────────────────────────────
   PAGE_MANAGE: 'page:manage',
 
+  // ── Central do participante (FASE 32) ───────────────────────────────────────
+  /**
+   * Ver o diretório de participantes da instituição (todos os eventos) e abrir a
+   * ficha de uma pessoa: inscrições, frequência, certificados, cartas, XP e a
+   * comunicação que ela recebeu.
+   *
+   * É a permissão mais sensível da fase: a ficha reúne dado pessoal que nenhuma
+   * outra tela junta. Por isso ela é SEPARADA de `registration:read:any` — quem
+   * opera a inscrição de um evento não ganha, por consequência, o histórico da
+   * pessoa em todos os eventos da instituição.
+   */
+  PARTICIPANT_READ: 'participant:read',
+  /**
+   * Enviar recado a um participante (e-mail pelo outbox + mensagem na caixa de
+   * entrada dele).
+   *
+   * Separada da leitura de propósito: consultar a ficha é ato de conferência, e
+   * enviar mensagem é ato de COMUNICAÇÃO, com efeito para fora da plataforma —
+   * quem só precisa conferir não deve poder disparar e-mail em massa.
+   */
+  PARTICIPANT_MESSAGE: 'participant:message',
+
   // ── Plataforma (FASE 9) ─────────────────────────────────────────────────────
   /**
    * Governança global: provisionar instituições, definir planos e quotas,
@@ -323,6 +345,15 @@ const ORGANIZER_PERMISSIONS: Permission[] = [
    */
   PERMISSIONS.SPEAKER_MANAGE,
   PERMISSIONS.PAGE_MANAGE,
+  /**
+   * `participant:read` e `participant:message` — quem organiza responde pela
+   * relação com o público: enxerga quem participou e fala com essas pessoas. As
+   * duas ficam juntas porque é o mesmo ofício (a mesma razão de `communication:read`
+   * estar aqui), e continuam separadas de `registration:read:any`, que é operação
+   * de inscrição.
+   */
+  PERMISSIONS.PARTICIPANT_READ,
+  PERMISSIONS.PARTICIPANT_MESSAGE,
   /**
    * `communication:read` — quem organiza o evento responde também pelos avisos que
    * ele gera (convites de equipe, atribuições de avaliação, certificados). Fica com

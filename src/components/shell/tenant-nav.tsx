@@ -3,12 +3,15 @@ import {
   BadgeCheck,
   BookOpenCheck,
   CalendarDays,
+  ChartColumn,
   ClipboardCheck,
+  Contact,
   IdCard,
   Compass,
   FileText,
   Gauge,
   GraduationCap,
+  Inbox,
   Layers,
   Mail,
   Medal,
@@ -161,6 +164,18 @@ export function buildTenantNav(input: {
           permission: PERMISSIONS.XP_READ_OWN,
         },
         {
+          /**
+           * Caixa de entrada do participante (FASE 32): os recados que a instituição
+           * mandou. A porta é PESSOAL (a mesma permissão das próprias inscrições) e a
+           * posse é conferida na consulta — a permissão abre a tela, o `userId` da
+           * sessão decide o que aparece nela.
+           */
+          href: href('/minhas-mensagens'),
+          label: 'Minhas mensagens',
+          icon: <Inbox className="size-4" aria-hidden />,
+          permission: PERMISSIONS.REGISTRATION_READ_OWN,
+        },
+        {
           href: href('/cartas'),
           label: 'Cartas',
           icon: <Layers className="size-4" aria-hidden />,
@@ -243,6 +258,31 @@ export function buildTenantNav(input: {
           label: 'Comunicação',
           icon: <Mail className="size-4" aria-hidden />,
           permission: PERMISSIONS.COMMUNICATION_READ,
+        },
+        {
+          /**
+           * Central do participante (FASE 32): quem são as pessoas da instituição e o
+           * que elas viveram aqui, atravessando TODOS os eventos.
+           *
+           * `participant:read` é separada de `registration:read:any` de propósito:
+           * operar a inscrição de um evento não pode entregar, por consequência, o
+           * histórico de uma pessoa em toda a instituição.
+           */
+          href: href('/participantes'),
+          label: 'Participantes',
+          icon: <Contact className="size-4" aria-hidden />,
+          permission: PERMISSIONS.PARTICIPANT_READ,
+        },
+        {
+          /**
+           * Inteligência da instituição (FASE 32): a tela que finalmente usa
+           * `tenant:analytics:read` — permissão que existia desde a FASE 2 e nenhuma
+           * tela consumia.
+           */
+          href: href('/panorama'),
+          label: 'Panorama',
+          icon: <ChartColumn className="size-4" aria-hidden />,
+          permission: PERMISSIONS.TENANT_ANALYTICS_READ,
         },
       ],
     },

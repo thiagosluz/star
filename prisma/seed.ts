@@ -45,6 +45,8 @@ import {
   updatePageBlock,
 } from '../src/lib/admin/landing-service';
 import { saveSponsor, saveSponsorTier } from '../src/lib/admin/sponsor-service';
+import { sendParticipantMessage } from '../src/lib/participants/message-service';
+import { closeEmailQueue } from '../src/lib/communication/email-queue';
 import {
   attachSpeakerAccount,
   linkSpeakerToActivity,
@@ -972,6 +974,30 @@ async function main() {
         : '  ✓ crachá de demonstração: já existia',
     );
 
+    /**
+     * ── O RECADO AO PARTICIPANTE, PELO SERVIÇO REAL (FASE 32) ────────────────────
+     * A central do participante nasce com dado: sem isto, quem abre a demonstração
+     * encontra o diretório com os números certos e a caixa de entrada VAZIA — e
+     * conclui que o envio não funciona. O recado sai pelo mesmo caminho da tela
+     * (mensagem gravada + e-mail enfileirado no outbox).
+     */
+    const recadoDemo = await sendParticipantMessage({
+      tenantId: ufbaId,
+      tenantSlug: 'ufba-demo',
+      actorId: ana,
+      userIds: [bruno],
+      subject: 'Material do minicurso disponível',
+      body:
+        'Olá!\n\nO material de apoio do minicurso de Rust já está publicado na página do evento.\n\nQualquer dúvida, responda por aqui.',
+      eventId: congressoUfba,
+    });
+
+    console.log(
+      recadoDemo.ok
+        ? `  ✓ recado de demonstração: ${recadoDemo.sent} mensagem(ns), ${recadoDemo.queued} e-mail(s) na fila`
+        : `  ✓ recado de demonstração: não enviado (${recadoDemo.message})`,
+    );
+
     await prisma.submission.create({
       data: {
         id: randomUUID(),
@@ -1445,5 +1471,14 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    /**
+     * A CONEXÃO DA FILA PRECISA SER FECHADA AQUI (FASE 32).
+     *
+     * O seed passou a enfileirar e-mail de verdade (o recado ao participante), e o
+     * BullMQ mantém uma conexão com o Redis aberta: sem fechá-la, o processo do seed
+     * fica VIVO depois de imprimir o relatório — o `npm run db:seed` nunca termina e,
+     * num script de provisionamento (`db:setup`), trava a esteira inteira.
+     */
+    await closeEmailQueue();
     await prisma.$disconnect();
   });

@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30 e 31 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1587 testes** unitários/integração · **102 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31 e 32 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1638 testes** unitários/integração · **107 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -13,7 +13,10 @@ avaliação por pares e gamificação.
 > mídia** com reaproveitamento, **janela de exibição** agendada no fuso do evento,
 > **portal do palestrante** com convite (que aparece na área do próprio palestrante), materiais
 > e certificado · **inscrição no EVENTO** que já inclui as atividades abertas, com
-> programação editável (rótulos em português)
+> programação editável (rótulos em português) · **credenciamento por crachá** (um crachá por
+> pessoa, contexto da leitura, folha A4 e crachá na tela) · **central do participante**
+> (diretório de todos os eventos, ficha 360, recados com caixa de entrada e panorama da
+> instituição)
 
 ---
 
@@ -55,6 +58,7 @@ avaliação por pares e gamificação.
 | **Sorteio ao vivo, em rodadas** | O sorteio deixou de ser um momento só: cada **rodada** tem o próprio compromisso de semente, o próprio **prêmio** (título e descrição) e o próprio **patrocinador** — anunciados no telão e no resultado, e **fora** do documento assinado (corrigir o texto do prêmio não invalida resultado publicado). **"Criar para o palco"** cria o sorteio sem apurar, para o telão existir antes do anúncio; **"Preparar próxima rodada"** publica um compromisso novo (revelar a semente de uma rodada não entrega as seguintes) e **"Sortear a rodada N"** apura. As **posições continuam** entre as rodadas (a entrega do prêmio é por posição) e **quem ganhou não concorre de novo** — no domínio, com o motivo dito na tela. O telão **rola uma roleta** com os nomes reais da lista publicada e para no ganhador; a auditoria e o resultado público passaram a ser **por rodada** |
 | **Credenciamento por crachá** | Um **crachá por pessoa** no evento (código opaco, único, sem dado pessoal no QR), emitido individualmente ou **em massa** na área de crachás, impresso em **folha A4** (QR Code + código + nome, 8 por página) e disponível também no **crachá online** do próprio participante. O **modo monitor** lê o QR pela **câmera** do celular/computador (API nativa do navegador com decodificador local de reserva), por leitor USB ou digitando o código — escolhendo o CONTEXTO da leitura: **portaria** (chegada ao evento) ou **atividade** (frequência, com entrada, saída e minutos). Presença sem inscrição é registrada com aviso; a janela de credenciamento da atividade é respeitada; o crachá revogado identifica a pessoa e não vale; e quem esquece de registrar a saída é fechado no **fim da atividade**, pelo worker ou pelo painel |
 | **Governança da plataforma** | Papel `SUPERADMIN` em escopo próprio (`PLATFORM`), provisionamento atômico de instituições, métricas consolidadas, suspensão com corte imediato de tráfego e **diretório público** de instituições em `/organizacoes` |
+| **Central do participante** | A visão da **PESSOA**, que antes só existia por evento: **diretório** de todos os participantes da instituição (união de vínculo e inscrição) com busca, filtro por evento/certificado/presença e paginação; **ficha 360** com os eventos que a pessoa viveu, frequência e minutos, certificados, cartas, XP e toda a comunicação recebida; **recado** por e-mail **e** mensagem na **caixa de entrada** do participante (com marcação de lida por posse); **panorama** da instituição com taxa de comparecimento, minutos, certificados, cartas, XP e **série por evento**, recortada por período no **fuso da instituição**; e **exportação em CSV** com escape contra fórmula, teto de linhas e registro na trilha. A abertura da ficha entra na auditoria (`READ`) e o e-mail aparece **mascarado** na lista |
 | **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
 | **Operação e segurança** | Rate limit do login contado no **Redis** (vale entre instâncias), métricas no formato **Prometheus** em `/api/metrics` com token, log estruturado com redação de senha/e-mail, RLS criada pela própria migração, `audit_logs` **particionada por mês** e pool de conexões com **PgBouncer** em modo transação |
 | **Planos e quotas** | Planos FREE/STARTER/PROFESSIONAL/ENTERPRISE com quotas de eventos, **membros da equipe** e **armazenamento**; troca de plano e edição de quotas pelo painel de governança (com aviso quando a nova quota fica abaixo do uso); as **três** quotas **recusam de verdade** — e o público de evento, que ganha acesso automático na inscrição pública, **não** consome a quota de membros |
@@ -393,7 +397,7 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1587 testes (67 arquivos) — unit + integração com banco real
+npm test                  # 1638 testes (69 arquivos) — unit + integração com banco real
 npm run test:e2e          # 97 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
@@ -449,9 +453,10 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-17-pagina-publica-e-patrocinio.md`](docs/fase-17-pagina-publica-e-patrocinio.md) | Página pública montada pelo organizador: editor de blocos validados por tipo, tema visual, capa e logotipo por upload direto ao storage, cadastro de cotas e patrocinadores com limite de vagas e documento fiscal mascarado, e edição de coautores com ordem de crédito — tudo sem uma única migração | ADR-092 … 099 |
 | [`docs/fase-22-operacao-de-palco.md`](docs/fase-22-operacao-de-palco.md) | **Operação de palco:** desfazer a entrega do prêmio **com motivo na trilha**, filtro do histórico por situação e período no fuso da instituição, premiação de **N revisores**, **endereço próprio** do resultado publicado com a prova da semente, chave do cofre **versionada** (`RAFFLE_SEED_KEYS`, girar não invalida compromisso) e prévia ao vivo por **SSE** com polling de volta. Inclui a correção de privacidade do consentimento de nome público | ADR-137 … 139 |
 | [docs/fase-29-palco-e-auditoria.md](docs/fase-29-palco-e-auditoria.md) | **Palco e auditoria do sorteio:** o **telão** público (compromisso da semente ANTES da apuração, contagem ao vivo por SSE e revelação automática com confetes próprios), **link + QR** do telão na tela de sorteios, a **lista publicada** (ordem, código opaco e minutos) gravada na apuração e assinada no resultado (payload v3) e a **auditoria** que refaz as contas no navegador de quem lê — com a receita para conferir fora do site | ADR-140 … 143 |
+| [docs/fase-32-central-do-participante.md](docs/fase-32-central-do-participante.md) | **Central do participante e inteligência da instituição:** o **diretório** de todos os participantes (união de vínculo e inscrição, com busca, filtros e paginação), a **ficha 360** (eventos, frequência e minutos, certificados, cartas, XP e comunicação), o **recado** por e-mail **e** mensagem na caixa de entrada do participante, o **panorama** da instituição por período e por evento e a **exportação em CSV** — com abertura de ficha auditada (`READ`), e-mail mascarado na lista e a correção de uma recusa silenciosa na guarda das Server Actions | ADR-153 … 157 |
 | [docs/fase-31-credenciamento-e-frequencia.md](docs/fase-31-credenciamento-e-frequencia.md) | **Credenciamento e frequência por crachá:** o **crachá** passou a existir (um código opaco `CR-XXXX-XXXX` por pessoa no evento), com **área de emissão individual e em massa**, **folha A4 em PDF** com QR + código + nome e **crachá online** do participante; o **modo monitor** lê o QR pela **câmera** (API nativa + decodificador local), pelo leitor USB ou por digitação, escolhendo o CONTEXTO (portaria × atividade) — e **credenciamento ≠ frequência**: a chegada é um fato, a sessão na atividade é outro, com entrada, saída e minutos com teto no fim da atividade | ADR-148 … 152 |
 | [docs/fase-30-sorteio-ao-vivo-em-rodadas.md](docs/fase-30-sorteio-ao-vivo-em-rodadas.md) | **Sorteio ao vivo, em rodadas:** cada apuração é um MOMENTO com o próprio compromisso de semente, prêmio, patrocinador e resultado assinado (payload v4); **"Criar para o palco"** faz o telão existir ANTES da apuração; a **roleta** passa os nomes reais da lista publicada e para no ganhador; quem ganhou uma rodada não concorre nas seguintes; auditoria e resultado público **por rodada** | ADR-144 … 147 |
-| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 63 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
+| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 72 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
@@ -761,6 +766,15 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     depois vê o resultado direto — decisão consciente, mas sem controle: uma projeção que
     reinicia no meio do anúncio perde a roleta, e o operador não tem como repeti-la nem
     apresentá-la sem animação.
+35. **O arquivo exportado não tem prazo nem controle de destino (FASE 32, dívida E44).** O CSV da
+    central do participante sai com o e-mail completo (é o insumo da ação, não uma vitrine) e
+    passa a viver em pasta compartilhada, e-mail e pen drive. A trilha registra quem exportou e
+    quantas linhas, mas não impede que o arquivo circule anos depois. Falta marca d'água com autor
+    e data, prazo declarado na tela e uma política de retenção combinada com a instituição.
+36. **O recado ao participante é mão única (FASE 32, dívida E45).** A instituição fala, a pessoa
+    lê (e a ficha mostra "não lido"), mas não há resposta pela plataforma nem thread — e "não
+    lido" não é o mesmo que "não recebido". Falta a resposta na própria caixa de entrada e o
+    indicador de resposta na ficha.
 ---
 
 **Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — verificar um
@@ -768,7 +782,10 @@ domínio no Resend para o e-mail chegar a qualquer destinatário (D7, que é ope
 destrava o uso real), PKCS#7 e antivírus para uso institucional (F18) — e depois a
 reconciliação entre banco e bucket e o acesso de participante na remoção (C6 e C7, que a
 FASE 21 declarou), o consentimento de perfil público (E35), a autenticidade da lista auditável
-do sorteio (E36), o interruptor do telão (E37), a edição do prêmio anunciado de uma rodada (E38), o controle da roleta do telão (E39), o credenciamento offline (E40), a impressão em etiqueta adesiva (E41) e a identidade visual do crachá (E42), o segundo grau do acervo de mídia
+do sorteio (E36), o interruptor do telão (E37), a edição do prêmio anunciado de uma rodada (E38),
+o controle da roleta do telão (E39), o credenciamento offline (E40), a impressão em etiqueta
+adesiva (E41), a identidade visual do crachá (E42), o "só entrada" no balcão (E43), a retenção do
+arquivo exportado (E44) e a resposta ao recado (E45), o segundo grau do acervo de mídia
 (F26: miniaturas, busca e sincronia em lote), o material/convite do palestrante (F27, que
 agora só precisa do template) e a entrega de e-mail de segunda ordem (F28: webhooks e
 preferências).

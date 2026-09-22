@@ -79,10 +79,31 @@ export async function guardAction<TState extends ActionGuardState = ActionGuardS
   const principal = await loadPrincipal(user.id, tenant.id, membership.status);
   const scopes = input.allowedScopes ?? ['TENANT'];
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  PERMISSÃO `:own` NA ACTION: O DONO É SEMPRE QUEM ESTÁ NA SESSÃO (FASE 32)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `can()` recusa uma permissão `:own` sem `ownerId` (fail-closed, invariante nº 4).
+   *  A guarda de PÁGINA já resolvia isso (`requirePagePermission` passa
+   *  `ownerId: context.user.id`); esta guarda não passava, e o efeito era silencioso:
+   *  a action recusava com "permissão negada" para a PRÓPRIA pessoa.
+   *
+   *  Numa action, o alvo de uma permissão `:own` é a pessoa autenticada — o dono do
+   *  RECURSO continua sendo conferido depois, no serviço, com o id vindo do BANCO
+   *  (é o que separa "pode usar a própria caixa" de "pode usar a caixa de qualquer
+   *  um"). Sem esta linha, metade da lição da FASE 25 voltava pela porta dos fundos.
+   */
+  const ownership = input.permission.endsWith(':own') ? { ownerId: user.id } : undefined;
+
   const authorized = scopes.some((scope) =>
     scope === 'EVENT'
-      ? can(principal, input.permission, { scope: 'EVENT', eventId: input.eventId ?? undefined })
-      : can(principal, input.permission, { scope }),
+      ? can(
+          principal,
+          input.permission,
+          { scope: 'EVENT', eventId: input.eventId ?? undefined },
+          ownership,
+        )
+      : can(principal, input.permission, { scope }, ownership),
   );
 
   if (!authorized) {

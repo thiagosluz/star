@@ -204,8 +204,8 @@ model EventCredential {
   status CredentialStatus @default(ACTIVE)
 
   /// Quem emitiu. NULO = emitido no backfill da migração (antes de existir emissão).
-  issuedById String?   @db.Uuid
-  issuedAt   DateTime  @default(now()) @db.Timestamptz(6)
+  issuedById String?  @db.Uuid
+  issuedAt   DateTime @default(now()) @db.Timestamptz(6)
 
   /// Última impressão da etiqueta (a folha pode ser reimpressa; isto guarda a mais recente).
   printedAt   DateTime? @db.Timestamptz(6)
@@ -234,6 +234,57 @@ model EventCredential {
   @@index([tenantId, userId])
   @@map("event_credentials")
 }
+
+/// Recado da instituição para um participante (FASE 32): o que aparece na caixa de
+/// entrada dele e o que sai por e-mail.
+///
+/// A mensagem é o FATO e é do participante (não da tela): ela nasce aqui e é o
+/// e-mail que sai DEPOIS, pelo outbox da FASE 15. Quem não recebeu o e-mail (endereço
+/// inválido, fila fora do ar) continua vendo o recado na plataforma — a comunicação
+/// interna não depende do provedor externo.
+model ParticipantMessage {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  /// Destinatário — a caixa de entrada é dele.
+  userId   String  @db.Uuid
+  /// Evento relacionado, quando o recado é sobre um (opcional: o recado pode ser da
+  /// instituição, e o `SetNull` preserva o histórico se o evento for excluído).
+  eventId  String? @db.Uuid
+
+  subject String @db.VarChar(140)
+  body    String @db.VarChar(2000)
+
+  /// Mesma chave gravada no outbox (`email_messages."dedupeKey"`): liga a mensagem ao
+  /// e-mail SEM coluna de referência, porque é ela que o reenvio do job já usa para
+  /// não duplicar (FASE 15).
+  dedupeKey String @unique @db.VarChar(200)
+
+  /// Agrupa o envio em massa: um lote, N mensagens. NULO = recado individual.
+  batchId String? @db.Uuid
+
+  /// Quem enviou. NULO só em dado semeado/importado sem autor conhecido.
+  sentById String?  @db.Uuid
+  sentAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  /// Quando o participante abriu o recado. É o que permite à instituição saber se a
+  /// comunicação chegou a ser LIDA — e não apenas enviada.
+  readAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation("ParticipantMessageRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  event  Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  sentBy User?  @relation("ParticipantMessageSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+
+  /// A CAIXA DE ENTRADA: as mensagens de uma pessoa, da mais nova para a mais antiga.
+  @@index([tenantId, userId, sentAt])
+  /// O HISTÓRICO da instituição: o que ela mandou, em ordem.
+  @@index([tenantId, sentAt])
+  @@index([tenantId, batchId])
+  @@map("participant_messages")
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -409,6 +460,13 @@ enum AuditAction {
   LOGIN
   LOGOUT
   EXPORT
+  /// Leitura de dado pessoal agregado — a ficha do participante (FASE 32).
+  ///
+  /// Existe porque a trilha só sabia registrar ESCRITA: abrir a ficha de alguém é um
+  /// acesso a dado pessoal que a instituição precisa poder conferir depois ("quem
+  /// consultou o histórico desta pessoa?"). Sem ação própria, o acesso ficaria
+  /// invisível ou seria disfarçado de `EXPORT`.
+  READ
   PERMISSION_CHANGE
   IMPERSONATE
 }
@@ -736,42 +794,44 @@ model Tenant {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  memberships       UserTenantProfile[]
-  roleAssignments   RoleAssignment[]
-  events            Event[]
-  rooms             Room[]
-  activities        Activity[]
-  activitySpeakers  ActivitySpeaker[]
+  memberships         UserTenantProfile[]
+  roleAssignments     RoleAssignment[]
+  events              Event[]
+  rooms               Room[]
+  activities          Activity[]
+  activitySpeakers    ActivitySpeaker[]
   /// Palestrantes da instituição e seus materiais — FASE 25.
-  speakerProfiles   SpeakerProfile[]
-  speakerMaterials  SpeakerMaterial[]
-  tracks            Track[]
-  eventPages        EventPage[]
-  eventPageVersions EventPageVersion[]
-  pageBlocks        PageBlock[]
-  mediaAssets       MediaAsset[]
-  sponsorTiers      SponsorTier[]
-  sponsors          Sponsor[]
-  registrations     Registration[]
-  attendances       Attendance[]
-  submissions       Submission[]
-  submissionAuthors SubmissionAuthor[]
-  submissionFiles   SubmissionFile[]
-  reviewAssignments ReviewAssignment[]
-  reviews           Review[]
-  reviewConflicts   ReviewConflict[]
-  raffles           Raffle[]
-  raffleWinners     RaffleWinner[]
+  speakerProfiles     SpeakerProfile[]
+  speakerMaterials    SpeakerMaterial[]
+  tracks              Track[]
+  eventPages          EventPage[]
+  eventPageVersions   EventPageVersion[]
+  pageBlocks          PageBlock[]
+  mediaAssets         MediaAsset[]
+  sponsorTiers        SponsorTier[]
+  sponsors            Sponsor[]
+  registrations       Registration[]
+  attendances         Attendance[]
+  submissions         Submission[]
+  submissionAuthors   SubmissionAuthor[]
+  submissionFiles     SubmissionFile[]
+  reviewAssignments   ReviewAssignment[]
+  reviews             Review[]
+  reviewConflicts     ReviewConflict[]
+  raffles             Raffle[]
+  raffleWinners       RaffleWinner[]
   /// Crachás emitidos para este evento — FASE 31.
-  eventCredentials  EventCredential[]
-  cardTemplates     CardTemplate[]
-  userCards         UserCard[]
-  xpProfiles        UserXpProfile[]
-  xpTransactions    XpTransaction[]
-  taskDefinitions   TaskDefinition[]
-  userTaskProgress  UserTaskProgress[]
-  certificates      Certificate[]
-  auditLogs         AuditLog[]
+  eventCredentials    EventCredential[]
+  /// Recados enviados no contexto deste evento — FASE 32.
+  participantMessages ParticipantMessage[]
+  cardTemplates       CardTemplate[]
+  userCards           UserCard[]
+  xpProfiles          UserXpProfile[]
+  xpTransactions      XpTransaction[]
+  taskDefinitions     TaskDefinition[]
+  userTaskProgress    UserTaskProgress[]
+  certificates        Certificate[]
+  auditLogs           AuditLog[]
 
   /// FASE 4 — avaliação por pares.
   reviewerExpertise    ReviewerExpertise[]
@@ -863,22 +923,25 @@ model User {
   conflictsAgainstMe   ReviewerConflictDeclaration[] @relation("ConflictWithUser")
 
   /// Sorteios que esta pessoa criou — FASE 8.
-  rafflesCreated        Raffle[]           @relation("RaffleCreatedBy")
+  rafflesCreated          Raffle[]             @relation("RaffleCreatedBy")
   /// Rodadas de sorteio que esta pessoa preparou/apurou — FASE 30.
-  raffleRoundsCreated   RaffleRound[]      @relation("RaffleRoundCreatedBy")
+  raffleRoundsCreated     RaffleRound[]        @relation("RaffleRoundCreatedBy")
   /// Sorteios em que esta pessoa foi sorteada — FASE 8.
-  raffleWins            RaffleWinner[]
+  raffleWins              RaffleWinner[]
   /// Crachá que esta pessoa usa no evento (FASE 31).
-  eventCredentials      EventCredential[] @relation("CredentialHolder")
-  eventCredentialsIssued EventCredential[] @relation("CredentialIssuedBy")
-  eventCredentialsPrinted EventCredential[] @relation("CredentialPrintedBy")
-  eventCredentialsRevoked EventCredential[] @relation("CredentialRevokedBy")
+  eventCredentials        EventCredential[]    @relation("CredentialHolder")
+  eventCredentialsIssued  EventCredential[]    @relation("CredentialIssuedBy")
+  eventCredentialsPrinted EventCredential[]    @relation("CredentialPrintedBy")
+  eventCredentialsRevoked EventCredential[]    @relation("CredentialRevokedBy")
+  /// Recados que esta pessoa RECEBEU na caixa de entrada — FASE 32.
+  participantMessages     ParticipantMessage[] @relation("ParticipantMessageRecipient")
+  /// Recados que esta pessoa enviou como organização — FASE 32.
+  participantMessagesSent ParticipantMessage[] @relation("ParticipantMessageSentBy")
   /// Prêmios de sorteio que esta pessoa ENTREGOU — FASE 16.
-  rafflePrizesDelivered RaffleWinner[]     @relation("RafflePrizeDeliveredBy")
+  rafflePrizesDelivered   RaffleWinner[]       @relation("RafflePrizeDeliveredBy")
   /// Versões de página pública que esta pessoa gravou — FASE 23.
-  eventPageVersions     EventPageVersion[] @relation("EventPageVersionCreatedBy")
-  /// Imagens que esta pessoa enviou — FASE 24.
-  mediaAssetsUploaded   MediaAsset[]       @relation("MediaAssetUploadedBy")
+  eventPageVersions       EventPageVersion[]   @relation("EventPageVersionCreatedBy") /// Imagens que esta pessoa enviou — FASE 24.
+  mediaAssetsUploaded     MediaAsset[]         @relation("MediaAssetUploadedBy")
 
   /// Perfis de palestrante reivindicados por esta pessoa — FASE 25.
   speakerProfiles          SpeakerProfile[]  @relation("SpeakerProfileUser")
@@ -1132,26 +1195,28 @@ model Event {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  activities      Activity[]
-  rooms           Room[]
-  tracks          Track[]
-  registrations   Registration[]
-  submissions     Submission[]
-  pages           EventPage[]
-  sponsors        Sponsor[]
-  sponsorTiers    SponsorTier[]
-  roleAssignments RoleAssignment[]
-  cardTemplates   CardTemplate[]
-  taskDefinitions TaskDefinition[]
-  certificates    Certificate[]
-  attendances     Attendance[]
-  userCards       UserCard[]
-  xpTransactions  XpTransaction[]
-  raffles         Raffle[]
-  mediaAssets     MediaAsset[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activities          Activity[]
+  rooms               Room[]
+  tracks              Track[]
+  registrations       Registration[]
+  submissions         Submission[]
+  pages               EventPage[]
+  sponsors            Sponsor[]
+  sponsorTiers        SponsorTier[]
+  roleAssignments     RoleAssignment[]
+  cardTemplates       CardTemplate[]
+  taskDefinitions     TaskDefinition[]
+  certificates        Certificate[]
+  attendances         Attendance[]
+  userCards           UserCard[]
+  xpTransactions      XpTransaction[]
+  raffles             Raffle[]
+  mediaAssets         MediaAsset[]
   /// Crachás emitidos para este evento — FASE 31.
-  eventCredentials EventCredential[]
+  eventCredentials    EventCredential[]
+  /// Recados ligados a este evento (opcional no recado) — FASE 32.
+  participantMessages ParticipantMessage[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -1863,6 +1928,9 @@ model Attendance {
 
   @@index([tenantId, activityId, userId])
   @@index([tenantId, eventId, checkedInAt])
+  /// "As presenças DESTA pessoa na instituição" — a ficha do participante atravessa
+  /// todos os eventos (FASE 32), e sem este índice a agregação varria a tabela.
+  @@index([tenantId, userId, checkedInAt])
   @@index([registrationId])
   @@index([qrNonce])
   @@map("attendances")
@@ -2681,6 +2749,9 @@ model EmailMessage {
   @@unique([dedupeKey])
   @@index([tenantId, createdAt])
   @@index([tenantId, status, createdAt])
+  /// "O que esta pessoa recebeu" — a ficha mostra a comunicação por DESTINATÁRIO
+  /// (FASE 32), não só por endereço.
+  @@index([tenantId, toUserId, createdAt])
   @@index([status, createdAt])
   @@index([to])
   @@map("email_messages")

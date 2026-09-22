@@ -89,6 +89,14 @@ export const TENANT_SCOPED_TABLES = [
    */
   'event_credentials',
   /**
+   * FASE 32 — recado da instituição para um participante. Guarda o que ele vê na
+   * caixa de entrada e o que saiu por e-mail (o vínculo com o outbox é a
+   * `dedupeKey`, não uma coluna de referência). A `userId` é do DESTINATÁRIO: a
+   * policy por instituição continua sendo o que impede uma instituição de ler o
+   * recado da outra.
+   */
+  'participant_messages',
+  /**
    * FASE 15 — comunicação. As duas tabelas entram aqui mesmo com semânticas
    * diferentes: `email_messages` tem `tenantId` NULO nas mensagens de PLATAFORMA
    * (verificação de e-mail, redefinição de senha), e a policy faz exatamente o que

@@ -105,6 +105,25 @@ export interface EmailPayloads {
     certificateUrl: string;
     validationUrl: string;
   };
+
+  /**
+   * FASE 32 — recado da instituição para o participante.
+   *
+   * O ASSUNTO é escrito por uma pessoa da instituição, e não pelo sistema: por isso
+   * ele chega aqui como dado (já validado no domínio, com o tamanho limitado) e é
+   * escapado na montagem. O corpo vai como TEXTO (`markup`), com os parágrafos
+   * separados — o recado não é HTML de autoria livre, senão a caixa de saída da
+   * instituição viraria um vetor de injeção no e-mail de terceiros.
+   */
+  PARTICIPANT_MESSAGE: {
+    recipientName: string;
+    tenantName: string;
+    subject: string;
+    body: string;
+    eventTitle: string | null;
+    senderName: string | null;
+    inboxUrl: string;
+  };
 }
 
 export type EmailTemplateKey = keyof EmailPayloads;
@@ -118,6 +137,7 @@ export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'REVIEW_OVERDUE',
   'CARD_GRANTED',
   'CERTIFICATE_ISSUED',
+  'PARTICIPANT_MESSAGE',
 ] as const);
 
 export interface RenderedEmail {
@@ -570,6 +590,63 @@ export function renderEmail<K extends EmailTemplateKey>(
         ].join('\n'),
       };
     }
+
+    case 'PARTICIPANT_MESSAGE': {
+      const data = payload as EmailPayloads['PARTICIPANT_MESSAGE'];
+      /**
+       * O ASSUNTO da instituição viaja no assunto do e-mail — é o que a pessoa lê na
+       * caixa dela. Antes do nome da instituição, para que a lista de mensagens não
+       * vire uma fileira de "EventFlow".
+       *
+       * O corpo é quebrado em parágrafos e escapado: recado é TEXTO, e um `<script>`
+       * digitado no campo vira texto literal em vez de marcação no cliente de quem
+       * recebe (o mesmo cuidado do escape da etiqueta do crachá, FASE 31).
+       */
+      const paragraphs = data.body
+        .split(/\n{2,}/)
+        .map((block) => block.trim())
+        .filter((block) => block.length > 0);
+
+      return {
+        subject: `${data.subject} — ${data.tenantName}`,
+        html: renderLayout({
+          brandName: brand,
+          /**
+           * O `preheader` é TEXTO e o layout já o escapa (`escapeHtml`): passar
+           * marcação aqui imprimiria `&lt;p …&gt;` no resumo da caixa de entrada — o
+           * defeito do negrito visível, que o teste unitário prende.
+           */
+          preheader: data.subject,
+          title: escapeHtml(data.subject),
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            ...paragraphs.map((block) => paragraph(markup(escapeHtml(block).replace(/\n/g, '<br />')))),
+          ],
+          details: [
+            ...(data.eventTitle ? [{ label: 'Evento', value: escapeHtml(data.eventTitle) }] : []),
+            ...(data.senderName ? [{ label: 'Enviado por', value: escapeHtml(data.senderName) }] : []),
+          ],
+          callToAction: { label: 'Abrir na plataforma', url: data.inboxUrl },
+          notice:
+            'Este recado também fica guardado na sua área do participante, em "Minhas mensagens" — inclusive se você perder este e-mail.',
+          footerNote: `Você recebeu esta mensagem de ${escapeHtml(data.tenantName)}.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          data.subject,
+          '',
+          ...paragraphs,
+          ...(data.eventTitle ? ['', `Evento: ${data.eventTitle}`] : []),
+          ...(data.senderName ? [`Enviado por: ${data.senderName}`] : []),
+          '',
+          'Abra na plataforma:',
+          data.inboxUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
   }
 }
 
@@ -586,4 +663,5 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   REVIEW_OVERDUE: 'Parecer vencido',
   CARD_GRANTED: 'Carta conquistada',
   CERTIFICATE_ISSUED: 'Certificado emitido',
+  PARTICIPANT_MESSAGE: 'Recado ao participante',
 };
