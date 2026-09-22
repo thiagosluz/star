@@ -158,6 +158,85 @@ export interface EmailPayloads {
     expiresInDays: number;
     startsAtLabel: string | null;
   };
+
+  /**
+   * FASE 34 — a vaga está RETIDA e depende de confirmação.
+   *
+   * É o aviso central da fase: sem ele, a pessoa só descobre que precisava confirmar
+   * quando a vaga já foi liberada. O prazo e o que é preciso vão no corpo, porque o
+   * e-mail é lido longe da plataforma — muitas vezes no caminho até a secretaria.
+   */
+  REGISTRATION_PENDING: {
+    recipientName: string;
+    eventTitle: string;
+    activityTitle: string;
+    /** "25/09/2026, 23:59" — no fuso do evento. */
+    deadlineLabel: string;
+    /** O checklist do que levar/apresentar ("Doação: 1 kg de alimento"). */
+    requirements: string[];
+    /** Onde confirmar. Nulo quando a atividade só exige itens, sem local. */
+    place: string | null;
+    instructions: string | null;
+    registrationsUrl: string;
+  };
+
+  /**
+   * FASE 34 — falta pouco para o prazo vencer.
+   *
+   * Mesmo conteúdo do anterior, com a contagem regressiva no lugar do prazo seco: o
+   * lembrete existe para mover quem deixou para depois, e "falta 1 dia" move mais que
+   * "até 25/09".
+   */
+  REGISTRATION_DUE_SOON: {
+    recipientName: string;
+    eventTitle: string;
+    activityTitle: string;
+    deadlineLabel: string;
+    /** "falta 1 dia", "faltam 6 hora(s)". */
+    countdownLabel: string;
+    requirements: string[];
+    place: string | null;
+    registrationsUrl: string;
+  };
+
+  /** FASE 34 — a equipe confirmou a vaga: o direito está garantido. */
+  REGISTRATION_CONFIRMED: {
+    recipientName: string;
+    eventTitle: string;
+    activityTitle: string;
+    deadlineLabel: string | null;
+    startsAtLabel: string | null;
+    registrationsUrl: string;
+  };
+
+  /**
+   * FASE 34 — o prazo venceu e a vaga foi liberada.
+   *
+   * Diz o que aconteceu e o que ainda é possível (se inscrever de novo, se houver
+   * vaga). Não promete a vaga de volta: quem decidiu foi o prazo, não a plataforma.
+   */
+  REGISTRATION_RELEASED: {
+    recipientName: string;
+    eventTitle: string;
+    activityTitle: string;
+    deadlineLabel: string;
+    registrationsUrl: string;
+  };
+
+  /**
+   * FASE 34 — a vaga liberada foi oferecida a quem esperava.
+   *
+   * A promoção já existia desde a FASE 3, mas era SILENCIOSA: a pessoa descobria
+   * entrando na plataforma por acaso. O aviso fecha o outro lado da liberação
+   * automática — liberar sem avisar quem entra é metade do trabalho.
+   */
+  WAITLIST_PROMOTED: {
+    recipientName: string;
+    eventTitle: string;
+    activityTitle: string;
+    startsAtLabel: string | null;
+    registrationsUrl: string;
+  };
 }
 
 export type EmailTemplateKey = keyof EmailPayloads;
@@ -174,6 +253,11 @@ export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'PARTICIPANT_MESSAGE',
   'PROPOSAL_RECEIVED',
   'SPEAKER_INVITATION',
+  'REGISTRATION_PENDING',
+  'REGISTRATION_DUE_SOON',
+  'REGISTRATION_CONFIRMED',
+  'REGISTRATION_RELEASED',
+  'WAITLIST_PROMOTED',
 ] as const);
 
 export interface RenderedEmail {
@@ -780,6 +864,236 @@ export function renderEmail<K extends EmailTemplateKey>(
         ].join('\n'),
       };
     }
+
+    case 'REGISTRATION_PENDING': {
+      const data = payload as EmailPayloads['REGISTRATION_PENDING'];
+
+      /**
+       * O CHECKLIST vai como parágrafos com marcador, e não num parágrafo corrido: é
+       * a lista que a pessoa usa no balcão ("levei o quilo de alimento?"). O local
+       * aparece como detalhe `Onde confirmar` para ser lido sem procurar no texto.
+       */
+      return {
+        subject: `Confirme sua vaga em ${data.activityTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `Confirme até ${data.deadlineLabel}`,
+          title: 'Sua vaga está reservada — falta confirmar',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A sua vaga em ${strong(data.activityTitle)}, no evento ${strong(data.eventTitle)}, está RESERVADA — mas ainda não está confirmada.`,
+            ),
+            paragraph(
+              'A confirmação é feita pela organização, no local indicado abaixo. Se ela não acontecer até o prazo, a vaga é liberada automaticamente para quem está na lista de espera.',
+            ),
+            ...data.requirements.map((item) => paragraph(`• ${item}`)),
+            ...(data.instructions ? [paragraph(data.instructions)] : []),
+          ],
+          details: [
+            { label: 'Atividade', value: escapeHtml(data.activityTitle) },
+            { label: 'Confirmar até', value: escapeHtml(data.deadlineLabel) },
+            ...(data.place ? [{ label: 'Onde confirmar', value: escapeHtml(data.place) }] : []),
+          ],
+          callToAction: { label: 'Ver minhas inscrições', url: data.registrationsUrl },
+          notice: 'A vaga fica presa com você até o prazo — depois disso ela volta a ficar disponível.',
+          footerNote: `${escapeHtml(data.eventTitle)} — confirmação de vaga.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `Sua vaga em ${data.activityTitle} (${data.eventTitle}) está reservada, mas ainda não confirmada.`,
+          `Confirme até: ${data.deadlineLabel}`,
+          ...(data.place ? [`Onde confirmar: ${data.place}`] : []),
+          ...(data.requirements.length > 0
+            ? ['', 'O que é preciso:', ...data.requirements.map((item) => `- ${item}`)]
+            : []),
+          ...(data.instructions ? ['', data.instructions] : []),
+          '',
+          'Se a confirmação não acontecer até o prazo, a vaga é liberada automaticamente.',
+          '',
+          'Minhas inscrições:',
+          data.registrationsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'REGISTRATION_DUE_SOON': {
+      const data = payload as EmailPayloads['REGISTRATION_DUE_SOON'];
+
+      return {
+        subject: `${data.countdownLabel} para confirmar sua vaga em ${data.activityTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `${data.countdownLabel} — confirme até ${data.deadlineLabel}`,
+          title: `Atenção: ${data.countdownLabel} para confirmar`,
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A sua vaga em ${strong(data.activityTitle)} (${strong(data.eventTitle)}) continua reservada e ainda NÃO foi confirmada.`,
+            ),
+            paragraph(
+              `O prazo termina em ${data.deadlineLabel}. Depois disso a vaga é liberada automaticamente.`,
+            ),
+            ...data.requirements.map((item) => paragraph(`• ${item}`)),
+          ],
+          details: [
+            { label: 'Atividade', value: escapeHtml(data.activityTitle) },
+            { label: 'Confirmação até', value: escapeHtml(data.deadlineLabel) },
+            ...(data.place ? [{ label: 'Onde confirmar', value: escapeHtml(data.place) }] : []),
+          ],
+          callToAction: { label: 'Ver minhas inscrições', url: data.registrationsUrl },
+          notice: 'Este é um lembrete automático do prazo escolhido pela organização do evento.',
+          footerNote: `${escapeHtml(data.eventTitle)} — prazo de confirmação.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `${data.countdownLabel} para confirmar sua vaga em ${data.activityTitle}.`,
+          `Confirme até: ${data.deadlineLabel}`,
+          ...(data.place ? [`Onde confirmar: ${data.place}`] : []),
+          ...(data.requirements.length > 0
+            ? ['', 'O que é preciso:', ...data.requirements.map((item) => `- ${item}`)]
+            : []),
+          '',
+          'Depois do prazo a vaga é liberada automaticamente.',
+          '',
+          'Minhas inscrições:',
+          data.registrationsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'REGISTRATION_CONFIRMED': {
+      const data = payload as EmailPayloads['REGISTRATION_CONFIRMED'];
+
+      return {
+        subject: `Vaga confirmada: ${data.activityTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: 'Sua vaga está confirmada',
+          title: 'Vaga confirmada',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A organização confirmou a sua vaga em ${strong(data.activityTitle)}, no evento ${strong(data.eventTitle)}.`,
+            ),
+            paragraph('Guarde este e-mail como comprovante da confirmação.'),
+          ],
+          details: [
+            { label: 'Atividade', value: escapeHtml(data.activityTitle) },
+            ...(data.startsAtLabel
+              ? [{ label: 'Data e horário', value: escapeHtml(data.startsAtLabel) }]
+              : []),
+          ],
+          callToAction: { label: 'Ver minhas inscrições', url: data.registrationsUrl },
+          footerNote: `${escapeHtml(data.eventTitle)} — confirmação de vaga.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `Sua vaga em ${data.activityTitle} (${data.eventTitle}) está CONFIRMADA.`,
+          ...(data.startsAtLabel ? [`Data e horário: ${data.startsAtLabel}`] : []),
+          '',
+          'Minhas inscrições:',
+          data.registrationsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'REGISTRATION_RELEASED': {
+      const data = payload as EmailPayloads['REGISTRATION_RELEASED'];
+
+      return {
+        subject: `Sua vaga em ${data.activityTitle} foi liberada`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `O prazo de confirmação terminou em ${data.deadlineLabel}`,
+          title: 'A vaga foi liberada',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A confirmação da sua vaga em ${strong(data.activityTitle)} (${strong(data.eventTitle)}) não foi registrada até ${strong(data.deadlineLabel)}.`,
+            ),
+            paragraph(
+              'Por isso a vaga foi liberada automaticamente para quem estava na lista de espera — foi o prazo que a organização definiu para todo mundo.',
+            ),
+            paragraph(
+              'Se ainda houver vagas, você pode se inscrever de novo pela página do evento.',
+            ),
+          ],
+          details: [
+            { label: 'Atividade', value: escapeHtml(data.activityTitle) },
+            { label: 'Prazo que terminou', value: escapeHtml(data.deadlineLabel) },
+          ],
+          callToAction: { label: 'Ver minhas inscrições', url: data.registrationsUrl },
+          notice: 'A inscrição cancelada por prazo não impede uma nova inscrição, se houver vaga.',
+          footerNote: `${escapeHtml(data.eventTitle)} — prazo de confirmação.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `O prazo para confirmar sua vaga em ${data.activityTitle} terminou em ${data.deadlineLabel}.`,
+          'A vaga foi liberada automaticamente para quem estava na lista de espera.',
+          'Se ainda houver vagas, você pode se inscrever de novo pela página do evento.',
+          '',
+          'Minhas inscrições:',
+          data.registrationsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'WAITLIST_PROMOTED': {
+      const data = payload as EmailPayloads['WAITLIST_PROMOTED'];
+
+      /**
+       * A promoção já era automática desde a FASE 3 e NINGUÉM era avisado: a pessoa
+       * descobria por acaso, entrando na plataforma — e às vezes descobria tarde.
+       */
+      return {
+        subject: `Você entrou: ${data.activityTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: 'Abriu uma vaga e ela é sua',
+          title: 'Abriu uma vaga, e ela é sua',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `Uma vaga foi liberada em ${strong(data.activityTitle)}, no evento ${strong(data.eventTitle)}, e você era o próximo da lista de espera.`,
+            ),
+            paragraph('A sua inscrição já está confirmada — não é preciso fazer nada.'),
+          ],
+          details: [
+            { label: 'Atividade', value: escapeHtml(data.activityTitle) },
+            ...(data.startsAtLabel
+              ? [{ label: 'Data e horário', value: escapeHtml(data.startsAtLabel) }]
+              : []),
+          ],
+          callToAction: { label: 'Ver minhas inscrições', url: data.registrationsUrl },
+          footerNote: `${escapeHtml(data.eventTitle)} — lista de espera.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `Abriu uma vaga em ${data.activityTitle} (${data.eventTitle}) e você era o próximo da lista de espera.`,
+          'Sua inscrição já está confirmada.',
+          ...(data.startsAtLabel ? [`Data e horário: ${data.startsAtLabel}`] : []),
+          '',
+          'Minhas inscrições:',
+          data.registrationsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
   }
 }
 
@@ -799,4 +1113,9 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   PARTICIPANT_MESSAGE: 'Recado ao participante',
   PROPOSAL_RECEIVED: 'Proposta recebida',
   SPEAKER_INVITATION: 'Convite de palestrante',
+  REGISTRATION_PENDING: 'Vaga reservada — confirme',
+  REGISTRATION_DUE_SOON: 'Prazo de confirmação próximo',
+  REGISTRATION_CONFIRMED: 'Vaga confirmada',
+  REGISTRATION_RELEASED: 'Vaga liberada por prazo',
+  WAITLIST_PROMOTED: 'Saiu da lista de espera',
 };

@@ -44,6 +44,20 @@ import {
 } from '@/domain/events/event-rules';
 import { acceptsAutoEnrollment } from '@/domain/events/activity-rules';
 import {
+  confirmationCountdown,
+  confirmationDeadlineLabel,
+  confirmationDueAt,
+  confirmationStateOf,
+  parseConfirmationRequirements,
+  requirementLabel,
+  type ConfirmationPolicy,
+  type ConfirmationState,
+} from '@/domain/events/confirmation-rules';
+import {
+  notifyConfirmationRequired,
+  notifyWaitlistPromoted,
+} from '@/lib/events/registration-notices';
+import {
   PUBLIC_REGISTRATION_ROLE,
   evaluateParticipantLink,
   isOpenToPublicEvent,
@@ -105,12 +119,28 @@ export class RegistrationError extends Error {
 export type RegistrationOutcome =
   | {
       ok: true;
-      status: Extract<RegistrationStatus, 'CONFIRMED' | 'WAITLISTED'>;
+      /**
+       * `PENDING` = a vaga está RETIDA aguardando a confirmação da equipe (FASE 34).
+       * A tela usa isto para dizer "confirme até <data>" em vez de "inscrição
+       * confirmada" — prometer o que ainda depende do balcão seria mentira.
+       */
+      status: Extract<RegistrationStatus, 'PENDING' | 'CONFIRMED' | 'WAITLISTED'>;
       registrationId: string;
       /** Posição na lista de espera, quando aplicável. */
       waitlistPosition: number | null;
       /** Vagas restantes após a operação. `null` = ilimitado. */
       remainingSeats: number | null;
+      /** Quando o prazo de confirmação vence. Nulo nas atividades automáticas. */
+      confirmationDueAt: Date | null;
+      /**
+       * O prazo já formatado NO FUSO DO EVENTO (FASE 34).
+       *
+       * Vem pronto do serviço porque o processo roda em UTC no container: formatar na
+       * tela com o fuso do processo mostraria "até 26/09, 02:59" onde o e-mail diz
+       * "até 25/09, 23:59" — duas respostas para a mesma pergunta, e a da tela seria a
+       * errada (armadilha 38).
+       */
+      confirmationDueLabel: string | null;
       /**
        * `true` quando esta inscrição CRIOU o vínculo de participante (inscrição
        * pública). A UI usa para explicar à pessoa que ela passou a ser participante
@@ -148,6 +178,14 @@ interface ActivityContext {
   startsAt: Date;
   endsAt: Date;
   eventId: string;
+  /**
+   * Como a vaga desta atividade é confirmada (FASE 34). `REQUIRED` faz a inscrição
+   * nascer `PENDING`, RETENDO a vaga até a equipe confirmar — é a diferença entre
+   * "reservei" e "é meu".
+   */
+  confirmationPolicy: ConfirmationPolicy;
+  /** Prazo em dias, contado da inscrição de cada pessoa. Nulo quando `AUTO`. */
+  confirmationWindowDays: number | null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -194,7 +232,33 @@ export async function registerForActivity(
     const outcome = await attemptRegistration(input);
 
     // Só repete em conflito transitório; erro de negócio é resposta final.
-    if (outcome.ok || !isTransientFailure(outcome.code)) return outcome;
+    if (outcome.ok || !isTransientFailure(outcome.code)) {
+      /**
+       * ── A VAGA ESTÁ RETIDA: AVISE ENQUANTO HÁ TEMPO (FASE 34) ────────────────
+       *
+       * O aviso sai aqui, no SERVIÇO, e não em cada tela: a inscrição nasce em mais
+       * de um caminho (página pública, balcão do credenciamento), e um caminho novo
+       * que esquecesse de avisar produziria uma vaga liberada sem ninguém nunca ter
+       * sido avisado de que precisava confirmar (o defeito da armadilha 65).
+       *
+       * Fora da transação e sem lançar (invariante 8): a inscrição está gravada, e a
+       * falha do provedor de e-mail não pode desfazê-la. O retorno diz se saiu.
+       */
+      if (outcome.ok && outcome.status === 'PENDING') {
+        const notice = await notifyConfirmationRequired({
+          tenantId: input.tenantId,
+          registrationId: outcome.registrationId,
+        });
+
+        if (!notice.ok) {
+          console.error(
+            `[inscricoes] aviso de confirmação não saiu: ${notice.message ?? 'motivo desconhecido'}`,
+          );
+        }
+      }
+
+      return outcome;
+    }
 
     // Backoff com jitter para desincronizar as tentativas concorrentes.
     const backoff = Math.min(15 * 2 ** attempt, 200);
@@ -233,6 +297,8 @@ async function attemptRegistration(
             registrationOpensAt: true,
             registrationClosesAt: true,
             settings: true,
+            /** O prazo de confirmação é calculado no FUSO DO EVENTO (FASE 34). */
+            timezone: true,
           },
         });
 
@@ -255,6 +321,9 @@ async function attemptRegistration(
             endsAt: true,
             eventId: true,
             requiresRegistration: true,
+            /** Confirmação de vaga (FASE 34). */
+            confirmationPolicy: true,
+            confirmationWindowDays: true,
             /** O teto da sala entra no limite efetivo (revisão da FASE 3). */
             room: { select: { capacity: true } },
           },
@@ -383,20 +452,31 @@ async function attemptRegistration(
             startsAt: activity.startsAt,
             endsAt: activity.endsAt,
             eventId: activity.eventId,
+            confirmationPolicy: activity.confirmationPolicy,
+            confirmationWindowDays: activity.confirmationWindowDays,
           },
           event.id,
           userId,
+          event.timezone,
         );
 
         if (attempt.status === 'REJECTED') {
           throw new RegistrationError(attempt.reason, attempt.message);
         }
 
-        // Reserva confirmada: o contador do evento acompanha o da atividade.
-        // A vaga no evento é o TOTAL de inscrições confirmadas, não a soma das
-        // atividades — por isso usamos um predicado próprio, sem contador de
-        // atividade envolvido.
-        if (attempt.status === 'CONFIRMED') {
+        /**
+         * ── `PENDING` TAMBÉM OCUPA LUGAR NO EVENTO (FASE 34) ────────────────────
+         *
+         *  A inscrição que aguarda confirmação retém a vaga da ATIVIDADE — e retém
+         *  também o lugar no EVENTO, porque é a mesma pessoa viajando, almoçando e
+         *  ocupando espaço. Tratar `PENDING` diferente aqui criaria uma contagem que
+         *  só existe de um lado: o cancelamento (manual, do participante, ou
+         *  automático, por prazo) decrementa o contador do evento sempre que a
+         *  inscrição ocupava vaga — e `cancelReleasesSeat` inclui `PENDING` desde a
+         *  FASE 1. Sem reservar aqui, o contador do evento afundaria a cada prazo
+         *  vencido, e a lotação do evento passaria a permitir superlotação.
+         */
+        if (attempt.status === 'CONFIRMED' || attempt.status === 'PENDING') {
           const reservedEventSeat = await reserveEventSeat(tx, event.id);
           if (!reservedEventSeat) {
             // Evento lotado embora a atividade tivesse vaga.
@@ -420,6 +500,10 @@ async function attemptRegistration(
           waitlistPosition: attempt.waitlistPosition,
           remainingSeats: attempt.remainingAfter,
           linkedAsParticipant,
+          confirmationDueAt: attempt.confirmationDueAt,
+          confirmationDueLabel: attempt.confirmationDueAt
+            ? confirmationDeadlineLabel(attempt.confirmationDueAt, event.timezone)
+            : null,
         };
       },
       { timeout: 15_000 },
@@ -639,12 +723,16 @@ async function tryReserveSeat(
   activity: ActivityContext,
   eventId: string,
   userId: string,
+  /** Fuso do EVENTO: é nele que o prazo de confirmação vence (FASE 34). */
+  timeZone: string,
 ): Promise<
   | {
-      status: 'CONFIRMED' | 'WAITLISTED';
+      status: 'PENDING' | 'CONFIRMED' | 'WAITLISTED';
       registrationId: string;
       waitlistPosition: number | null;
       remainingAfter: number | null;
+      /** Quando o prazo de confirmação vence. Nulo nas atividades automáticas. */
+      confirmationDueAt: Date | null;
     }
   | { status: 'REJECTED'; reason: RegistrationErrorCode; message: string }
 > {
@@ -661,6 +749,24 @@ async function tryReserveSeat(
   };
 
   /**
+   * ── 0. Confirmação de vaga: o prazo nasce COM a inscrição (FASE 34) ────────
+   *
+   *  Calculado aqui, uma vez, para que o mesmo instante valha para o que a pessoa vê
+   *  na tela, para o que o e-mail diz e para o que a varredura vai comparar depois.
+   *  Recalcular depois, a partir de "agora", daria um prazo que se move sozinho.
+   */
+  const requiresConfirmation =
+    activity.confirmationPolicy === 'REQUIRED' && activity.confirmationWindowDays !== null;
+
+  const dueAt = requiresConfirmation
+    ? confirmationDueAt({
+        registeredAt: new Date(),
+        windowDays: activity.confirmationWindowDays!,
+        timeZone,
+      })
+    : null;
+
+  /**
    * ── 1. Tenta RESERVAR A VAGA antes de criar a inscrição ────────────────────
    *
    * A ordem importa. Se criássemos a inscrição primeiro e depois descobríssemos
@@ -674,16 +780,31 @@ async function tryReserveSeat(
   const reserved = await tx.$executeRawUnsafe(RESERVE_ACTIVITY_SEAT_SQL, activity.id);
 
   if (reserved === 1) {
+    /**
+     * ── A vaga está RESERVADA; o que muda é o que ela significa (FASE 34) ──────
+     *
+     * `AUTO` nasce `CONFIRMED` (o comportamento de sempre). `REQUIRED` nasce
+     * `PENDING` — e `PENDING` OCUPA VAGA: o contador que o UPDATE acima incrementou é
+     * o mesmo que a listagem pública usa para dizer "lotada". É isso que dá sentido ao
+     * prazo: a vaga fica presa com quem se inscreveu, e a liberação automática é o que
+     * a devolve. Se `PENDING` não contasse, o prazo não devolveria nada — só
+     * cancelaria uma linha.
+     */
     const registration = await tx.registration.create({
-      data: { ...baseData, status: 'CONFIRMED' },
+      data: {
+        ...baseData,
+        status: requiresConfirmation ? 'PENDING' : 'CONFIRMED',
+        confirmationDueAt: dueAt,
+      },
       select: { id: true },
     });
 
     return {
-      status: 'CONFIRMED',
+      status: requiresConfirmation ? 'PENDING' : 'CONFIRMED',
       registrationId: registration.id,
       waitlistPosition: null,
       remainingAfter: remainingSeats(activity.capacity, activity.confirmedCount + 1),
+      confirmationDueAt: dueAt,
     };
   }
 
@@ -754,6 +875,13 @@ async function tryReserveSeat(
         registrationId: waitlisted.id,
         waitlistPosition: waitlisted.waitlistPosition,
         remainingAfter: remainingSeats(activity.capacity, activity.confirmedCount),
+        /**
+         * Quem espera vaga não tem prazo para confirmar: não há vaga retida. Quando a
+         * promoção chegar, a linha vira `CONFIRMED` direto (decisão da promoção,
+         * FASE 3) — cobrar confirmação de quem acabou de ser chamado seria criar uma
+         * segunda forma de perder a vaga.
+         */
+        confirmationDueAt: null,
       };
     } catch (error) {
       lastError = error;
@@ -1242,7 +1370,7 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
   const { tenantId, registrationId, userId, reason } = input;
 
   try {
-    return await withTenant(
+    const outcome = await withTenant(
       tenantId,
       async (tx) => {
         const registration = await tx.registration.findFirst({
@@ -1360,6 +1488,26 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
       },
       { timeout: 15_000 },
     );
+
+    /**
+     * ── QUEM SAIU DA ESPERA É AVISADO (FASE 34) ───────────────────────────────
+     *
+     * A promoção é automática desde a FASE 3 e era SILENCIOSA: a pessoa descobria
+     * entrando na plataforma por acaso — e às vezes descobria tarde. O aviso sai
+     * DEPOIS do commit (invariante 8): falha de e-mail não desfaz a promoção.
+     */
+    if (outcome.ok && outcome.promoted) {
+      const notice = await notifyWaitlistPromoted({
+        tenantId,
+        registrationId: outcome.promoted.registrationId,
+      });
+
+      if (!notice.ok) {
+        console.error(`[inscricoes] aviso de promoção não saiu: ${notice.message ?? 'motivo desconhecido'}`);
+      }
+    }
+
+    return outcome;
   } catch (error) {
     return toCancelOutcome(error);
   }
@@ -1371,8 +1519,25 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
  * Mesmo padrão do fluxo principal: o UPDATE condicional decide. Se outra
  * transação consumiu a vaga nesse meio-tempo, `reserved` é 0 e ninguém é
  * promovido — a inscrição permanece na espera.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  PROMOVER TAMBÉM OCUPA LUGAR NO EVENTO (defeito real, encontrado na FASE 34)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Quem entra pela lista de espera passa a ser uma inscrição CONFIRMADA — e toda
+ *  inscrição confirmada de atividade ocupa, além da vaga da atividade, um lugar na
+ *  lotação do EVENTO (é o que `attemptRegistration` reserva). A promoção reservava só
+ *  a vaga da ATIVIDADE: a cada vaga devolvida e reocupada, o contador do evento ficava
+ *  um abaixo do real. O sintoma não aparece no primeiro evento — ele aparece como
+ *  "o evento diz que tem vaga e a inscrição no evento é recusada", ou o contrário, e
+ *  só depois de muitos cancelamentos.
+ *
+ *  A ORDEM importa, e por isso ela está escrita: o lugar no evento é reservado
+ *  PRIMEIRO (se não houver, não há promoção e nada foi tocado); a vaga da atividade
+ *  vem depois e, se ela falhar (outra transação levou a vaga), o lugar do evento é
+ *  DEVOLVIDO antes de desistir — senão a promoção que não aconteceu teria consumido
+ *  lotação do evento.
  */
-async function promoteNextFromWaitlist(
+export async function promoteNextFromWaitlist(
   tx: TxClient,
   activityId: string,
 ): Promise<{ registrationId: string } | null> {
@@ -1384,9 +1549,29 @@ async function promoteNextFromWaitlist(
 
   if (!next) return null;
 
+  const activity = await tx.activity.findFirst({
+    where: { id: activityId },
+    select: { eventId: true },
+  });
+
+  if (!activity) return null;
+
+  const reservedEventSeat = await reserveEventSeat(tx, activity.eventId);
+
+  if (!reservedEventSeat) return null;
+
   const reserved = await tx.$executeRawUnsafe(RESERVE_ACTIVITY_SEAT_SQL, activityId);
 
-  if (reserved !== 1) return null;
+  if (reserved !== 1) {
+    /** Desfaz o lugar no evento: a promoção não vai acontecer. */
+    await tx.$executeRaw`
+      UPDATE events
+         SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
+       WHERE id = ${activity.eventId}::uuid
+    `;
+
+    return null;
+  }
 
   await tx.registration.update({
     where: { id: next.id },
@@ -1448,6 +1633,23 @@ export interface MyRegistration {
   isEventRegistration: boolean;
   /** `true` = criada pela inscrição no evento (atividade aberta). */
   isAutomatic: boolean;
+  /**
+   * ─── Confirmação de vaga (FASE 34) ──────────────────────────────────────────
+   * O que a pessoa precisa saber na lista: se a vaga está RETIDA devendo
+   * confirmação, até quando, o que levar e onde ir. A tela não tem botão de
+   * confirmar — quem confirma é a equipe —, então o aviso é INSTRUÇÃO, e não ação.
+   */
+  confirmation: {
+    state: ConfirmationState;
+    /** "25/09/2026, 23:59" no fuso do evento. */
+    deadlineLabel: string | null;
+    /** "faltam 2 dias" / "vence em menos de uma hora". */
+    countdown: string | null;
+    /** O checklist do que levar/apresentar. */
+    requirements: string[];
+    place: string | null;
+    confirmedAt: Date | null;
+  } | null;
 }
 
 /** Inscrições do usuário autenticado nesta instituição. */
@@ -1467,11 +1669,25 @@ export async function listMyRegistrations(
         activityId: true,
         eventId: true,
         origin: true,
-        activity: { select: { title: true, slug: true, startsAt: true } },
-        event: { select: { title: true, slug: true } },
+        confirmationDueAt: true,
+        confirmedAt: true,
+        cancelReason: true,
+        activity: {
+          select: {
+            title: true,
+            slug: true,
+            startsAt: true,
+            confirmationPolicy: true,
+            confirmationRequirements: true,
+            confirmationPlace: true,
+          },
+        },
+        event: { select: { title: true, slug: true, timezone: true } },
       },
     }),
   );
+
+  const now = new Date();
 
   return rows.map((row) => ({
     id: row.id,
@@ -1492,6 +1708,43 @@ export async function listMyRegistrations(
     eventSlug: row.event.slug,
     isEventRegistration: row.activityId === null,
     isAutomatic: row.origin === 'EVENT_AUTO',
+    /**
+     * A confirmação só existe quando a atividade pede confirmação E há vaga retida
+     * (ou confirmada) a mostrar. Numa atividade automática, ou na inscrição do
+     * evento, o campo é `null` — e a tela não fala de prazo nenhum. Preencher com
+     * "previsto para 23:59" numa atividade que não confirma seria inventar uma
+     * obrigação que ninguém pediu.
+     */
+    confirmation: row.activity
+      ? (() => {
+          const policy = row.activity.confirmationPolicy as ConfirmationPolicy;
+          const state = confirmationStateOf({
+            policy,
+            status: row.status as RegistrationStatus,
+            dueAt: row.confirmationDueAt,
+            now,
+            cancelReason: row.cancelReason,
+          });
+
+          if (policy !== 'REQUIRED') return null;
+          if (state === 'NOT_REQUIRED') return null;
+
+          return {
+            state,
+            deadlineLabel: row.confirmationDueAt
+              ? confirmationDeadlineLabel(row.confirmationDueAt, row.event.timezone)
+              : null,
+            countdown: row.confirmationDueAt
+              ? confirmationCountdown(row.confirmationDueAt, now)
+              : null,
+            requirements: parseConfirmationRequirements(
+              row.activity.confirmationRequirements,
+            ).map(requirementLabel),
+            place: row.activity.confirmationPlace,
+            confirmedAt: row.confirmedAt,
+          };
+        })()
+      : null,
   }));
 }
 

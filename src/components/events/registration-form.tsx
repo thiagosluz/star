@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { CheckCircle2, Clock, UserPlus } from 'lucide-react';
+import { CheckCircle2, Clock, Hourglass, UserPlus } from 'lucide-react';
 
 import {
   registerForActivityAction,
@@ -37,7 +37,7 @@ export function RegistrationForm({
   eventSlug: string;
   activitySlug: string;
   isWaitlist: boolean;
-  alreadyRegistered: 'CONFIRMED' | 'WAITLISTED' | null;
+  alreadyRegistered: 'PENDING' | 'CONFIRMED' | 'WAITLISTED' | null;
 }) {
   const [state, formAction] = useActionState<RegistrationActionState | null, FormData>(
     registerForActivityAction,
@@ -49,7 +49,12 @@ export function RegistrationForm({
     return (
       <div className="ef-card space-y-2 p-5">
         <p className="flex items-center gap-2 font-medium" data-testid="registration-status">
-          {alreadyRegistered === 'CONFIRMED' ? (
+          {alreadyRegistered === 'PENDING' ? (
+            <>
+              <Hourglass className="size-4 text-warning-strong" aria-hidden />
+              Vaga reservada — falta confirmar
+            </>
+          ) : alreadyRegistered === 'CONFIRMED' ? (
             <>
               <CheckCircle2 className="size-4 text-success-strong" aria-hidden />
               Inscrição confirmada
@@ -62,9 +67,16 @@ export function RegistrationForm({
           )}
         </p>
         <p className="text-sm opacity-70">
-          {alreadyRegistered === 'CONFIRMED'
-            ? 'Você receberá as instruções de acesso e o certificado após a atividade.'
-            : 'Avisaremos assim que uma vaga for liberada. A confirmação é automática e por ordem de chegada.'}
+          {/**
+            * Quem confirma é a EQUIPE, no local combinado — a tela não oferece botão
+            * nenhum: o caminho é ir até lá. O prazo e o checklist estão em
+            * "Minhas inscrições", que é onde a pessoa volta para conferir.
+            */}
+          {alreadyRegistered === 'PENDING'
+            ? 'A confirmação é registrada pela organização, no local indicado. Sem ela até o prazo, a vaga é liberada automaticamente. Acompanhe em "Minhas inscrições".'
+            : alreadyRegistered === 'CONFIRMED'
+              ? 'Você receberá as instruções de acesso e o certificado após a atividade.'
+              : 'Avisaremos assim que uma vaga for liberada. A confirmação é automática e por ordem de chegada.'}
         </p>
       </div>
     );
@@ -73,10 +85,24 @@ export function RegistrationForm({
   // ── Resultado da ação ──────────────────────────────────────────────────────
   if (state?.ok) {
     return (
-      <div className="ef-card space-y-2 p-5" data-testid="registration-success">
+      <div className="ef-card space-y-2 p-5" data-testid="registration-success" data-registration-code={state.code}>
         <p className="flex items-center gap-2 font-medium">
-          <CheckCircle2 className="size-4 text-success-strong" aria-hidden />
-          {state.code === 'CONFIRMED' ? 'Inscrição confirmada!' : 'Você entrou na lista de espera'}
+          {state.code === 'PENDING' ? (
+            <>
+              <Hourglass className="size-4 text-warning-strong" aria-hidden />
+              Vaga reservada — falta confirmar
+            </>
+          ) : state.code === 'CONFIRMED' ? (
+            <>
+              <CheckCircle2 className="size-4 text-success-strong" aria-hidden />
+              Inscrição confirmada!
+            </>
+          ) : (
+            <>
+              <Clock className="size-4 text-warning-strong" aria-hidden />
+              Você entrou na lista de espera
+            </>
+          )}
         </p>
         <p className="text-sm opacity-70">{state.message}</p>
       </div>

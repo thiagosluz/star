@@ -108,7 +108,7 @@ export default async function ActivityPage({
   const user = await getAuthenticatedUser();
 
   let membershipStatus: string | null = null;
-  let alreadyRegistered: 'CONFIRMED' | 'WAITLISTED' | null = null;
+  let alreadyRegistered: 'PENDING' | 'CONFIRMED' | 'WAITLISTED' | null = null;
   let myRegistrationId: string | null = null;
   let canRegister = false;
   /**
@@ -154,7 +154,16 @@ export default async function ActivityPage({
       );
       myRegistrationId = mine?.id ?? null;
 
-      if (mine && (mine.status === 'CONFIRMED' || mine.status === 'WAITLISTED')) {
+      if (
+        mine &&
+        (mine.status === 'PENDING' || mine.status === 'CONFIRMED' || mine.status === 'WAITLISTED')
+      ) {
+        /**
+         * `PENDING` entra aqui (FASE 34): quem está com a vaga RETIDA não pode ver o
+         * formulário de novo — o servidor recusaria com "você já está inscrito", e a
+         * tela estaria oferecendo o que ela mesma nega. O que a pessoa precisa nesse
+         * estado é saber que falta confirmar e ONDE.
+         */
         alreadyRegistered = mine.status;
       }
     }

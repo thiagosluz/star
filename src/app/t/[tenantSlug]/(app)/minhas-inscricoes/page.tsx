@@ -15,7 +15,8 @@ const STATUS_LABEL: Record<string, string> = {
   WAITLISTED: 'Lista de espera',
   ATTENDED: 'Presença registrada',
   NO_SHOW: 'Não compareceu',
-  PENDING: 'Pendente',
+  /** `PENDING` = vaga RETIDA aguardando a confirmação da equipe (FASE 34). */
+  PENDING: 'Vaga reservada — falta confirmar',
 };
 
 /** Inscrições do usuário na instituição ativa. */
@@ -140,6 +141,82 @@ export default async function MyRegistrationsPage({
                     </span>
                   </p>
                 )}
+
+                {/**
+                  * ── A VAGA ESTÁ RETIDA (FASE 34) ────────────────────────────────
+                  *
+                  *  Quem confirma é a EQUIPE, no local indicado — então aqui não há
+                  *  botão: o que a pessoa precisa é do prazo, do checklist do que
+                  *  levar e do lugar aonde ir. Um botão "confirmar" que a equipe
+                  *  recusaria seria uma promessa falsa.
+                  */}
+                {registration.confirmation ? (
+                  <div
+                    className="mt-2 space-y-1 rounded-md border border-secondary/50 bg-secondary/5 p-3 text-xs"
+                    data-testid="registration-confirmation"
+                    data-confirmation-state={registration.confirmation.state}
+                  >
+                    {registration.confirmation.state === 'PENDING' ? (
+                      <>
+                        <p className="font-medium text-secondary-strong">
+                          Falta confirmar sua vaga
+                          {registration.confirmation.countdown
+                            ? ` — ${registration.confirmation.countdown}`
+                            : ''}
+                        </p>
+                        <p className="text-muted-foreground">
+                          A confirmação é feita pela organização
+                          {registration.confirmation.place
+                            ? ` em ${registration.confirmation.place}`
+                            : ''}
+                          {registration.confirmation.deadlineLabel
+                            ? `, até ${registration.confirmation.deadlineLabel}`
+                            : ''}
+                          . Sem ela, a vaga é liberada automaticamente.
+                        </p>
+                      </>
+                    ) : null}
+
+                    {registration.confirmation.state === 'EXPIRED' ? (
+                      <>
+                        <p className="font-medium text-secondary-strong">
+                          Prazo de confirmação vencido
+                        </p>
+                        <p className="text-muted-foreground">
+                          O prazo terminou
+                          {registration.confirmation.deadlineLabel
+                            ? ` em ${registration.confirmation.deadlineLabel}`
+                            : ''}
+                          . A vaga está sendo liberada — procure a organização se ainda houver tempo.
+                        </p>
+                      </>
+                    ) : null}
+
+                    {registration.confirmation.state === 'CONFIRMED' ? (
+                      <p className="font-medium text-secondary-strong">
+                        Vaga confirmada pela organização
+                        {registration.confirmation.confirmedAt
+                          ? ` em ${new Intl.DateTimeFormat('pt-BR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            }).format(registration.confirmation.confirmedAt)}`
+                          : ''}
+                      </p>
+                    ) : null}
+
+                    {registration.confirmation.requirements.length > 0 ? (
+                      <div data-testid="registration-confirmation-requirements">
+                        <p className="text-muted-foreground">O que é preciso levar/apresentar:</p>
+                        <ul className="ml-4 list-disc text-muted-foreground">
+                          {registration.confirmation.requirements.map((requirement) => (
+                            <li key={requirement}>{requirement}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
@@ -162,8 +239,14 @@ export default async function MyRegistrationsPage({
                   </Link>
                 )}
 
+                {/**
+                  * Desistir também vale para quem está com a vaga RETIDA: se a pessoa
+                  * não vai confirmar, é melhor que a vaga volte para a fila agora do que
+                  * no fim do prazo. O cancelamento é terminal e devolve a vaga.
+                  */}
                 {(registration.status === 'CONFIRMED' ||
-                  registration.status === 'WAITLISTED') && (
+                  registration.status === 'WAITLISTED' ||
+                  registration.status === 'PENDING') && (
                   <CancelRegistrationButton
                     tenantSlug={tenantSlug}
                     eventSlug={registration.eventSlug}

@@ -183,9 +183,11 @@ async function start(): Promise<void> {
   // ── Fila de e-mails (FASE 15) ──────────────────────────────────────────────
   const {
     ATTENDANCE_SWEEP_JOB,
+    CONFIRMATION_SWEEP_JOB,
     EMAIL_QUEUE_NAME,
     REVIEW_DEADLINES_JOB,
     scheduleAttendanceSweep,
+    scheduleConfirmationSweep,
     scheduleReviewDeadlineScan,
   } =
     await import('@/lib/communication/email-queue');
@@ -214,6 +216,27 @@ async function start(): Promise<void> {
         );
 
         return sweep;
+      }
+
+      /**
+       * Confirmação de vaga (FASE 34): a MESMA passada avisa quem está perto do prazo
+       * e libera a vaga de quem já venceu. A ordem importa — o lembrete só olha prazo
+       * futuro, a liberação só olha prazo vencido, e nenhuma inscrição recebe os dois.
+       */
+      if (job.name === CONFIRMATION_SWEEP_JOB) {
+        const { runConfirmationReminderScan, runConfirmationExpirySweep } = await import(
+          '@/lib/events/confirmation-service'
+        );
+
+        const reminders = await runConfirmationReminderScan();
+        const expiry = await runConfirmationExpirySweep();
+
+        console.log(
+          `  ✓ confirmação de vaga: ${reminders.reminded} lembrete(s) enviado(s), ` +
+            `${expiry.released} vaga(s) liberada(s) por prazo e ${expiry.promoted} promoção(ões) da lista de espera`,
+        );
+
+        return { reminders, expiry };
       }
 
       if (job.name === REVIEW_DEADLINES_JOB) {
@@ -286,10 +309,12 @@ async function start(): Promise<void> {
   // de acumular varreduras.
   const scheduled = await scheduleReviewDeadlineScan();
   const sweepScheduled = await scheduleAttendanceSweep();
+  const confirmationScheduled = await scheduleConfirmationSweep();
 
   console.log(
     `  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (prazos de parecer: ${scheduled ? 'agendados' : 'indisponível'}; ` +
-      `fechamento de presenças: ${sweepScheduled ? 'agendado' : 'indisponível'}).`,
+      `fechamento de presenças: ${sweepScheduled ? 'agendado' : 'indisponível'}; ` +
+      `confirmação de vaga: ${confirmationScheduled ? 'agendada' : 'indisponível'}).`,
   );
   console.log(`${line}\n`);
 

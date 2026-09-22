@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32 e 33 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1690 testes** unitários/integração · **111 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33 e 34 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1759 testes** unitários/integração · **116 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -403,8 +403,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1690 testes (71 arquivos) — unit + integração com banco real
-npm run test:e2e          # 111 testes E2E contra o container de produção
+npm test                  # 1759 testes (73 arquivos) — unit + integração com banco real
+npm run test:e2e          # 116 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
@@ -463,7 +463,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [docs/fase-33-chamadas-de-propostas.md](docs/fase-33-chamadas-de-propostas.md) | **Chamadas de propostas:** a chamada virou entidade com TIPO próprio (artigo, palestrante, minicurso, oficina, mesa-redonda, pôster e outra atividade), janela, cegueira, **rubrica própria** (precedência CHAMADA → TRILHA → PADRÃO) e limite por autor por chamada; a proposta **é uma submissão** com campos por tipo, o **formulário é público** (conta criada no caminho e vínculo de participante nascendo da proposta) e o bloco **"Chamadas de propostas"** aparece onde o organizador o colocar; o **protocolo de aceite** registra a decisão pelo motor do comitê e deixa **criar a atividade** (com a carga declarada) e **convidar o palestrante** como escolhas do organizador — o convite por e-mail quita a dívida **E25** | ADR-158 … 169 |
 | [docs/fase-31-credenciamento-e-frequencia.md](docs/fase-31-credenciamento-e-frequencia.md) | **Credenciamento e frequência por crachá:** o **crachá** passou a existir (um código opaco `CR-XXXX-XXXX` por pessoa no evento), com **área de emissão individual e em massa**, **folha A4 em PDF** com QR + código + nome e **crachá online** do participante; o **modo monitor** lê o QR pela **câmera** (API nativa + decodificador local), pelo leitor USB ou por digitação, escolhendo o CONTEXTO (portaria × atividade) — e **credenciamento ≠ frequência**: a chegada é um fato, a sessão na atividade é outro, com entrada, saída e minutos com teto no fim da atividade | ADR-148 … 152 |
 | [docs/fase-30-sorteio-ao-vivo-em-rodadas.md](docs/fase-30-sorteio-ao-vivo-em-rodadas.md) | **Sorteio ao vivo, em rodadas:** cada apuração é um MOMENTO com o próprio compromisso de semente, prêmio, patrocinador e resultado assinado (payload v4); **"Criar para o palco"** faz o telão existir ANTES da apuração; a **roleta** passa os nomes reais da lista publicada e para no ganhador; quem ganhou uma rodada não concorre nas seguintes; auditoria e resultado público **por rodada** | ADR-144 … 147 |
-| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 78 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
+| [docs/fase-34-confirmacao-de-vaga.md](docs/fase-34-confirmacao-de-vaga.md) | **Confirmação de vaga com prazo:** o organizador escolhe no cadastro da atividade se a vaga é **automática** ou **exige confirmação**, com prazo em dias, **o que é preciso** (pagamento, doação, item, outro) e **onde confirmar**; a inscrição nasce **RETENDO a vaga** e a pessoa é avisada por **e-mail e na plataforma**; quem confirma é a **equipe**, na fila de confirmações; vencido o prazo, a vaga é **liberada automaticamente**, o primeiro da lista de espera é promovido e **os dois** são avisados | ADR-170 … 178 |
+| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 81 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |

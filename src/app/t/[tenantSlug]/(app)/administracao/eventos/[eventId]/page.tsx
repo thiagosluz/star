@@ -12,6 +12,7 @@ import { getReviewerRanking } from '@/lib/gamification/achievement-service';
 import { activityStatusLabel, activityTypeLabel } from '@/domain/events/activity-rules';
 import { effectiveActivityCapacity, roomCapacityLabel } from '@/domain/events/event-rules';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
+import { ConfirmationFields } from '@/components/admin/confirmation-fields';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { ReviewerAwardPanel } from '@/components/reviews/reviewer-award';
 import {
@@ -152,6 +153,18 @@ export default async function AdminEventDetailPage({
     })),
   ];
 
+  /**
+   * Quantas vagas estão RETIDAS esperando confirmação neste evento (FASE 34).
+   *
+   * Fica no topo porque é um número com prazo: cada dia sem confirmação é uma vaga
+   * que a varredura vai devolver para a lista de espera — e o organizador precisa
+   * saber disso ANTES, não depois de a fila se desfazer sozinha.
+   */
+  const pendingConfirmations = event.activities.reduce(
+    (total, activity) => total + activity.pendingConfirmations,
+    0,
+  );
+
   return (
     <main className="max-w-5xl space-y-8">
       <header className="space-y-1.5">
@@ -231,6 +244,20 @@ export default async function AdminEventDetailPage({
             data-testid="calls-link"
           >
             Chamadas de propostas →
+          </Link>
+          {/*
+            Confirmações de vaga (FASE 34): a fila de quem está com a vaga RETIDA
+            esperando confirmação, ordenada pelo prazo. O link mostra o total pendente
+            porque é número com data para virar vaga liberada — sem isso o organizador
+            só descobriria a fila quando ela já tivesse se desfeito sozinha.
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/confirmacoes`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="confirmations-link"
+          >
+            Confirmações de vaga
+            {pendingConfirmations > 0 ? ` (${pendingConfirmations})` : ''} →
           </Link>
         </p>
       </header>
@@ -522,6 +549,34 @@ export default async function AdminEventDetailPage({
                             defaultChecked={activity.checkInEnabled}
                           />
                         </div>
+
+                        {/**
+                         * Confirmação de vaga (FASE 34): a escolha do organizador no
+                         * cadastro. Aberta por padrão quando há pendentes, porque é o
+                         * estado que exige ação — e o número de quem espera aparece no
+                         * resumo da atividade logo acima.
+                         */}
+                        <details open={activity.pendingConfirmations > 0} className="rounded-lg border border-border p-3">
+                          <summary className="cursor-pointer text-sm font-medium">
+                            Confirmação de vaga
+                            {activity.confirmationPolicy === 'REQUIRED'
+                              ? ` · exige confirmação (${activity.confirmationWindowDays ?? 0} dia(s))`
+                              : ' · automática'}
+                            {activity.pendingConfirmations > 0
+                              ? ` · ${activity.pendingConfirmations} aguardando`
+                              : ''}
+                          </summary>
+
+                          <div className="mt-3">
+                            <ConfirmationFields
+                              policy={activity.confirmationPolicy}
+                              windowDays={activity.confirmationWindowDays}
+                              requirements={activity.confirmationRequirements}
+                              place={activity.confirmationPlace}
+                              instructions={activity.confirmationInstructions}
+                            />
+                          </div>
+                        </details>
                       </AdminForm>
                     </details>
 
@@ -589,6 +644,19 @@ export default async function AdminEventDetailPage({
               mesa-redonda): quem se inscrever no evento entra nelas automaticamente, e vagas/lista de espera
               não se aplicam. Minicursos e oficinas normalmente exigem inscrição própria.
             </p>
+
+            {/**
+              * A atividade NASCE com a confirmação automática (o padrão preserva o
+              * comportamento de sempre). Quem quiser cobrar confirmação escolhe aqui, no
+              * mesmo lugar em que escolhe vagas e lista de espera.
+              */}
+            <ConfirmationFields
+              policy="AUTO"
+              windowDays={null}
+              requirements={[]}
+              place={null}
+              instructions={null}
+            />
           </AdminForm>
         </div>
       </details>

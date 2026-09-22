@@ -48,6 +48,7 @@ import { saveSponsor, saveSponsorTier } from '../src/lib/admin/sponsor-service';
 import { sendParticipantMessage } from '../src/lib/participants/message-service';
 import { saveCall, setCallPublished } from '../src/lib/proposals/call-service';
 import { submitProposal } from '../src/lib/proposals/proposal-service';
+import { registerForActivity } from '../src/lib/events/registration-service';
 import { closeEmailQueue } from '../src/lib/communication/email-queue';
 import {
   attachSpeakerAccount,
@@ -229,6 +230,8 @@ async function main() {
   const trilhaTecnologia = randomUUID();
   /** Minicurso usado como base dos certificados de demonstração (FASE 6). */
   const minicursoRustId = randomUUID();
+  /** A atividade que exige confirmação de vaga, com prazo e doação (FASE 34). */
+  const oficinaSolidariaId = randomUUID();
 
   await inTenant(ufbaId, async () => {
     await prisma.event.create({
@@ -352,6 +355,56 @@ async function main() {
           capacity: 150,
           waitlistEnabled: false,
           workloadMinutes: 90,
+        },
+        /**
+         * ── A ATIVIDADE CONFIRMÁVEL (FASE 34) ────────────────────────────────────
+         *
+         *  Ela existe no dado de demonstração porque a confirmação de vaga só aparece
+         *  na tela quando alguém a escolheu no cadastro: sem esta linha, nem a fila de
+         *  confirmações nem o aviso de prazo teriam o que mostrar — e o caminho novo
+         *  ficaria invisível para quem abre a demonstração.
+         *
+         *  A OFICINA cobra uma doação e acontece na secretaria: é o caso que motivou a
+         *  fase (a vaga presa com quem nunca apareceu para entregar o quilo de
+         *  alimento).
+         */
+        {
+          id: oficinaSolidariaId,
+          tenantId: ufbaId,
+          eventId: congressoUfba,
+          slug: 'oficina-brinquedos-reciclados',
+          title: 'Oficina: Brinquedos reciclados para escolas públicas',
+          description:
+            'Oficina prática de construção de brinquedos com material reciclado, para doação a escolas ' +
+            'municipais. A vaga é confirmada com a entrega da doação na secretaria.',
+          type: 'WORKSHOP',
+          status: 'SCHEDULED',
+          modality: 'IN_PERSON',
+          startsAt: days(32),
+          endsAt: new Date(days(32).getTime() + 3 * 3_600_000),
+          roomId: salaOficinas,
+          capacity: 25,
+          waitlistEnabled: true,
+          workloadMinutes: 180,
+          confirmationPolicy: 'REQUIRED',
+          confirmationWindowDays: 3,
+          confirmationRequirements: [
+            {
+              kind: 'DONATION',
+              label: '1 kg de alimento não perecível',
+              note: 'Vale qualquer marca; arroz, feijão ou leite em pó.',
+            },
+            {
+              kind: 'ITEM',
+              label: '1 brinquedo novo ou em bom estado',
+              note: 'Para doação às escolas municipais.',
+            },
+          ],
+          confirmationPlace: 'Secretaria do evento — Bloco B, térreo, das 9h às 18h',
+          confirmationInstructions:
+            'Traga a doação até o prazo. A confirmação é registrada pela equipe na secretaria, e é ela ' +
+            'que garante a vaga na oficina.',
+          tags: ['oficina', 'sustentabilidade'],
         },
       ],
     });
@@ -745,7 +798,7 @@ async function main() {
     });
   });
 
-  console.log('  ✓ 2 eventos, 2 salas e 4 atividades criados');
+  console.log('  ✓ 2 eventos, 2 salas e 5 atividades criados (1 delas exige confirmação de vaga)');
 
   // ── Papéis: acúmulo e escopo ───────────────────────────────────────────────
   await inTenant(ufbaId, async () => {
@@ -1541,6 +1594,45 @@ async function main() {
 
   console.log(`  ✓ chamadas de propostas: ${chamadasDemo}`);
 
+  // ── Confirmação de vaga com prazo (FASE 34) ───────────────────────────────
+  /**
+   * A demonstração passa pelo SERVIÇO REAL (`registerForActivity`), e não por um
+   * `create` à mão: é o serviço que aplica a política da atividade, calcula o prazo no
+   * fuso do evento, retém a vaga e dispara o aviso. Gravar a linha direto produziria
+   * um dado que PARECE o do produto — com um prazo que o serviço nunca calcularia — e
+   * a demonstração passaria a mentir sobre o próprio caminho (armadilha 67).
+   */
+  let confirmacaoDemo = 'não foi possível demonstrar';
+
+  const inscricaoPendente = await registerForActivity({
+    tenantId: ufbaId,
+    eventSlug: 'congresso-2026',
+    activitySlug: 'oficina-brinquedos-reciclados',
+    userId: carla,
+    consentData: true,
+    consentImage: false,
+  });
+
+  if (inscricaoPendente.ok && inscricaoPendente.status === 'PENDING') {
+    const prazo = inscricaoPendente.confirmationDueAt;
+
+    confirmacaoDemo =
+      `1 vaga RETIDA aguardando confirmação (carla@example.test)` +
+      (prazo
+        ? ` — prazo até ${new Intl.DateTimeFormat('pt-BR', {
+            dateStyle: 'short',
+            timeStyle: 'short',
+            timeZone: 'America/Bahia',
+          }).format(prazo)} (America/Bahia)`
+        : '');
+  } else {
+    confirmacaoDemo = inscricaoPendente.ok
+      ? `a inscrição nasceu ${inscricaoPendente.status} (esperado PENDING)`
+      : `falhou: ${inscricaoPendente.message}`;
+  }
+
+  console.log(`  ✓ confirmação de vaga: ${confirmacaoDemo}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1599,6 +1691,11 @@ async function main() {
   console.log(`    Público:   /t/ufba-demo/eventos/congresso-2026/chamada/chamada-palestrantes`);
   console.log(`    ${chamadasDemo}`);
   console.log(`    O aceite (com atividade e convite) fica no painel do comitê de cada proposta.`);
+  console.log(`\n  Confirmação de vaga com prazo (FASE 34):`);
+  console.log(`    Fila:      /t/ufba-demo/administracao/eventos/<id>/confirmacoes`);
+  console.log(`    Atividade: /t/ufba-demo/eventos/congresso-2026/atividades/oficina-brinquedos-reciclados`);
+  console.log(`    ${confirmacaoDemo}`);
+  console.log(`    Liberar as vencidas: npm run registrations:expire`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

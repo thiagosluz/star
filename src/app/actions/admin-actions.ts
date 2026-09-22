@@ -18,6 +18,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { revalidatePath, revalidateTag } from 'next/cache';
+import { headers } from 'next/headers';
 import { z } from 'zod';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
@@ -43,6 +44,7 @@ import {
 } from '@/lib/admin/gamification-admin-service';
 import { checkInByBadgeToken } from '@/lib/events/attendance-service';
 import { revokeCertificate } from '@/lib/certificates/certificate-service';
+import { confirmRegistration } from '@/lib/events/confirmation-service';
 
 export interface AdminActionState {
   ok: boolean;
@@ -353,6 +355,36 @@ export async function deleteRoomAction(
     : { ok: false, code: result.code, message: result.message };
 }
 
+/**
+ * Lê as exigências da confirmação de vaga do formulário (FASE 34).
+ *
+ * As linhas chegam em LISTAS PARALELAS (`requirementKind[]`, `requirementLabel[]`,
+ * `requirementNote[]`), como a rubrica da chamada (FASE 33) e a autoria da submissão
+ * (FASE 17): é o que permite adicionar e remover linhas na tela sem indexar nomes de
+ * campo. Linha sem descrição é DESCARTADA aqui — o domínio recusaria a lista inteira
+ * por causa de uma linha em branco que o organizador nem viu.
+ */
+function readConfirmationRequirements(formData: FormData): { kind: string; label: string; note: string }[] {
+  const kinds = formData.getAll('requirementKind').map((value) => String(value));
+  const labels = formData.getAll('requirementLabel').map((value) => String(value));
+  const notes = formData.getAll('requirementNote').map((value) => String(value));
+
+  const rows: { kind: string; label: string; note: string }[] = [];
+
+  for (let index = 0; index < labels.length; index += 1) {
+    const label = (labels[index] ?? '').trim();
+    if (!label) continue;
+
+    rows.push({
+      kind: (kinds[index] ?? '').trim(),
+      label,
+      note: (notes[index] ?? '').trim(),
+    });
+  }
+
+  return rows;
+}
+
 const activitySchema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
   eventId: z.string().uuid(),
@@ -437,6 +469,18 @@ export async function saveActivityAction(
      * campo (a API interna, um teste) continua criando atividade coerente.
      */
     requiresRegistration: formData.get('requiresRegistration') === 'on',
+    /**
+     * ─── Confirmação de vaga com prazo (FASE 34) ──────────────────────────────
+     * O organizador escolhe no cadastro da atividade. Ausente/`AUTO` = a vaga é
+     * confirmada no ato da inscrição, e nada mais nesta fase se aplica.
+     */
+    confirmationPolicy: formData.get('confirmationPolicy') === 'REQUIRED' ? 'REQUIRED' : 'AUTO',
+    confirmationWindowDays: nullable(formData.get('confirmationWindowDays'))
+      ? toInt(formData.get('confirmationWindowDays'))
+      : null,
+    confirmationRequirements: readConfirmationRequirements(formData),
+    confirmationPlace: nullable(formData.get('confirmationPlace')),
+    confirmationInstructions: nullable(formData.get('confirmationInstructions')),
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
@@ -459,6 +503,80 @@ export async function saveActivityAction(
   return {
     ok: true,
     message: `${result.created ? 'Atividade criada.' : 'Atividade atualizada.'}${automatic}`,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Confirmação de vaga (FASE 34)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Registra a confirmação de uma vaga, pela EQUIPE.
+ *
+ * A permissão é `registration:update:any` — a mesma de quem corrige uma inscrição
+ * pelo painel, e não uma permissão nova: confirmar é atualizar a situação de uma
+ * inscrição que a pessoa já fez. Quem confirma é a equipe (decisão do humano nesta
+ * fase), então não há caminho de autosserviço: o `actorId` vem da sessão e vai para a
+ * trilha, que é o que responde "quem recebeu este pagamento?" depois.
+ */
+export async function confirmRegistrationAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      registrationId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      registrationId: formData.get('registrationId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Confirmação inválida.' };
+  }
+
+  const auth = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_UPDATE_ANY,
+  });
+  if (!auth.ok) return auth.state;
+
+  const request = await headers();
+
+  const result = await confirmRegistration({
+    tenantId: auth.tenantId,
+    registrationId: parsed.data.registrationId,
+    actorId: auth.userId,
+    ipAddress: request.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    userAgent: request.get('user-agent'),
+  });
+
+  /**
+   * A fila PRECISA ser relida: a linha confirmada sai dos pendentes e entra nos
+   * confirmados, e o contador da atividade muda. Sem a releitura a tela continuaria
+   * oferecendo "Confirmar" para quem já foi confirmado — e o segundo clique receberia
+   * "já confirmada", que parece defeito.
+   */
+  revalidatePath(
+    tenantPath(
+      parsed.data.tenantSlug,
+      `/administracao/eventos/${parsed.data.eventId}/confirmacoes`,
+    ),
+  );
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  return {
+    ok: true,
+    message: `Vaga de ${result.personName} em “${result.activityTitle}” confirmada.${
+      result.emailQueued ? ' O aviso foi enviado por e-mail.' : ''
+    }`,
   };
 }
 

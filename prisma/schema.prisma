@@ -159,6 +159,21 @@ enum RegistrationOrigin {
   EVENT_AUTO
 }
 
+/// Como a vaga de uma atividade é confirmada (FASE 34).
+///
+/// `AUTO` — a inscrição confirma a vaga no ato. É o padrão e o comportamento de tudo
+/// o que existia antes desta fase: quem clica, fica.
+///
+/// `REQUIRED` — a inscrição nasce `PENDING` e a vaga fica RETIDA até a equipe
+/// registrar a confirmação (o pagamento, a doação, o item recebido). Vencido o prazo
+/// escolhido pelo organizador, a vaga é liberada automaticamente.
+///
+/// A escolha é do organizador, no cadastro da atividade: sem ela, nada muda.
+enum ConfirmationPolicy {
+  AUTO
+  REQUIRED
+}
+
 /// Como a presença foi comprovada — base de auditoria da carga horária.
 enum AttendanceSource {
   QR_CODE_CHECKIN
@@ -904,6 +919,8 @@ model User {
   roleAssignments   RoleAssignment[]
   registrations     Registration[]
   attendances       Attendance[]
+  /// Inscrições cuja vaga esta pessoa confirmou, como equipe (FASE 34).
+  registrationsConfirmed Registration[] @relation("RegistrationConfirmedBy")
   submissions       Submission[]
   submissionAuthors SubmissionAuthor[]
   /// Chamadas de propostas que esta pessoa criou — FASE 33.
@@ -1294,6 +1311,21 @@ model Activity {
   /// liberaria inscrições em uma atividade configurada como lotada.
   capacity        Int?    @default(0)
   waitlistEnabled Boolean @default(false)
+
+  /// ─── Confirmação de vaga com prazo (FASE 34) ─────────────────────────────
+  /// Escolha do ORGANIZADOR. `AUTO` (padrão) = a vaga é confirmada na inscrição;
+  /// `REQUIRED` = a inscrição retém a vaga e a equipe precisa confirmá-la.
+  confirmationPolicy ConfirmationPolicy @default(AUTO)
+  /// Prazo, em DIAS, contado da inscrição de cada pessoa. `null` quando `AUTO`.
+  confirmationWindowDays Int?
+  /// O que é preciso para confirmar — `[{ kind, label, note }]`. O formato é do
+  /// domínio (`parseConfirmationRequirements`), que descarta linha malformada em vez
+  /// de derrubar a leitura.
+  confirmationRequirements Json @default("[]")
+  /// Onde confirmar (secretaria, balcão, sala) — texto do organizador.
+  confirmationPlace        String? @db.VarChar(300)
+  /// Orientações gerais da confirmação.
+  confirmationInstructions String? @db.Text
 
   /// A atividade exige inscrição INDIVIDUAL?
   ///
@@ -1839,6 +1871,22 @@ model Registration {
   /// Posição na lista de espera quando `status = WAITLISTED`.
   waitlistPosition Int? @default(0)
 
+  /// ─── Confirmação de vaga com prazo (FASE 34) ─────────────────────────────
+  /// Quando o prazo desta inscrição vence (fim do dia, no FUSO DO EVENTO). NULO nas
+  /// atividades de confirmação automática.
+  confirmationDueAt DateTime? @db.Timestamptz(6)
+  /// Quando o lembrete "falta pouco para o prazo" foi gravado. É a chave de
+  /// idempotência do aviso: a varredura roda de hora em hora e não pode repetir.
+  confirmationReminderAt DateTime? @db.Timestamptz(6)
+  /// Quando a EQUIPE confirmou a vaga, e quem confirmou.
+  ///
+  /// Quem confirma é a equipe (decisão do humano na FASE 34): a confirmação é o
+  /// registro de que a instituição recebeu o pagamento/doação/item, e não uma
+  /// declaração da própria pessoa — o que ela assinaria sozinha não é prova para
+  /// quem cobra.
+  confirmedAt   DateTime? @db.Timestamptz(6)
+  confirmedById String?   @db.Uuid
+
   /// Consentimentos LGPD (imagem, dados, comunicações).
   consentImage Boolean   @default(false)
   consentData  Boolean   @default(false)
@@ -1870,6 +1918,7 @@ model Registration {
 
   attendances    Attendance[]
   xpTransactions XpTransaction[]
+  confirmedBy    User?        @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
   /// NÃO existe `@@unique([activityId, userId])` aqui de propósito.
   ///
@@ -1885,6 +1934,10 @@ model Registration {
   /// (ver prisma/migrations) porque o Prisma Schema Language ainda não
   /// expressa índices parciais.
   @@index([tenantId, eventId, status])
+  /// A VARREDURA do prazo de confirmação (FASE 34): "as pendentes desta instituição
+  /// cujo prazo já venceu". Sem este índice, a varredura periódica varreria a tabela
+  /// inteira a cada passada.
+  @@index([tenantId, status, confirmationDueAt])
   @@index([tenantId, userId, status])
   @@index([eventId, status])
   @@index([badgeToken])

@@ -65,6 +65,33 @@ export const ATTENDANCE_SWEEP_JOB = 'attendance-sweep';
  */
 export const ATTENDANCE_SWEEP_PATTERN = '*/15 * * * *';
 
+/**
+ * Nome do job repetível que cuida dos prazos de confirmação de vaga (FASE 34).
+ *
+ * Ele faz DUAS coisas na mesma passada, e de propósito:
+ *
+ *   • o LEMBRETE, para quem está a menos de um dia do vencimento;
+ *   • a LIBERAÇÃO, para quem já venceu.
+ *
+ *  Separá-los em dois agendadores daria dois relógios para a mesma regra, e a
+ *  primeira manutenção esqueceria um deles. A mesma passada que avisa é a que
+ *  libera — e a ordem importa: quem está dentro do prazo é avisado, quem passou é
+ *  liberado, e nenhuma inscrição recebe os dois tratamentos no mesmo minuto (o
+ *  lembrete exige prazo FUTURO; a liberação, prazo vencido).
+ */
+export const CONFIRMATION_SWEEP_JOB = 'registration-confirmation-sweep';
+
+/**
+ * Cadência da confirmação de vaga.
+ *
+ * De hora em hora: o prazo vence no FIM DO DIA local, e o lembrete sai com 24 h de
+ * antecedência — então a hora em que a passada roda não muda a decisão, só o quanto
+ * antes a pessoa é avisada e por quanto tempo a vaga fica retida depois de vencida.
+ * De 15 em 15 minutos (como as presenças) seria 96 varreduras por dia para prazos que
+ * duram dias.
+ */
+export const CONFIRMATION_SWEEP_PATTERN = '0 * * * *';
+
 export interface EmailJobData {
   emailMessageId: string;
   /** NULO nas mensagens de plataforma (verificação, redefinição de senha). */
@@ -172,8 +199,31 @@ export async function scheduleAttendanceSweep(): Promise<boolean> {
   }
 }
 
-/** Números da fila (diagnóstico, métricas e painel). */
-export async function emailQueueStats(): Promise<{
+/**
+ * Registra (uma vez) o job repetível da confirmação de vaga (FASE 34).
+ *
+ * Mesmo padrão dos outros dois: id FIXO, então reiniciar o worker reagenda em vez de
+ * acumular varreduras — e subir dez workers não cria dez passadas.
+ */
+export async function scheduleConfirmationSweep(): Promise<boolean> {
+  try {
+    await getQueue().upsertJobScheduler(
+      'registration-confirmation-sweep',
+      { pattern: CONFIRMATION_SWEEP_PATTERN },
+      { name: CONFIRMATION_SWEEP_JOB, data: { emailMessageId: '', tenantId: null } },
+    );
+
+    return true;
+  } catch (error) {
+    logger.warn('não foi possível agendar a varredura de confirmação de vaga', {
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
+
+    return false;
+  }
+}
+
+/** Números da fila (diagnóstico, métricas e painel). */export async function emailQueueStats(): Promise<{
   waiting: number;
   active: number;
   completed: number;

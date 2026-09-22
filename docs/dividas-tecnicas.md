@@ -10,7 +10,8 @@
 > **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
 > **FASE 23** (E9–E13), a **FASE 24** (E14–E17), a **FASE 25** (escopo próprio: E21–E24), a
 > **FASE 15** (D1–D6 + A5) e a **FASE 21** (C4–C5), a **FASE 29**, a **FASE 30**, a **FASE 31**,
-> a **FASE 32** e a **FASE 33** (que quitou o E25 e declarou E46–E47), com as **revisões
+> a **FASE 32**, a **FASE 33** (que quitou o E25 e declarou E46–E47) e a **FASE 34** (que
+> declarou E48–E49), com as **revisões
 > pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
 >
@@ -93,14 +94,14 @@
 | B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 29 | 7 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, não há interruptor para manter o telão fora do ar, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, a roleta do telão não pode ser repetida nem desligada, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo e o proponente não é avisado da decisão |
+| E. Jornada do participante | 31 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, não há interruptor para manter o telão fora do ar, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, a roleta do telão não pode ser repetida nem desligada, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, o proponente não é avisado da decisão, a confirmação de vaga não é por exigência e não há prazo-limite da atividade |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **53** | **16** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **55** | **17** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+3+29+5+0+4+1 = 53 — o tema G ficou
+> O total é a **soma das tabelas de tema** (4+5+2+3+31+5+0+4+1 = 55 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -113,6 +114,14 @@
 > E37**, que a FASE 29 declarou — esta última sem quitar nenhuma dívida anterior: o escopo
 > dela veio do humano, e o que ela fechou foi um defeito de honestidade na auditoria, não um
 > item deste levantamento).
+>
+> **A FASE 34** (confirmação de vaga com prazo) veio do humano e **não quitou item deste
+> levantamento**: ela separou "inscrever-se" de "confirmar-se" (a vaga fica retida até a equipe
+> registrar a confirmação e é liberada automaticamente no vencimento) e declarou o **E48** (a
+> confirmação é do conjunto, não de cada exigência) e o **E49** (não há prazo-limite da atividade
+> além dos N dias da inscrição). No caminho, corrigiu dois defeitos reais: a promoção da lista de
+> espera não devolvia o lugar no EVENTO (armadilha 79) e a fila de confirmações abria pela agenda
+> em vez da urgência (armadilha 80). O consolidado passa de 53 para **55**.
 >
 > **A FASE 33** (chamadas de propostas) veio do humano e **QUITOU o E25**: o convite de palestrante
 > passou a sair por e-mail (template `SPEAKER_INVITATION`, disparado pelo protocolo de aceite). Ela
@@ -241,6 +250,8 @@
 | E39 | **A roleta tem duração fixa e não pode ser reexecutada nem desligada** | FASE 30 (novo, ADR-146) | A animação roda quando o telão percebe a apuração ao vivo, por ~3 s, e quem abre o link depois vê o resultado direto (decisão consciente). Não há controle para repetir a roleta (telão recarregado no meio do anúncio) nem para apresentá-la sem animação | O suspense do anúncio é o que o pedido queria, e o operador não tem como ajustá-lo ao palco: uma projeção que reinicia perde a roleta, e não há como forçá-la de novo | P | Sim |
 | E46 | **A proposta de uma chamada não aceita anexo** | FASE 33 (novo, ADR-161/162) | O formulário público pede texto e os campos do TIPO (carga horária, público-alvo, minibiografia), e não tem upload — diferente da submissão de artigo, que anexa o PDF. A prontidão fora da ciência trata "sem arquivo" como AVISO, e o caminho de upload existe (FASE 23/24, com quota e assinatura real do arquivo) | A organização decide sobre um resumo de 150 caracteres e uma minibiografia, sem o plano de aula nem o currículo que costumam acompanhar a proposta — e a decisão fica mais pobre justamente nas chamadas em que ela é mais subjetiva. O caminho é reusar `requestUploadAction`/`confirmUploadAction` no formulário público, com visibilidade decidida como no material do palestrante | M | Sim |
 | E47 | **O proponente não é avisado da decisão (aceite ou recusa)** | FASE 33 (novo, ADR-165) | `recordDecision` grava situação, nota e auditoria, e nenhum e-mail sai; o proponente descobre o resultado entrando na plataforma com o protocolo em mãos. A esteira de e-mail existe (FASE 15) e a proposta já tem o template `PROPOSAL_RECEIVED` | Expectativa quebrada no ponto mais sensível: a pessoa enviou uma proposta e ficou sem resposta — e um e-mail de recusa bem escrito é metade do trabalho de organizar uma chamada. O caminho é um template `PROPOSAL_DECIDED`, disparado por `recordDecision` fora da transação, com `dedupeKey` por proposta × decisão e o parecer resumido quando houver | P | Sim |
+| E48 | **A confirmação de vaga é do CONJUNTO, não de cada exigência** | FASE 34 (novo, ADR-170) | A equipe confirma a vaga inteira: não há como registrar "recebeu o alimento, falta o brinquedo". A lista de exigências existe (tipo, descrição, observação) e aparece na tela e no aviso, mas o estado da confirmação é um só (`PENDING` → `CONFIRMED`) | Numa campanha com três itens, quem entregou dois fica no mesmo estado de quem não entregou nada — e a equipe resolve no balcão, no olho, ou aceita a confirmação parcial sem registro. A tela do balcão mostraria N caixas e o histórico diria exatamente o que foi recebido. O caminho é uma tabela de confirmações por exigência, com a confirmação geral derivada da regra "todas as obrigatórias cumpridas" (o estado da INSCRIÇÃO continua sendo um só) | M | Sim |
+| E49 | **Não há prazo-limite da atividade além dos N dias da inscrição** | FASE 34 (novo, ADR-173) | O organizador escolhe "5 dias", e quem se inscreve no último dia antes do evento tem prazo até depois do evento começar: a varredura olha o prazo da pessoa, não a data da atividade | Uma vaga retida pode ser liberada com a atividade já em andamento, e quem se inscreve em cima da hora e não confirma ocupa o lugar no dia. O caminho é um campo opcional de data-limite na atividade, com o prazo da pessoa sendo o MENOR entre "N dias" e a data-limite (a terceira opção que o humano não escolheu nesta fase) | P | Sim |
 
 ### F. Gamificação
 
@@ -307,6 +318,7 @@ Ordenado por **risco que elimina × dependência** (não por facilidade):
 | ~~**F31 — Credenciamento e frequência por crachá**~~ | Leitura de QR pela câmera, área de crachás com emissão individual e em massa, etiqueta com QR + código + nome, crachá online do participante e a separação entre credenciamento e frequência | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 31** — `docs/fase-31-credenciamento-e-frequencia.md`. O crachá passou a existir de verdade (a coluna era lida por todos e escrita por ninguém) e declarou **E40**, **E41** e **E42** |
 | ~~**F32 — Central do participante e inteligência da instituição**~~ | Diretório de participantes atravessando todos os eventos, ficha 360 (eventos, frequência, certificados, cartas, XP e comunicação), recado por e-mail **e** mensagem na caixa de entrada, panorama com a vida da instituição por período e por evento, e exportação em CSV | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 32** — `docs/fase-32-central-do-participante.md`. Deu à instituição a visão da PESSOA (até aqui só havia listas por evento), corrigiu uma recusa silenciosa na guarda das Server Actions e declarou **E44** e **E45** |
 | ~~**F33 — Chamadas de propostas**~~ | Chamadas por tipo (palestrante, minicurso, oficina, mesa…), formulário público de proposta, bloco na página do evento e protocolo de aceite | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 33** — `docs/fase-33-chamadas-de-propostas.md`. Quitou o **E25** (o convite de palestrante passou a sair por e-mail) e declarou **E46** (a proposta não aceita anexo) e **E47** (o proponente não é avisado da decisão) |
+| ~~**F34 — Confirmação de vaga com prazo**~~ | Atividade confirmável escolhida pelo organizador (prazo, o que é preciso e onde confirmar), vaga retida até a equipe confirmar, avisos por e-mail e na plataforma, liberação automática no vencimento com promoção da lista de espera e fila de confirmações para a equipe | Escopo definido pelo humano (não vinha deste levantamento) | **Concluída como FASE 34** — `docs/fase-34-confirmacao-de-vaga.md`. Separou "inscrever-se" de "confirmar-se" e declarou **E48** (a confirmação é do conjunto, não de cada exigência) e **E49** (não há prazo-limite da atividade); no caminho corrigiu a promoção que não devolvia o lugar no evento (armadilha 79) e a fila que abria pela agenda (armadilha 80) |
 | **Transversal (sem fase)** | Composição das telas antigas, tema escuro, `use cache`, paginação, fila com prazo (atividade e evento), `@axe-core`, regressão visual | H1, H3, H5, H6, I6, B5, E1, E2, E33 | Itens rápidos que não justificam fase própria: entram como carona nas fases acima ou em "mutirões" de meio dia |
 
 ### Mutirão executado na FASE 12 (concluído)

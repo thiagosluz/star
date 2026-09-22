@@ -143,13 +143,60 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     expiresInDays: 14,
     startsAtLabel: '01/10/2026 às 14:00',
   },
+  /**
+   * FASE 34 — os cinco avisos da confirmação de vaga. O checklist do que levar
+   * aparece em dois deles: é o texto que a pessoa usa no balcão.
+   */
+  REGISTRATION_PENDING: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    activityTitle: 'Oficina: Brinquedos reciclados',
+    deadlineLabel: '25/09/2026, 23:59',
+    requirements: ['Doação: 1 kg de alimento não perecível', 'Item: 1 brinquedo'],
+    place: 'Secretaria do bloco B, térreo — das 9h às 18h',
+    instructions: 'Traga o comprovante impresso.',
+    registrationsUrl: 'http://localhost:3000/t/ufba/minhas-inscricoes',
+  },
+  REGISTRATION_DUE_SOON: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    activityTitle: 'Oficina: Brinquedos reciclados',
+    deadlineLabel: '25/09/2026, 23:59',
+    countdownLabel: 'falta 1 dia',
+    requirements: ['Doação: 1 kg de alimento não perecível'],
+    place: 'Secretaria do bloco B, térreo — das 9h às 18h',
+    registrationsUrl: 'http://localhost:3000/t/ufba/minhas-inscricoes',
+  },
+  REGISTRATION_CONFIRMED: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    activityTitle: 'Oficina: Brinquedos reciclados',
+    deadlineLabel: '25/09/2026, 23:59',
+    startsAtLabel: '13/10/2026 às 09:00',
+    registrationsUrl: 'http://localhost:3000/t/ufba/minhas-inscricoes',
+  },
+  REGISTRATION_RELEASED: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    activityTitle: 'Oficina: Brinquedos reciclados',
+    deadlineLabel: '25/09/2026, 23:59',
+    registrationsUrl: 'http://localhost:3000/t/ufba/minhas-inscricoes',
+  },
+  WAITLIST_PROMOTED: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    activityTitle: 'Oficina: Brinquedos reciclados',
+    startsAtLabel: '13/10/2026 às 09:00',
+    registrationsUrl: 'http://localhost:3000/t/ufba/minhas-inscricoes',
+  },
 };
 
 const CONTEXT = { brandName: 'Universidade Federal da Bahia' };
 
 describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', () => {
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(11);
+    /** 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34). */
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(16);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();

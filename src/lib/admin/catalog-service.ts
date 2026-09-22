@@ -24,6 +24,12 @@ import { randomUUID } from 'node:crypto';
 
 import { withTenant } from '@/lib/db/tenant-client';
 import { canDeleteActivity, defaultRequiresRegistration } from '@/domain/events/activity-rules';
+import {
+  parseConfirmationRequirements,
+  validateConfirmationPolicy,
+  type ConfirmationPolicy,
+  type ConfirmationRequirement,
+} from '@/domain/events/confirmation-rules';
 import { syncOpenActivityEnrollments } from '@/lib/events/registration-service';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
@@ -55,6 +61,11 @@ export type AdminErrorCode =
   | 'ROOM_CAPACITY_BELOW_USAGE'
   /** O plano da instituição atingiu o limite de eventos (FASE 12, item C2). */
   | 'QUOTA_EXCEEDED'
+  /**
+   * Desligar a confirmação de vaga deixaria inscrições pendentes sem saída (FASE 34):
+   * elas seguram vaga, não têm mais prazo e ninguém pode confirmá-las.
+   */
+  | 'INVALID_PENDING_CONFIRMATIONS'
   | 'INTERNAL';
 
 export type AdminResult<T> =
@@ -365,6 +376,18 @@ export interface AdminEventDetail extends AdminEventRow {
     requiresRegistration: boolean;
     /** Inscrições vivas — o que a exclusão encontra pela frente. */
     registrationCount: number;
+    /**
+     * Confirmação de vaga (FASE 34). A tela precisa dos quatro para reabrir o
+     * formulário com o que está gravado — um formulário que esquece a política
+     * desligaria a confirmação na primeira edição de título.
+     */
+    confirmationPolicy: ConfirmationPolicy;
+    confirmationWindowDays: number | null;
+    confirmationRequirements: ConfirmationRequirement[];
+    confirmationPlace: string | null;
+    confirmationInstructions: string | null;
+    /** Quantas inscrições aguardam confirmação — o que impede desligar a política. */
+    pendingConfirmations: number;
   }[];
   tracks: {
     id: string;
@@ -430,6 +453,12 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
             isFeatured: true,
             checkInEnabled: true,
             requiresRegistration: true,
+            /** Confirmação de vaga (FASE 34) — a tela reabre o formulário com isto. */
+            confirmationPolicy: true,
+            confirmationWindowDays: true,
+            confirmationRequirements: true,
+            confirmationPlace: true,
+            confirmationInstructions: true,
             room: { select: { name: true, capacity: true } },
             _count: {
               select: {
@@ -462,6 +491,27 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
   );
 
   if (!event) return null;
+
+  /**
+   * As pendentes de confirmação, por atividade (FASE 34) — uma consulta para todas.
+   */
+  const pendingRows = await withTenant(tenantId, (tx) =>
+    tx.registration.groupBy({
+      by: ['activityId'],
+      where: {
+        tenantId,
+        eventId,
+        status: 'PENDING',
+        deletedAt: null,
+        activityId: { not: null },
+      },
+      _count: { _all: true },
+    }),
+  );
+
+  const pendingByActivity = new Map(
+    pendingRows.map((row) => [row.activityId ?? '', row._count._all]),
+  );
 
   return {
     id: event.id,
@@ -519,6 +569,22 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       checkInEnabled: activity.checkInEnabled,
       requiresRegistration: activity.requiresRegistration,
       registrationCount: activity._count.registrations,
+      confirmationPolicy: activity.confirmationPolicy,
+      confirmationWindowDays: activity.confirmationWindowDays,
+      confirmationRequirements: parseConfirmationRequirements(activity.confirmationRequirements),
+      confirmationPlace: activity.confirmationPlace,
+      confirmationInstructions: activity.confirmationInstructions,
+      /**
+       * Quantas inscrições aguardam confirmação. Vem de uma consulta própria porque
+       * `_count` do Prisma conta UMA vez por relação: pedir "inscrições vivas" e
+       * "pendentes" no mesmo select obrigaria a dois relacionamentos, e o modelo não
+       * tem. Uma `groupBy` para as atividades do evento resolve com uma ida ao banco.
+       *
+       * A tela usa o número para explicar por que a política não pode ser desligada
+       * agora — e o serviço recalcula dentro da transação, porque a janela entre
+       * desenhar e salvar é exatamente onde alguém confirma ou se inscreve.
+       */
+      pendingConfirmations: pendingByActivity.get(activity.id) ?? 0,
     })),
     tracks: event.tracks.map((track) => ({
       id: track.id,
@@ -780,6 +846,19 @@ export interface ActivityInput {
    * se inscreveu no evento e não aplica vagas/lista de espera.
    */
   requiresRegistration?: boolean;
+  /**
+   * ─── Confirmação de vaga com prazo (FASE 34) ─────────────────────────────────
+   * A escolha do organizador. Ausente = `AUTO`, isto é, a vaga é confirmada no ato
+   * da inscrição — o comportamento de tudo o que existia antes desta fase.
+   */
+  confirmationPolicy?: 'AUTO' | 'REQUIRED';
+  /** Prazo em DIAS, contado da inscrição de cada pessoa. Obrigatório em `REQUIRED`. */
+  confirmationWindowDays?: number | null;
+  /** `[{ kind, label, note }]` — validado e normalizado pelo domínio. */
+  confirmationRequirements?: unknown;
+  /** Onde confirmar (secretaria, balcão). */
+  confirmationPlace?: string | null;
+  confirmationInstructions?: string | null;
 }
 
 /**
@@ -887,6 +966,49 @@ export async function saveActivity(input: ActivityInput): Promise<
         }
       }
 
+      const requiresRegistrationValue =
+        input.requiresRegistration ?? defaultRequiresRegistration(input.type);
+
+      /**
+       * ── A POLÍTICA DE CONFIRMAÇÃO PASSA PELO DOMÍNIO (FASE 34) ─────────────────
+       *
+       * `validateConfirmationPolicy` normaliza (descarta os campos de confirmação
+       * quando a política é `AUTO`) e recusa o que não tem como ser obedecido:
+       * exigir confirmação sem dizer o QUE nem ONDE.
+       */
+      const confirmation = validateConfirmationPolicy({
+        policy: input.confirmationPolicy,
+        windowDays: input.confirmationWindowDays,
+        requirements: input.confirmationRequirements,
+        place: input.confirmationPlace,
+        instructions: input.confirmationInstructions,
+      });
+
+      if (!confirmation.ok) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message: confirmation.message,
+          details: confirmation.details,
+        };
+      }
+
+      /**
+       * Atividade ABERTA (`requiresRegistration = false`) não pode exigir confirmação
+       * de vaga: quem entra nela vem da inscrição no EVENTO, e não há formulário por
+       * atividade onde reservar uma vaga para depois confirmar. Aceitar a combinação
+       * produziria uma atividade que ANUNCIA prazo de confirmação e nunca tem
+       * inscrição pendente nenhuma.
+       */
+      if (confirmation.policy === 'REQUIRED' && !requiresRegistrationValue) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message:
+            'Atividade aberta a todos os inscritos não tem inscrição individual — não há vaga própria para confirmar. Desligue "exige confirmação" ou marque a atividade como de inscrição individual.',
+        };
+      }
+
       const data = {
         slug: input.slug,
         title: input.title,
@@ -907,8 +1029,13 @@ export async function saveActivity(input: ActivityInput): Promise<
          * palestra e mesa-redonda nascem abertas, minicurso e oficina nascem com
          * inscrição própria. É conveniência, não imposição — o valor explícito vence.
          */
-        requiresRegistration:
-          input.requiresRegistration ?? defaultRequiresRegistration(input.type),
+        requiresRegistration: requiresRegistrationValue,
+        /** Confirmação de vaga: normalizada pelo domínio logo acima. */
+        confirmationPolicy: confirmation.policy,
+        confirmationWindowDays: confirmation.windowDays,
+        confirmationRequirements: confirmation.requirements as unknown as object,
+        confirmationPlace: confirmation.place,
+        confirmationInstructions: confirmation.instructions,
       };
 
       if (input.activityId) {
@@ -923,11 +1050,35 @@ export async function saveActivity(input: ActivityInput): Promise<
             capacity: true,
             roomId: true,
             workloadMinutes: true,
+            confirmationPolicy: true,
           },
         });
 
         if (!before) {
           return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Atividade não encontrada.' };
+        }
+
+        /**
+         * ── DESLIGAR A CONFIRMAÇÃO COM GENTE ESPERANDO (FASE 34) ────────────────
+         *
+         * Quem está `PENDING` só sai desse estado por confirmação da equipe ou por
+         * prazo vencido — e nenhum dos dois existe numa atividade `AUTO`. Desligar a
+         * confirmação com pendentes deixaria essas inscrições paradas para sempre:
+         * segurando vaga, sem prazo, e sem ninguém que possa confirmá-las. A recusa
+         * diz QUANTAS são e manda resolver antes (confirmar ou cancelar).
+         */
+        if (before.confirmationPolicy === 'REQUIRED' && confirmation.policy === 'AUTO') {
+          const pending = await tx.registration.count({
+            where: { activityId: before.id, deletedAt: null, status: 'PENDING' },
+          });
+
+          if (pending > 0) {
+            return {
+              ok: false as const,
+              code: 'INVALID_PENDING_CONFIRMATIONS' as const,
+              message: `Há ${pending} inscrição(ões) aguardando confirmação nesta atividade. Confirme ou cancele antes de desligar a confirmação de vaga.`,
+            };
+          }
         }
 
         /**
@@ -968,6 +1119,7 @@ export async function saveActivity(input: ActivityInput): Promise<
               'capacity',
               'roomId',
               'workloadMinutes',
+              'confirmationPolicy',
             ]),
           },
           tx,
@@ -993,6 +1145,7 @@ export async function saveActivity(input: ActivityInput): Promise<
             title: { from: null, to: input.title },
             startsAt: { from: null, to: input.startsAt },
             capacity: { from: null, to: input.capacity ?? null },
+            confirmacao: { from: null, to: confirmation.policy },
           },
         },
         tx,

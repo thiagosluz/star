@@ -199,12 +199,22 @@ export async function registerForActivityAction(
     ok: true,
     code: outcome.status,
     waitlistPosition: outcome.waitlistPosition,
+    /**
+     * ─── A VAGA RETIDA DIZ O PRAZO E O LUGAR (FASE 34) ─────────────────────────
+     *
+     *  `PENDING` não é "confirmado" nem "lista de espera": é "a vaga é sua se você
+     *  confirmar". A mensagem precisa dizer as três coisas — que a vaga está
+     *  RESERVADA, até QUANDO e ONDE confirmar —, senão a pessoa fecha a página
+     *  achando que terminou, e descobre o contrário quando a vaga já foi liberada.
+     */
     message:
       outcome.status === 'CONFIRMED'
         ? outcome.linkedAsParticipant
           ? 'Inscrição confirmada! Sua conta passou a ser participante desta instituição.'
           : 'Inscrição confirmada!'
-        : `Você entrou na lista de espera (posição ${outcome.waitlistPosition}).`,
+        : outcome.status === 'PENDING'
+          ? `Sua vaga está RESERVADA e aguarda confirmação${outcome.confirmationDueLabel ? ` até ${outcome.confirmationDueLabel}` : ''}. A confirmação é feita pela organização — sem ela, a vaga é liberada automaticamente.`
+          : `Você entrou na lista de espera (posição ${outcome.waitlistPosition}).`,
   };
 }
 
