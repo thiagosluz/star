@@ -862,6 +862,18 @@ model Tenant {
   /// FASE 33 — chamadas de propostas.
   calls             CallForProposals[]
 
+  /// FASE 38 — quadro de demandas internas do evento.
+  demandBoards      DemandBoard[]
+  demandColumns     DemandColumn[]
+  demands           Demand[]
+  demandAssignees   DemandAssignee[]
+  demandComments    DemandComment[]
+  demandMentions    DemandMention[]
+  demandEvents      DemandEvent[]
+  /// FASE 38 — equipes do evento (quem executa as demandas).
+  eventTeams        EventTeam[]
+  eventTeamMembers  EventTeamMember[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -984,6 +996,19 @@ model User {
   invitationsSent      TenantInvitation[] @relation("TenantInvitationInvitedBy")
   /// Convites de equipe que esta pessoa aceitou — FASE 15.
   invitationsAccepted  TenantInvitation[] @relation("TenantInvitationAcceptedBy")
+
+  /// Demandas internas que esta pessoa criou — FASE 38.
+  demandsCreated       Demand[]           @relation("DemandCreatedBy")
+  /// Demandas atribuídas a esta pessoa — FASE 38.
+  demandAssignments    DemandAssignee[]   @relation("DemandAssignedTo")
+  /// Comentários que esta pessoa escreveu nas demandas — FASE 38.
+  demandComments       DemandComment[]
+  /// Menções que esta pessoa recebeu em comentários — FASE 38.
+  demandMentions       DemandMention[]
+  /// Linhas da linha do tempo cujo ator é esta pessoa — FASE 38.
+  demandEvents         DemandEvent[]      @relation("DemandEventActor")
+  /// Equipes do evento de que esta pessoa faz parte — FASE 38.
+  eventTeamMemberships EventTeamMember[]
 
   @@index([email])
   @@index([deletedAt])
@@ -1245,6 +1270,12 @@ model Event {
   participantMessages ParticipantMessage[]
   /// Chamadas de propostas do evento — FASE 33.
   calls               CallForProposals[]
+  /// Quadro de demandas internas — UM por evento (FASE 38).
+  demandBoard         DemandBoard?
+  /// Demandas internas do evento — FASE 38.
+  demands             Demand[]
+  /// Equipes que executam as demandas deste evento — FASE 38.
+  eventTeams          EventTeam[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -3127,4 +3158,275 @@ model AuditLog {
   @@index([tenantId, entityType, entityId])
   @@index([userId, createdAt])
   @@map("audit_logs")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  QUADRO DE DEMANDAS INTERNAS DO EVENTO (FASE 38)
+// ───────────────────────────────────────────────────────────────────────────────
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  POR QUE "DEMANDA", E NÃO "TAREFA"
+//  ─────────────────────────────────────────────────────────────────────────────
+//  `TaskDefinition`/`UserTaskProgress` (acima) são as MISSÕES da gamificação, e
+//  `task:manage` é a permissão de quem as cadastra. O trabalho interno da equipe
+//  ganhou outro nome — em todo lugar: schema, permissão, URL e tela.
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  O QUADRO É DO EVENTO, E A COLUNA É O ESTADO
+//  ─────────────────────────────────────────────────────────────────────────────
+//  Um quadro por evento (`@@unique([eventId])`, que é também o que torna a criação
+//  das colunas padrão idempotente sob concorrência). As colunas são configuráveis e
+//  carregam `isDone`: é esse booleano — e não o NOME da coluna — que diz se a
+//  demanda está concluída. Renomear "Concluído" para "Feito" não pode zerar o
+//  histórico do que terminou.
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  POSIÇÃO NÃO É ÚNICA (e é de propósito)
+//  ─────────────────────────────────────────────────────────────────────────────
+//  `position` é índice simples, como `PageBlock.displayOrder` (FASE 17): reordenar
+//  reescreve o bloco inteiro (10, 20, 30…), e uma restrição de unicidade sobre a
+//  posição exigiria constraint `DEFERRABLE` para sobreviver ao meio da transação —
+//  complexidade que não paga. O desempate da leitura é `(position, id)`.
+
+/// Quadro de demandas de UM evento. Existe no máximo um por evento.
+model DemandBoard {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  name String @default("Demandas do evento") @db.VarChar(120)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  columns  DemandColumn[]
+  demands  Demand[]
+
+  /// Um quadro por evento — e a criação das colunas padrão fica idempotente.
+  @@unique([eventId])
+  @@index([tenantId])
+  @@map("demand_boards")
+}
+
+/// Coluna do quadro. `isDone` é o que define "concluída"; o nome é rótulo.
+model DemandColumn {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  boardId  String @db.Uuid
+
+  name     String  @db.VarChar(40)
+  position Int
+  /// A demanda que entra aqui está CONCLUÍDA (grava `completedAt`).
+  isDone   Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board   DemandBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  demands Demand[]
+
+  /// Duas colunas com o mesmo nome confundem quem arrasta.
+  @@unique([boardId, name])
+  @@index([tenantId, boardId, position])
+  @@map("demand_columns")
+}
+
+/// A demanda: o cartão do quadro.
+model Demand {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  boardId  String @db.Uuid
+  /// Redundante com `board.eventId` DE PROPÓSITO: o quadro é 1:1 com o evento e
+  /// nunca muda de evento, então não há divergência possível — e a coluna é o que
+  /// permite a varredura de prazos filtrar e indexar por evento (fuso, rotina) sem
+  /// atravessar o quadro a cada linha.
+  eventId  String @db.Uuid
+  columnId String @db.Uuid
+  /// Equipe responsável (opcional: a demanda pode ser de pessoas e não de equipe).
+  teamId   String? @db.Uuid
+
+  /// Ordem dentro da coluna. Índice simples (ver o cabeçalho da seção).
+  position Int     @default(0)
+
+  title       String  @db.VarChar(160)
+  description String? @db.Text
+  /// `LOW` | `NORMAL` | `HIGH` | `URGENT` — espelha o domínio, sem enum no banco.
+  priority    String  @default("NORMAL") @db.VarChar(10)
+
+  /// Início e PRAZO. O prazo é o FIM do dia local do evento (23:59).
+  startAt DateTime? @db.Timestamptz(6)
+  dueAt   DateTime? @db.Timestamptz(6)
+
+  /// Gravado quando a demanda entra numa coluna com `isDone`; limpo ao sair.
+  /// É FATO, não derivado do nome da coluna.
+  completedAt DateTime? @db.Timestamptz(6)
+
+  createdById String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board     DemandBoard     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  column    DemandColumn    @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  team      EventTeam?      @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy User?           @relation("DemandCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignees DemandAssignee[]
+  comments  DemandComment[]
+  events    DemandEvent[]
+
+  /// A leitura do quadro é "as demandas desta coluna, nesta ordem".
+  @@index([tenantId, boardId, columnId, position])
+  /// A rotina de vencimento varre por prazo dentro do evento.
+  @@index([tenantId, dueAt])
+  /// O quadro de um evento e o resumo "o que ainda está aberto".
+  @@index([tenantId, eventId, completedAt])
+  @@index([tenantId, teamId])
+  @@map("demands")
+}
+
+/// Quem está com a demanda. A equipe fica em `demands.teamId`; aqui são PESSOAS.
+model DemandAssignee {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  demandId String @db.Uuid
+  userId   String @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  demand Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+  user   User   @relation("DemandAssignedTo", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([demandId, userId])
+  /// "O que é meu hoje" — a leitura por pessoa.
+  @@index([tenantId, userId])
+  @@map("demand_assignees")
+}
+
+/// Comentário da demanda. A menção é linhas, não texto procurado.
+model DemandComment {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  demandId String @db.Uuid
+  authorId String @db.Uuid
+
+  body String @db.VarChar(2000)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  demand   Demand          @relation(fields: [demandId], references: [id], onDelete: Cascade)
+  author   User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mentions DemandMention[]
+
+  @@index([tenantId, demandId, createdAt])
+  @@map("demand_comments")
+}
+
+/// Pessoa mencionada num comentário — e se ela já foi avisada.
+model DemandMention {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @db.Uuid
+  commentId String @db.Uuid
+  userId    String @db.Uuid
+
+  /// Quando o aviso saiu. Nulo = ainda não avisado (a rotina pega).
+  notifiedAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comment DemandComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([tenantId, userId, notifiedAt])
+  @@map("demand_mentions")
+}
+
+/// Linha do tempo do cartão — o que a FICHA mostra.
+///
+/// Separada da trilha de auditoria de propósito: a auditoria é registro de
+/// conformidade (quem fez o quê, com IP), e esta linha é a narrativa que a equipe
+/// lê ("fulano moveu para Em andamento"). Guardar as duas pontas (de → para) é o
+/// que permite mostrar a mudança sem depender do estado atual da linha.
+model DemandEvent {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  demandId String @db.Uuid
+  actorId  String? @db.Uuid
+
+  /// `CREATED` | `MOVED` | `ASSIGNED` | `UNASSIGNED` | `UPDATED` | `COMPLETED` |
+  /// `REOPENED` | `COMMENTED` | `TEAM_CHANGED` — espelha o domínio.
+  kind String @db.VarChar(24)
+
+  /// As duas pontas da mudança, em texto já legível para a ficha.
+  fromValue String? @db.VarChar(200)
+  toValue   String? @db.VarChar(200)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  demand Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("DemandEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, demandId, createdAt])
+  @@map("demand_events")
+}
+
+/// Equipe do evento: quem executa as demandas.
+model EventTeam {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  name        String  @db.VarChar(80)
+  description String? @db.VarChar(300)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event   Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  members EventTeamMember[]
+  demands Demand[]
+
+  @@unique([eventId, name])
+  @@index([tenantId, eventId])
+  @@map("event_teams")
+}
+
+/// Membro da equipe do evento.
+///
+/// Só vínculo `MEMBER` ATIVO entra aqui (regra de aplicação, verificada no
+/// serviço): participante de evento não é força de trabalho por acidente.
+///
+/// O líder é UM por equipe, garantido por índice único PARCIAL (`WHERE "isLead"`),
+/// criado na migração à mão — o Prisma não expressa índice parcial, e a regra
+/// precisa viver no BANCO para dois cliques simultâneos não elegerem dois líderes.
+model EventTeamMember {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  teamId   String @db.Uuid
+  userId   String @db.Uuid
+
+  isLead Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team   EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  /// "De que equipes eu sou líder?" — a leitura da posse.
+  @@index([tenantId, userId])
+  @@map("event_team_members")
 }

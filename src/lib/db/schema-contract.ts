@@ -119,6 +119,23 @@ export const TENANT_SCOPED_TABLES = [
    * depende de o checklist de uma instituição não aparecer na outra.
    */
   'registration_confirmation_items',
+  /**
+   * FASE 38 — quadro de demandas internas do evento. As nove tabelas entram
+   * juntas porque nascem do mesmo ato: o quadro, suas colunas, as demandas, quem
+   * está com elas, o que foi conversado, quem foi mencionado, a linha do tempo do
+   * cartão e as equipes do evento (com seus membros). Todas têm `tenantId` — a
+   * demanda de uma instituição não pode aparecer no quadro de outra, e é a RLS que
+   * garante isso mesmo se uma consulta esquecer o filtro.
+   */
+  'demand_boards',
+  'demand_columns',
+  'demands',
+  'demand_assignees',
+  'demand_comments',
+  'demand_mentions',
+  'demand_events',
+  'event_teams',
+  'event_team_members',
 ];
 
 /**

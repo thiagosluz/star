@@ -12,7 +12,9 @@
 > **FASE 15** (D1–D6 + A5) e a **FASE 21** (C4–C5), a **FASE 29**, a **FASE 30**, a **FASE 31**,
 > a **FASE 32**, a **FASE 33** (que quitou o E25 e declarou E46–E47), a **FASE 34** (que
 > declarou E48–E49) e a **FASE 35**, com a **FASE 36** (que quitou A3, B7 e E47) e a
-> **FASE 37** (que quitou E41 e E48 e declarou o E50), com as **revisões
+> **FASE 37** (que quitou E41 e E48 e declarou o E50) e a **FASE 38** (que quitou a METADE
+> do E50 — o quadro de demandas funciona sem JavaScript — e declarou E51–E52), com as
+> **revisões
 > pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
 >
@@ -95,21 +97,24 @@
 | B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 25 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo e não há prazo-limite da atividade |
+| E. Jornada do participante | 27 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **47** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **49** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
 > sem atualizar o resumo, e a FASE 33 fez o mesmo com o E25. Contando o que está **aberto**,
 > linha por linha, nas nossas próprias tabelas (a regra deste documento): o total era **50**
 > antes daquela fase, passou a **48** com A3, B7 e E47 quitados lá, e passa a **47** com E41 e
-> E48 quitados na FASE 37 (que declarou o E50).
+> E48 quitados na FASE 37 (que declarou o E50). A **FASE 38** não quitou item nenhum
+> integralmente — ela quitou a **metade do E50** que dá para quitar sem reescrever uma dúzia
+> de telas (o quadro de demandas é operável sem JavaScript) — e declarou **E51** e **E52**:
+> o total vai a **49**.
 >
-> O total é a **soma das tabelas de tema** (3+4+2+3+25+5+0+4+1 = 47 — o tema G ficou
+> O total é a **soma das tabelas de tema** (3+4+2+3+27+5+0+4+1 = 49 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -280,7 +285,9 @@
 | ~~E47~~ | ~~**O proponente não é avisado da decisão (aceite ou recusa)**~~ | FASE 33 | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. Template `PROPOSAL_DECIDED`, disparado por `recordDecision` **fora da transação**, com `dedupeKey` por proposta × decisão, o parecer do comitê no aviso e os dois canais (caixa de entrada + outbox). Vale para a proposta de CHAMADA; o artigo do fluxo acadêmico continua acompanhando pela tela de submissões (limite declarado na ADR-189) | — | — | — |
 | ~~E48~~ | ~~**A confirmação de vaga é do CONJUNTO, não de cada exigência**~~ | FASE 34 | **QUITADO na FASE 37** — `docs/fase-37-crachas-e-checklist.md`. Cada exigência da atividade vira uma linha da INSCRIÇÃO (`registration_confirmation_items`, criada no momento da inscrição e na promoção da lista de espera) com estado próprio (`PENDING`/`RECEIVED`/`WAIVED`, autor e hora), e a vaga é DERIVADA: quando todas as obrigatórias estão satisfeitas ela se confirma sozinha, pelo caminho de sempre (ADR-196/197/198/199). O item opcional não segura a vaga, e "sem exigências" continua sendo confirmação da equipe | — | — | — |
 | E49 | **Não há prazo-limite da atividade além dos N dias da inscrição** | FASE 34 (novo, ADR-173) | O organizador escolhe "5 dias", e quem se inscreve no último dia antes do evento tem prazo até depois do evento começar: a varredura olha o prazo da pessoa, não a data da atividade | Uma vaga retida pode ser liberada com a atividade já em andamento, e quem se inscreve em cima da hora e não confirma ocupa o lugar no dia. O caminho é um campo opcional de data-limite na atividade, com o prazo da pessoa sendo o MENOR entre "N dias" e a data-limite (a terceira opção que o humano não escolheu nesta fase) | P | Sim |
-| E50 | **A ação em linha só existe depois de hidratada: o clique antes do bundle não vira requisição** | FASE 37 (novo, ADR-199) | O `InlineActionForm` (usado em todas as telas de operação: confirmar vaga, marcar item, aprovar, mover bloco, sincronizar) renderiza o formulário no servidor, mas quem o ENVIA é o cliente. Com o JavaScript ainda carregando, o clique é absorvido pelo React e não vira requisição — sem erro na tela e sem linha no log. O E2E provou pela trilha de rede: nenhum POST | Para quem opera é "cliquei e não aconteceu nada" — e a pessoa clica de novo. Numa tela de balcão, com fila esperando, é atrito no pior momento. O caminho é o formulário funcionar sem JavaScript (Server Action com `action` de verdade, e o recado vindo do servidor) ou bloquear o clique enquanto a página não estiver interativa | M | Sim |
+| E50 | **A ação em linha só existe depois de hidratada: o clique antes do bundle não vira requisição** | FASE 37 (novo, ADR-199) | O `InlineActionForm` (usado em todas as telas de operação: confirmar vaga, marcar item, aprovar, mover bloco, sincronizar) renderiza o formulário no servidor, mas quem o ENVIA é o cliente. Com o JavaScript ainda carregando, o clique é absorvido pelo React e não vira requisição — sem erro na tela e sem linha no log. O E2E provou pela trilha de rede: nenhum POST. **A FASE 38 quitou a METADE**: o quadro de demandas tem um formulário de movimento com `action` nativa (`(formData) => void`), que o E2E prova com `javaScriptEnabled: false` — a ação em linha continua dependendo da hidratação | Para quem opera é "cliquei e não aconteceu nada" — e a pessoa clica de novo. Numa tela de balcão, com fila esperando, é atrito no pior momento. O que falta é a RAIZ: converter as ações de linha para `(formData) => void` (o `<form action={...}>` do React só aceita essa forma, e o `useActionState` recebe `(prev, formData)`) e trazer o recado do servidor — uma dúzia de telas a reescrever, com o E2E de cada uma provando que nada regrediu | M | Sim |
+| E52 | **O quadro de demandas carrega todos os cartões do evento** | FASE 38 (novo) | `loadDemandBoard` lê todas as demandas do quadro em uma consulta, com comentários contados. Um evento com centenas de demandas abertas (ou um histórico de anos) traz tudo para a tela | A tela é de OPERAÇÃO e precisa abrir rápido no dia do evento. O caminho é paginar por coluna, deixando as concluídas fora do primeiro carregamento (com um contador e "ver concluídas") | P | Sim |
+| E51 | **O quadro de demandas não reordena por teclado** | FASE 38 (novo, ADR-202) | O arrastar e soltar reordena e move entre colunas, e o formulário do cartão move de coluna — mas reordenar DENTRO da coluna só existe pelo gesto do mouse | A ordem é informação de prioridade: sem caminho por teclado, quem não usa mouse não consegue dizer "isto vem antes daquilo". O caminho é um par de botões "mover para cima/baixo" no cartão, chamando o MESMO `moveDemand` com o índice de destino (o serviço já aceita `toIndex`) | P | Sim |
 
 ### F. Gamificação
 

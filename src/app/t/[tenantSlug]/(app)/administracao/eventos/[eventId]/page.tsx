@@ -246,6 +246,23 @@ export default async function AdminEventDetailPage({
             Chamadas de propostas →
           </Link>
           {/*
+            Demandas internas (FASE 38): o quadro de trabalho da EQUIPE — o que
+            precisa ser feito, quem está com cada frente e o que está atrasado. Não se
+            confunde com a Programação: "atividade" é a sessão com sala, vagas e
+            presença; a demanda é o trabalho da organização para que ela aconteça.
+
+            O link não é filtrado por permissão porque esta PÁGINA já exige
+            `event:update` — e quem tem esse papel (OWNER, ADMIN, ORGANIZER) tem
+            `demand:read`. A barreira de verdade continua na Server Action.
+          */}
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/demandas`)}
+            className="font-medium underline underline-offset-4"
+            data-testid="demands-link"
+          >
+            Demandas da equipe →
+          </Link>
+          {/*
             Confirmações de vaga (FASE 34): a fila de quem está com a vaga RETIDA
             esperando confirmação, ordenada pelo prazo. O link mostra o total pendente
             porque é número com data para virar vaga liberada — sem isso o organizador

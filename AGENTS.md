@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36 e 37 (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35, F36 e F37 entregues; a F18+ é a próxima)
-Testes ................. 1919 (Vitest: unit + integração) + 128 (Playwright E2E)
-ADRs ................... 199 (numeração GLOBAL e sequencial — a próxima é ADR-200)
-Permissões ............. 60 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 42 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36, 37 e 38 (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35, F36, F37 e F38 entregues; a F18+ é a próxima)
+Testes ................. 1977 (Vitest: unit + integração) + 133 (Playwright E2E)
+ADRs ................... 212 (numeração GLOBAL e sequencial — a próxima é ADR-213)
+Permissões ............. 65 (11 papéis, 4 escopos)
+Tabelas de tenant ...... 51 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1919+ testes passando
+npm test              # esperado: 1977+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 128+ testes passando
+npm run test:e2e      # esperado: 133+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,7 +127,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 88 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 91 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
 > no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
 > seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
@@ -137,17 +137,9 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 | # | A regra |
 |---|---|
-| 78 | **Estado que depende de um dado que chega depois precisa de uma condição explícita de "ainda não chegou"**: tratar "ausente" e "atrasado" como a mesma coisa entrega o resultado certo e a experiência errada |
-| 79 | **Ao mexer num caminho que DEVOLVE um recurso, confira o caminho que o RETOMA**: liberar e reocupar são a mesma esteira, e um lado sem o outro desalinha o contador em silêncio |
-| 80 | **Tela de trabalho ordena por urgência, não por agenda** — "quem espera" decide o que abrir primeiro |
-| 81 | **Rótulo de formulário é identificador: único na tela inteira — inclusive contra os rótulos do próprio bloco** (o casamento é por substring). E a fase não é medida só pelos testes dela: a suíte inteira prova que o que funcionava continua funcionando |
-| 82 | **Tabela nova nasce alcançável pela role de runtime** (`ALTER DEFAULT PRIVILEGES` concede DML a toda tabela criada): tabela de PLATAFORMA sem RLS precisa de **revogação explícita**, e o contrato é quem exige isso |
-| 83 | **Quem CONCEDE é quem tem de REVOGAR**: um `REVOKE` só na migração é desfeito pelo script de init que reconcede em massa — procure todos os caminhos que concedem antes de revogar |
-| 84 | **`entityId` de trilha é coluna `uuid`**, e a auditoria **nunca lança**: identificador textual ali apaga o registro em silêncio. Quando o registro falha em silêncio por projeto, o teste tem de olhar o DADO, não o efeito visível |
-| 85 | **Verificação que compartilha o banco com outra suíte mede o estado da outra suíte** — confirme que a árvore está parada antes de investigar um "vazamento" acusado por um script que escolhe o dado sozinho |
-| 86 | **O padrão da TELA tem de ser o mesmo do DOMÍNIO**: a caixa "é obrigatória" nascia desmarcada na linha nova e toda exigência criada pela tela era gravada como OPCIONAL — o formulário grava o que está na tela, e "ausente = obrigatória" só vale para `undefined`, não para `false` |
-| 87 | **Medida que o sistema não entende não pode virar o PADRÃO em silêncio**: mm → pontos depende do equipamento (100 mm a 203 dpi sai com 67 mm numa impressora de 300 dpi), então o arquivo sai, a medida está errada e não há erro em lugar nenhum. Ausente usa o padrão; presente e inválido é RECUSA |
-| 88 | **Ação de cliente só existe depois de hidratada**: um clique antes de o bundle carregar é absorvido pelo React e não vira requisição (nenhum POST na trilha de rede). Teste de jornada repete o clique — como a pessoa faz — em vez de medir o tempo de carregamento; o produto precisa de formulário que funcione sem JavaScript (dívida **E50**) |
+| 89 | **A suíte roda com o worker no ar**: a rotina recém-registrada no agendador dispara na PRIMEIRA passada e mexe no dado da fixture vizinha — o teste falha uma vez e passa nas seguintes. Antes de investigar um teste que falhou sozinho, veja se a rotina rodou naquele minuto, e reporte o número da execução limpa |
+| 90 | **Asserção negativa sobre a URL é frágil**: `not.toHaveURL(/demandas/)` reprovou com o produto CERTO, porque o slug da instituição de teste continha a palavra. Afirme o DESTINO (`toHaveURL(/\/dashboard$/)`), não a ausência de um termo |
+| 91 | **Tamanho de fonte fora da escala reprova o guard do design system** antes de qualquer revisão: telas novas usam `text-xs`/`sm`/`title`/`display`. Se o desenho pede um tamanho que não existe, o problema é o desenho — não a escala |
 
 ---
 
@@ -534,6 +526,25 @@ promoção da lista de espera — a vaga continua sendo `registrations.status`, 
 `confirmRegistration` quando as obrigatórias acabam, com `WAIVED` valendo como resolvido e o
 item opcional sem segurar nada (ADR-196…199).
 
+### Quadro de demandas internas do evento (FASE 38)
+
+O trabalho da EQUIPE ganhou lugar: um quadro por evento
+(`/t/<slug>/administracao/eventos/<eventId>/demandas`, com `/equipes` ao lado), com colunas
+configuráveis, cartões com responsáveis, prazo, equipe, conversa e histórico. **Não confunda
+com a Programação**: "atividade" é a sessão com sala, vagas e presença; a demanda é o trabalho
+da organização. A rotina `demand-due` avisa os prazos de hora em hora.
+
+Cinco regras que quebram fácil: **a coluna é o estado e `isDone` é DADO** — renomear
+"Concluído" não pode zerar o histórico (ADR-201); **mover é escrita CONDICIONAL** pelo que a
+tela viu, e o segundo movimento recebe `ALREADY_MOVED` (ADR-203); **a posição não é única** e
+reordenar reescreve o bloco de 10 em 10 (ADR-202); **o prazo é o fim do DIA local do evento** e
+"vence hoje" não é atrasado (ADR-207); e **a menção é LINHA, não texto procurado** (ADR-204).
+
+Quem é atribuído é **vínculo `MEMBER` ativo** (ADR-205); o **líder da equipe** é DADO
+(`isLead`, com índice único parcial garantindo UM por equipe) e distribui só dentro da própria
+equipe (ADR-206). O quadro **funciona sem JavaScript** — é o que quitou a METADE da dívida
+**E50**.
+
 ### Operação de palco (FASE 22)
 
 O sorteio ganhou o que a OPERAÇÃO pede — e o tema de sorteios fechou: as seis dívidas
@@ -882,6 +893,7 @@ tests/{unit,integration,e2e}
 | 35 | Resiliência de balcão e palco (**operação sem rede** no credenciamento, **sentido da leitura** no balcão — entrada × saída × alternar —, prêmio e patrocinador da rodada corrigíveis pela tela e **controles do palco** com pausa/replay/atalhos; quitou **E38, E39, E40 e E43**) — escopo definido pelo humano | ✅ |
 | 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), **lote de certificados em ZIP** montado em fluxo e **aviso de decisão ao proponente** da chamada; quitou **A3, B7 e E47**) — escopo definido pelo humano | ✅ |
 | 37 | Crachá em **etiqueta adesiva** (PDF com grade configurável) e em **impressora térmica** (ZPL II configurável), e **confirmação de vaga por ITEM** (checklist snapshot da inscrição, com a vaga confirmada quando as obrigatórias acabam); quitou **E41** e **E48**) — escopo definido pelo humano | ✅ |
+| 38 | **Quadro de demandas internas do evento** (Kanban por evento com colunas configuráveis, equipes com líder, prazo no fuso do evento, comentários com menção avisando por e-mail e caixa de entrada, e o cartão movido por arrastar **ou** por formulário — o quadro funciona sem JavaScript); quitou a METADE da **E50** e declarou **E51** e **E52**) — escopo definido pelo humano | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -890,12 +902,14 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, soma das tabelas de
-tema — A=3, B=4, C=2, D=3, E=25, F=5, G=0, H=4, I=1; o tema G ficou ZERADO na FASE 22) está em
+**Dívidas técnicas:** o levantamento consolidado (**49 itens abertos**, soma das tabelas de
+tema — A=3, B=4, C=2, D=3, E=27, F=5, G=0, H=4, I=1; o tema G ficou ZERADO na FASE 22) está em
 **`docs/dividas-tecnicas.md`**, com o histórico do que cada fase quitou e o que declarou de
 novo. O total publicado até a FASE 35 (55) somava linhas **já riscadas** — a correção da
 contagem está no próprio documento. A FASE 36 quitou **A3**, **B7** e **E47**; a FASE 37 quitou
-**E41** e **E48** e declarou **E50** (ação em linha antes da hidratação).
+**E41** e **E48** e declarou **E50**; a FASE 38 quitou a **metade da E50** (o quadro de
+demandas é operável sem JavaScript) e declarou **E51** (reordenar por teclado) e **E52**
+(paginação do quadro).
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a ordem
 sugerida.
 
@@ -904,8 +918,8 @@ sugerida.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 88 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-37-crachas-e-checklist.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 91 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-38-quadro-de-demandas.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

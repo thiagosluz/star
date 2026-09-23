@@ -156,6 +156,48 @@ export const PERMISSIONS = {
    */
   PARTICIPANT_MESSAGE: 'participant:message',
 
+  // ── Demandas internas do evento (FASE 38) ───────────────────────────────────
+  /**
+   * Ver o quadro de demandas do evento: cartões, prazos, responsáveis, equipes e
+   * comentários.
+   *
+   * É a permissão de quem TRABALHA no evento — não dá acesso a dado pessoal de
+   * participante nem a decisão acadêmica. Fica separada de `event:read` porque o
+   * quadro diz quem está fazendo o quê e o que está atrasado: é a agenda interna da
+   * equipe, e nem todo mundo que enxerga o evento precisa dela.
+   */
+  DEMAND_READ: 'demand:read',
+  /**
+   * Criar, editar, mover e concluir demandas.
+   *
+   * Mover o cartão é o ato central do quadro, e é de quem EXECUTA: a equipe do dia
+   * move o que está fazendo sem poder criar ou apagar a estrutura do trabalho.
+   */
+  DEMAND_MANAGE: 'demand:manage',
+  /**
+   * Definir responsáveis e equipe de QUALQUER demanda do evento.
+   *
+   * Distribuir trabalho é ato de coordenação: quem organiza decide quem faz o quê.
+   */
+  DEMAND_ASSIGN: 'demand:assign',
+  /**
+   * O LÍDER da equipe distribui trabalho DENTRO da própria equipe.
+   *
+   * `:own` porque a posse é o que separa isto de `demand:assign`: sem o `ownerId`
+   * conferido (o `teamId` da demanda contra a liderança de quem age), a permissão
+   * sozinha não autoriza nada — é o invariante nº 4, e é o que permite o líder
+   * existir sem virar papel novo a cada equipe criada.
+   */
+  DEMAND_ASSIGN_OWN_TEAM: 'demand:assign:own-team',
+  /**
+   * Criar, editar e excluir as EQUIPES do evento e seus membros.
+   *
+   * Só vínculo `MEMBER` ativo entra numa equipe: participante de evento não é força
+   * de trabalho por acidente, e a quota de equipe da instituição não é consumida por
+   * quem só se inscreveu.
+   */
+  DEMAND_TEAM_MANAGE: 'demand:team:manage',
+
   // ── Plataforma (FASE 9) ─────────────────────────────────────────────────────
   /**
    * Governança global: provisionar instituições, definir planos e quotas,
@@ -361,6 +403,17 @@ const ORGANIZER_PERMISSIONS: Permission[] = [
    * trilha científica.
    */
   PERMISSIONS.COMMUNICATION_READ,
+  /**
+   * Demandas internas — FASE 38. As quatro permissões de coordenação ficam com quem
+   * organiza: ler o quadro, criar e mover demandas, distribuir trabalho entre
+   * pessoas e equipes, e manter as equipes do evento. O papel STAFF recebe as três
+   * de execução (ler, mover e liderar a própria equipe) e não a de coordenar.
+   */
+  PERMISSIONS.DEMAND_READ,
+  PERMISSIONS.DEMAND_MANAGE,
+  PERMISSIONS.DEMAND_ASSIGN,
+  PERMISSIONS.DEMAND_ASSIGN_OWN_TEAM,
+  PERMISSIONS.DEMAND_TEAM_MANAGE,
 ];
 
 /** Permissões de quem participa (todo usuário tem, no mínimo, estas). */
@@ -498,6 +551,16 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     PERMISSIONS.ATTENDANCE_MANAGE,
     PERMISSIONS.CERTIFICATE_READ_ANY,
     PERMISSIONS.SPONSOR_READ,
+    /**
+     * FASE 38 — a equipe do dia TRABALHA no quadro: lê, cria e move demandas. Não
+     * recebe `demand:assign` (distribuir trabalho entre todos é coordenação), mas
+     * recebe `demand:assign:own-team`: quem lidera uma equipe distribui dentro dela,
+     * e a posse é conferida no serviço. Quem não lidera equipe nenhuma não
+     * consegue atribuir nada — a permissão sozinha não abre nada.
+     */
+    PERMISSIONS.DEMAND_READ,
+    PERMISSIONS.DEMAND_MANAGE,
+    PERMISSIONS.DEMAND_ASSIGN_OWN_TEAM,
   ],
 
   PARTICIPANT: PARTICIPANT_PERMISSIONS,

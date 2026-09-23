@@ -27,11 +27,19 @@ const PASSWORD = 'senha-forte-e2e-2026';
 const operatorEmail = `f36.rotinas.${RUN_ID}.${randomUUID().slice(0, 6)}@example.test`;
 const commonEmail = `f36.comum.${RUN_ID}.${randomUUID().slice(0, 6)}@example.test`;
 
-/** As cinco rotinas do catálogo — a tela precisa mostrar TODAS, sem lista própria. */
+/**
+ * As rotinas do catálogo — a tela precisa mostrar TODAS, sem lista própria.
+ *
+ * A lista é escrita aqui de propósito (e não lida do `JOB_CATALOG`): se a tela passar a
+ * montar a própria lista a partir do domínio, um erro de digitação no catálogo não
+ * apareceria. A contrapartida é esta linha a mais sempre que uma rotina nasce — a
+ * FASE 38 acrescentou `demand-due`.
+ */
 const JOB_KEYS = [
   'review-deadlines',
   'attendance-sweep',
   'registration-confirmation-sweep',
+  'demand-due',
   'file-scan',
   'audit-partitions',
 ] as const;
@@ -107,7 +115,7 @@ test.describe('rotinas automáticas', () => {
     await expect(page.getByTestId('platform-jobs')).toHaveCount(0);
   });
 
-  test('2. o operador vê as cinco rotinas, com cadência, saúde e histórico', async ({ page }) => {
+  test('2. o operador vê as seis rotinas, com cadência, saúde e histórico', async ({ page }) => {
     await signInAs(page, operatorEmail);
 
     const response = await page.goto('/superadmin/rotinas');

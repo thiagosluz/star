@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { can, holdsPermission } from '@/domain/rbac/authorization';
+import type { Principal } from '@/domain/rbac/authorization';
 import type { Permission } from '@/domain/rbac/permissions';
 import type { RoleScope } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -50,7 +51,7 @@ export async function requirePagePermission(input: {
    *  acesso ao evento alheio.
    */
   allowedScopes?: readonly RoleScope[];
-}): Promise<{ tenantId: string; tenantName: string; userId: string }> {
+}): Promise<{ tenantId: string; tenantName: string; userId: string; principal: Principal }> {
   const context = await getRequestContext();
 
   if (!context) {
@@ -82,10 +83,25 @@ export async function requirePagePermission(input: {
     redirect(tenantPath(input.tenantSlug, input.fallbackPath ?? '/dashboard'));
   }
 
+  /**
+   * Um principal nulo nunca chega aqui (sem ele `can()` nega e a linha acima já
+   * redirecionou), mas o tipo é honesto sobre a possibilidade — e a página que recebe
+   * o principal não pode receber nulo.
+   */
+  if (!context.principal) {
+    redirect(tenantPath(input.tenantSlug, input.fallbackPath ?? '/dashboard'));
+  }
+
   return {
     tenantId: context.activeTenant.tenantId,
     tenantName: context.activeTenant.tenantName,
     userId: context.user.id,
+    /**
+     * O principal sai daqui para a PÁGINA decidir o que MOSTRAR (o quadro esconde a
+     * configuração de colunas de quem não administra o quadro). Não é autorização: a
+     * barreira continua na Server Action, que reconfere a permissão com o alvo exato.
+     */
+    principal: context.principal,
   };
 }
 

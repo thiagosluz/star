@@ -185,6 +185,7 @@ async function start(): Promise<void> {
     ATTENDANCE_SWEEP_JOB,
     AUDIT_PARTITIONS_JOB,
     CONFIRMATION_SWEEP_JOB,
+    DEMAND_DUE_JOB,
     EMAIL_QUEUE_NAME,
     FILE_SCAN_JOB,
     REVIEW_DEADLINES_JOB,
@@ -280,6 +281,26 @@ async function start(): Promise<void> {
           );
 
           return expiry.released + expiry.promoted;
+        });
+      }
+
+      /**
+       * Prazos das demandas internas do evento (FASE 38): avisa quem é responsável
+       * pela demanda que vence amanhã e por aquelas já vencidas — uma vez por dia e
+       * por pessoa, porque a `dedupeKey` do aviso carrega o dia LOCAL do evento.
+       */
+      if (job.name === DEMAND_DUE_JOB) {
+        const { runDemandDueSweep } = await import('@/lib/events/demand-service');
+
+        return runTracked('demand-due', async () => {
+          const sweep = await runDemandDueSweep();
+
+          console.log(
+            `    demandas: ${sweep.dueSoon} aviso(s) de prazo próximo, ${sweep.overdue} de atraso, ` +
+              `${sweep.failures} falha(s), em ${sweep.tenants} instituição(ões)`,
+          );
+
+          return sweep.dueSoon + sweep.overdue;
         });
       }
 

@@ -49,6 +49,13 @@ import { sendParticipantMessage } from '../src/lib/participants/message-service'
 import { saveCall, setCallPublished } from '../src/lib/proposals/call-service';
 import { submitProposal } from '../src/lib/proposals/proposal-service';
 import { registerForActivity } from '../src/lib/events/registration-service';
+import {
+  addDemandComment,
+  createDemand,
+  createEventTeam,
+  loadDemandBoard,
+  moveDemand,
+} from '../src/lib/events/demand-service';
 import { closeEmailQueue } from '../src/lib/communication/email-queue';
 import {
   attachSpeakerAccount,
@@ -1633,6 +1640,118 @@ async function main() {
 
   console.log(`  ✓ confirmação de vaga: ${confirmacaoDemo}`);
 
+  // ── Demandas internas do evento (FASE 38) ─────────────────────────────────
+  /**
+   * A demonstração passa pelos SERVIÇOS REAIS (`createEventTeam`, `createDemand` e
+   * `moveDemand`), e não por `create` à mão: é o serviço que monta o quadro com as
+   * colunas padrão, grava a linha do tempo, marca `completedAt` pela COLUNA e
+   * dispara os avisos. Gravar as linhas direto produziria um quadro que PARECE o do
+   * produto — sem linha do tempo e com a conclusão que ninguém carimbou.
+   */
+  let demandasDemo = 'não foi possível demonstrar';
+
+  const eventoCongresso = await prisma.event.findFirst({
+    where: { tenantId: ufbaId, slug: 'congresso-2026' },
+    select: { id: true },
+  });
+
+  if (eventoCongresso) {
+    const equipe = await createEventTeam({
+      tenantId: ufbaId,
+      eventId: eventoCongresso.id,
+      actorId: ana,
+      name: 'Logística do congresso',
+      description: 'Credenciamento, som e apoio aos palestrantes',
+      memberIds: [ana, bruno],
+      leadId: bruno,
+    });
+
+    if (equipe.ok) {
+      const quadro = await loadDemandBoard({ tenantId: ufbaId, eventId: eventoCongresso.id });
+
+      const colunas = quadro.ok ? quadro.board.columns : [];
+      const concluido = colunas.find((column) => column.isDone);
+      const emAndamento = colunas[1];
+
+      const crachas = await createDemand({
+        tenantId: ufbaId,
+        eventId: eventoCongresso.id,
+        actorId: ana,
+        title: 'Imprimir os crachás do credenciamento',
+        description: 'Conferir a folha de etiquetas e a impressora térmica antes do dia 1.',
+        priority: 'HIGH',
+        teamId: equipe.teamId,
+        assigneeIds: [bruno],
+        dueAt: new Date(Date.now() + 3 * 86_400_000),
+      });
+
+      const som = await createDemand({
+        tenantId: ufbaId,
+        eventId: eventoCongresso.id,
+        actorId: ana,
+        title: 'Fechar o contrato do som do auditório',
+        priority: 'URGENT',
+        teamId: equipe.teamId,
+        assigneeIds: [ana],
+        /** Vencida: a demonstração mostra o cartão ATRASADO no quadro. */
+        dueAt: new Date(Date.now() - 2 * 86_400_000),
+      });
+
+      const credenciamento = await createDemand({
+        tenantId: ufbaId,
+        eventId: eventoCongresso.id,
+        actorId: ana,
+        title: 'Definir a escala do balcão de credenciamento',
+        teamId: equipe.teamId,
+      });
+
+      if (crachas.ok && concluido) {
+        await moveDemand({
+          tenantId: ufbaId,
+          demandId: crachas.demandId,
+          actorId: bruno,
+          fromColumnId: colunas[0]!.id,
+          toColumnId: concluido.id,
+        });
+      }
+
+      if (credenciamento.ok && emAndamento) {
+        await moveDemand({
+          tenantId: ufbaId,
+          demandId: credenciamento.demandId,
+          actorId: ana,
+          fromColumnId: colunas[0]!.id,
+          toColumnId: emAndamento.id,
+        });
+      }
+
+      if (som.ok) {
+        await addDemandComment({
+          tenantId: ufbaId,
+          demandId: som.demandId,
+          actorId: ana,
+          body: 'A proposta do fornecedor venceu; preciso de uma segunda cotação.',
+          mentionIds: [bruno],
+        });
+      }
+
+      const total = quadro.ok
+        ? (await loadDemandBoard({ tenantId: ufbaId, eventId: eventoCongresso.id }))
+        : null;
+
+      demandasDemo =
+        `${equipe.teamId ? '1 equipe (líder bruno)' : 'sem equipe'} · 3 demandas` +
+        (total?.ok
+          ? ` — ${total.board.summary.open} em aberto, ${total.board.summary.overdue} atrasada(s), ` +
+            `${total.board.summary.done} concluída(s)`
+          : '');
+    } else {
+      demandasDemo = `falhou: ${equipe.message}`;
+    }
+  }
+
+  console.log(`  ✓ demandas internas: ${demandasDemo}`);
+
   // ── Resumo ─────────────────────────────────────────────────────────────────
   console.log(`\n${line}`);
   console.log('  CONTAS DE DEMONSTRAÇÃO\n');
@@ -1696,6 +1815,10 @@ async function main() {
   console.log(`    Atividade: /t/ufba-demo/eventos/congresso-2026/atividades/oficina-brinquedos-reciclados`);
   console.log(`    ${confirmacaoDemo}`);
   console.log(`    Liberar as vencidas: npm run registrations:expire`);
+  console.log(`\n  Demandas internas do evento (FASE 38):`);
+  console.log(`    Quadro:  /t/ufba-demo/administracao/eventos/<id>/demandas`);
+  console.log(`    Equipes: /t/ufba-demo/administracao/eventos/<id>/equipes`);
+  console.log(`    ${demandasDemo}`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

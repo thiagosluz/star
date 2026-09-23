@@ -18,6 +18,7 @@ export const JOB_KEYS = [
   'review-deadlines',
   'attendance-sweep',
   'registration-confirmation-sweep',
+  'demand-due',
   'file-scan',
   'audit-partitions',
 ] as const;
@@ -67,6 +68,15 @@ export const JOB_CATALOG: Record<JobKey, JobDefinition> = {
     pattern: '0 * * * *',
     cadenceLabel: 'de hora em hora',
     itemsLabel: 'vagas liberadas',
+  },
+  'demand-due': {
+    key: 'demand-due',
+    label: 'Prazos das demandas internas',
+    description:
+      'Avisa quem é responsável pela demanda que vence amanhã e por aquelas cujo prazo já passou, uma vez por dia.',
+    pattern: '0 * * * *',
+    cadenceLabel: 'de hora em hora',
+    itemsLabel: 'avisos enviados',
   },
   'file-scan': {
     key: 'file-scan',

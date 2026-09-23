@@ -264,6 +264,55 @@ export interface EmailPayloads {
     notes: string | null;
     proposalsUrl: string;
   };
+
+  /**
+   * FASE 38 — você ficou responsável por uma demanda interna do evento.
+   *
+   * O aviso é para QUEM EXECUTA, e é o único da fase que nasce de uma atribuição
+   * (não de um prazo). Ele diz o que é e quando vence, porque é isso que decide se
+   * a pessoa abre a tela agora ou depois.
+   */
+  DEMAND_ASSIGNED: {
+    recipientName: string;
+    demandTitle: string;
+    eventTitle: string;
+    teamName: string | null;
+    priorityLabel: string;
+    dueAtLabel: string | null;
+    assignedByName: string | null;
+    demandUrl: string;
+  };
+
+  /** FASE 38 — alguém mencionou você num comentário da demanda. */
+  DEMAND_MENTION: {
+    recipientName: string;
+    demandTitle: string;
+    eventTitle: string;
+    authorName: string;
+    /** O comentário, já aparado e escapado na montagem. */
+    comment: string;
+    demandUrl: string;
+  };
+
+  /** FASE 38 — o prazo da demanda é amanhã. */
+  DEMAND_DUE_SOON: {
+    recipientName: string;
+    demandTitle: string;
+    eventTitle: string;
+    dueAtLabel: string;
+    demandUrl: string;
+  };
+
+  /** FASE 38 — o prazo passou e a demanda continua aberta. */
+  DEMAND_OVERDUE: {
+    recipientName: string;
+    demandTitle: string;
+    eventTitle: string;
+    dueAtLabel: string;
+    /** Já calculado no fuso do evento. */
+    daysLate: number;
+    demandUrl: string;
+  };
 }
 
 export type EmailTemplateKey = keyof EmailPayloads;
@@ -286,6 +335,10 @@ export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'REGISTRATION_RELEASED',
   'WAITLIST_PROMOTED',
   'PROPOSAL_DECIDED',
+  'DEMAND_ASSIGNED',
+  'DEMAND_MENTION',
+  'DEMAND_DUE_SOON',
+  'DEMAND_OVERDUE',
 ] as const);
 
 export interface RenderedEmail {
@@ -1175,6 +1228,161 @@ export function renderEmail<K extends EmailTemplateKey>(
         ].join('\n'),
       };
     }
+
+    case 'DEMAND_ASSIGNED': {
+      const data = payload as EmailPayloads['DEMAND_ASSIGNED'];
+
+      /**
+       * Quem atribuiu aparece nos DETALHES e não no título: o que a pessoa precisa
+       * saber primeiro é o que fazer e até quando. "Fulano te passou uma demanda" sem
+       * dizer qual obrigaria a abrir a mensagem para descobrir se é urgente.
+       */
+      return {
+        subject: `Você ficou com: ${data.demandTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: data.dueAtLabel ? `Prazo: ${data.dueAtLabel}.` : 'Sem prazo definido.',
+          title: 'Uma demanda do evento é sua',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `Você ficou responsável por ${strong(data.demandTitle)}, no evento ${strong(data.eventTitle)}.`,
+            ),
+            paragraph(
+              'Abra o quadro para ver os detalhes, comentar e mover o cartão conforme o trabalho andar.',
+            ),
+          ],
+          details: [
+            { label: 'Prioridade', value: escapeHtml(data.priorityLabel) },
+            ...(data.teamName ? [{ label: 'Equipe', value: escapeHtml(data.teamName) }] : []),
+            { label: 'Prazo', value: data.dueAtLabel ? escapeHtml(data.dueAtLabel) : 'sem prazo' },
+            ...(data.assignedByName
+              ? [{ label: 'Atribuída por', value: escapeHtml(data.assignedByName) }]
+              : []),
+          ],
+          callToAction: { label: 'Abrir a demanda', url: data.demandUrl },
+          footerNote: 'Você recebe este aviso porque é responsável pela demanda.',
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `Você ficou responsável por "${data.demandTitle}" (${data.eventTitle}).`,
+          `Prioridade: ${data.priorityLabel}`,
+          ...(data.teamName ? [`Equipe: ${data.teamName}`] : []),
+          `Prazo: ${data.dueAtLabel ?? 'sem prazo'}`,
+          ...(data.assignedByName ? [`Atribuída por: ${data.assignedByName}`] : []),
+          '',
+          'Abra a demanda em:',
+          data.demandUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'DEMAND_MENTION': {
+      const data = payload as EmailPayloads['DEMAND_MENTION'];
+
+      return {
+        subject: `${data.authorName} mencionou você em: ${data.demandTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `${data.authorName} chamou você num comentário.`,
+          title: 'Você foi mencionado numa demanda',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `${strong(data.authorName)} mencionou você no comentário da demanda ${strong(data.demandTitle)}, no evento ${strong(data.eventTitle)}.`,
+            ),
+          ],
+          /** O comentário vai como DESTAQUE: é o motivo do aviso. */
+          notice: `${escapeHtml(data.authorName)} escreveu: ${escapeHtml(data.comment)}`,
+          callToAction: { label: 'Responder no quadro', url: data.demandUrl },
+          footerNote: 'Você recebe este aviso porque foi mencionado no comentário.',
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `${data.authorName} mencionou você na demanda "${data.demandTitle}" (${data.eventTitle}).`,
+          '',
+          `${data.authorName} escreveu: ${data.comment}`,
+          '',
+          'Responda em:',
+          data.demandUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'DEMAND_DUE_SOON': {
+      const data = payload as EmailPayloads['DEMAND_DUE_SOON'];
+
+      return {
+        subject: `Prazo amanhã: ${data.demandTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `Vence em ${data.dueAtLabel}.`,
+          title: 'A demanda vence amanhã',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A demanda ${strong(data.demandTitle)}, do evento ${strong(data.eventTitle)}, vence em ${strong(data.dueAtLabel)}.`,
+            ),
+            paragraph(
+              'Se já estiver pronta, mova o cartão para a coluna de conclusão. Se algo travou, comente na demanda — quem coordena precisa saber antes do prazo passar.',
+            ),
+          ],
+          callToAction: { label: 'Abrir a demanda', url: data.demandUrl },
+          footerNote: 'Este aviso é enviado uma vez por dia, no dia anterior ao prazo.',
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `A demanda "${data.demandTitle}" (${data.eventTitle}) vence em ${data.dueAtLabel}.`,
+          '',
+          'Abra a demanda em:',
+          data.demandUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'DEMAND_OVERDUE': {
+      const data = payload as EmailPayloads['DEMAND_OVERDUE'];
+      const days = data.daysLate === 1 ? '1 dia' : `${data.daysLate} dias`;
+
+      return {
+        subject: `Demanda atrasada há ${days}: ${data.demandTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `O prazo era ${data.dueAtLabel}.`,
+          title: 'Demanda com prazo vencido',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `O prazo da demanda ${strong(data.demandTitle)}, do evento ${strong(data.eventTitle)}, era ${strong(data.dueAtLabel)} — venceu há ${days}.`,
+            ),
+            paragraph(
+              'Ela continua aberta no quadro. Conclua, atualize o prazo ou comente o que está travando: um cartão parado sem explicação é o que faz o trabalho reaparecer na véspera do evento.',
+            ),
+          ],
+          callToAction: { label: 'Resolver agora', url: data.demandUrl },
+          footerNote: 'Este aviso é repetido uma vez por dia enquanto a demanda estiver atrasada.',
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `A demanda "${data.demandTitle}" (${data.eventTitle}) venceu em ${data.dueAtLabel} — há ${days}.`,
+          '',
+          'Resolva em:',
+          data.demandUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
   }
 }
 
@@ -1200,4 +1408,8 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   REGISTRATION_RELEASED: 'Vaga liberada por prazo',
   WAITLIST_PROMOTED: 'Saiu da lista de espera',
   PROPOSAL_DECIDED: 'Decisão da proposta',
+  DEMAND_ASSIGNED: 'Demanda atribuída',
+  DEMAND_MENTION: 'Menção em demanda',
+  DEMAND_DUE_SOON: 'Prazo de demanda próximo',
+  DEMAND_OVERDUE: 'Demanda atrasada',
 };

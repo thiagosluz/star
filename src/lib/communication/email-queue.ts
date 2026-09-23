@@ -115,11 +115,23 @@ export const FILE_SCAN_PATTERN = JOB_CATALOG['file-scan'].pattern;
 export const AUDIT_PARTITIONS_JOB = 'audit-partitions';
 export const AUDIT_PARTITIONS_PATTERN = JOB_CATALOG['audit-partitions'].pattern;
 
+/**
+ * ─── Prazos das demandas internas do evento (FASE 38) ─────────────────────────
+ *
+ *  De hora em hora, pela mesma razão da confirmação de vaga: o aviso de prazo não é
+ *  sensível a minutos, e a passada é limitada por lote. O que impede o aviso
+ *  repetido não é a cadência, é a `dedupeKey` — ela carrega o DIA local do evento,
+ *  então doze passadas num dia produzem um aviso por pessoa e por demanda.
+ */
+export const DEMAND_DUE_JOB = 'demand-due';
+export const DEMAND_DUE_PATTERN = JOB_CATALOG['demand-due'].pattern;
+
 /** Todos os jobs repetíveis, com a cadência do catálogo — uma fonte só. */
 export const SCHEDULED_JOBS = [
   { name: REVIEW_DEADLINES_JOB, pattern: REVIEW_DEADLINES_PATTERN },
   { name: ATTENDANCE_SWEEP_JOB, pattern: ATTENDANCE_SWEEP_PATTERN },
   { name: CONFIRMATION_SWEEP_JOB, pattern: CONFIRMATION_SWEEP_PATTERN },
+  { name: DEMAND_DUE_JOB, pattern: DEMAND_DUE_PATTERN },
   { name: FILE_SCAN_JOB, pattern: FILE_SCAN_PATTERN },
   { name: AUDIT_PARTITIONS_JOB, pattern: AUDIT_PARTITIONS_PATTERN },
 ] as const;

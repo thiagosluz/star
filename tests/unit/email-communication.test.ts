@@ -204,14 +204,54 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     notes: 'Detalhar a carga horária e a ementa do minicurso.',
     proposalsUrl: 'http://localhost:3000/t/ufba/submissoes',
   },
+  /**
+   * FASE 38 — os quatro avisos do quadro de demandas internas. As datas e rótulos
+   * chegam já formatados pelo serviço (o template não decide fuso nem idioma).
+   */
+  DEMAND_ASSIGNED: {
+    recipientName: 'Ana Souza',
+    demandTitle: 'Imprimir os crachás do credenciamento',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    teamName: 'Logística do congresso',
+    priorityLabel: 'Alta',
+    dueAtLabel: '26/09/2026',
+    assignedByName: 'Bruno Lima',
+    demandUrl: 'http://localhost:3000/t/ufba/administracao/eventos/e1/demandas/d1',
+  },
+  DEMAND_MENTION: {
+    recipientName: 'Ana Souza',
+    demandTitle: 'Fechar o contrato do som',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    authorName: 'Bruno Lima',
+    comment: 'A proposta do fornecedor venceu; preciso de uma segunda cotação.',
+    demandUrl: 'http://localhost:3000/t/ufba/administracao/eventos/e1/demandas/d2',
+  },
+  DEMAND_DUE_SOON: {
+    recipientName: 'Ana Souza',
+    demandTitle: 'Imprimir os crachás do credenciamento',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    dueAtLabel: '26/09/2026',
+    demandUrl: 'http://localhost:3000/t/ufba/administracao/eventos/e1/demandas/d1',
+  },
+  DEMAND_OVERDUE: {
+    recipientName: 'Ana Souza',
+    demandTitle: 'Fechar o contrato do som',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    dueAtLabel: '20/09/2026',
+    daysLate: 3,
+    demandUrl: 'http://localhost:3000/t/ufba/administracao/eventos/e1/demandas/d2',
+  },
 };
 
 const CONTEXT = { brandName: 'Universidade Federal da Bahia' };
 
 describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', () => {
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
-    /** 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34) + 1 da decisão da proposta (FASE 36). */
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(17);
+    /**
+     * 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34) + 1 da decisão da proposta
+     * (FASE 36) + 4 das demandas internas (FASE 38).
+     */
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(21);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();
