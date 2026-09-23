@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36, 37 e 38 concluídas (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35, F36, F37 e F38 entregues; a F18+ é a próxima) · **1977 testes** unitários/integração · **133 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38 e 39 concluídas (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35, F36, F37, F38 e F39 entregues; a F18+ é a próxima) · **2014 testes** unitários/integração · **137 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -27,6 +27,9 @@ avaliação por pares e gamificação.
 > · **quadro de demandas internas do evento** (Kanban com colunas configuráveis, equipes com
 > líder, prazo no fuso do evento, comentários com menção, avisos por e-mail e caixa de entrada,
 > e o cartão movido por arrastar **ou** por formulário — o quadro funciona sem JavaScript)
+> · **rubrica de avaliação com número livre de critérios** (até 12, na trilha e na chamada, com a
+> chave derivada do rótulo e a FORMA congelada a partir do primeiro parecer — a régua da nota não
+> muda debaixo de quem já avaliou)
 
 ---
 
@@ -416,8 +419,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1977 testes (88 arquivos) — unit + integração com banco real
-npm run test:e2e          # 133 testes E2E contra o container de produção
+npm test                  # 2014 testes (90 arquivos) — unit + integração com banco real
+npm run test:e2e          # 137 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas, partições e tabelas de plataforma
@@ -466,7 +469,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-15-comunicacao.md`](docs/fase-15-comunicacao.md) | **Comunicação:** e-mail transacional pelo Resend atrás de um driver com o padrão em NÃO enviar, fila `emails` com 5 tentativas, **outbox** que guarda o que saiu, 8 templates em funções puras, **convite de equipe** com token hasheado e vínculo no aceite, avisos de avaliação/prazo/carta/certificado e verificação de e-mail sem bloquear o login | ADR-127 … 130 |
 | [`docs/fase-21-ciclo-de-vida-do-membro-e-storage.md`](docs/fase-21-ciclo-de-vida-do-membro-e-storage.md) | **Ciclo de vida do membro e armazenamento:** trocar papéis e remover membro pela tela de equipe (remoção lógica, concessões revogadas, guardas de posse própria e de último proprietário) e a **quota de armazenamento aplicada** em todo envio — submissão, mídia e material de palestrante — medida sobre **tudo** o que a instituição guarda, bloqueando só o upload novo e **nunca** a emissão de certificado | ADR-131 … 133 |
 | [`docs/design-system.md`](docs/design-system.md) | **Sistema de design:** tokens, tipografia, catálogo de primitivos, regras de navegação, receita de módulo novo e o que a trava reprova | — |
-| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 49 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
+| [`docs/dividas-tecnicas.md`](docs/dividas-tecnicas.md) | **Levantamento consolidado:** 50 dívidas abertas (o levantamento original mais o que cada fase declarou), verificadas no código, por tema, com esforço e fases candidatas numeradas como as fases que serão entregues | — |
 | [`docs/fase-25-portal-do-palestrante.md`](docs/fase-25-portal-do-palestrante.md) | Portal do palestrante: o palestrante passa a ser **pessoa da instituição** (`speaker_profiles`) com perfil e vínculo de conta por **convite hasheado**, **portal** com posse verificada no banco, **materiais** com visibilidade por visitante (401/403/404), **vitrine** com foto e bio, ficha individual e **certificado de palestrante** que exige evento encerrado e credenciamento. A **revisão pós-entrega** (§10) abriu as portas que faltavam: o menu voltou a mostrar os itens pessoais e o convite pendente virou entrada do portal | ADR-113 … 120 |
 | [`docs/fase-24-midia-e-agendamento.md`](docs/fase-24-midia-e-agendamento.md) | Mídia e agendamento: **biblioteca de mídia** (tabela `media_assets` com RLS, reaproveitamento por checksum e exclusão que **confere o uso**), **sincronia** do patrocinador copiado a partir da origem, **janela de exibição** (`unpublishAt` decidido na leitura) e a data agendada interpretada no **fuso do evento** | ADR-107 … 112 |
 | [`docs/fase-23-conteudo-e-midia.md`](docs/fase-23-conteudo-e-midia.md) | Operação do editor de página: **pré-visualização** do rascunho pelo mesmo componente da página pública, **upload de imagem na galeria**, **cópia de patrocinador** entre eventos (cota pela categoria, cadastro oculto), **histórico de versões** com restauração e **publicação agendada** decidida na leitura — sem agendador | ADR-100 … 106 |
@@ -482,7 +485,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-36-operacao-e-seguranca.md`](docs/fase-36-operacao-e-seguranca.md) | **Operação das rotinas e segurança dos arquivos:** as cinco rotinas automáticas passaram a ter **histórico, saúde e "executar agora"** em `/superadmin/rotinas` (a linha em `job_runs` é o registro E a exclusão mútua, decidida por índice único parcial — o PgBouncer em modo transação não preserva lock de sessão), a manutenção das **partições da auditoria** saiu do cron do host e virou rotina do worker (quita B7), a **inspeção antivírus** dos arquivos enviados entrou com driver cujo padrão é NÃO inspecionar, portão nos dois caminhos que servem bytes de terceiro e trilha da ameaça (quita A3), o **lote de certificados em ZIP** é montado em fluxo por evento (com trilha `EXPORT`) e o **proponente passou a ser avisado da decisão** da chamada, nos dois canais e com o parecer do comitê (quita E47) | ADR-183 … 191 |
 | [`docs/fase-37-crachas-e-checklist.md`](docs/fase-37-crachas-e-checklist.md) | **Crachá em etiqueta e impressora térmica · confirmação por item:** a área de crachás ganhou a **folha de etiqueta adesiva** em PDF (grade configurável em milímetros, padrão 3 × 8 de 63,5 × 33,9 mm centralizados em A4) e o arquivo **ZPL II** para impressora térmica (dpi, medida do rolo e ampliação do QR configuráveis, padrão 203 dpi · 100 × 50 mm), sem marca nem modelo no código e com recusa do que não cabe antes de gastar a folha (quita E41); e a **confirmação de vaga passou a ser por ITEM** — cada exigência vira uma linha da inscrição (`registration_confirmation_items`, snapshot criado na inscrição retida **e** na promoção da lista de espera), marcada uma a uma no balcão, com a vaga confirmada sozinha quando todas as obrigatórias acabam e pelo mesmo caminho da confirmação manual (quita E48) | ADR-192 … 199 |
 | [`docs/fase-38-quadro-de-demandas.md`](docs/fase-38-quadro-de-demandas.md) | **Quadro de demandas internas do evento:** um Kanban por evento, com **colunas configuráveis** (nascendo com o padrão) e a **coluna** — e não o nome dela — decidindo a conclusão (`isDone` grava `completedAt`); **equipes do evento** com nome, **um líder** (índice único parcial) e membros; responsáveis, **início, prazo e concluído em** com o atraso contado no **fuso do evento** ("vence hoje" não é atrasado); **comentários com menção** (a menção é LINHA, não texto procurado) avisando por e-mail e caixa de entrada; e o cartão movido por **arrastar e soltar ou por formulário** — o quadro é operável **sem JavaScript**, o que quita a metade da E50 que dá para quitar sem reescrever uma dúzia de telas | ADR-200 … 212 |
-| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 91 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
+| [`docs/fase-39-rubrica-livre.md`](docs/fase-39-rubrica-livre.md) | **Rubrica com número livre de critérios:** a avaliação aceita de 1 a **12** critérios (o teto é do serviço, não da tela), a **chave** de cada critério nasce do rótulo (e é preservada nas linhas que já existem), e a **FORMA** da rubrica — chaves, pesos e notas máximas — **congela a partir do primeiro parecer**, porque acrescentar critério deixa todo parecer existente sem nota e remover renormaliza os pesos em silêncio. Rótulo, descrição e ordem continuam livres; a trilha passou a ser **editável**; e sem JavaScript o editor oferece as linhas do teto (nenhum botão morto) — com o envio provado pelo E2E | ADR-213 … 218 |
+| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 92 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
@@ -490,7 +494,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **212 decisões** registradas até aqui.
+> são **218 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -548,9 +552,9 @@ prisma/
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              1368 testes de regra pura e de formato (sem banco) — 49 arquivos
-├── integration/        609 testes com banco, Redis e storage reais — 39 arquivos
-└── e2e/               133 testes Playwright contra o container
+├── unit/              1393 testes de regra pura e de formato (sem banco) — 50 arquivos
+├── integration/        621 testes com banco, Redis e storage reais — 40 arquivos
+└── e2e/               137 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -837,6 +841,16 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     atividade nem para uma sala. Ficou fora de escopo de propósito — a ligação convida a
     automações (concluir a demanda quando a atividade termina, bloquear a publicação sem
     checklist) que esta fase não teria como testar.
+43. **A rubrica congela depois do primeiro parecer (FASE 39).** O organizador escolhe de 1 a 12
+    critérios enquanto ninguém avaliou; a partir do primeiro parecer, o número de critérios, as
+    chaves, os pesos e as notas máximas não mudam mais (rótulo, descrição e ordem continuam
+    livres). A razão é aritmética: acrescentar critério deixa todo parecer existente sem nota em
+    um deles, e remover renormaliza os pesos — as notas já dadas passariam a significar outra
+    coisa. Quem precisa de outra régua cria outra trilha ou outra chamada.
+44. **A contagem que congela a rubrica da trilha é conservadora (FASE 39, dívida E53).** Ela conta
+    pareceres de submissões da trilha sem checar se aquela submissão usa mesmo a rubrica dela
+    (uma chamada com rubrica própria vence a da trilha). Erra para o lado de congelar, e a
+    mensagem diz o que contou.
 ---
 
 **Próximos passos sugeridos:** fechar as dívidas por prioridade de risco — verificar um
@@ -847,7 +861,8 @@ FASE 21 declarou), o consentimento de perfil público (E35), a autenticidade da 
 do sorteio (E36), o interruptor do telão (E37), a identidade visual do crachá e a lente da
 câmera (E42), a retenção do arquivo exportado (E44), a resposta ao recado (E45), o prazo-limite
 da atividade (E49), a ação em linha que funcione sem JavaScript (E50, já pela metade), a
-paginação e a reordenação por teclado do quadro de demandas (E51 e E52), o segundo grau do acervo
+paginação e a reordenação por teclado do quadro de demandas (E51 e E52), a contagem exata do
+congelamento da rubrica (E53), o segundo grau do acervo
 de mídia (F26: miniaturas, busca e sincronia em lote), o material/convite do palestrante (F27,
 que agora só precisa do template) e a entrega de e-mail de segunda ordem (F28: webhooks e
 preferências).

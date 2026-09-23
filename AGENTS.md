@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36, 37 e 38 (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35, F36, F37 e F38 entregues; a F18+ é a próxima)
-Testes ................. 1977 (Vitest: unit + integração) + 133 (Playwright E2E)
-ADRs ................... 212 (numeração GLOBAL e sequencial — a próxima é ADR-213)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38 e 39 (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35, F36, F37, F38 e F39 entregues; a F18+ é a próxima)
+Testes ................. 2014 (Vitest: unit + integração) + 137 (Playwright E2E)
+ADRs ................... 218 (numeração GLOBAL e sequencial — a próxima é ADR-219)
 Permissões ............. 65 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 51 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1977+ testes passando
+npm test              # esperado: 2014+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 133+ testes passando
+npm run test:e2e      # esperado: 137+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,19 +127,14 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 91 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
-> [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
-> no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
-> seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
-> renumere. **Antes de mexer numa área, procure ali o que já quebrou nela.** Abaixo ficam as
-> mais recentes, e só a REGRA de cada uma (a narrativa de como ela foi encontrada está no
-> `docs/armadilhas.md`) — é a regra que impede a repetição.
+> **A tabela COMPLETA — 92 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> [`docs/armadilhas.md`](docs/armadilhas.md)**, e a seção 10 manda lê-la antes de mexer em
+> qualquer coisa. Os números são estáveis e citados no código e nos documentos de fase — não
+> renumere. A mais recente, como amostra do que a regra protege:
 
-| # | A regra |
-|---|---|
-| 89 | **A suíte roda com o worker no ar**: a rotina recém-registrada no agendador dispara na PRIMEIRA passada e mexe no dado da fixture vizinha — o teste falha uma vez e passa nas seguintes. Antes de investigar um teste que falhou sozinho, veja se a rotina rodou naquele minuto, e reporte o número da execução limpa |
-| 90 | **Asserção negativa sobre a URL é frágil**: `not.toHaveURL(/demandas/)` reprovou com o produto CERTO, porque o slug da instituição de teste continha a palavra. Afirme o DESTINO (`toHaveURL(/\/dashboard$/)`), não a ausência de um termo |
-| 91 | **Tamanho de fonte fora da escala reprova o guard do design system** antes de qualquer revisão: telas novas usam `text-xs`/`sm`/`title`/`display`. Se o desenho pede um tamanho que não existe, o problema é o desenho — não a escala |
+* **92 — Timeout de teste não é diagnóstico**: reduza o cenário ao mínimo que ainda falha, faça a
+  asserção carregar o dado que explica a falha e **meça antes de documentar uma limitação** (eu
+  quase documentei uma que não existia — o que faltava era o locator, não a funcionalidade).
 
 ---
 
@@ -369,11 +364,9 @@ do histórico antigo, é que revela direto, em vez de inventar nomes — armadil
 rodada preparada por vez** — dois compromissos no ar deixariam o telão sem saber o que
 anunciar.
 
-A rodada 1 do histórico foi **copiada** pela migração para `raffle_rounds`, com os mesmos
-valores que estavam em `raffles`: as colunas de semente/lista do sorteio são **legado
-congelado** desde então, e a fonte de verdade é a rodada. O fluxo ao vivo assina por RODADA
-(`pendingRound`/`lastDrawnRound`), porque o status do sorteio fica `DRAWN` para sempre depois
-da primeira apuração.
+A rodada 1 do histórico foi **copiada** pela migração para `raffle_rounds`, e as colunas de
+semente/lista do sorteio são **legado congelado** desde então. O fluxo ao vivo assina por
+RODADA, porque o status do sorteio fica `DRAWN` para sempre depois da primeira apuração.
 
 ### Credenciamento por crachá (FASE 31)
 
@@ -436,9 +429,8 @@ sessão, nunca do formulário) enquanto ENVIAR exige `participant:message` no es
 instituição; e **`null` não é `0`** — taxa de comparecimento e média de minutos vêm `null` sem
 denominador, e a tela mostra "—" em vez de inventar 0% para quem não teve oportunidade.
 
-A visão geral é a única tela que usa `tenant:analytics:read`, permissão que existia desde a
-FASE 2 sem consumidor. E a guarda das Server Actions passou a tratar permissão `:own`
-(armadilha 72).
+A guarda das Server Actions trata permissão `:own` (armadilha 72); a visão geral usa
+`tenant:analytics:read`, permissão que existia desde a FASE 2 sem consumidor.
 
 ### Chamadas de propostas (FASE 33)
 
@@ -544,6 +536,21 @@ Quem é atribuído é **vínculo `MEMBER` ativo** (ADR-205); o **líder da equip
 (`isLead`, com índice único parcial garantindo UM por equipe) e distribui só dentro da própria
 equipe (ADR-206). O quadro **funciona sem JavaScript** — é o que quitou a METADE da dívida
 **E50**.
+
+### Rubrica com número livre de critérios (FASE 39)
+
+O organizador escolhe **quantos critérios** a rubrica tem — de **1 a 12** (ADR-214) — na
+chamada e na **trilha**, que ganhou **tela de edição** (antes a trilha nunca podia ser
+editada):
+
+Quatro regras que quebram fácil: **a chave do critério é DERIVADA do rótulo** e a chave já
+gravada é PRESERVADA quando o formulário a manda — renomear o rótulo não pode invalidar o
+parecer que a referencia (ADR-213); **a rubrica CONGELA no primeiro parecer** (chaves, pesos e
+notas máximas; rótulo, descrição e ORDEM seguem livres — ADR-215/216) e a comparação é sobre a
+rubrica **EFETIVA** (CHAMADA → TRILHA → PADRÃO), senão a trilha sem rubrica própria não teria
+com o que comparar; **o editor funciona sem JavaScript** — 12 linhas no `<noscript>`, linha
+sem rótulo descartada (ADR-218); e **peso ou nota que não é número cai no padrão** em vez de
+virar `NaN` na média ponderada.
 
 ### Operação de palco (FASE 22)
 
@@ -716,13 +723,9 @@ escopo de tenant na entrada recusaria o caso normal — foi um dos defeitos que 
 pegou (armadilha 42 mostra a outra metade, no `Field`).
 
 **Duas portas para o portal.** Além de quem já é palestrante, entra quem tem **convite
-pendente para o e-mail da conta** (`userId` nulo + `inviteTokenHash` gravado + e-mail igual):
-o papel nasce com o aceite, então exigir o papel para chegar ao convite era um impasse. A
-mesma condição (`pendingInviteWhere`, em `speaker-portal-service.ts`) decide a guarda, o item
-do menu e a lista — e o item do menu segue a porta ("Convite de palestrante" antes do aceite,
-"Portal do palestrante" depois, com o LAYOUT revalidado no aceite). Quem ainda não tem vínculo
-aceita pela página pública do convite, que lista os convites do e-mail da conta logada
-(ADR-119/120, `docs/fase-25-portal-do-palestrante.md` §10).
+pendente para o e-mail da conta** — o papel nasce com o aceite, então exigi-lo para chegar ao
+convite era um impasse. A mesma condição (`pendingInviteWhere`) decide a guarda, o item do
+menu (que segue a porta) e a lista (ADR-119/120, `docs/fase-25-portal-do-palestrante.md` §10).
 
 
 ### Comunicação (FASE 15)
@@ -894,6 +897,7 @@ tests/{unit,integration,e2e}
 | 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), **lote de certificados em ZIP** montado em fluxo e **aviso de decisão ao proponente** da chamada; quitou **A3, B7 e E47**) — escopo definido pelo humano | ✅ |
 | 37 | Crachá em **etiqueta adesiva** (PDF com grade configurável) e em **impressora térmica** (ZPL II configurável), e **confirmação de vaga por ITEM** (checklist snapshot da inscrição, com a vaga confirmada quando as obrigatórias acabam); quitou **E41** e **E48**) — escopo definido pelo humano | ✅ |
 | 38 | **Quadro de demandas internas do evento** (Kanban por evento com colunas configuráveis, equipes com líder, prazo no fuso do evento, comentários com menção avisando por e-mail e caixa de entrada, e o cartão movido por arrastar **ou** por formulário — o quadro funciona sem JavaScript); quitou a METADE da **E50** e declarou **E51** e **E52**) — escopo definido pelo humano | ✅ |
+| 39 | **Rubrica com número livre de critérios** (1 a 12 critérios, com a chave **derivada do rótulo**; a **edição de trilha**, que não existia; e a rubrica **congelada a partir do primeiro parecer** — só rótulo, descrição e ordem seguem livres); declarou **E53**) — escopo definido pelo humano | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -902,14 +906,15 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**49 itens abertos**, soma das tabelas de
-tema — A=3, B=4, C=2, D=3, E=27, F=5, G=0, H=4, I=1; o tema G ficou ZERADO na FASE 22) está em
+**Dívidas técnicas:** o levantamento consolidado (**50 itens abertos**, soma das tabelas de
+tema — A=3, B=4, C=2, D=3, E=28, F=5, G=0, H=4, I=1; o tema G ficou ZERADO na FASE 22) está em
 **`docs/dividas-tecnicas.md`**, com o histórico do que cada fase quitou e o que declarou de
 novo. O total publicado até a FASE 35 (55) somava linhas **já riscadas** — a correção da
 contagem está no próprio documento. A FASE 36 quitou **A3**, **B7** e **E47**; a FASE 37 quitou
 **E41** e **E48** e declarou **E50**; a FASE 38 quitou a **metade da E50** (o quadro de
 demandas é operável sem JavaScript) e declarou **E51** (reordenar por teclado) e **E52**
-(paginação do quadro).
+(paginação do quadro); a FASE 39 declarou **E53** (a contagem de pareceres da trilha é
+conservadora: soma a dos pareceres de TODAS as chamadas ligadas a ela).
 Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a ordem
 sugerida.
 
@@ -918,8 +923,8 @@ sugerida.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 91 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-38-quadro-de-demandas.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 92 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-39-rubrica-livre.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

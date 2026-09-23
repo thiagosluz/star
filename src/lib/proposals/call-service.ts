@@ -32,7 +32,8 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { isValidSlug, normalizeSlug } from '@/domain/tenancy/resolution';
-import { parseRubric, validateRubric, type RubricCriterion } from '@/domain/review/review-rules';
+import { parseRubric, resolveEffectiveRubric, validateRubric, type RubricCriterion } from '@/domain/review/review-rules';
+import { assertRubricShapeFree } from '@/lib/review/rubric-guard';
 import {
   PROPOSAL_KIND_LABELS,
   callCountdown,
@@ -50,6 +51,11 @@ export type CallErrorCode =
   | 'INVALID_INPUT'
   | 'INVALID_WINDOW'
   | 'SLUG_TAKEN'
+  /**
+   * A FORMA da rubrica não pode mudar: já existe parecer enviado nesta chamada, e a
+   * nota de quem avaliou deixaria de ser calculável (FASE 39).
+   */
+  | 'RUBRIC_FROZEN'
   | 'INTERNAL';
 
 export type CallResult<T> =
@@ -483,7 +489,7 @@ export async function saveCall(
       if (input.trackId) {
         const track = await tx.track.findFirst({
           where: { id: input.trackId, eventId: input.eventId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, reviewRubric: true },
         });
 
         if (!track) {
@@ -508,11 +514,44 @@ export async function saveCall(
       if (input.callId) {
         const existing = await tx.callForProposals.findFirst({
           where: { id: input.callId, tenantId: input.tenantId, eventId: input.eventId, deletedAt: null },
-          select: { id: true, kind: true },
+          select: { id: true, kind: true, reviewRubric: true, trackId: true },
         });
 
         if (!existing) {
           return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Chamada não encontrada.' };
+        }
+
+        /**
+         * ─────────────────────────────────────────────────────────────────────
+         *  A FORMA DA RUBRICA CONGELA A PARTIR DO PRIMEIRO PARECER (FASE 39)
+         * ─────────────────────────────────────────────────────────────────────
+         *  Os dois lados da comparação passam pela MESMA precedência que o revisor
+         *  usa (`resolveEffectiveRubric`: CHAMADA → TRILHA → PADRÃO). Comparar o JSON
+         *  gravado não bastaria: uma chamada sem rubrica própria herda a da trilha, e
+         *  nesse caso gravar uma rubrica de cinco critérios mudaria a forma do mesmo
+         *  jeito — só que sem parecer com a antiga.
+         */
+        const trackRubric = existing.trackId
+          ? (
+              await tx.track.findFirst({
+                where: { id: existing.trackId, deletedAt: null },
+                select: { reviewRubric: true },
+              })
+            )?.reviewRubric ?? null
+          : null;
+
+        const freeze = await assertRubricShapeFree(tx, {
+          tenantId: input.tenantId,
+          callId: existing.id,
+          stored: existing.reviewRubric,
+          submitted: resolveEffectiveRubric({
+            callRubric: rubric.length > 0 ? rubric : null,
+            trackRubric,
+          }).rubric,
+        });
+
+        if (!freeze.ok) {
+          return { ok: false as const, code: 'RUBRIC_FROZEN' as const, message: freeze.message };
         }
 
         const proposals = await tx.submission.count({

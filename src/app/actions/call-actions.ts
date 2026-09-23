@@ -42,6 +42,7 @@ import {
   PROPOSAL_LONG_TEXT_MAX,
   proposalFieldsFor,
 } from '@/domain/proposals/call-rules';
+import { buildRubricFromRows } from '@/domain/review/review-rules';
 import type { RubricCriterion } from '@/domain/review/review-rules';
 import {
   deleteCall,
@@ -110,19 +111,18 @@ function formTimeZone(value: FormDataEntryValue | null | undefined): string {
  *  dizendo "esta chamada não tem rubrica própria", e não "salve uma rubrica vazia".
  */
 function readRubric(formData: FormData): RubricCriterion[] {
-  const keys = formData.getAll('rubricKey').map(String);
-  const labels = formData.getAll('rubricLabel').map(String);
-  const weights = formData.getAll('rubricWeight').map(String);
-  const maxScores = formData.getAll('rubricMaxScore').map(String);
-
-  return keys
-    .map((key, index) => ({
-      key: key.trim(),
-      label: (labels[index] ?? key).trim(),
-      weight: Number(weights[index] ?? 1),
-      maxScore: Number(maxScores[index] ?? 10),
-    }))
-    .filter((criterion) => criterion.key.length > 0);
+  /**
+   * A conversão linha → critério vive no DOMÍNIO (`buildRubricFromRows`): a chave é
+   * derivada do rótulo quando a linha é nova e preservada quando já existe, e linha
+   * sem rótulo é descartada. Uma segunda cópia desta regra no painel da chamada
+   * divergiria da que a trilha usa (armadilha 55).
+   */
+  return buildRubricFromRows({
+    keys: formData.getAll('rubricKey'),
+    labels: formData.getAll('rubricLabel'),
+    weights: formData.getAll('rubricWeight'),
+    maxScores: formData.getAll('rubricMaxScore'),
+  });
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

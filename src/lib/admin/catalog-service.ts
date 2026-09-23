@@ -44,7 +44,8 @@ import {
   normalizeRoomCapacity,
   type RoomUsage,
 } from '@/domain/events/event-rules';
-import { parseRubric } from '@/domain/review/review-rules';
+import { parseRubric, type RubricCriterion } from '@/domain/review/review-rules';
+import { assertRubricShapeFree } from '@/lib/review/rubric-guard';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
 
 export type AdminErrorCode =
@@ -66,6 +67,11 @@ export type AdminErrorCode =
    * elas seguram vaga, não têm mais prazo e ninguém pode confirmá-las.
    */
   | 'INVALID_PENDING_CONFIRMATIONS'
+  /**
+   * A FORMA da rubrica não pode mudar: já existe parecer enviado, e a nota de quem
+   * avaliou deixaria de ser calculável (FASE 39 — `src/lib/review/rubric-guard.ts`).
+   */
+  | 'RUBRIC_FROZEN'
   | 'INTERNAL';
 
 export type AdminResult<T> =
@@ -393,11 +399,21 @@ export interface AdminEventDetail extends AdminEventRow {
     id: string;
     slug: string;
     name: string;
+    description: string | null;
+    color: string | null;
+    maxSubmissionsPerAuthor: number;
+    requiresBlindReview: boolean;
     requiredReviews: number;
     acceptanceThreshold: number;
     rejectThreshold: number;
     isActive: boolean;
     submissionCount: number;
+    /**
+     * A rubrica como está gravada (FASE 39) — vazia significa "usa a padrão". A tela de
+     * edição precisa dela para mostrar o que está em vigor e para mandar a FORMA de
+     * volta intacta quando a rubrica estiver congelada.
+     */
+    reviewRubric: readonly RubricCriterion[];
   }[];
 }
 
@@ -478,10 +494,15 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
             id: true,
             slug: true,
             name: true,
+            description: true,
+            color: true,
+            maxSubmissionsPerAuthor: true,
+            requiresBlindReview: true,
             requiredReviews: true,
             acceptanceThreshold: true,
             rejectThreshold: true,
             isActive: true,
+            reviewRubric: true,
             _count: { select: { submissions: true } },
           },
         },
@@ -590,11 +611,17 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       id: track.id,
       slug: track.slug,
       name: track.name,
+      description: track.description,
+      color: track.color,
+      maxSubmissionsPerAuthor: track.maxSubmissionsPerAuthor,
+      requiresBlindReview: track.requiresBlindReview,
       requiredReviews: track.requiredReviews,
       acceptanceThreshold: Number(track.acceptanceThreshold),
       rejectThreshold: Number(track.rejectThreshold),
       isActive: track.isActive,
       submissionCount: track._count.submissions,
+      /** O JSON cru passa por `parseRubric` aqui: a tela recebe critérios, não `JsonValue`. */
+      reviewRubric: parseRubric(track.reviewRubric).rubric,
     })),
   };
 }
@@ -1387,11 +1414,39 @@ export async function saveTrack(input: TrackInput): Promise<AdminResult<{ trackI
       if (input.trackId) {
         const before = await tx.track.findFirst({
           where: { id: input.trackId, eventId: input.eventId, deletedAt: null },
-          select: { id: true, name: true, requiredReviews: true, isActive: true },
+          select: {
+            id: true,
+            name: true,
+            requiredReviews: true,
+            isActive: true,
+            /** A rubrica em vigor — o `before` da comparação de FORMA (FASE 39). */
+            reviewRubric: true,
+          },
         });
 
         if (!before) {
           return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Trilha não encontrada.' };
+        }
+
+        /**
+         * ─────────────────────────────────────────────────────────────────────
+         *  A FORMA DA RUBRICA CONGELA A PARTIR DO PRIMEIRO PARECER (FASE 39)
+         * ─────────────────────────────────────────────────────────────────────
+         *  Acrescentar critério zeraria a nota de todo parecer já enviado (o cálculo
+         *  devolve `null` com um critério sem nota) e remover renormalizaria os pesos
+         *  em silêncio. A guarda compara a rubrica que o organizador mandou com a que
+         *  está EM VIGOR (o JSON gravado ou a padrão, se a trilha não tem própria) e
+         *  recusa dizendo quantos pareceres existem.
+         */
+        const freeze = await assertRubricShapeFree(tx, {
+          tenantId: input.tenantId,
+          trackId: before.id,
+          stored: before.reviewRubric,
+          submitted: rubric,
+        });
+
+        if (!freeze.ok) {
+          return { ok: false as const, code: 'RUBRIC_FROZEN' as const, message: freeze.message };
         }
 
         await tx.track.update({ where: { id: before.id }, data });

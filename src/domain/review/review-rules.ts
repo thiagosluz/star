@@ -38,6 +38,7 @@ export interface RubricCriterion {
 
 export type RubricValidationError =
   | { code: 'EMPTY'; message: string }
+  | { code: 'TOO_MANY'; message: string; count: number }
   | { code: 'DUPLICATE_KEY'; message: string; keys: string[] }
   | { code: 'INVALID_WEIGHT'; message: string; keys: string[] }
   | { code: 'INVALID_MAX_SCORE'; message: string; keys: string[] }
@@ -49,6 +50,202 @@ export type RubricValidation =
 
 /** Chave de critério aceita: minúsculas, dígitos e underscore (usada em JSON). */
 const CRITERION_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+
+/** Tamanho máximo da chave — o mesmo do regex acima. */
+const CRITERION_KEY_MAX = 40;
+
+/**
+ * Quantos critérios uma rubrica pode ter.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE EXISTE UM TETO (FASE 39)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O número de critérios era fixo em três; passou a ser escolha do organizador, e
+ *  escolha sem teto não é escolha — é um campo onde cabe qualquer coisa. Doze cabem
+ *  numa tela, num parecer e na leitura de quem avalia; e o teto é validado no
+ *  DOMÍNIO (não só na tela), porque o formulário não é a única porta: a Server Action
+ *  e o serviço aceitam o mesmo dado.
+ */
+export const MAX_RUBRIC_CRITERIA = 12;
+
+/**
+ * Rótulo → chave do critério ("Originalidade e relevância" → `originalidade_e_relevancia`).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A CHAVE DEIXOU DE SER DIGITADA (FASE 39)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A chave é técnica: é o campo de `Review.scores` e obedece a um regex (minúsculas,
+ *  dígitos e underscore, começando por letra). Pedir que quem organiza digite isso é
+ *  pedir que erre — e o erro só aparecia DEPOIS do envio, com "chave inválida" ou
+ *  "chave repetida". Derivando do rótulo, o organizador escreve "Originalidade" e
+ *  pronto; o rótulo é o que as pessoas leem, a chave é o que o banco guarda.
+ *
+ *  Colisão ganha sufixo numérico (`_2`, `_3`…) em vez de virar erro: duas linhas com
+ *  o mesmo rótulo são um deslize comum, e recusar o formulário inteiro por isso seria
+ *  desproporcional. `taken` são as chaves já usadas NA MESMA rubrica.
+ */
+export function criterionKeyFromLabel(label: string, taken: readonly string[] = []): string {
+  const base =
+    label
+      .normalize('NFD')
+      /** Marcas de acento separadas pela normalização NFD. */
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/_{2,}/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, CRITERION_KEY_MAX) || 'criterio';
+
+  /** O regex exige começar por letra: rótulo que começa com número ganha prefixo. */
+  const first = /^[a-z]/.test(base) ? base : `c${base}`.slice(0, CRITERION_KEY_MAX);
+
+  if (!taken.includes(first)) return first;
+
+  for (let attempt = 2; attempt <= 99; attempt += 1) {
+    const suffix = `_${attempt}`;
+    const candidate = `${first.slice(0, CRITERION_KEY_MAX - suffix.length)}${suffix}`;
+
+    if (!taken.includes(candidate)) return candidate;
+  }
+
+  /** Inalcançável na prática (99 linhas com o mesmo rótulo); existe para não lançar. */
+  return first.slice(0, CRITERION_KEY_MAX - 2);
+}
+
+/**
+ * A FORMA da rubrica — o que entra na conta da nota.
+ *
+ * Rótulo, descrição e ORDEM ficam de fora de propósito (FASE 39):
+ *
+ *   • rótulo e descrição não entram em `computeWeightedScore` — corrigir um erro de
+ *     digitação depois de avaliado não reescreve nota nenhuma;
+ *   • a ordem também não: a soma é a mesma, e travar a reordenação impediria o
+ *     organizador de melhorar a LEITURA do formulário.
+ *
+ * O que entra: a chave, o peso e a nota máxima de cada critério — e o CONJUNTO de
+ * chaves, que é o que diz quantos critérios a rubrica tem.
+ */
+export interface RubricShapeDiff {
+  added: string[];
+  removed: string[];
+  /** Chaves que continuam existindo com peso ou nota máxima diferentes. */
+  changed: string[];
+}
+
+export function rubricShapeDiff(
+  before: readonly RubricCriterion[],
+  after: readonly RubricCriterion[],
+): RubricShapeDiff {
+  const previous = new Map(before.map((criterion) => [criterion.key, criterion]));
+  const next = new Map(after.map((criterion) => [criterion.key, criterion]));
+
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: string[] = [];
+
+  for (const key of next.keys()) {
+    if (!previous.has(key)) added.push(key);
+  }
+
+  for (const [key, criterion] of previous) {
+    const replacement = next.get(key);
+
+    if (!replacement) {
+      removed.push(key);
+      continue;
+    }
+
+    if (replacement.weight !== criterion.weight || replacement.maxScore !== criterion.maxScore) {
+      changed.push(key);
+    }
+  }
+
+  return { added, removed, changed };
+}
+
+export function rubricShapeChanged(
+  before: readonly RubricCriterion[],
+  after: readonly RubricCriterion[],
+): boolean {
+  const diff = rubricShapeDiff(before, after);
+  return diff.added.length > 0 || diff.removed.length > 0 || diff.changed.length > 0;
+}
+
+/** A mudança de forma descrita para quem lê a recusa. */
+export function rubricShapeDiffLabel(diff: { added: string[]; removed: string[]; changed: string[] }): string {
+  const parts: string[] = [];
+
+  if (diff.added.length > 0) parts.push(`critério(s) novo(s): ${diff.added.join(', ')}`);
+  if (diff.removed.length > 0) parts.push(`critério(s) removido(s): ${diff.removed.join(', ')}`);
+  if (diff.changed.length > 0) parts.push(`peso ou nota máxima alterados em: ${diff.changed.join(', ')}`);
+
+  return parts.join(' · ');
+}
+
+/**
+ * As linhas do formulário → rubrica.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A CHAVE É PRESERVADA QUANDO EXISTE, E DERIVADA QUANDO NÃO (FASE 39)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A tentação é derivar a chave do rótulo SEMPRE — mas a chave é parte da FORMA da
+ *  rubrica (é o campo de `Review.scores`) e está congelada depois do primeiro parecer.
+ *  Se ela fosse recalculada a cada salvamento, corrigir um rótulo mudaria a chave e a
+ *  edição seria recusada — justamente o que a decisão de manter rótulo editável quis
+ *  evitar. Então:
+ *
+ *    • linha que já existe manda a chave num campo oculto, e ela é preservada;
+ *    • linha nova manda vazio, e a chave nasce do rótulo (`criterionKeyFromLabel`).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  LINHA SEM RÓTULO É DESCARTADA — E O QUE ESTÁ PREENCHIDO NÃO VIRA PADRÃO EM SILÊNCIO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Sem rótulo não há critério: é o que permite o formulário oferecer linhas em branco
+ *  (e o que faz a rubrica vazia significar "use a da trilha / a padrão"). Já o peso e
+ *  a nota máxima seguem a regra do projeto: **vazio usa o padrão (1 e 10); presente e
+ *  inválido é recusado** por `validateRubric`, em vez de virar 1 sem avisar.
+ */
+export function buildRubricFromRows(input: {
+  keys?: readonly unknown[];
+  labels?: readonly unknown[];
+  weights?: readonly unknown[];
+  maxScores?: readonly unknown[];
+}): RubricCriterion[] {
+  const labels = input.labels ?? [];
+  const used: string[] = [];
+
+  return labels
+    .map((rawLabel, index) => {
+      const label = typeof rawLabel === 'string' ? rawLabel.trim() : '';
+      if (label.length === 0) return null;
+
+      const postedKey = input.keys?.[index];
+      const key =
+        typeof postedKey === 'string' && postedKey.trim().length > 0
+          ? postedKey.trim().toLowerCase()
+          : criterionKeyFromLabel(label, used);
+
+      used.push(key);
+
+      return {
+        key,
+        label: label.slice(0, 120),
+        weight: numberOrFallback(input.weights?.[index], 1),
+        maxScore: numberOrFallback(input.maxScores?.[index], 10),
+      } satisfies RubricCriterion;
+    })
+    .filter((criterion): criterion is RubricCriterion => criterion !== null);
+}
+
+/** Vazio (ou ausente) usa o padrão; o que veio preenchido é convertido como está. */
+function numberOrFallback(raw: unknown, fallback: number): number {
+  if (raw === undefined || raw === null) return fallback;
+
+  const text = typeof raw === 'string' ? raw.trim() : raw;
+  if (text === '') return fallback;
+
+  return Number(text);
+}
 
 /**
  * Valida uma rubrica.
@@ -64,6 +261,15 @@ export function validateRubric(rubric: readonly RubricCriterion[]): RubricValida
     errors.push({
       code: 'EMPTY',
       message: 'A rubrica precisa de pelo menos um critério.',
+    });
+    return { valid: false, errors };
+  }
+
+  if (rubric.length > MAX_RUBRIC_CRITERIA) {
+    errors.push({
+      code: 'TOO_MANY',
+      message: `A rubrica tem ${rubric.length} critérios; o máximo é ${MAX_RUBRIC_CRITERIA}.`,
+      count: rubric.length,
     });
     return { valid: false, errors };
   }

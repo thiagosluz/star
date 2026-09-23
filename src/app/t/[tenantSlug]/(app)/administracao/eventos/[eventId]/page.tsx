@@ -14,6 +14,8 @@ import { effectiveActivityCapacity, roomCapacityLabel } from '@/domain/events/ev
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { ConfirmationFields } from '@/components/admin/confirmation-fields';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
+import { RubricEditor } from '@/components/admin/rubric-editor';
+import { rubricReviewCounts } from '@/lib/review/rubric-guard';
 import { ReviewerAwardPanel } from '@/components/reviews/reviewer-award';
 import {
   deleteActivityAction,
@@ -132,6 +134,14 @@ export default async function AdminEventDetailPage({
 
   const event = await getAdminEvent(tenantId, eventId);
   if (!event) notFound();
+
+  /**
+   * Quantos pareceres já existem por trilha — é o que decide se a rubrica aparece
+   * editável ou congelada. UMA consulta para todas as trilhas, não uma por linha.
+   */
+  const trackReviewCounts = (
+    await rubricReviewCounts({ tenantId, trackIds: event.tracks.map((track) => track.id) })
+  ).byTrack;
 
   /**
    * Ranking de revisores + permissão de premiar (FASE 16, item F1).
@@ -689,13 +699,100 @@ export default async function AdminEventDetailPage({
           {event.tracks.length > 0 ? (
             <ul className="divide-y divide-border rounded-lg border border-border" data-testid="track-list">
               {event.tracks.map((track) => (
-                <li key={track.id} className="space-y-0.5 p-3 text-sm">
+                <li key={track.id} className="space-y-2 p-3 text-sm">
                   <p className="font-medium">{track.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {track.requiredReviews} parecer(es) · aceite ≥ {track.acceptanceThreshold} · rejeição &lt;{' '}
                     {track.rejectThreshold} · {track.submissionCount} submissão(ões) ·{' '}
-                    {track.isActive ? 'ativa' : 'inativa'}
+                    {track.isActive ? 'ativa' : 'inativa'} ·{' '}
+                    {track.reviewRubric.length > 0
+                      ? `rubrica própria com ${track.reviewRubric.length} critério(s)`
+                      : 'usa a rubrica padrão'}
                   </p>
+
+                  {/**
+                   * ─────────────────────────────────────────────────────────────
+                   *  A TRILHA PASSOU A SER EDITÁVEL (FASE 39)
+                   * ─────────────────────────────────────────────────────────────
+                   *  Ela nascia e não mudava mais: uma trilha com rubrica errada só se
+                   *  consertava criando outra. O formulário é o mesmo da criação, com
+                   *  os valores carregados e o `trackId` oculto — e a rubrica vem do
+                   *  `RubricEditor`, que mostra a FORMA congelada quando já existe
+                   *  parecer (com a contagem) em vez de campos que o servidor recusaria.
+                   */}
+                  <details className="rounded-lg border border-border p-2" data-testid={`track-edit-${track.id}`}>
+                    <summary className="cursor-pointer text-xs font-medium">Editar trilha</summary>
+
+                    <AdminForm
+                      action={saveTrackAction}
+                      submitLabel="Salvar trilha"
+                      testId={`edit-track-${track.id}`}
+                      compact
+                    >
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={event.id} />
+                      <input type="hidden" name="trackId" value={track.id} />
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field
+                          label="Identificador"
+                          name="slug"
+                          required
+                          defaultValue={track.slug}
+                          hint="Mudar o identificador muda o endereço público da trilha."
+                        />
+                        <Field label="Nome" name="name" required defaultValue={track.name} />
+                        <Field label="Cor" name="color" defaultValue={track.color} hint="Hexadecimal ou oklch()" />
+                        <Field
+                          label="Limite por autor (0 = ilimitado)"
+                          name="maxSubmissionsPerAuthor"
+                          type="number"
+                          min={0}
+                          defaultValue={track.maxSubmissionsPerAuthor}
+                        />
+                        <Field
+                          label="Pareceres exigidos"
+                          name="requiredReviews"
+                          type="number"
+                          min={1}
+                          defaultValue={track.requiredReviews}
+                        />
+                        <Field
+                          label="Nota de aceite"
+                          name="acceptanceThreshold"
+                          type="number"
+                          min={0}
+                          max={100}
+                          defaultValue={track.acceptanceThreshold}
+                        />
+                        <Field
+                          label="Nota de rejeição"
+                          name="rejectThreshold"
+                          type="number"
+                          min={0}
+                          max={100}
+                          defaultValue={track.rejectThreshold}
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-4">
+                        <CheckboxField
+                          label="Exigir revisão cega"
+                          name="requiresBlindReview"
+                          defaultChecked={track.requiresBlindReview}
+                        />
+                        <CheckboxField label="Trilha ativa" name="isActive" defaultChecked={track.isActive} />
+                      </div>
+
+                      <RubricEditor
+                        criteria={track.reviewRubric}
+                        scope="TRACK"
+                        scopeLabel={track.name}
+                        frozen={{ reviews: trackReviewCounts[track.id] ?? 0 }}
+                        testId={`track-rubric-${track.id}`}
+                      />
+                    </AdminForm>
+                  </details>
                 </li>
               ))}
             </ul>
@@ -722,20 +819,18 @@ export default async function AdminEventDetailPage({
               <CheckboxField label="Trilha ativa" name="isActive" defaultChecked />
             </div>
 
-            <fieldset className="space-y-2 rounded-lg border border-border p-3">
-              <legend className="px-1 text-xs uppercase tracking-wide text-muted-foreground">
-                Rubrica (opcional — vazio usa a rubrica padrão)
-              </legend>
-
-              {[0, 1, 2].map((index) => (
-                <div key={index} className="grid gap-2 sm:grid-cols-4">
-                  <Field label={`Critério ${index + 1}`} name="rubricKey" placeholder="originality" />
-                  <Field label="Rótulo" name="rubricLabel" placeholder="Originalidade" />
-                  <Field label="Peso" name="rubricWeight" type="number" min={1} defaultValue={index === 0 ? 3 : 1} />
-                  <Field label="Nota máxima" name="rubricMaxScore" type="number" min={1} defaultValue={10} />
-                </div>
-              ))}
-            </fieldset>
+            {/**
+              * O número de critérios é escolha do organizador (FASE 39). O editor é o
+              * MESMO da chamada de propostas: chave derivada do rótulo, teto de 12,
+              * acrescentar/remover com JavaScript e as linhas do teto disponíveis para
+              * quem está sem JavaScript.
+              */}
+            <RubricEditor
+              criteria={[]}
+              scope="TRACK"
+              scopeLabel="Nova trilha"
+              testId="track-rubric"
+            />
           </AdminForm>
         </div>
       </details>

@@ -28,6 +28,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
 import { DEFAULT_RUBRIC } from '@/domain/review/review-rules';
+import { buildRubricFromRows } from '@/domain/review/review-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, TASK_KINDS, XP_SOURCE_KINDS } from '@/domain/gamification/types';
 import {
   deleteActivity,
@@ -749,25 +750,20 @@ export async function saveTrackAction(
   }
 
   /**
-   * A rubrica chega como três listas paralelas (critério, peso, nota máxima).
+   * A rubrica chega como listas paralelas (rótulo, peso, nota máxima) e mais a chave
+   * oculta de cada linha.
    *
-   * Listas paralelas evitam exigir JSON do organizador — e são validadas campo a
-   * campo por `parseRubric`, que recusa peso zero, nota máxima negativa e chaves
-   * duplicadas. Vazio significa "use a rubrica padrão".
+   * Listas paralelas evitam exigir JSON do organizador — e a conversão vive no DOMÍNIO
+   * (`buildRubricFromRows`), a mesma que o painel da chamada usa: a chave é derivada do
+   * rótulo na linha nova e preservada na linha que já existe, e linha sem rótulo é
+   * descartada. Vazio significa "use a rubrica padrão".
    */
-  const keys = formData.getAll('rubricKey').map(String);
-  const labels = formData.getAll('rubricLabel').map(String);
-  const weights = formData.getAll('rubricWeight').map(String);
-  const maxScores = formData.getAll('rubricMaxScore').map(String);
-
-  const rubric = keys
-    .map((key, index) => ({
-      key: key.trim(),
-      label: (labels[index] ?? key).trim(),
-      weight: Number(weights[index] ?? 1),
-      maxScore: Number(maxScores[index] ?? 10),
-    }))
-    .filter((criterion) => criterion.key.length > 0);
+  const rubric = buildRubricFromRows({
+    keys: formData.getAll('rubricKey'),
+    labels: formData.getAll('rubricLabel'),
+    weights: formData.getAll('rubricWeight'),
+    maxScores: formData.getAll('rubricMaxScore'),
+  });
 
   const result = await saveTrack({
     tenantId: auth.tenantId,

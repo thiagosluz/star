@@ -13,7 +13,6 @@ import {
   PROPOSAL_KIND_LABELS,
   PROPOSAL_KIND_SHORT_LABELS,
 } from '@/domain/proposals/call-rules';
-import type { RubricCriterion } from '@/domain/review/review-rules';
 import {
   deleteCallAction,
   saveCallAction,
@@ -21,6 +20,8 @@ import {
 } from '@/app/actions/call-actions';
 import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
+import { RubricEditor } from '@/components/admin/rubric-editor';
+import { rubricReviewCounts } from '@/lib/review/rubric-guard';
 
 export const metadata = { title: 'Chamadas de propostas' };
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,14 @@ export default async function EventCallsPage({
   const now = new Date();
   const callsResult = await listCalls({ tenantId, eventId, now });
   const calls = callsResult.ok ? callsResult.calls : [];
+
+  /**
+   * Quantos pareceres já existem por chamada — o que decide se a rubrica aparece
+   * editável ou congelada (FASE 39). UMA consulta para todas as chamadas.
+   */
+  const callReviewCounts = (
+    await rubricReviewCounts({ tenantId, callIds: calls.map((call) => call.id) })
+  ).byCall;
 
   /**
    * As propostas são lidas só das chamadas que TÊM propostas — a contagem já veio na
@@ -145,7 +154,12 @@ export default async function EventCallsPage({
         defaultValue=""
         hint="A trilha traz a rubrica e a afinidade dos revisores. Chamada de palestrante não precisa."
       />
-      <RubricFieldset criteria={[]} />
+      {/**
+        * O editor de rubrica é o MESMO da trilha (FASE 39): número de critérios livre
+        * até o teto, chave derivada do rótulo, e a FORMA congelada quando já existe
+        * parecer — com a contagem no lugar dos campos.
+        */}
+      <RubricEditor criteria={[]} scope="CALL" scopeLabel="Nova chamada" testId="call-rubric" />
     </>
   );
 
@@ -377,7 +391,13 @@ export default async function EventCallsPage({
                           options={trackOptions}
                           defaultValue={call.trackId ?? ''}
                         />
-                        <RubricFieldset criteria={call.reviewRubric} />
+                        <RubricEditor
+                          criteria={call.reviewRubric}
+                          scope="CALL"
+                          scopeLabel={call.title}
+                          frozen={{ reviews: callReviewCounts[call.id] ?? 0 }}
+                          testId={`call-rubric-${call.id}`}
+                        />
                       </div>
                     </AdminForm>
                   </div>
@@ -448,68 +468,6 @@ export default async function EventCallsPage({
 }
 
 /**
- * Rubrica própria da chamada (FASE 33).
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE A CHAMADA TEM RUBRICA, SE A TRILHA JÁ TEM
- * ─────────────────────────────────────────────────────────────────────────────
- *  A trilha é o eixo TEMÁTICO (e é por ela que os revisores são escolhidos por
- *  afinidade); a chamada é o CONVITE. Uma chamada de minicurso aponta a trilha
- *  "Extensão" para achar quem entende do assunto e ainda assim julga por critérios
- *  próprios — "viabilidade da oficina", "clareza do plano de aula" — que não fazem
- *  sentido para um artigo científico. A precedência é CHAMADA → TRILHA → PADRÃO, e
- *  vazio aqui significa "use a da trilha".
- *
- *  O campo é o MESMO da tela de trilhas (quatro colunas por linha, sem JSON): quem
- *  organiza um evento já conhece o formulário.
- */
-function RubricFieldset({ criteria }: { criteria: readonly RubricCriterion[] }) {
-  /** Sempre ao menos três linhas em branco: a primeira rubrica caber numa folga. */
-  const rows = Math.max(3, criteria.length);
-
-  return (
-    <fieldset className="space-y-2 rounded-lg border border-border p-3 sm:col-span-2">
-      <legend className="px-1 text-xs uppercase tracking-wide text-muted-foreground">
-        Rubrica da chamada (opcional — vazio usa a da trilha, e a padrão sem trilha)
-      </legend>
-
-      {Array.from({ length: rows }, (_, index) => {
-        const criterion = criteria[index];
-
-        return (
-          <div key={index} className="grid gap-2 sm:grid-cols-4">
-            <Field
-              label={`Critério ${index + 1}`}
-              name="rubricKey"
-              placeholder="feasibility"
-              defaultValue={criterion?.key}
-            />
-            <Field
-              label="Rótulo"
-              name="rubricLabel"
-              placeholder="Viabilidade da oficina"
-              defaultValue={criterion?.label}
-            />
-            <Field
-              label="Peso"
-              name="rubricWeight"
-              type="number"
-              min={1}
-              defaultValue={criterion?.weight ?? (index === 0 ? 3 : 1)}
-            />
-            <Field
-              label="Nota máxima"
-              name="rubricMaxScore"
-              type="number"
-              min={1}
-              defaultValue={criterion?.maxScore ?? 10}
-            />
-          </div>
-        );
-      })}
-    </fieldset>
-  );
-}
 
 /**
  * Instante → valor de `<input type="datetime-local">`.

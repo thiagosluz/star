@@ -1553,6 +1553,29 @@ async function main() {
         maxScore: 10,
         description: 'O pré-requisito declarado combina com o público-alvo.',
       },
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  E A DEMONSTRAÇÃO DA RUBRICA LIVRE (FASE 39)
+       *  ─────────────────────────────────────────────────────────────────────────────
+       *  O número de critérios era fixo em três; agora é escolha do organizador. A
+       *  chamada de minicursos é a que mais pede isso — julgar uma oficina por cinco
+       *  critérios é o caso real —, e é por isso que ela nasce com CINCO, passando pelo
+       *  mesmo `saveCall` que a tela usa.
+       */
+      {
+        key: 'cost',
+        label: 'Custo e materiais',
+        weight: 1,
+        maxScore: 10,
+        description: 'O que a instituição precisa comprar ou ceder para a oficina acontecer.',
+      },
+      {
+        key: 'originality',
+        label: 'Ineditismo da proposta',
+        weight: 1,
+        maxScore: 10,
+        description: 'A oficina propõe algo que o evento ainda não tem.',
+      },
     ],
   });
 
@@ -1809,6 +1832,8 @@ async function main() {
   console.log(`    Painel:    /t/ufba-demo/administracao/eventos/<id>/chamadas`);
   console.log(`    Público:   /t/ufba-demo/eventos/congresso-2026/chamada/chamada-palestrantes`);
   console.log(`    ${chamadasDemo}`);
+  console.log(`    A chamada de minicursos tem RUBRICA PRÓPRIA com 5 critérios (FASE 39) —`);
+  console.log(`    a trilha traz a afinidade, a chamada decide pelos critérios de oficina.`);
   console.log(`    O aceite (com atividade e convite) fica no painel do comitê de cada proposta.`);
   console.log(`\n  Confirmação de vaga com prazo (FASE 34):`);
   console.log(`    Fila:      /t/ufba-demo/administracao/eventos/<id>/confirmacoes`);
