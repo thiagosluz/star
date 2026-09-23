@@ -27,6 +27,8 @@ import { randomBytes } from 'node:crypto';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
+import { isScanningEnabled } from '@/lib/storage/scan-service';
+import { canServeFile, initialScanStatus } from '@/domain/review/file-scan-rules';
 import { canSubmitToCall, type ProposalKind } from '@/domain/proposals/call-rules';
 import { formatBytes } from '@/domain/events/image-rules';
 import {
@@ -88,6 +90,14 @@ export type SubmissionErrorCode =
   | 'TRACK_REQUIRED'
   /** A instituição esgotou a quota de armazenamento do plano (FASE 21). */
   | 'QUOTA_EXCEEDED'
+  /**
+   * FASE 36 — o portão da inspeção de arquivos: `FILE_SCANNING` enquanto a
+   * varredura não terminou e `FILE_BLOCKED` quando ela encontrou uma ameaça. Os dois
+   * códigos são separados porque a orientação ao usuário é diferente: um é "aguarde",
+   * o outro é "fale com a organização".
+   */
+  | 'FILE_SCANNING'
+  | 'FILE_BLOCKED'
   | 'FORBIDDEN'
   | 'INTERNAL';
 
@@ -664,9 +674,15 @@ export async function confirmUpload(
           checksum: input.checksum.toLowerCase(),
           version: input.version,
           isCurrent: true,
-          // Sem antivírus configurado nesta fase: marcamos como ignorado em vez
-          // de "limpo", para não afirmar algo que não verificamos.
-          scanStatus: 'SKIPPED',
+          /**
+           * ── O ARQUIVO NASCE PENDENTE QUANDO HÁ INSPEÇÃO (FASE 36) ────────────
+           *  Com o driver ligado, `PENDING` — e o portão do download não deixa o
+           *  comitê vê-lo antes do veredito. Desligado, `SKIPPED`, que é o valor
+           *  honesto: "não inspecionado", e não "limpo". O comentário original
+           *  desta linha dizia exatamente isso e ficou como está: a fase cumpriu a
+           *  promessa que ele registrava (dívida A3).
+           */
+          scanStatus: initialScanStatus(isScanningEnabled()),
           uploadedById: input.userId,
         },
         select: { id: true, version: true, sizeBytes: true, checksum: true },
@@ -1339,12 +1355,34 @@ export async function getFileDownloadUrl(
     const file = await withTenant(tenantId, (tx) =>
       tx.submissionFile.findFirst({
         where: { id: fileId, deletedAt: null },
-        select: { bucket: true, storageKey: true, fileName: true, kind: true },
+        select: { bucket: true, storageKey: true, fileName: true, kind: true, scanStatus: true },
       }),
     );
 
     if (!file) {
       throw new SubmissionError('NOT_FOUND', 'Arquivo não encontrado.');
+    }
+
+    /**
+     * ─── O PORTÃO DA INSPEÇÃO (FASE 36) ─────────────────────────────────────────
+     *  Este é o caminho pelo qual o COMITÊ recebe o PDF, e é aqui que a promessa
+     *  "inspecionar antes de disponibilizar" vale: arquivo com ameaça detectada não
+     *  sai nunca, e arquivo ainda não inspecionado espera a varredura terminar.
+     *
+     *  A regra é do domínio (`canServeFile`), não desta função: os outros caminhos
+     *  que servem upload de terceiro (material do palestrante) precisam da MESMA
+     *  decisão, e duas cópias dela divergiriam (armadilha 55).
+     */
+    const serve = canServeFile({
+      status: file.scanStatus,
+      scanningEnabled: isScanningEnabled(),
+    });
+
+    if (!serve.ok) {
+      throw new SubmissionError(
+        serve.code === 'INFECTED' ? 'FILE_BLOCKED' : 'FILE_SCANNING',
+        serve.message,
+      );
     }
 
     if (

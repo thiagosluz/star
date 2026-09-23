@@ -189,14 +189,29 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     startsAtLabel: '13/10/2026 às 09:00',
     registrationsUrl: 'http://localhost:3000/t/ufba/minhas-inscricoes',
   },
+  /**
+   * FASE 36 — a decisão da chamada de propostas (quita a dívida E47). O parecer vai
+   * literal: é o que a pessoa lê para saber o que ajustar.
+   */
+  PROPOSAL_DECIDED: {
+    recipientName: 'Ana Souza',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    callTitle: 'Chamada de minicursos',
+    proposalTitle: 'Introdução a Rust para cientistas de dados',
+    protocol: '2026-AB12',
+    decisionLabel: 'Ajustes solicitados',
+    outcome: 'O comitê pediu ajustes antes de decidir.',
+    notes: 'Detalhar a carga horária e a ementa do minicurso.',
+    proposalsUrl: 'http://localhost:3000/t/ufba/submissoes',
+  },
 };
 
 const CONTEXT = { brandName: 'Universidade Federal da Bahia' };
 
 describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', () => {
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
-    /** 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34). */
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(16);
+    /** 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34) + 1 da decisão da proposta (FASE 36). */
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(17);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();

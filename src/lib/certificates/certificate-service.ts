@@ -920,6 +920,121 @@ export async function listCertificates(input: {
 }
 
 /**
+ * ─── O LOTE DE CERTIFICADOS DE UM EVENTO (FASE 36) ─────────────────────────────
+ *
+ *  Devolve só a LISTA do que dá para baixar (chave, bucket e nome de arquivo); os
+ *  bytes saem depois, um a um, pelo fluxo do ZIP. É essa separação que mantém a
+ *  memória do processo limitada a UM PDF: montar o lote em memória funcionaria no
+ *  evento de 30 pessoas e derrubaria o servidor no de 3.000.
+ *
+ *  Os certificados sem arquivo (ainda `GENERATING`) NÃO entram — e são CONTADOS, para
+ *  que a tela possa dizer quantos ficaram de fora em vez de entregar um ZIP menor
+ *  sem explicação.
+ */
+export interface CertificateZipPlan {
+  eventTitle: string;
+  eventSlug: string;
+  entries: { certificateId: string; bucket: string; storageKey: string; fileName: string }[];
+  /** Certificados emitidos que ainda não têm PDF — ficam de fora, e a tela diz. */
+  pending: number;
+}
+
+export async function planEventCertificateZip(input: {
+  tenantId: string;
+  eventId: string;
+}): Promise<CertificateResult<CertificateZipPlan>> {
+  try {
+    const plan = await withTenant(input.tenantId, async (tx) => {
+      const event = await tx.event.findFirst({
+        where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
+        select: { title: true, slug: true },
+      });
+
+      if (!event) return null;
+
+      const rows = await tx.certificate.findMany({
+        where: { tenantId: input.tenantId, eventId: input.eventId, status: 'ISSUED' },
+        orderBy: [{ kind: 'asc' }, { issuedAt: 'asc' }],
+        select: {
+          id: true,
+          bucket: true,
+          storageKey: true,
+          validationCode: true,
+          recipientName: true,
+        },
+      });
+
+      /**
+       * ─── QUEM FICOU DE FORA, E POR QUÊ ──────────────────────────────────────────
+       *  São DUAS populações, e contá-las pela mesma condição foi um defeito pego pelo
+       *  teste de integração:
+       *
+       *    • **em geração** (`QUEUED`/`GENERATING`) — o certificado existe e o PDF
+       *      ainda não. É o caso comum de quem clica "baixar tudo" logo depois de
+       *      emitir, e é justamente ele que a mensagem "ainda estão sendo gerados"
+       *      precisa atender;
+       *    • **emitido sem arquivo** — `ISSUED` sem `storageKey`, que só acontece se a
+       *      geração travou entre o `UPDATE` e o envio ao storage.
+       *
+       *  Antes, `pending` contava apenas a segunda — então a mensagem de "gerando"
+       *  praticamente nunca aparecia, e o lote saía vazio com a explicação errada.
+       */
+      const inFlight = await tx.certificate.count({
+        where: {
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          status: { in: ['QUEUED', 'GENERATING'] },
+        },
+      });
+
+      const entries: CertificateZipPlan['entries'] = [];
+      let pending = inFlight;
+
+      for (const row of rows) {
+        if (!row.storageKey || !row.bucket) {
+          pending += 1;
+          continue;
+        }
+
+        entries.push({
+          certificateId: row.id,
+          bucket: row.bucket,
+          storageKey: row.storageKey,
+          fileName: `${row.validationCode}-${row.recipientName
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-zA-Z0-9]+/g, '-')
+            .toLowerCase()}.pdf`,
+        });
+      }
+
+      return { eventTitle: event.title, eventSlug: event.slug, entries, pending };
+    });
+
+    if (!plan) {
+      return { ok: false as const, code: 'NOT_FOUND', message: 'Evento não encontrado.' };
+    }
+
+    if (plan.entries.length === 0) {
+      return {
+        ok: false as const,
+        code: 'NOT_STORED',
+        message:
+          plan.pending > 0
+            ? `Os ${plan.pending} certificado(s) deste evento ainda estão sendo gerados. Tente de novo em alguns minutos.`
+            : 'Este evento ainda não tem certificados emitidos.',
+      };
+    }
+
+    return { ok: true as const, ...plan };
+  } catch (error) {
+    console.error(`[certificates] falha ao montar o lote: ${errorMessage(error)}`);
+
+    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível preparar o lote.' };
+  }
+}
+
+/**
  * URL assinada de download do PDF.
  *
  * A validade é curta (5 min) e a URL é gerada sob demanda: um certificado contém

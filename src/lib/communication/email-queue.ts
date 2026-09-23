@@ -25,6 +25,7 @@ import { Queue, type ConnectionOptions } from 'bullmq';
 
 import { incCounter } from '@/lib/observability/metrics';
 import { logger } from '@/lib/observability/logger';
+import { JOB_CATALOG } from '@/domain/platform/job-catalog';
 import { redisConnection } from '@/lib/certificates/queue';
 
 export const EMAIL_QUEUE_NAME = 'emails';
@@ -92,10 +93,49 @@ export const CONFIRMATION_SWEEP_JOB = 'registration-confirmation-sweep';
  */
 export const CONFIRMATION_SWEEP_PATTERN = '0 * * * *';
 
+/**
+ * ─── Inspeção antivírus dos arquivos enviados (FASE 36) ───────────────────────
+ *
+ *  De 5 em 5 minutos: é o tempo que um arquivo recém-enviado fica invisível para o
+ *  comitê quando a inspeção está ligada (o portão bloqueia `PENDING`). Cinco minutos
+ *  é o meio-termo entre a espera de quem submeteu e o custo de varrer a tabela —
+ *  a passada é limitada por lote, por instituição.
+ */
+export const FILE_SCAN_JOB = 'file-scan';
+export const FILE_SCAN_PATTERN = JOB_CATALOG['file-scan'].pattern;
+
+/**
+ * ─── Manutenção das partições da auditoria (FASE 36) ──────────────────────────
+ *
+ *  Todo dia às 3h. A FASE 13 deixou isto para o cron do HOST; trazer para o worker
+ *  remove a dependência de alguém configurar agendador na máquina — e o mês virando
+ *  sem partição é o tipo de falha que só aparece quando alguém tenta auditar.
+ *  Continua existindo a CLI (`npm run db:partitions`) para quem opera sem worker.
+ */
+export const AUDIT_PARTITIONS_JOB = 'audit-partitions';
+export const AUDIT_PARTITIONS_PATTERN = JOB_CATALOG['audit-partitions'].pattern;
+
+/** Todos os jobs repetíveis, com a cadência do catálogo — uma fonte só. */
+export const SCHEDULED_JOBS = [
+  { name: REVIEW_DEADLINES_JOB, pattern: REVIEW_DEADLINES_PATTERN },
+  { name: ATTENDANCE_SWEEP_JOB, pattern: ATTENDANCE_SWEEP_PATTERN },
+  { name: CONFIRMATION_SWEEP_JOB, pattern: CONFIRMATION_SWEEP_PATTERN },
+  { name: FILE_SCAN_JOB, pattern: FILE_SCAN_PATTERN },
+  { name: AUDIT_PARTITIONS_JOB, pattern: AUDIT_PARTITIONS_PATTERN },
+] as const;
+
 export interface EmailJobData {
   emailMessageId: string;
   /** NULO nas mensagens de plataforma (verificação, redefinição de senha). */
   tenantId: string | null;
+  /**
+   * FASE 36 — de onde veio a passada de uma ROTINA (`SCHEDULE` pelo relógio,
+   * `MANUAL` pelo painel de governança, `CLI`). O registro em `job_runs` guarda
+   * isto, e é o que responde "quem pediu esta execução?".
+   */
+  trigger?: string;
+  /** Quem pediu pelo painel (nulo no relógio). */
+  actorId?: string | null;
 }
 
 let queue: Queue<EmailJobData> | null = null;
@@ -216,6 +256,80 @@ export async function scheduleConfirmationSweep(): Promise<boolean> {
     return true;
   } catch (error) {
     logger.warn('não foi possível agendar a varredura de confirmação de vaga', {
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
+
+    return false;
+  }
+}
+
+/**
+ * Registra (uma vez) os jobs repetíveis das rotinas automáticas.
+ *
+ * O id do agendador é FIXO por rotina (`upsertJobScheduler`): subir dez workers não
+ * cria dez passadas, e reiniciar reagenda em vez de acumular. A lista sai do
+ * catálogo (`SCHEDULED_JOBS`), então acrescentar uma rotina é acrescentar uma linha
+ * lá — não há segunda lista para esquecer.
+ */
+export async function scheduleAutomationJobs(): Promise<{ scheduled: string[]; failed: string[] }> {
+  const scheduled: string[] = [];
+  const failed: string[] = [];
+
+  for (const job of SCHEDULED_JOBS) {
+    try {
+      await getQueue().upsertJobScheduler(
+        job.name,
+        { pattern: job.pattern },
+        { name: job.name, data: { emailMessageId: '', tenantId: null, trigger: 'SCHEDULE' } },
+      );
+
+      scheduled.push(job.name);
+    } catch (error) {
+      logger.warn(`não foi possível agendar a rotina ${job.name}`, {
+        error: error instanceof Error ? error.message : 'erro desconhecido',
+      });
+
+      failed.push(job.name);
+    }
+  }
+
+  return { scheduled, failed };
+}
+
+/**
+ * Pede ao worker que rode uma rotina AGORA.
+ *
+ * ─── POR QUE A TELA NÃO RODA A ROTINA (FASE 36) ───────────────────────────────
+ *  As varreduras são cross-tenant e passam por todas as instituições: executá-las
+ *  dentro de uma requisição HTTP prenderia a resposta por minutos e daria ao
+ *  processo web uma conexão de plataforma que ele não tem (a de runtime é sujeita a
+ *  RLS por instituição). A tela ENFILEIRA; quem trabalha é o worker — a mesma
+ *  divisão de sempre.
+ *
+ *  O `jobId` derivado do instante evita que dois cliques no mesmo segundo virem
+ *  dois jobs (e, se virarem, o claim em `job_runs` ainda protege a rotina).
+ */
+export async function enqueueJobRun(input: {
+  job: string;
+  trigger?: string;
+  actorId?: string | null;
+}): Promise<boolean> {
+  try {
+    await getQueue().add(
+      input.job,
+      {
+        emailMessageId: '',
+        tenantId: null,
+        trigger: input.trigger ?? 'MANUAL',
+        actorId: input.actorId ?? null,
+      },
+      { jobId: `job-${input.job}-${Date.now()}` },
+    );
+
+    return true;
+  } catch (error) {
+    logger.warn('fila de rotinas indisponível', {
+      job: input.job,
       error: error instanceof Error ? error.message : 'erro desconhecido',
     });
 

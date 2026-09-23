@@ -21,6 +21,9 @@
  *  O aviso nasce em `participant_messages` — a caixa de entrada da pessoa, dentro da
  *  plataforma — e o e-mail é ENFILEIRADO no outbox com a MESMA `dedupeKey`. Assim o
  *  aviso chega mesmo com o provedor de e-mail fora, e o reenvio do job não duplica.
+ *  Desde a FASE 36 essa rotina é `deliverNotice`, em
+ *  `@/lib/communication/notice-service` — o aviso de decisão da proposta precisou da
+ *  mesma regra, e uma terceira cópia dela divergiria.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  NADA AQUI LANÇA (INVARIANTE 8)
@@ -31,8 +34,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { withTenant } from '@/lib/db/tenant-client';
-import { errorMessage } from '@/lib/db/prisma-errors';
-import { queueEmail } from '@/lib/communication/email-service';
+import { deliverNotice, noticeFailure, type NoticeOutcome } from '@/lib/communication/notice-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   confirmationDeadlineLabel,
@@ -40,17 +42,15 @@ import {
   requirementLabel,
 } from '@/domain/events/confirmation-rules';
 import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
-import type { EmailPayloads, EmailTemplateKey } from '@/domain/communication/email-templates';
 
-export interface NoticeOutcome {
-  ok: boolean;
-  /** `true` quando o e-mail entrou na fila (o aviso já está na caixa de entrada). */
-  emailQueued: boolean;
-  /** Preenchido quando algo falhou — o chamador loga, não trata. */
-  message: string | null;
-}
+/**
+ * O contrato do aviso vem do módulo compartilhado (`notice-service`), e é
+ * REEXPORTADO aqui porque este arquivo nasceu primeiro e é o import de quem o usa
+ * desde a FASE 34 — duas definições da mesma forma divergiriam.
+ */
+export type { NoticeOutcome };
 
-const FAILED = (message: string): NoticeOutcome => ({ ok: false, emailQueued: false, message });
+const FAILED = noticeFailure;
 
 /**
  * O que os cinco avisos precisam saber, lido uma vez.
@@ -131,74 +131,10 @@ async function loadNoticeContext(
 /**
  * Grava o aviso na caixa de entrada e enfileira o e-mail.
  *
- * `skipDuplicates` na `dedupeKey` é o que torna os cinco avisos idempotentes: a
- * varredura roda de hora em hora e a promoção da lista de espera pode ser tentada
- * duas vezes sob concorrência. Repetir o mesmo FATO não vira duas mensagens — a
- * mesma regra da FASE 15.
+ * A rotina vive em `@/lib/communication/notice-service` desde a FASE 36, quando um
+ * terceiro caso (o aviso de decisão da proposta) precisou da mesma regra. A ordem
+ * "grava o FATO, enfileira a consequência" existe em um lugar só.
  */
-async function deliverNotice<K extends EmailTemplateKey>(input: {
-  tenantId: string;
-  userId: string;
-  eventId: string;
-  recipientEmail: string;
-  dedupeKey: string;
-  subject: string;
-  body: string;
-  template: K;
-  payload: EmailPayloads[K];
-}): Promise<NoticeOutcome> {
-  try {
-    const context = await withTenant(input.tenantId, async (tx) => {
-      await tx.participantMessage.createMany({
-        data: [
-          {
-            tenantId: input.tenantId,
-            userId: input.userId,
-            eventId: input.eventId,
-            subject: input.subject.slice(0, 140),
-            body: input.body.slice(0, 2000),
-            dedupeKey: input.dedupeKey,
-            /**
-             * `sentById` NULO: não há pessoa que enviou — o aviso é do SISTEMA, no
-             * prazo que a organização escolheu. Atribuí-lo a alguém seria inventar
-             * autoria; a tela da caixa de entrada mostra "automático" para nulo.
-             */
-            sentById: null,
-            sentAt: new Date(),
-          },
-        ],
-        skipDuplicates: true,
-      });
-
-      const tenant = await tx.tenant.findUniqueOrThrow({
-        where: { id: input.tenantId },
-        select: { name: true },
-      });
-
-      return tenant.name;
-    });
-
-    const queued = await queueEmail({
-      tenantId: input.tenantId,
-      to: input.recipientEmail,
-      toUserId: input.userId,
-      template: input.template,
-      brandName: context,
-      dedupeKey: input.dedupeKey,
-      payload: input.payload,
-    });
-
-    return {
-      ok: true,
-      emailQueued: queued.ok,
-      message: queued.ok ? null : queued.message,
-    };
-  } catch (error) {
-    console.error(`[confirmacao] falha ao avisar (${input.dedupeKey}): ${errorMessage(error)}`);
-
-    return FAILED(errorMessage(error));
-  }
-}
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  1. A vaga foi retida — confirme até o prazo

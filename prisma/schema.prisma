@@ -1573,6 +1573,14 @@ model SpeakerMaterial {
   /// Endereço público. Para link externo é o destino; para arquivo é a URL do objeto.
   url String? @db.VarChar(1024)
 
+  /// ─── Varredura antivírus (FASE 36) ───────────────────────────────────────
+  /// Mesma semântica de `SubmissionFile.scanStatus`: material de palestrante é
+  /// upload de gente de fora e é servido a INSCRITOS — o risco é o mesmo, e a
+  /// decisão de bloquear também.
+  scanStatus  String    @default("PENDING") @db.VarChar(20)
+  scannedAt   DateTime? @db.Timestamptz(6)
+  scanMessage String?   @db.VarChar(300)
+
   displayOrder Int       @default(0)
   uploadedById String?   @db.Uuid
   createdAt    DateTime  @default(now()) @db.Timestamptz(6)
@@ -2257,7 +2265,15 @@ model SubmissionFile {
 
   isCurrent  Boolean @default(true)
   /// Resultado da varredura antivírus (ClamAV/serviço externo).
+  ///
+  /// `PENDING` aguardando inspeção · `CLEAN` inspecionado e limpo · `INFECTED`
+  /// bloqueado · `SKIPPED` NÃO inspecionado (driver desligado — o valor diz a
+  /// verdade em vez de afirmar uma verificação que não aconteceu).
   scanStatus String  @default("PENDING") @db.VarChar(20)
+  /// Quando a inspeção terminou (nulo enquanto pendente ou não inspecionado).
+  scannedAt   DateTime? @db.Timestamptz(6)
+  /// Motivo registrado quando a inspeção falha ou encontra algo.
+  scanMessage String?   @db.VarChar(300)
 
   uploadedById String?   @db.Uuid
   createdAt    DateTime  @default(now()) @db.Timestamptz(6)
@@ -2957,6 +2973,55 @@ model TenantInvitation {
 // ───────────────────────────────────────────────────────────────────────────────
 //  OBSERVABILIDADE & AUDITORIA
 // ───────────────────────────────────────────────────────────────────────────────
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  EXECUÇÃO DE ROTINA AUTOMÁTICA (FASE 36)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE UMA TABELA, E NÃO SÓ LOG
+///  ─────────────────────────────────────────────────────────────────────────────
+///  As quatro varreduras (prazos de parecer, presenças, confirmação de vaga e
+///  partições da auditoria) rodam desde fases diferentes e só sabiam falar pelo
+///  `console.log` do worker: quem opera não tinha como responder "a rotina das 3h
+///  rodou ontem?", nem "quantas vagas ela liberou?", nem "por que falhou?".
+///
+///  A linha desta tabela é o REGISTRO do trabalho, e também a **exclusão mútua**:
+///  um índice único parcial garante UMA execução em andamento por rotina, o que
+///  substitui o advisory lock de sessão — que não sobrevive ao PgBouncer em modo
+///  transação (ADR-186).
+///
+///  Ela NÃO tem `tenantId` de propósito: a execução é da PLATAFORMA (uma passada
+///  atende todas as instituições), então não entra no contrato de RLS por tenant.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model JobRun {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Nome estável da rotina (`review-deadlines`, `attendance-sweep`…).
+  job String @db.VarChar(60)
+
+  /// `RUNNING` · `OK` · `FAILED` · `SKIPPED` (outra instância já estava rodando).
+  status String @default("RUNNING") @db.VarChar(20)
+
+  /// `SCHEDULE` (relógio) · `MANUAL` (painel) · `CLI`.
+  trigger String @default("SCHEDULE") @db.VarChar(20)
+
+  startedAt  DateTime  @default(now()) @db.Timestamptz(6)
+  finishedAt DateTime? @db.Timestamptz(6)
+
+  /// Quantos itens a passada tratou (o que cada rotina chama de "item").
+  items Int @default(0)
+
+  /// Motivo da falha, quando houve — é o que a tela mostra.
+  error String? @db.Text
+
+  /// Quem disparou (nulo no relógio) e de onde.
+  triggeredById String? @db.Uuid
+  host          String? @db.VarChar(120)
+
+  @@index([job, startedAt])
+  @@index([status, startedAt])
+  @@map("job_runs")
+}
 
 /// Trilha de auditoria imutável. Gravada pela aplicação (não pelo banco) para
 /// capturar ator, IP e contexto de tenant mesmo em operações cross-tenant.

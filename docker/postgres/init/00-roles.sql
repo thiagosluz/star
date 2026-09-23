@@ -81,6 +81,33 @@ ALTER DEFAULT PRIVILEGES FOR ROLE eventflow_admin IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE eventflow_admin IN SCHEMA public
   GRANT EXECUTE ON FUNCTIONS TO eventflow_app;
 
+-- ─── Tabelas de PLATAFORMA: a role de runtime NÃO alcança (FASE 36) ───────────
+--
+-- O GRANT acima é "em TODAS as tabelas" e o ALTER DEFAULT PRIVILEGES vale também
+-- para as que ainda vão nascer — inclusive as de PLATAFORMA. `job_runs` é uma delas:
+-- não tem `tenantId` (uma passada de rotina atende todas as instituições), então não
+-- há RLS possível, e alcançável pelo runtime ela exporia o histórico operacional
+-- (host, erro, rotina) e permitiria TRAVAR uma rotina inserindo uma linha `RUNNING`.
+--
+-- ─── POR QUE O REVOKE PRECISA ESTAR AQUI, E NÃO SÓ NA MIGRAÇÃO ────────────────
+--  Este arquivo é REEXECUTADO por `npm run db:rls`, e todo `npm run db:migrate:deploy`
+--  termina nele (o initdb do container só roda no primeiro boot, então o projeto
+--  reaplica as policies pelo script). O `GRANT ... ON ALL TABLES` da linha 59 passa
+--  por cima do REVOKE que a migração fez — foi exatamente o que aconteceu na primeira
+--  versão desta fase: a migração revogou, o `db:migrate:deploy` reconcedeu, e a
+--  verificação de contrato reprovou com a abertura de volta.
+--
+--  O `to_regclass` existe porque na PRIMEIRA subida do container as tabelas ainda não
+--  existem (o initdb roda antes das migrações) — e `REVOKE` em relação inexistente é
+--  erro. Nesse caso a migração `20260923154500_job_runs_platform_only` faz a revogação.
+DO $$
+BEGIN
+  IF to_regclass('public.job_runs') IS NOT NULL THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.job_runs FROM eventflow_app';
+  END IF;
+END
+$$;
+
 -- ─── Isolamento do schema de templates ────────────────────────────────────────
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 

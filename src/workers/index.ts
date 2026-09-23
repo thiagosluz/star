@@ -183,71 +183,161 @@ async function start(): Promise<void> {
   // ── Fila de e-mails (FASE 15) ──────────────────────────────────────────────
   const {
     ATTENDANCE_SWEEP_JOB,
+    AUDIT_PARTITIONS_JOB,
     CONFIRMATION_SWEEP_JOB,
     EMAIL_QUEUE_NAME,
+    FILE_SCAN_JOB,
     REVIEW_DEADLINES_JOB,
-    scheduleAttendanceSweep,
-    scheduleConfirmationSweep,
-    scheduleReviewDeadlineScan,
+    scheduleAutomationJobs,
   } =
     await import('@/lib/communication/email-queue');
   const { deliverEmail } = await import('@/lib/communication/email-service');
   const { runReviewDeadlineScan } = await import('@/lib/communication/reminder-service');
+  const { runTrackedJob } = await import('@/lib/platform/job-runs');
+  const { JOB_CATALOG } = await import('@/domain/platform/job-catalog');
+  /** O tipo entra por import de tipo: `type` não vale na desestruturação de um `import()` dinâmico. */
+  type JobKey = import('@/domain/platform/job-catalog').JobKey;
 
   const emailWorker = new Worker<EmailJobData>(
     EMAIL_QUEUE_NAME,
     async (job: Job<EmailJobData>) => {
       /**
-       * Job repetível: varredura de prazos. Ele não entrega mensagem — cria as que
-       * faltam no outbox —, então tem caminho próprio.
+       * ═══════════════════════════════════════════════════════════════════════════
+       *  ROTINAS AUTOMÁTICAS (FASE 36) — TODAS PASSAM POR `runTrackedJob`
+       *
+       *  ───────────────────────────────────────────────────────────────────────────
+       *  O QUE MUDOU NESTA FASE
+       *  ───────────────────────────────────────────────────────────────────────────
+       *  Cada rotina existia com o próprio `if` e o próprio `console.log`. Agora
+       *  todas abrem e fecham um registro em `job_runs`, o que dá três coisas de uma
+       *  vez: **histórico** (a governança mostra quando rodou, quantos itens tratou e
+       *  por que falhou), **exclusão mútua** (uma execução por rotina, decidida pelo
+       *  índice único parcial) e **falha contida** (uma varredura que explode vira
+       *  `FAILED` no registro, em vez de derrubar o worker ou as outras rotinas).
+       *
+       *  O `trigger` vem do dado do job: `MANUAL` quando alguém clicou em "executar
+       *  agora" no painel, `SCHEDULE` quando foi o relógio.
+       * ═══════════════════════════════════════════════════════════════════════════
        */
+      const trigger = job.data?.trigger === 'MANUAL' ? ('MANUAL' as const) : ('SCHEDULE' as const);
+
+      const runTracked = async (key: JobKey, run: () => Promise<number>) => {
+        const outcome = await runTrackedJob(key, run, {
+          trigger,
+          actorId: job.data?.actorId ?? null,
+        });
+
+        if (outcome.status === 'SKIPPED') {
+          console.log(`  · ${key}: pulada (outra execução em andamento)`);
+        } else if (outcome.status === 'FAILED') {
+          console.error(`  ✗ ${key}: falhou — ${outcome.error}`);
+        } else {
+          console.log(`  ✓ ${key}: ${outcome.items} ${JOB_CATALOG[key].itemsLabel}`);
+        }
+
+        return outcome;
+      };
+
       /**
-       * Fechamento automático das presenças abertas (FASE 31): quem esqueceu de registrar
-       * a saída recebe a saída no FIM DA ATIVIDADE — o número não depende de quando esta
-       * varredura rodou, o que importa para quem audita e para quem reemite certificado.
+       * Fechamento automático das presenças abertas (FASE 31): quem esqueceu de
+       * registrar a saída recebe a saída no FIM DA ATIVIDADE — o número não depende
+       * de quando esta varredura rodou, o que importa para quem audita e para quem
+       * reemite certificado.
        */
       if (job.name === ATTENDANCE_SWEEP_JOB) {
         const { runAttendanceSweep } = await import('@/lib/events/attendance-sweep');
-        const sweep = await runAttendanceSweep();
 
-        console.log(
-          `  ✓ presenças: ${sweep.closed} sessão(ões) fechada(s) em ${sweep.tenants} instituição(ões), ` +
-            `${sweep.minutes} minuto(s) apurados, ${sweep.pending} ainda em andamento`,
-        );
+        return runTracked('attendance-sweep', async () => {
+          const sweep = await runAttendanceSweep();
 
-        return sweep;
+          console.log(
+            `    presenças: ${sweep.closed} sessão(ões) fechada(s) em ${sweep.tenants} instituição(ões), ` +
+              `${sweep.minutes} minuto(s) apurados, ${sweep.pending} ainda em andamento`,
+          );
+
+          return sweep.closed;
+        });
       }
 
       /**
-       * Confirmação de vaga (FASE 34): a MESMA passada avisa quem está perto do prazo
-       * e libera a vaga de quem já venceu. A ordem importa — o lembrete só olha prazo
-       * futuro, a liberação só olha prazo vencido, e nenhuma inscrição recebe os dois.
+       * Confirmação de vaga (FASE 34): a MESMA passada avisa quem está perto do
+       * prazo e libera a vaga de quem já venceu. A ordem importa — o lembrete só olha
+       * prazo futuro, a liberação só olha prazo vencido, e nenhuma inscrição recebe
+       * os dois.
        */
       if (job.name === CONFIRMATION_SWEEP_JOB) {
         const { runConfirmationReminderScan, runConfirmationExpirySweep } = await import(
           '@/lib/events/confirmation-service'
         );
 
-        const reminders = await runConfirmationReminderScan();
-        const expiry = await runConfirmationExpirySweep();
+        return runTracked('registration-confirmation-sweep', async () => {
+          const reminders = await runConfirmationReminderScan();
+          const expiry = await runConfirmationExpirySweep();
 
-        console.log(
-          `  ✓ confirmação de vaga: ${reminders.reminded} lembrete(s) enviado(s), ` +
-            `${expiry.released} vaga(s) liberada(s) por prazo e ${expiry.promoted} promoção(ões) da lista de espera`,
-        );
+          console.log(
+            `    confirmação de vaga: ${reminders.reminded} lembrete(s) enviado(s), ` +
+              `${expiry.released} vaga(s) liberada(s) por prazo e ${expiry.promoted} promoção(ões) da lista de espera`,
+          );
 
-        return { reminders, expiry };
+          return expiry.released + expiry.promoted;
+        });
       }
 
       if (job.name === REVIEW_DEADLINES_JOB) {
-        const scan = await runReviewDeadlineScan();
+        return runTracked('review-deadlines', async () => {
+          const scan = await runReviewDeadlineScan();
 
-        console.log(
-          `  ✓ prazos: ${scan.dueSoon} aviso(s) de prazo próximo, ${scan.overdue} vencido(s), ` +
-            `${scan.deduplicated} já avisado(s)`,
-        );
+          console.log(
+            `    prazos: ${scan.dueSoon} aviso(s) de prazo próximo, ${scan.overdue} vencido(s), ` +
+              `${scan.deduplicated} já avisado(s)`,
+          );
 
-        return scan;
+          return scan.dueSoon + scan.overdue;
+        });
+      }
+
+      /**
+       * ─── Inspeção dos arquivos enviados (FASE 36) ─────────────────────────────
+       *  Roda o que nasceu `PENDING`: o arquivo fica invisível ao comitê até o
+       *  veredito (o portão está em `canServeFile`). Inspeção indisponível NÃO é
+       *  veredito — o arquivo continua pendente e a próxima passada tenta de novo.
+       */
+      if (job.name === FILE_SCAN_JOB) {
+        const { runFileScanSafely } = await import('@/lib/review/file-scan-service');
+
+        return runTracked('file-scan', async () => {
+          const scan = await runFileScanSafely();
+
+          console.log(
+            `    inspeção: ${scan.scanned} arquivo(s) · ${scan.clean} limpo(s) · ` +
+              `${scan.infected} bloqueado(s) · ${scan.failed} sem veredito`,
+          );
+
+          return scan.scanned;
+        });
+      }
+
+      /**
+       * ─── Partições da auditoria (FASE 36) ─────────────────────────────────────
+       *  A FASE 13 deixou isto para o cron do host. Trazer para cá tira a dependência
+       *  de alguém configurar agendador na máquina — e o mês virando sem partição é o
+       *  tipo de falha que só aparece quando alguém tenta auditar.
+       */
+      if (job.name === AUDIT_PARTITIONS_JOB) {
+        const { ensureAuditPartitions } = await import('@/lib/platform/partition-service');
+
+        return runTracked('audit-partitions', async () => {
+          const outcome = await ensureAuditPartitions();
+
+          if (!outcome.ok) throw new Error(outcome.message);
+
+          console.log(
+            `    partições: ${outcome.result.created.length} criada(s), ` +
+              `${outcome.result.rescued} linha(s) resgatada(s) da DEFAULT`,
+          );
+
+          return outcome.result.created.length;
+        });
       }
 
       const { emailMessageId, tenantId } = job.data;
@@ -307,14 +397,18 @@ async function start(): Promise<void> {
 
   // O agendador é registrado aqui, com id fixo: reiniciar o worker reagenda em vez
   // de acumular varreduras.
-  const scheduled = await scheduleReviewDeadlineScan();
-  const sweepScheduled = await scheduleAttendanceSweep();
-  const confirmationScheduled = await scheduleConfirmationSweep();
+  /**
+   * As rotinas são agendadas a partir do CATÁLOGO (`SCHEDULED_JOBS`): acrescentar
+   * uma rotina é acrescentar uma linha lá, e o log desta linha diz o que ficou de
+   * fora — antes eram três booleanos escritos à mão, e a quarta rotina não apareceria
+   * em lugar nenhum.
+   */
+  const { scheduled, failed } = await scheduleAutomationJobs();
 
   console.log(
-    `  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (prazos de parecer: ${scheduled ? 'agendados' : 'indisponível'}; ` +
-      `fechamento de presenças: ${sweepScheduled ? 'agendado' : 'indisponível'}; ` +
-      `confirmação de vaga: ${confirmationScheduled ? 'agendada' : 'indisponível'}).`,
+    `  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (${scheduled.length} rotina(s) agendada(s): ${scheduled.join(', ')}${
+      failed.length > 0 ? ` · INDISPONÍVEIS: ${failed.join(', ')}` : ''
+    }).`,
   );
   console.log(`${line}\n`);
 

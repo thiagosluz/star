@@ -18,6 +18,7 @@ import {
   Mic,
   Settings2,
   Sparkles,
+  Timer,
   Users,
 } from 'lucide-react';
 
@@ -327,6 +328,20 @@ export function buildPlatformNav(): ShellNavGroup[] {
           href: '/superadmin/governanca',
           label: 'Governança',
           icon: <Medal className="size-4" aria-hidden />,
+        },
+        {
+          /**
+           * Rotinas automáticas (FASE 36): as varreduras da plataforma — prazos,
+           * presenças, confirmação de vaga, inspeção de arquivos e partições da
+           * auditoria — com histórico, saúde e o pedido de execução imediata.
+           *
+           * É item de PLATAFORMA porque uma passada atende todas as instituições;
+           * quem opera a instituição não tem o que decidir sobre o relógio da
+           * plataforma.
+           */
+          href: '/superadmin/rotinas',
+          label: 'Rotinas',
+          icon: <Timer className="size-4" aria-hidden />,
         },
       ],
     },

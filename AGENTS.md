@@ -16,11 +16,12 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34 e 35 (F15, F21, F22, F29, F30, F31, F32, F33, F34 e F35 entregues; a F18+ é a próxima)
-Testes ................. 1772 (Vitest: unit + integração) + 116 (Playwright E2E)
-ADRs ................... 182 (numeração GLOBAL e sequencial — a próxima é ADR-183)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35 e 36 (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35 e F36 entregues; a F18+ é a próxima)
+Testes ................. 1865 (Vitest: unit + integração) + 123 (Playwright E2E)
+ADRs ................... 191 (numeração GLOBAL e sequencial — a próxima é ADR-192)
 Permissões ............. 60 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 41 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -98,20 +99,22 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 1759+ testes passando
+npm test              # esperado: 1865+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
-npm run db:verify     # esperado: "Contrato íntegro."
+npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
+                      #           alcançável pela role de runtime)
 npm run db:verify:isolation   # esperado: "9/9 verificações passaram."
 npm run db:partitions         # esperado: partições do mês atual e dos seguintes já criadas
 
-# Pooling (opcional, exige o perfil `pooler` no ar):
+# Pooling (opcional, exige o perfil `pooler` no ar) — rode com a árvore PARADA
+# (armadilha 85: ele escolhe os tenants por conta própria e o cleanup do E2E apaga um deles):
 docker compose --profile pooler up -d pooler
 npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transação preservado sob PgBouncer."
 
 # E2E exige o container rodando o código NOVO:
-docker compose --profile app up -d --build web
+docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 116+ testes passando
+npm run test:e2e      # esperado: 123+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -124,7 +127,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 81 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 85 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md).** Ela saiu deste arquivo para o protocolo caber
 > no orçamento de leitura de uma sessão nova (o `AGENTS.md` era truncado no fim, escondendo a
 > seção 10). Os números são estáveis e citados no código e nos documentos de fase — não
@@ -134,15 +137,6 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 | # | A regra |
 |---|---|
-| 65 | Quando uma entidade nova passa a ser a fonte de um dado, **todos os caminhos que criam essa entidade precisam gravar o registro dela** — inclusive o mais antigo, que é o que ninguém revisita |
-| 66 | Cenário que precisa de um estado deve produzi-lo **pelo caminho que a pessoa usa** quando é esse caminho que está sob suspeita. Fixture por escrita direta isola a tela, mas **não é evidência de que a tela é alcançável** |
-| 67 | **Ao achar um campo misterioso no schema, pergunte quem ESCREVE nele** — campo que todos leem e ninguém grava é funcionalidade que só existe no dado de teste |
-| 68 | **Comando idempotente usado para um fato que se repete tem a chave errada**: a chave da frequência é a sessão aberta, não a inscrição |
-| 69 | **Antes de nomear um segmento dinâmico, olhe como o mesmo nível é nomeado no resto da árvore** (`eventSlug` × `eventId` derrubam o build) |
-| 70 | **Relógio do processo no lugar de dado** é impureza no render: o "agora" vem do banco, que é quem grava |
-| 71 | **Identificador opaco não se normaliza**: a etiqueta impressa é lida letra por letra |
-| 72 | **Guardas gêmeas precisam da mesma regra, e botão sem clique é caminho sem teste** |
-| 73 | **Migração à mão se confere coluna a coluna contra o modelo** — contrato de schema não é verificação de forma |
 | 74 | **Número de validação não se digita na tela**: importe a constante de quem decide. E fixture incoerente com as regras do produto mede a própria fixture |
 | 75 | **Coluna que participa de uma regra precisa de caminho que ESCREVE e de caminho que LÊ** |
 | 76 | **Revalidar a rota cujo render depende do estado que a action acabou de mudar apaga o retorno da própria action**: quando o feedback vive no cliente, ou a página não se atualiza sozinha, ou o componente precisa saber se explicar no estado novo |
@@ -151,6 +145,10 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 | 79 | **Ao mexer num caminho que DEVOLVE um recurso, confira o caminho que o RETOMA**: liberar e reocupar são a mesma esteira, e um lado sem o outro desalinha o contador em silêncio |
 | 80 | **Tela de trabalho ordena por urgência, não por agenda** — "quem espera" decide o que abrir primeiro |
 | 81 | **Rótulo de formulário é identificador: único na tela inteira — inclusive contra os rótulos do próprio bloco** (o casamento é por substring). E a fase não é medida só pelos testes dela: a suíte inteira prova que o que funcionava continua funcionando |
+| 82 | **Tabela nova nasce alcançável pela role de runtime** (`ALTER DEFAULT PRIVILEGES` concede DML a toda tabela criada): tabela de PLATAFORMA sem RLS precisa de **revogação explícita**, e o contrato é quem exige isso |
+| 83 | **Quem CONCEDE é quem tem de REVOGAR**: um `REVOKE` só na migração é desfeito pelo script de init que reconcede em massa — procure todos os caminhos que concedem antes de revogar |
+| 84 | **`entityId` de trilha é coluna `uuid`**, e a auditoria **nunca lança**: identificador textual ali apaga o registro em silêncio. Quando o registro falha em silêncio por projeto, o teste tem de olhar o DADO, não o efeito visível |
+| 85 | **Verificação que compartilha o banco com outra suíte mede o estado da outra suíte** — confirme que a árvore está parada antes de investigar um "vazamento" acusado por um script que escolhe o dado sozinho |
 
 ---
 
@@ -187,12 +185,73 @@ Pool em modo **transação**: seguro aqui porque o contexto de tenant é `SET LO
 `LISTEN`/`NOTIFY`, prepared statement nomeado). Para o runtime usá-lo, aponte
 `APP_DATABASE_URL` para a porta 6432. Prova automatizada: `npm run db:verify:pooling`.
 
-### Partições da auditoria (FASE 13)
+### Partições da auditoria (FASE 13 · operação desde a FASE 36)
 
 `audit_logs` é particionada por mês em `createdAt`, com partição `DEFAULT` para que
-gravar auditoria nunca falhe. **Agende `npm run db:partitions`** (host/cron): ele cria
-o mês atual e os seguintes e resgata linhas que caíram na `DEFAULT`. Retenção é
-`DROP TABLE audit_logs_<AAAA_MM>` — decisão de negócio, ainda em aberto (dívida B8).
+gravar auditoria nunca falhe. **Quem mantém é a rotina `audit-partitions` do WORKER**
+(todo dia às 3h, registrada em `job_runs`): ela cria o mês atual e os seguintes e resgata
+linhas que caíram na `DEFAULT`, aplicando RLS + FORCE e as concessões em cada partição nova.
+A CLI `npm run db:partitions` continua existindo para quem opera sem worker e chama o MESMO
+serviço. Retenção é `DROP TABLE audit_logs_<AAAA_MM>` — decisão de negócio, ainda em aberto
+(dívida B8): a manutenção **cria** e nunca **apaga**.
+
+### Inspeção antivírus dos arquivos (FASE 36)
+
+O arquivo enviado por terceiro passa por inspeção antes de ser servido ao comitê, **quando a
+inspeção está ligada**. O driver padrão é `none` — **não inspecionar** —, e nesse caso o
+arquivo nasce `SKIPPED` ("não inspecionado"), é servido normalmente e a tela diz isso.
+
+```bash
+docker compose --profile av up -d clamav   # perfil próprio; ~1 GB de assinaturas
+# .env: SCAN_DRIVER=clamav · CLAMAV_HOST=clamav · CLAMAV_PORT=3310
+```
+
+Três regras que quebram fácil: **`INFECTED` nunca é servido**, com a inspeção ligada ou
+desligada (desligar o antivírus não devolve à circulação o que já foi identificado);
+**`PENDING` só é bloqueado ENQUANTO a inspeção está ligada** (travar tudo com o driver
+desligado quebraria o produto, e o estado honesto do arquivo é `SKIPPED`); e **inspeção
+indisponível NÃO é veredito** — o arquivo continua `PENDING` para a próxima passada, porque
+`INFECTED` por indisponibilidade bloquearia gente inocente e `CLEAN` seria pior. O portão
+vale onde a aplicação media os bytes (submissão e material de palestrante) e **não** em
+`media_assets`, que é bucket público (ADR-187).
+
+### Tarefas automáticas e painel de rotinas (FASE 36)
+
+As cinco rotinas da plataforma — prazos de parecer, presenças em aberto, confirmação de vaga,
+inspeção de arquivos e partições — abrem e fecham um registro em `job_runs`.
+
+```bash
+# /superadmin/rotinas  → catálogo, saúde, histórico e "Executar agora"
+psql "$DATABASE_URL" -c 'SELECT job, status, trigger, items, error FROM job_runs ORDER BY "startedAt" DESC LIMIT 20'
+```
+
+Quatro regras que quebram fácil: **a linha em `job_runs` é o registro E a reserva** (índice
+único parcial `WHERE status = 'RUNNING'`, e **não** advisory lock: o PgBouncer em modo
+transação não preserva lock de sessão — ADR-183); **execução órfã tem prazo de validade**
+(meia hora; sem isso o worker que morre no meio trava a rotina para sempre); **a tela lê o
+CATÁLOGO, não as execuções** — uma rotina que nunca rodou precisa aparecer como "nunca
+rodou" (ADR-184); e **o atraso é medido contra a cadência da própria rotina**, com o leitor de
+cron recusando opinar sobre expressão que ele não entende (ADR-185). O botão do painel
+**enfileira** e responde na hora: quem roda é o worker (ADR-186).
+
+`job_runs` é **tabela de plataforma**: sem RLS (não há `tenantId`) e **sem privilégio para a
+role de runtime** — a revogação vive no `docker/postgres/init/00-roles.sql` (quem concede é
+quem revoga) e a verificação de contrato reprova se ela voltar (ADR-191, armadilhas 82–83).
+
+### Lote de certificados em ZIP (FASE 36)
+
+```
+Tela ....... /t/<slug>/administracao/certificados → escolha o EVENTO no filtro →
+             "Baixar todos em ZIP"
+Rota ....... GET /api/t/<slug>/certificados/zip?evento=<eventId>   (certificate:issue)
+```
+
+O lote é montado em **fluxo** — `planEventCertificateZip` devolve só o plano (bucket, chave e
+nome) e cada PDF é lido e escrito um por vez (um evento de 3.000 certificados não cabe em
+memória). Certificado ainda em geração **não entra** e é contado; objeto que falhou no bucket
+é **pulado** (o ZIP sai com o resto) e a contagem aparece no cabeçalho
+`x-certificados-fora-do-lote`. O acesso entra na trilha como `EXPORT`, com quem baixou
+(ADR-188).
 
 ### Quotas e planos (FASE 14)
 
@@ -769,8 +828,8 @@ tests/{unit,integration,e2e}
 |---|---|---|
 | 1 | Infraestrutura, modelagem, RLS | ✅ |
 | 2 | Autenticação, RBAC, multi-tenancy | ✅ |
-| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ revisão pós-entrega**: **inscrição no EVENTO** que já inclui as atividades **abertas** (`requiresRegistration = false`, linhas `EVENT_AUTO`), **editar e excluir** atividade na programação (exclusão recusada com inscritos/presença) e rótulos de tipo/situação **em português** (ADR-124/125/126, §19 do doc) — **+ segunda revisão**: **ciclo de vida da SALA** (editar e excluir, com a exclusão recusada enquanto há atividade usando), **capacidade opcional** (vazio = sem limite) e a **sala como teto das vagas**, aplicado inclusive na reserva atômica da inscrição e anunciado na página pública (ADR-134/135/136, §20 do doc) | ✅ |
-| 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: criar o rascunho cai direto na página da submissão, o rascunho **não nasce inválido** (a validação do envio vale na criação e na edição), o autor **edita** título/resumo/palavras-chave e pode **excluir rascunhos** (nunca o que já foi enviado) | ✅ |
+| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ duas revisões pós-entrega**: inscrição no EVENTO incluindo as atividades abertas (`EVENT_AUTO`), editar/excluir atividade e **ciclo de vida da SALA** (capacidade opcional = sem limite; a sala é o teto das vagas, aplicado na reserva atômica) — ADR-124/125/126, 134/135/136 | ✅ |
+| 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: o rascunho cai direto na página da submissão, não nasce inválido e pode ser editado/excluído | ✅ |
 | 5 | Gamificação (XP, cartas, missões) | ✅ |
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
 | 7 | Painel administrativo + E2E completo | ✅ |
@@ -796,6 +855,8 @@ tests/{unit,integration,e2e}
 | 32 | Central do participante e inteligência da instituição (**diretório** de todos os participantes da instituição — união de vínculo e inscrição —, **ficha 360** com eventos, frequência, certificados, cartas, XP e comunicação, **recado** por e-mail e mensagem na **caixa de entrada** do participante, **panorama** com taxa de comparecimento e série por evento no fuso da instituição, e **exportação em CSV** com trilha; abertura de ficha auditada e e-mail mascarado na lista) — escopo definido pelo humano | ✅ |
 | 33 | Chamadas de propostas (**chamada como entidade** com tipo, janela, cegueira, **rubrica própria** — precedência CHAMADA → TRILHA → PADRÃO — e limite por autor POR CHAMADA; a proposta **é uma submissão** com campos por tipo e o **formulário é público**; bloco **"Chamadas de propostas"** posicionado pelo organizador na página; **protocolo de aceite** em que a decisão é do comitê e **criar a atividade** e **convidar o palestrante** são escolhas do organizador — o convite por e-mail quita a dívida **E25**) — escopo definido pelo humano | ✅ |
 | 34 | Confirmação de vaga com prazo (**escolha do organizador** no cadastro da atividade: automática × exige confirmação, com prazo em dias, o que é preciso e onde confirmar; a inscrição nasce **retendo a vaga** até a equipe confirmar; **avisos por e-mail e na plataforma**; vencido o prazo, a vaga é **liberada automaticamente**, o próximo da lista de espera é promovido e os dois são avisados; **fila de confirmações** para a equipe, ordenada pela urgência) — escopo definido pelo humano | ✅ |
+| 35 | Resiliência de balcão e palco (**operação sem rede** no credenciamento, **sentido da leitura** no balcão — entrada × saída × alternar —, prêmio e patrocinador da rodada corrigíveis pela tela e **controles do palco** com pausa/replay/atalhos; quitou **E38, E39, E40 e E43**) — escopo definido pelo humano | ✅ |
+| 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), **lote de certificados em ZIP** montado em fluxo e **aviso de decisão ao proponente** da chamada; quitou **A3, B7 e E47**) — escopo definido pelo humano | ✅ |
 | 18+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
@@ -804,41 +865,22 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**55 itens abertos**, soma das
-tabelas de tema — o tema G ficou ZERADO na FASE 22 — o levantamento original menos o que
-as FASES 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 29, 30, 31, 32, 33 e 34 quitaram, mais o que cada uma declarou de
-novo: a FASE 15 quitou os sete itens de
-comunicação (D1–D6 + A5) e declarou D7–D9; **a FASE 21 quitou C4–C5 e declarou C6–C7**
-(reconciliação banco × bucket e acesso de participante perdido na remoção); **a FASE 22
-quitou G8–G13 e declarou o E35** (não há tela para a pessoa autorizar o nome no resultado
-público); **as FASES 29, 30 e 31 não quitaram item deste levantamento** (o escopo veio do
-humano) e declararam o **E36** (a lista auditável não pode ser comprometida antes da apuração) e o
-**E37** (não há interruptor para manter o telão fora do ar), o **E38** (o prêmio anunciado de uma rodada não pode ser corrigido pela tela) e o **E39** (a roleta não pode ser repetida nem desligada pelo operador), o **E40** (o credenciamento não funciona sem rede), o **E41** (a impressão é folha A4 para recortar), o **E42** (o crachá não tem identidade visual do evento) e o **E43** (o botão único do balcão fecha a presença na segunda leitura: não há como pedir "só entrada" na tela); **a FASE 32 declarou o E44 e o E45**; **a FASE 33 QUITOU o E25** (o convite de palestrante passou a sair por e-mail) **e declarou o E46** (a proposta não aceita anexo) **e o E47** (o proponente não é avisado da decisão); a FASE 25
-declarou cinco itens, a revisão dela declarou o E30, as duas rodadas da revisão da FASE 4
-declararam o E31 e o E32, a **primeira** revisão da FASE 3 declarou o E33 e a **segunda**
-declarou o E34 (a sala de uma atividade ABERTA não limita o público do evento: o painel
-avisa); verificado no código,
-com esforço e
-fases candidatas numeradas como as fases que serão entregues — ~~F15 Comunicação~~
-(entregue) · ~~F16 Sorteios de ponta a ponta~~ (entregue) · ~~F17 Landing page e
-patrocínio~~ (entregue) · F18 Segurança de documentos · F19 Gamificação avançada · F20
-Observabilidade de segunda ordem · ~~F21 Ciclo de vida do membro e storage~~ (entregue) ·
-~~F22 Operação de palco~~ (entregue) ·
-~~F23 Conteúdo e mídia~~ (entregue) · ~~F24 Mídia e agendamento~~ (entregue) ·
-~~F25 Portal do palestrante~~ (entregue) · F26 Acervo de mídia: miniaturas, busca e
-sincronia em lote · F27 Material e convite do palestrante · F28 Entrega de e-mail de
-segunda ordem · ~~F29 Palco público e auditoria do sorteio~~ (entregue) · ~~F30 Sorteio ao vivo, em rodadas~~ (entregue) · ~~F31 Credenciamento e frequência por crachá~~ (entregue)) está em
-**`docs/dividas-tecnicas.md`**.
-Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a
-ordem sugerida.
+**Dívidas técnicas:** o levantamento consolidado (**48 itens abertos**, soma das tabelas de
+tema — A=3, B=4, C=2, D=3, E=26, F=5, G=0, H=4, I=1; o tema G ficou ZERADO na FASE 22) está em
+**`docs/dividas-tecnicas.md`**, com o histórico do que cada fase quitou e o que declarou de
+novo. O total publicado até a FASE 35 (55) somava linhas **já riscadas** — a correção da
+contagem está no próprio documento. A FASE 36 quitou **A3** (antivírus), **B7** (agendamento
+das partições) e **E47** (aviso ao proponente) e não declarou dívida nova.
+Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a ordem
+sugerida.
 
 ---
 
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 81 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-34-confirmacao-de-vaga.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 85 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-36-operacao-e-seguranca.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

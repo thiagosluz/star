@@ -124,12 +124,24 @@ export default async function ReviewSubmissionPage({
   });
 
   const downloadUrls = new Map<string, string>();
+  /**
+   * ─── O ARQUIVO Bloqueado PRECISA DIZER POR QUÊ (FASE 36) ─────────────────────
+   *  Desde a inspeção de arquivos, um artefato pode estar listado e NÃO ter link: o
+   *  portão recusa o que ainda não foi inspecionado e o que tem ameaça detectada. Sem
+   *  guardar o motivo, a tela mostrava o arquivo, escondia o botão e deixava o revisor
+   *  sem saber se era permissão, arquivo ausente ou bloqueio — o "botão que não
+   *  existe" da armadilha 72, na versão que ninguém percebe.
+   */
+  const blockedFiles = new Map<string, string>();
+
   for (const file of visibleFiles) {
     const result = await getFileDownloadUrl(tenantId, file.id, {
       role: 'REVIEWER',
       isBlind: assignment.isBlind,
     });
+
     if (result.ok) downloadUrls.set(file.id, result.url);
+    else blockedFiles.set(file.id, result.message);
   }
 
   return (
@@ -238,6 +250,13 @@ export default async function ReviewSubmissionPage({
                     <Download className="size-3.5" aria-hidden />
                     Baixar
                   </a>
+                ) : blockedFiles.has(file.id) ? (
+                  <p
+                    className="max-w-[20rem] shrink-0 text-right text-xs text-warning-strong"
+                    data-testid={`file-blocked-${file.id}`}
+                  >
+                    {blockedFiles.get(file.id)}
+                  </p>
                 ) : null}
               </li>
             ))}

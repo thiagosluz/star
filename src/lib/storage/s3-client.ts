@@ -407,8 +407,49 @@ export async function createDownloadUrl(input: {
   });
 }
 
-/** Lista objetos sob um prefixo (usado por diagnóstico e limpeza). */
-export async function listObjects(
+/**
+ * Lê um objeto em FLUXO (sem carregar o arquivo inteiro na memória).
+ *
+ * ─── POR QUE ISTO EXISTE (FASE 36) ────────────────────────────────────────────
+ *  Dois caminhos precisam dos BYTES do objeto, e não de uma URL assinada:
+ *
+ *    • a **inspeção antivírus**, que repassa o conteúdo ao clamd em blocos — um PDF
+ *      de 20 MB não pode ser carregado inteiro para ser inspecionado;
+ *    • o **ZIP de certificados**, que transmite cada PDF para o navegador enquanto
+ *      ele é lido (a memória fica limitada a UM arquivo, não ao evento inteiro).
+ *
+ *  Os dois usam esta função justamente para não repetir a lógica de erro.
+ */
+export async function getObjectStream(
+  bucket: string,
+  objectKey: string,
+): Promise<NodeJS.ReadableStream> {
+  const response = await internalClient().send(
+    new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
+  );
+
+  const body = response.Body;
+
+  if (!body) {
+    throw new Error(`Objeto vazio ou inexistente: ${bucket}/${objectKey}`);
+  }
+
+  return body as unknown as NodeJS.ReadableStream;
+}
+
+/** Lê um objeto inteiro em memória. Use só quando o tamanho é conhecido e pequeno. */
+export async function getObjectBuffer(bucket: string, objectKey: string): Promise<Buffer> {
+  const stream = await getObjectStream(bucket, objectKey);
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array>) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+/** Lista objetos sob um prefixo (usado por diagnóstico e limpeza). */export async function listObjects(
   bucket: string,
   prefix: string,
   maxKeys = 50,

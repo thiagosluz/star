@@ -7,12 +7,18 @@
 #    minio          Object storage S3-compatível, com provisionamento de buckets
 #    web            Next.js 16 (output: standalone)      [perfil: app]
 #    worker         Worker BullMQ (certificados, e-mails) [perfil: app]
+#    pooler         PgBouncer em modo transação           [perfil: pooler]
+#    clamav         Inspeção antivírus dos arquivos       [perfil: av]
 #
 #  Subir apenas a infraestrutura (recomendado na FASE 1):
 #      docker compose up -d
 #
 #  Subir a stack completa (a partir da FASE 2):
 #      docker compose --profile app up -d --build
+#
+#  Subir a inspeção de arquivos (FASE 36) — só quando for usá-la:
+#      docker compose --profile av up -d clamav
+#      # e então, no .env: SCAN_DRIVER=clamav
 #
 #  ─────────────────────────────────────────────────────────────────────────────
 #  NOTA SOBRE O MINIO (importante)
@@ -265,6 +271,46 @@ services:
     networks: [eventflow]
 
   # ═════════════════════════════════════════════════════════════════════════════
+  #  ClamAV — inspeção antivírus dos arquivos enviados (FASE 36)
+  # ═════════════════════════════════════════════════════════════════════════════
+  #  Por que em PERFIL PRÓPRIO (`av`) e não junto de `app`: o daemon carrega a base
+  #  de assinaturas na memória e pede ~1 GB de RAM. Subir isso em toda máquina de
+  #  desenvolvimento, para inspecionar o arquivo de teste de quem está mexendo numa
+  #  tela, seria um custo sem contrapartida — e o produto funciona sem inspeção
+  #  (o driver padrão é `none`, que marca os arquivos como não inspecionados e os
+  #  serve normalmente). Quando a inspeção é LIGADA (`SCAN_DRIVER=clamav`), o portão
+  #  passa a bloquear arquivo ainda não inspecionado — ver
+  #  `src/domain/review/file-scan-rules.ts`.
+  #
+  #  O volume da base é NOMEADO de propósito: sem ele, cada `up` baixaria as
+  #  assinaturas de novo (centenas de MB) antes de o daemon aceitar conexão.
+  #
+  #  O `CLAMAV_NO_MILTERD` desliga o serviço de milter, que só serve a servidores de
+  #  e-mail — aqui o uso é o protocolo `INSTREAM` do clamd na porta 3310.
+  clamav:
+    image: clamav/clamav:1.4
+    container_name: eventflow-clamav
+    profiles: [av]
+    <<: [*restart, *default-logging]
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+      # Duas verificações de base por dia bastam para desenvolvimento.
+      FRESHCLAM_CHECKS: "2"
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      # O script vem na própria imagem e pergunta ao daemon pelo socket.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      # Generoso: na PRIMEIRA subida o freshclam baixa a base inteira.
+      start_period: 180s
+    networks: [eventflow]
+
+  # ═════════════════════════════════════════════════════════════════════════════
   #  Aplicação Next.js (standalone) — FASE 2 em diante
   # ═════════════════════════════════════════════════════════════════════════════
   web:
@@ -348,6 +394,15 @@ services:
       # dezenas de cadastros do mesmo IP contra este container e seria derrubada
       # com 429 — não porque o contador seja local.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
+
+      # Inspeção antivírus (FASE 36). O padrão é `none` — NÃO inspecionar —, e é uma
+      # decisão, não um esquecimento: com o driver desligado o arquivo enviado é
+      # servido normalmente e marcado como não inspecionado. Ligar a inspeção é
+      # explícito (`SCAN_DRIVER=clamav`), e aí o portão passa a bloquear arquivo que
+      # ainda não recebeu veredito.
+      SCAN_DRIVER: ${SCAN_DRIVER:-none}
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
     ports:
       - "${APP_PORT:-3000}:3000"
     healthcheck:
@@ -385,6 +440,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-eventflow}
       APP_DB_USER: ${APP_DB_USER:-eventflow_app}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-eventflow_app_password}
+      # ─── POR QUE O WORKER TAMBÉM TEM A CONEXÃO ADMIN (FASE 36) ──────────────────
+      #  Ele já rodava as varreduras pela role de runtime. Desde esta fase ele
+      #  também escreve os REGISTROS das rotinas (`job_runs`) e cria as partições
+      #  mensais de `audit_logs` — as duas operações de PLATAFORMA, que não pertencem
+      #  a instituição nenhuma e por isso não cabem em `withTenant` (invariante nº 1).
+      #  Sem esta variável o `job_runs` e a manutenção das partições falhariam dentro
+      #  do container, e o painel de rotinas mostraria uma falha a cada passada.
+      MIGRATE_DATABASE_URL: postgresql://${POSTGRES_USER:-eventflow_admin}:${POSTGRES_PASSWORD:-eventflow_dev_password}@postgres:5432/${POSTGRES_DB:-eventflow}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_URL: redis://redis:6379
@@ -402,6 +465,12 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-EventFlow <nao-responda@eventflow.test>}
       EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
       REVIEW_REMINDER_HOURS: ${REVIEW_REMINDER_HOURS:-48}
+      # Inspeção antivírus (FASE 36): quem varre é o WORKER (rotina `file-scan`), e
+      # para isso precisa das mesmas variáveis do web — o web só consulta o veredito
+      # gravado, no portão de download.
+      SCAN_DRIVER: ${SCAN_DRIVER:-none}
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
       # O worker não aceita tráfego HTTP: nenhuma porta publicada.
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
     networks: [eventflow]
@@ -416,6 +485,10 @@ volumes:
     name: eventflow-redis-data
   minio-data:
     name: eventflow-minio-data
+  # Base de assinaturas do ClamAV: sobrevive ao `down` e evita rebaixar tudo a cada
+  # subida (o daemon não aceita conexão antes de ter a base carregada).
+  clamav-data:
+    name: eventflow-clamav-data
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Rede

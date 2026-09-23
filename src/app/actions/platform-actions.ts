@@ -28,6 +28,9 @@ import { z } from 'zod';
 
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
+import { recordAudit } from '@/lib/admin/audit';
+import { enqueueJobRun } from '@/lib/communication/email-queue';
+import { isJobKey, jobDefinition } from '@/domain/platform/job-catalog';
 import {
   addTenantMember,
   grantSuperAdmin,
@@ -424,4 +427,86 @@ export async function revokeSuperAdminAction(
   revalidatePath('/superadmin/governanca');
 
   return { ok: true, message: 'Concessão de plataforma revogada.' };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Rotinas automáticas (FASE 36)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Pede ao worker que rode uma rotina AGORA.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A TELA NÃO RODA A ROTINA — E ISSO É O DESENHO, NÃO UMA LIMITAÇÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  As cinco rotinas são cross-tenant: cada passada abre transação por instituição,
+ *  com a conexão de PLATAFORMA (`adminPrisma`), que o processo web não usa para
+ *  isso (invariante nº 1). Rodá-las dentro da requisição prenderia a resposta do
+ *  operador por minutos e daria à web uma conexão que ela não tem.
+ *
+ *  Então a ação ENFILEIRA e responde na hora. O que o operador lê é a verdade: o
+ *  pedido foi entregue ao worker. A execução aparece no histórico logo abaixo —
+ *  com `trigger = MANUAL` e o nome de quem pediu —, e é por isso que este retorno
+ *  não é um "concluído" falso.
+ *
+ *  `revalidatePath` NÃO é chamado aqui de propósito (armadilha 76): o render desta
+ *  rota depende de `job_runs`, e a linha só existe quando o worker terminar. Mandar
+ *  a página se redesenhar agora apagaria a mensagem e mostraria a mesma lista, sem
+ *  o registro. Quem atualiza a lista é o próprio componente, depois da resposta.
+ */
+export async function runJobNowAction(
+  _prev: PlatformActionState | null,
+  formData: FormData,
+): Promise<PlatformActionState> {
+  const operator = await requirePlatformPermission();
+
+  const parsed = z.object({ job: z.string().trim().min(1).max(60) }).safeParse({
+    job: formData.get('job'),
+  });
+
+  if (!parsed.success || !isJobKey(parsed.data.job)) {
+    return failure('INVALID_INPUT', 'Rotina desconhecida.');
+  }
+
+  const job = parsed.data.job;
+  const definition = jobDefinition(job);
+
+  const queued = await enqueueJobRun({ job, trigger: 'MANUAL', actorId: operator.userId });
+
+  if (!queued) {
+    return failure(
+      'QUEUE_UNAVAILABLE',
+      'A fila de rotinas não respondeu. Confirme se o Redis e o worker estão no ar — sem o worker, a execução não sai da fila.',
+    );
+  }
+
+  /**
+   * A trilha guarda quem PEDIU. O registro da execução (`job_runs`) guarda o
+   * `actorId` também, mas ele nasce no worker; aqui fica o pedido, que é o ato de
+   * governança — e ele existe mesmo se o worker estiver fora do ar.
+   *
+   * ─── `entityId` É NULO DE PROPÓSITO ───────────────────────────────────────────
+   *  A coluna é `uuid`, e a rotina é identificada por uma CHAVE (`audit-partitions`).
+   *  Passar a chave ali faz o `INSERT` falhar — e, como `recordAudit` NUNCA lança
+   *  (invariante 8: auditoria não derruba operação), a falha virava **ausência de
+   *  trilha**, em silêncio. Quem pegou foi o E2E, que afirma a linha na tabela em vez
+   *  de afirmar a tela. A chave vai em `changes.chave`, e o rótulo em legível.
+   */
+  await recordAudit({
+    tenantId: null,
+    userId: operator.userId,
+    action: 'UPDATE',
+    entityType: 'job_schedule',
+    entityId: null,
+    changes: {
+      chave: { from: null, to: job },
+      rotina: { from: null, to: definition.label },
+      pedido: { from: null, to: 'execução imediata' },
+    },
+  });
+
+  return {
+    ok: true,
+    message: `Execução de "${definition.label}" pedida ao worker. O registro aparece no histórico assim que ele concluir.`,
+    data: { job },
+  };
 }

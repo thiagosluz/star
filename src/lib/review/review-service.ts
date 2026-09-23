@@ -54,6 +54,7 @@ import {
   canTransitionSubmission,
   type SubmissionStatus,
 } from '@/domain/review/submission-rules';
+import { notifyProposalDecided } from '@/lib/review/proposal-notices';
 
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1115,12 +1116,18 @@ export async function recordDecision(
   input: RecordDecisionInput,
 ): Promise<ReviewResult<{ status: SubmissionStatus; finalScore: number | null }>> {
   try {
-    return await withTenant(input.tenantId, async (tx) => {
+    const decided = await withTenant(input.tenantId, async (tx) => {
       const submission = await tx.submission.findFirst({
         where: { id: input.submissionId, deletedAt: null },
         select: {
           id: true,
           status: true,
+          /**
+           * `callId` entra na leitura por causa do AVISO ao proponente (FASE 36):
+           * submissão sem chamada é artigo do fluxo acadêmico e não gera aviso — e a
+           * decisão de quem é avisado precisa vir do DADO, não de quem chamou.
+           */
+          callId: true,
           track: { select: { requiredReviews: true } },
           reviews: {
             where: { submittedAt: { not: null }, deletedAt: null },
@@ -1177,9 +1184,39 @@ export async function recordDecision(
         },
       });
 
-      return { ok: true as const, status: input.decision as SubmissionStatus, finalScore };
+      return {
+        ok: true as const,
+        status: input.decision as SubmissionStatus,
+        finalScore,
+        isProposal: submission.callId !== null,
+      };
     });
-  } catch (error) {
+
+    /**
+     * ─── O AVISO AO PROPONENTE (FASE 36, dívida E47) ────────────────────────────
+     *
+     *  FORA da transação e DEPOIS do commit, pela mesma razão das outras notificações
+     *  (ADR-129): a decisão é um fato do comitê e não pode depender de um provedor de
+     *  e-mail. `notifyProposalDecided` não lança — devolve o motivo, que morre no log.
+     *
+     *  Só a proposta de CHAMADA avisa (`isProposal`): o artigo do fluxo acadêmico
+     *  continua como estava, e o limite está declarado no documento da fase.
+     */
+    if (decided.ok && decided.isProposal) {
+      const notice = await notifyProposalDecided({
+        tenantId: input.tenantId,
+        submissionId: input.submissionId,
+        decision: decided.status,
+      });
+
+      if (!notice.ok) {
+        console.error(
+          `[review] decisão registrada, mas o proponente não foi avisado (${input.submissionId}): ${notice.message}`,
+        );
+      }
+    }
+
+    return { ok: true as const, status: decided.status, finalScore: decided.finalScore };  } catch (error) {
     return toFailure('recordDecision', error);
   }
 }

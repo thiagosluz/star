@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34 e 35 concluídas (F15, F21, F22, F29, F30, F31, F32, F33, F34 e F35 entregues; a F18+ é a próxima) · **1772 testes** unitários/integração · **116 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34, 35 e 36 concluídas (F15, F21, F22, F29, F30, F31, F32, F33, F34, F35 e F36 entregues; a F18+ é a próxima) · **1865 testes** unitários/integração · **123 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -18,6 +18,10 @@ avaliação por pares e gamificação.
 > (diretório de todos os eventos, ficha 360, recados com caixa de entrada e panorama da
 > instituição) · **resiliência de balcão e palco** (credenciamento offline-first em IndexedDB,
 > modos estritos contra bipes duplos, edição imediata de anúncio no telão e controles de roleta)
+> · **rotinas automáticas com painel de operação** (`/superadmin/rotinas`: histórico, saúde e
+> "executar agora"), **inspeção antivírus** dos arquivos enviados (com o padrão em não
+> inspecionar), **lote de certificados em ZIP** por evento e **aviso de decisão** ao proponente
+> da chamada
 
 ---
 
@@ -63,6 +67,9 @@ avaliação por pares e gamificação.
 | **Central do participante** | A visão da **PESSOA**, que antes só existia por evento: **diretório** de todos os participantes da instituição (união de vínculo e inscrição) com busca, filtro por evento/certificado/presença e paginação; **ficha 360** com os eventos que a pessoa viveu, frequência e minutos, certificados, cartas, XP e toda a comunicação recebida; **recado** por e-mail **e** mensagem na **caixa de entrada** do participante (com marcação de lida por posse); **panorama** da instituição com taxa de comparecimento, minutos, certificados, cartas, XP e **série por evento**, recortada por período no **fuso da instituição**; e **exportação em CSV** com escape contra fórmula, teto de linhas e registro na trilha. A abertura da ficha entra na auditoria (`READ`) e o e-mail aparece **mascarado** na lista |
 | **Identidade visual** | Sistema de design com tokens do `DESIGN.md` (superfícies, marca, estados, raridade), tipografia própria (Plus Jakarta Sans + Inter), **20 primitivos** em `@/components/ui`, shell de navegação agrupado por intenção, guia de estilo vivo em `/superadmin/design` e trava de teste que impede cor crua em código novo (dívida zerada na 11B: **nenhuma** cor crua ou tamanho arbitrário no código de interface) |
 | **Operação e segurança** | Rate limit do login contado no **Redis** (vale entre instâncias), métricas no formato **Prometheus** em `/api/metrics` com token, log estruturado com redação de senha/e-mail, RLS criada pela própria migração, `audit_logs` **particionada por mês** e pool de conexões com **PgBouncer** em modo transação |
+| **Rotinas automáticas** | As cinco rotinas da plataforma — **prazos de parecer**, **presenças em aberto**, **confirmação de vaga**, **inspeção de arquivos** e **partições da auditoria** — abrem e fecham um registro em `job_runs`: o painel `/superadmin/rotinas` mostra **cadência em português, saúde, última passada, resultado e o motivo da falha**, com histórico das 40 execuções mais recentes e o botão **"Executar agora"** (que enfileira para o worker). A mesma linha que registra é a **exclusão mútua** (índice único parcial, e não advisory lock: o PgBouncer em modo transação não preserva lock de sessão) e execução órfã é encerrada como falha em meia hora, para a rotina nunca travar para sempre |
+| **Segurança dos arquivos** | Todo arquivo enviado por gente de fora (submissão e material de palestrante) pode passar por **inspeção antivírus** antes de ser servido: `INFECTED` **nunca** é servido (nem com a inspeção desligada depois), `PENDING` só é bloqueado enquanto a inspeção está ligada, e falha do antivírus **não é veredito** (o arquivo continua pendente). O driver padrão é **não inspecionar** — os arquivos nascem `SKIPPED`, são servidos e a tela diz que não houve inspeção. ClamAV sobe em perfil próprio (`--profile av`) e a ameaça fica na trilha |
+| **Lote e avisos** | Os **certificados de um evento** baixam em um **ZIP** montado em fluxo (um PDF por vez, sem carregar o lote em memória), com o nome `<código>-<nome>.pdf`, contagem dos que ficaram de fora e registro na trilha (`EXPORT`); e o **proponente de uma chamada é avisado da decisão** (aceita, recusada ou ajustes solicitados) por **e-mail e na caixa de entrada**, com o parecer do comitê e uma chave por decisão — pedir ajustes e depois aceitar são dois fatos, dois avisos |
 | **Planos e quotas** | Planos FREE/STARTER/PROFESSIONAL/ENTERPRISE com quotas de eventos, **membros da equipe** e **armazenamento**; troca de plano e edição de quotas pelo painel de governança (com aviso quando a nova quota fica abaixo do uso); as **três** quotas **recusam de verdade** — e o público de evento, que ganha acesso automático na inscrição pública, **não** consome a quota de membros |
 | **Ciclo de vida do membro** | A tela de equipe passou a **operar** o vínculo: trocar os papéis de um membro (checkboxes com os papéis de instituição, gravados de uma vez) e **remover** — remoção **lógica** (`REMOVED`), com **todas** as concessões revogadas em qualquer escopo e a quota liberada; o histórico de quem fez o quê continua legível. Ninguém remove o próprio acesso, e o **último proprietário ativo** não pode ser removido nem rebaixado — a recusa vem escrita. O diálogo **avisa** quando a pessoa tem inscrições, porque o vínculo é único por (instituição, pessoa) |
 | **Gamificação (conquistas)** | Cartas por gatilho, incluindo os dois de **marco** que só existiam no catálogo: `EVENT_ATTENDANCE_FULL` (presença em todas as atividades exigidas, concedida no check-out que fecha a última) e `REVIEWER_TOP` (revisor destaque premiado por ranking de pareceres, com piso lido da própria carta) |
@@ -404,11 +411,12 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 1759 testes (73 arquivos) — unit + integração com banco real
-npm run test:e2e          # 116 testes E2E contra o container de produção
+npm test                  # 1865 testes (83 arquivos) — unit + integração com banco real
+npm run test:e2e          # 123 testes E2E contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
-npm run db:verify         # contrato de RLS íntegro (tabelas e partições)
+npm run db:verify         # contrato de RLS íntegro (tabelas, partições e tabelas de plataforma
+                          # sem acesso para a role de runtime)
 npm run db:verify:isolation   # 9/9 ataques de isolamento barrados
 npm run db:verify:pooling     # contexto por transação preservado sob PgBouncer
 npm run db:partitions         # partições mensais de audit_logs em dia
@@ -466,7 +474,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [docs/fase-30-sorteio-ao-vivo-em-rodadas.md](docs/fase-30-sorteio-ao-vivo-em-rodadas.md) | **Sorteio ao vivo, em rodadas:** cada apuração é um MOMENTO com o próprio compromisso de semente, prêmio, patrocinador e resultado assinado (payload v4); **"Criar para o palco"** faz o telão existir ANTES da apuração; a **roleta** passa os nomes reais da lista publicada e para no ganhador; quem ganhou uma rodada não concorre nas seguintes; auditoria e resultado público **por rodada** | ADR-144 … 147 |
 | [docs/fase-34-confirmacao-de-vaga.md](docs/fase-34-confirmacao-de-vaga.md) | **Confirmação de vaga com prazo:** o organizador escolhe no cadastro da atividade se a vaga é **automática** ou **exige confirmação**, com prazo em dias, **o que é preciso** (pagamento, doação, item, outro) e **onde confirmar**; a inscrição nasce **RETENDO a vaga** e a pessoa é avisada por **e-mail e na plataforma**; quem confirma é a **equipe**, na fila de confirmações; vencido o prazo, a vaga é **liberada automaticamente**, o primeiro da lista de espera é promovido e **os dois** são avisados | ADR-170 … 178 |
 | [`docs/fase-35-resiliencia-balcao-e-palco.md`](docs/fase-35-resiliencia-balcao-e-palco.md) | **Resiliência de balcão e palco:** credenciamento **offline-first em IndexedDB** com sincronização idempotente cronológica via `idempotencyKey` e `Attendance.qrNonce` (quita E40), **seletor estrito de sentidos** (`IN`, `TOGGLE`, `OUT`) no console do monitor imune a bipes duplos e rajada (quita E43), **edição desacoplada de anúncios** de rodada sem alterar o hash assinado com reatividade SSE no telão (quita E38) e **controles interativos de roleta no palco** com pausa/retomada, replay e atalhos de teclado (quita E39) | ADR-179 … 182 |
-| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 81 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
+| [`docs/fase-36-operacao-e-seguranca.md`](docs/fase-36-operacao-e-seguranca.md) | **Operação das rotinas e segurança dos arquivos:** as cinco rotinas automáticas passaram a ter **histórico, saúde e "executar agora"** em `/superadmin/rotinas` (a linha em `job_runs` é o registro E a exclusão mútua, decidida por índice único parcial — o PgBouncer em modo transação não preserva lock de sessão), a manutenção das **partições da auditoria** saiu do cron do host e virou rotina do worker (quita B7), a **inspeção antivírus** dos arquivos enviados entrou com driver cujo padrão é NÃO inspecionar, portão nos dois caminhos que servem bytes de terceiro e trilha da ameaça (quita A3), o **lote de certificados em ZIP** é montado em fluxo por evento (com trilha `EXPORT`) e o **proponente passou a ser avisado da decisão** da chamada, nos dois canais e com o parecer do comitê (quita E47) | ADR-183 … 191 |
+| [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 85 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
 | [`docs/fase-13-operacao-e-seguranca.md`](docs/fase-13-operacao-e-seguranca.md) | Rate limit no Redis, métricas Prometheus com token, log estruturado com redação, RLS dentro da migração, `audit_logs` particionada por mês com partição `DEFAULT` e PgBouncer em modo transação | ADR-075 … 079 |
@@ -474,7 +483,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **182 decisões** registradas até aqui.
+> são **191 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -496,24 +505,28 @@ src/
 │   │                  vida do membro (remoção lógica, guarda do último proprietário)
 │   ├── rbac/          papéis, permissões e o `can()` (fail-closed)
 │   ├── events/        ciclo de vida, inscrições, agenda, landing page
-│   ├── review/        submissão, rubrica, afinidade, conflito de interesse
+│   ├── review/        submissão, rubrica, afinidade, conflito de interesse e
+│   │                  inspeção de arquivos (portão do download)
+│   ├── platform/      catálogo das rotinas automáticas (cadência, estados e saúde)
 │   ├── gamification/  XP, níveis, cartas, missões
 │   └── certificates/  elegibilidade, carga horária, código e conteúdo canônico
 ├── lib/               aplicação e infraestrutura
 │   ├── db/            cliente com contexto de tenant (RLS), cliente admin, erros do Prisma
 │   ├── auth/          sessão, guarda de páginas
 │   ├── events/        inscrições, credenciamento
-│   ├── review/        submissões e avaliação por pares
+│   ├── review/        submissões, avaliação por pares e varredura de arquivos
 │   ├── gamification/  motor de recompensas, serviços, ganchos
 │   ├── certificates/  assinatura, renderização (PDF/SVG), serviço, fila
+│   ├── documents/     escritor de ZIP sem dependência (lote de certificados)
 │   ├── admin/         trilha de auditoria e catálogo do painel
 │   ├── platform/      governança global: repositório administrativo, serviços,
-│   │                  diretório público e guarda de plataforma (404)
-│   ├── storage/       cliente S3/MinIO (URLs pré-assinadas) e a quota de armazenamento
+│   │                  diretório público, guarda de plataforma (404), registro das
+│   │                  execuções (`job_runs`) e manutenção das partições
+│   ├── storage/       cliente S3/MinIO (URLs pré-assinadas), quota e driver de inspeção
 │   └── tenancy/       resolução e cache de instituição
 ├── app/               Next.js
 │   ├── actions/       Server Actions (toda autorização é verificada aqui)
-│   ├── api/           Route Handlers (auth, health, download de certificado)
+│   ├── api/           Route Handlers (auth, health, download, exportação e lote em ZIP)
 │   ├── (public)/organizacoes     diretório público de instituições
 │   ├── superadmin/               painel de governança da plataforma
 │   ├── instituicao-bloqueada/    página de bloqueio (instituição suspensa)
@@ -521,16 +534,16 @@ src/
 │   ├── t/[tenantSlug]/(app)     painel autenticado
 │   └── validar/[code]           validação pública de certificado
 ├── components/        UI por domínio (review, gamification, certificates, admin…)
-└── workers/           entrypoint do worker BullMQ
+└── workers/           entrypoint do worker BullMQ (certificados, e-mails e as 5 rotinas)
 prisma/
 ├── schema.prisma      modelo de dados
 ├── migrations/        migrações (índices parciais, policies e particionamento à mão)
 ├── scripts/           RLS, contrato de schema, isolamento, pooling e partições
 └── seed.ts            dados de demonstração
 tests/
-├── unit/              1054 testes de regra pura e de formato (sem banco)
-├── integration/       439 testes com banco, Redis e storage reais
-└── e2e/               97 testes Playwright contra o container
+├── unit/              1289 testes de regra pura e de formato (sem banco)
+├── integration/        576 testes com banco, Redis e storage reais
+└── e2e/               123 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**
@@ -647,16 +660,21 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
 5. **Paginação** nas listagens administrativas é por limite de consulta.
 6. **Auditoria de leitura**: a trilha registra mutações; visualização de dado pessoal
    não é registrada (exceto o contador de validação pública).
-7. **Antivírus nos arquivos de submissão** (`scanStatus = SKIPPED`, marcado
-   honestamente em vez de afirmar "limpo").
+7. ~~**Antivírus nos arquivos de submissão** (`scanStatus = SKIPPED`, marcado
+   honestamente em vez de afirmar "limpo").~~ **Entregue na FASE 36 (quita A3):** driver de
+   inspeção cujo **padrão é NÃO inspecionar** (`SKIPPED`, servido e declarado como não
+   inspecionado), rotina `file-scan` no worker, portão de download nos dois caminhos que servem
+   bytes de terceiro (submissão e material de palestrante) e trilha da ameaça. Para ligar:
+   `docker compose --profile av up -d clamav` + `SCAN_DRIVER=clamav`.
 8. **Notificações por e-mail** (atribuição de parecer, certificado emitido) dependem
    do worker; a fila existe, o envio não.
 9. **Adoção do log estruturado é parcial (FASE 13).** Os pontos de operação (fila,
    worker, rate limit) usam o `logger` com redação; os serviços ainda têm ~66
    `console.*` (dívida B6).
-10. **Retenção da auditoria e agendamento das partições** são operação, não código: o
-    particionamento está pronto, mas nada é descartado e o `db:partitions` precisa de
-    cron/orquestrador (dívidas B7 e B8).
+10. **Retenção da auditoria** é decisão de negócio, não código: ~~o agendamento das partições~~
+    **foi entregue na FASE 36 (quita B7)** — a rotina `audit-partitions` do worker cria o mês
+    atual e os seguintes todo dia às 3h, com a CLI mantida para quem opera sem worker — mas
+    **nada é descartado** (dívida B8): a manutenção cria e nunca apaga.
 11. **Não há coletor de métricas.** `/api/metrics` é o contrato; Prometheus/Grafana e
     alertas ficam com quem opera (dívida B9).
 12. **Sorteios: a operação de palco chegou na FASE 22, e a antiga limitação caiu.** Desfazer
@@ -760,22 +778,17 @@ Registradas nas dívidas técnicas de cada fase — nenhuma escondida:
     organizador teste o telão antes do evento e projete o **mesmo link** no dia. Não há
     interruptor para manter o palco desligado até a hora do anúncio: quem tem o link (um UUID
     não enumerável, com `noindex`) vê o título antes da apuração.
-32. **O prêmio anunciado de uma rodada não pode ser corrigido pela tela (FASE 30, dívida E38).**
-    O prêmio e o patrocinador ficam FORA do documento assinado justamente para que corrigir o
-    texto não invalide um resultado publicado — mas não há caminho de escrita: a rodada é
-    imutável, e um typo no telão ou no resultado só sai com SQL. Falta uma ação de edição que
-    grave o antes e o depois na trilha (o hash do resultado não muda).
-33. **O credenciamento não funciona sem rede (FASE 31, dívida E40).** A leitura grava direto no
-    servidor: sem wi-fi no pavilhão (ou com a operadora saturada), o monitor não registra nada e a
-    fila para. Não há fila local nem indicador de "leitura pendente" — a saída é papel e digitação
-    depois, com os minutos errados. E41 (impressão em etiqueta adesiva, hoje folha A4 para recortar),
-    E42 (identidade visual do crachá e escolha da lente da câmera) e E43 (o botão único do balcão
-    fecha a presença na segunda leitura — a tela não deixa pedir "só entrada") completam a lista da fase.
-34. **A roleta do telão tem duração fixa e não pode ser repetida nem desligada (FASE 30, dívida
-    E39).** A animação roda quando o telão percebe a apuração ao vivo (~3 s) e quem abre o link
-    depois vê o resultado direto — decisão consciente, mas sem controle: uma projeção que
-    reinicia no meio do anúncio perde a roleta, e o operador não tem como repeti-la nem
-    apresentá-la sem animação.
+32. ~~**O prêmio anunciado de uma rodada não pode ser corrigido pela tela (FASE 30, dívida E38).**~~
+    **Quitada na FASE 35:** a edição do anúncio (prêmio e patrocinador) está desacoplada do
+    documento assinado, com o telão reagindo por SSE sem invalidar o hash do resultado.
+33. ~~**O credenciamento não funciona sem rede (FASE 31, dívida E40).**~~ **Quitada na FASE 35:**
+    o balcão é **offline-first em IndexedDB**, com sincronização idempotente e cronológica
+    (`idempotencyKey` + `Attendance.qrNonce`) quando a rede volta. Continuam abertas **E41**
+    (impressão em etiqueta adesiva, hoje folha A4 para recortar) e **E42** (identidade visual do
+    crachá e escolha da lente da câmera); ~~E43~~ foi quitada na FASE 35 com o **seletor de
+    sentidos** (`IN`, `TOGGLE`, `OUT`) imune a bipes duplos e rajada.
+34. ~~**A roleta do telão tem duração fixa e não pode ser repetida nem desligada (FASE 30, dívida
+    E39).**~~ **Quitada na FASE 35:** o palco tem **pausa/retomada, replay e atalhos de teclado**.
 35. **O arquivo exportado não tem prazo nem controle de destino (FASE 32, dívida E44).** O CSV da
     central do participante sai com o e-mail completo (é o insumo da ação, não uma vitrine) e
     passa a viver em pasta compartilhada, e-mail e pen drive. A trilha registra quem exportou e

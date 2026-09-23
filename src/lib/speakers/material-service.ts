@@ -45,6 +45,8 @@ import {
 } from '@/lib/storage/s3-client';
 import { isSha256Hex, verifyStoredObject } from '@/domain/review/submission-rules';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
+import { isScanningEnabled } from '@/lib/storage/scan-service';
+import { canServeFile, initialScanStatus } from '@/domain/review/file-scan-rules';
 import { formatBytes } from '@/domain/events/image-rules';
 import {
   canAccessMaterial,
@@ -337,6 +339,13 @@ export async function confirmMaterialUpload(
            * colocando esse link na página por fora.
            */
           url: null,
+          /**
+           * O material nasce aguardando inspeção quando o driver está ligado (e
+           * `SKIPPED` — "não inspecionado" — quando não está). O portão do download
+           * usa este campo, então gravar o estado certo AQUI é o que faz a promessa
+           * valer (FASE 36).
+           */
+          scanStatus: initialScanStatus(isScanningEnabled()),
           uploadedById: input.actorId,
         },
       });
@@ -603,6 +612,7 @@ export async function resolveMaterialDownload(input: {
           fileName: true,
           url: true,
           title: true,
+          scanStatus: true,
         },
       }),
     );
@@ -628,6 +638,22 @@ export async function resolveMaterialDownload(input: {
     }
 
     if (material.storageKey) {
+      /**
+       * ─── O PORTÃO DA INSPEÇÃO (FASE 36) ──────────────────────────────────────
+       *  Material de palestrante é upload de gente de fora servido a INSCRITOS — o
+       *  mesmo risco do arquivo de submissão, e a mesma decisão. A resposta é 403
+       *  (não 404): o material existe e a pessoa pode vê-lo; o que não pode é
+       *  receber os BYTES antes do veredito.
+       */
+      const serve = canServeFile({
+        status: material.scanStatus,
+        scanningEnabled: isScanningEnabled(),
+      });
+
+      if (!serve.ok) {
+        return { ok: false, code: 'FORBIDDEN', httpStatus: 403, message: serve.message };
+      }
+
       const url = await createDownloadUrl({
         bucket: material.storageBucket || materialBucket(),
         objectKey: material.storageKey,

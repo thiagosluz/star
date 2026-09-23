@@ -237,6 +237,33 @@ export interface EmailPayloads {
     startsAtLabel: string | null;
     registrationsUrl: string;
   };
+
+  /**
+   * FASE 36 — a decisão da chamada de propostas chegou (quita a dívida E47).
+   *
+   * A proposta era recebida, avaliada e decidida **sem que o proponente soubesse**:
+   * ele só descobria abrindo "Minhas submissões" por acaso — e o prazo de recurso ou
+   * de ajustes da chamada corria contra quem não tinha sido avisado. Este é o outro
+   * lado do protocolo da FASE 33: se o envio tem comprovante, a resposta também tem.
+   *
+   * O TEXTO CARREGA A ORIENTAÇÃO DA DECISÃO (`outcome`), porque "aceita", "recusada" e
+   * "ajustes solicitados" pedem AÇÕES diferentes de quem lê. O que o comitê escreveu
+   * (`notes`) vai literal: é o único lugar onde a pessoa lê o motivo por extenso.
+   */
+  PROPOSAL_DECIDED: {
+    recipientName: string;
+    eventTitle: string;
+    callTitle: string;
+    proposalTitle: string;
+    protocol: string;
+    /** "Aceita", "Recusada", "Ajustes solicitados". */
+    decisionLabel: string;
+    /** O que a decisão significa e o que fazer agora. */
+    outcome: string;
+    /** Justificativa/parecer do comitê, quando houver. */
+    notes: string | null;
+    proposalsUrl: string;
+  };
 }
 
 export type EmailTemplateKey = keyof EmailPayloads;
@@ -258,6 +285,7 @@ export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'REGISTRATION_CONFIRMED',
   'REGISTRATION_RELEASED',
   'WAITLIST_PROMOTED',
+  'PROPOSAL_DECIDED',
 ] as const);
 
 export interface RenderedEmail {
@@ -1094,6 +1122,59 @@ export function renderEmail<K extends EmailTemplateKey>(
         ].join('\n'),
       };
     }
+
+    case 'PROPOSAL_DECIDED': {
+      const data = payload as EmailPayloads['PROPOSAL_DECIDED'];
+
+      /**
+       * O PARECER vai como DESTAQUE (`notice`) e não como parágrafo: é o que a pessoa
+       * relê depois, e muitas vezes o que ela leva para outra pessoa da instituição. O
+       * protocolo continua nos detalhes, porque é por ele que a proposta é localizada —
+       * o mesmo par do e-mail de recebimento (FASE 33).
+       *
+       * O título usa a SITUAÇÃO ("Sua proposta foi aceita"): quem abre a caixa de
+       * entrada decide o que ler pelo assunto e pelo título, e "decisão registrada"
+       * obrigaria a abrir a mensagem para saber se é boa ou má notícia.
+       */
+      return {
+        subject: `${data.decisionLabel}: ${data.proposalTitle}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: `Protocolo ${data.protocol} — ${data.decisionLabel}`,
+          title: `Sua proposta foi ${data.decisionLabel.toLowerCase()}`,
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            markup(
+              `A chamada ${strong(data.callTitle)}, do evento ${strong(data.eventTitle)}, avaliou a sua proposta ${strong(data.proposalTitle)}.`,
+            ),
+            paragraph(data.outcome),
+          ],
+          details: [
+            { label: 'Situação', value: escapeHtml(data.decisionLabel) },
+            { label: 'Protocolo', value: escapeHtml(data.protocol) },
+            { label: 'Chamada', value: escapeHtml(data.callTitle) },
+          ],
+          callToAction: { label: 'Ver a proposta', url: data.proposalsUrl },
+          ...(data.notes ? { notice: `Parecer do comitê: ${escapeHtml(data.notes)}` } : {}),
+          footerNote: `Chamada de ${escapeHtml(data.callTitle)} — ${escapeHtml(data.eventTitle)}.`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          `Sua proposta "${data.proposalTitle}" foi ${data.decisionLabel.toLowerCase()}.`,
+          `Chamada: ${data.callTitle} (${data.eventTitle})`,
+          `Protocolo: ${data.protocol}`,
+          '',
+          data.outcome,
+          ...(data.notes ? ['', `Parecer do comitê: ${data.notes}`] : []),
+          '',
+          'Veja a proposta em:',
+          data.proposalsUrl,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
   }
 }
 
@@ -1118,4 +1199,5 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   REGISTRATION_CONFIRMED: 'Vaga confirmada',
   REGISTRATION_RELEASED: 'Vaga liberada por prazo',
   WAITLIST_PROMOTED: 'Saiu da lista de espera',
+  PROPOSAL_DECIDED: 'Decisão da proposta',
 };

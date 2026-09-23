@@ -22,6 +22,7 @@
 import { Client } from 'pg';
 import {
   APP_ROLE,
+  PLATFORM_ONLY_TABLES,
   TABLES_WITHOUT_RLS,
   TENANT_SCOPED_TABLES,
 } from '../../src/lib/db/schema-contract.ts';
@@ -225,6 +226,31 @@ try {
      WHERE p.proname = 'app_current_tenant_id' AND n.nspname = 'public'`,
   );
   check(fnRows.length === 1, `Função app_current_tenant_id() ausente.`);
+
+  // ── 10. Tabela de PLATAFORMA não é alcançável pela role de runtime ──────────
+  //  A seção 6 libera as tabelas sem RLS por allowlist — e liberar não é o mesmo que
+  //  ser inofensivo. O banco concede CRUD a toda tabela nova para `eventflow_app`
+  //  (ALTER DEFAULT PRIVILEGES do provisionamento), então uma tabela de plataforma
+  //  sem RLS nasce LEGÍVEL e GRAVÁVEL pelo runtime: o histórico operacional ficaria
+  //  exposto e uma linha `RUNNING` inserida à mão travaria a rotina.
+  //
+  //  Esta verificação nasceu da FASE 36, que criou a primeira tabela dessa classe
+  //  (`job_runs`) e descobriu a abertura ao rodar o contrato. Sem ela, a próxima
+  //  tabela de plataforma repetiria o erro em silêncio.
+  for (const table of PLATFORM_ONLY_TABLES) {
+    const { rows } = await client.query(
+      `SELECT privilege_type
+         FROM information_schema.role_table_grants
+        WHERE grantee = $1 AND table_schema = 'public' AND table_name = $2`,
+      [APP_ROLE, table],
+    );
+
+    check(
+      rows.length === 0,
+      `Tabela de plataforma "${table}" tem privilégio para a role "${APP_ROLE}" ` +
+        `(${rows.map((r) => r.privilege_type).join(', ')}). Revogue na migração.`,
+    );
+  }
 } catch (error) {
   failures.push(`Erro ao inspecionar o banco: ${error.message}`);
 } finally {
@@ -250,4 +276,5 @@ console.log(`  ✓  RLS habilitada + FORCE em todas as tabelas com tenantId`);
 console.log(`  ✓  Nenhuma tabela com RLS ficou sem policy`);
 console.log(`  ✓  Role "${APP_ROLE}" sem superuser e sem BYPASSRLS`);
 console.log(`  ✓  GRANTs mínimos presentes, TRUNCATE ausente`);
+console.log(`  ✓  Tabela(s) de plataforma inalcançável(is) pela role "${APP_ROLE}"`);
 console.log(`\n  Contrato íntegro.\n${line}\n`);

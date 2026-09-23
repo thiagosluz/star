@@ -126,8 +126,18 @@ export const GLOBAL_TABLES_WITH_RLS = ['user', 'session', 'tenants'];
  * `account` e `verification` pertencem ao fluxo de autenticação, que acontece
  * ANTES de existir tenant ativo. Aplicar RLS aqui quebraria o login sem ganho
  * de segurança: o acesso já é mediado por `identifier`/`userId`.
+ *
+ * `job_runs` (FASE 36) entra aqui pela mesma razão de fundo — não há `tenantId` por
+ * onde isolar, porque a passada de uma rotina atende TODAS as instituições —, mas o
+ * que a protege é outra coisa: o **privilégio foi revogado** da role de runtime
+ * (migração `20260923154500_job_runs_platform_only`). Sem isso, o padrão do banco
+ * (que concede CRUD a toda tabela nova para `eventflow_app`) deixaria o runtime ler o
+ * histórico operacional e até reservar uma rotina inserindo uma linha `RUNNING`.
+ * `PLATFORM_ONLY_TABLES` é o que a verificação de contrato usa para exigir a revogação.
  */
-export const TABLES_WITHOUT_RLS = ['account', 'verification'];
+export const PLATFORM_ONLY_TABLES = ['job_runs'];
+
+export const TABLES_WITHOUT_RLS = ['account', 'verification', ...PLATFORM_ONLY_TABLES];
 
 /** Todas as tabelas que devem ter `relrowsecurity = true`. */
 export const EXPECTED_RLS_TABLES = [...TENANT_SCOPED_TABLES, ...GLOBAL_TABLES_WITH_RLS];

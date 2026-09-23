@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { FileBadge, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Download, FileBadge, RefreshCw, ShieldAlert } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -65,14 +65,44 @@ export default async function AdminCertificatesPage({
             ← Administração
           </Link>
         </nav>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <FileBadge className="size-6 text-primary" aria-hidden />
-          Certificados
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {certificates.length} documento(s) listado(s)
-          {failed.length > 0 ? ` · ${failed.length} com falha de geração` : ''}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <FileBadge className="size-6 text-primary" aria-hidden />
+              Certificados
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {certificates.length} documento(s) listado(s)
+              {failed.length > 0 ? ` · ${failed.length} com falha de geração` : ''}
+            </p>
+          </div>
+
+          {/*
+            ─── O LOTE EM ZIP (FASE 36) ────────────────────────────────────────────
+            O download é por EVENTO — é assim que a instituição entrega os documentos
+            ("os certificados do congresso"), e é a única granularidade em que o lote
+            faz sentido: um ZIP com a instituição inteira misturaria eventos e não
+            caberia em memória nenhuma.
+
+            Com um evento escolhido no filtro, o botão aparece e leva ao lote daquele
+            evento. Sem ele, a tela diz o que fazer — em vez de oferecer um botão que
+            baixaria tudo.
+          */}
+          {evento ? (
+            <a
+              href={`/api/t/${tenantSlug}/certificados/zip?evento=${evento}`}
+              data-testid="download-certificate-zip"
+              className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              <Download className="size-4" aria-hidden />
+              Baixar todos em ZIP
+            </a>
+          ) : (
+            <p className="text-xs text-muted-foreground" data-testid="zip-hint">
+              Escolha um evento no filtro para baixar o lote em ZIP.
+            </p>
+          )}
+        </div>
       </header>
 
       <form method="get" className="flex flex-wrap items-end gap-3" data-testid="certificate-filters">

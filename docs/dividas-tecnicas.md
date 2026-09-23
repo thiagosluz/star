@@ -10,8 +10,9 @@
 > **FASE 14** (C1, C3, I4), a **FASE 16** (G1–G7 + F1), a **FASE 17** (E3, E4, E5, E6), a
 > **FASE 23** (E9–E13), a **FASE 24** (E14–E17), a **FASE 25** (escopo próprio: E21–E24), a
 > **FASE 15** (D1–D6 + A5) e a **FASE 21** (C4–C5), a **FASE 29**, a **FASE 30**, a **FASE 31**,
-> a **FASE 32**, a **FASE 33** (que quitou o E25 e declarou E46–E47) e a **FASE 34** (que
-> declarou E48–E49), com as **revisões
+> a **FASE 32**, a **FASE 33** (que quitou o E25 e declarou E46–E47), a **FASE 34** (que
+> declarou E48–E49) e a **FASE 35**, com a **FASE 36** (que quitou A3, B7 e E47 e não declarou
+> dívida nova), com as **revisões
 > pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
 >
@@ -90,18 +91,24 @@
 
 | Tema | Itens abertos | Dos quais rápidos (P) | Risco se ficar como está |
 |---|---|---|---|
-| A. Segurança e conformidade | 4 | 0 | Alto — arquivos sem varredura; assinatura de certificado ainda simétrica |
-| B. Confiabilidade e operação | 5 | 3 | Baixo — log estruturado parcial, partições sem agendamento e sem coletor |
+| A. Segurança e conformidade | 3 | 0 | Médio — **a varredura de arquivos foi entregue na FASE 36**; resta a assinatura assimétrica do certificado, a auditoria de leitura e o login social |
+| B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 31 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, não há interruptor para manter o telão fora do ar, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, a roleta do telão não pode ser repetida nem desligada, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, o proponente não é avisado da decisão, a confirmação de vaga não é por exigência e não há prazo-limite da atividade |
+| E. Jornada do participante | 26 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, a confirmação de vaga não é por exigência e não há prazo-limite da atividade |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **55** | **17** | (8 quitados na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · o escopo próprio da FASE 25, mais o que cada uma declarou de novo) |
+| **Total** | **48** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — mais o escopo próprio da FASE 25 e as revisões) |
 
-> O total é a **soma das tabelas de tema** (4+5+2+3+31+5+0+4+1 = 55 — o tema G ficou
+> **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
+> linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
+> sem atualizar o resumo, e a FASE 33 fez o mesmo com o E25. Contando o que está **aberto**,
+> linha por linha, nas nossas próprias tabelas (a regra deste documento): o total era **50**
+> antes desta fase, e passa a **48** com A3, B7 e E47 quitados aqui.
+>
+> O total é a **soma das tabelas de tema** (3+4+2+3+26+5+0+4+1 = 48 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -122,6 +129,17 @@
 > além dos N dias da inscrição). No caminho, corrigiu dois defeitos reais: a promoção da lista de
 > espera não devolvia o lugar no EVENTO (armadilha 79) e a fila de confirmações abria pela agenda
 > em vez da urgência (armadilha 80). O consolidado passa de 53 para **55**.
+>
+> **A FASE 36** (operação das rotinas automáticas, inspeção de arquivos, lote de certificados e
+> aviso de decisão) veio do humano e **quitou TRÊS itens deste levantamento**: o **A3** (antivírus
+> nos arquivos, aberto desde a FASE 4), o **B7** (agendamento da manutenção das partições, aberto
+> desde a FASE 13 — a rotina foi para dentro do worker) e o **E47** (o proponente não era avisado
+> da decisão, declarado pela FASE 33). No caminho ela criou a primeira tabela de plataforma sem
+> RLS (`job_runs`) e a verificação de contrato que exige a revogação do acesso do runtime
+> (armadilhas 82–83). Não declarou dívida nova. **O consolidado passa de 50 para 48** —
+> ver a *correção de contagem* acima: a soma publicada aqui (55) contava linhas já riscadas,
+> e os números da narrativa das fases 34–35 ("53 → 55", "52 → 53") vinham dessa soma. O que
+> vale é a contagem linha a linha das tabelas.
 >
 > **A FASE 33** (chamadas de propostas) veio do humano e **QUITOU o E25**: o convite de palestrante
 > passou a sair por e-mail (template `SPEAKER_INVITATION`, disparado pelo protocolo de aceite). Ela
@@ -180,7 +198,7 @@
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
 | A2 | **Assinatura assimétrica de certificado (PKCS#7/CMS)** | F1, F6 | Trocar HMAC por chave privada + certificado; `signatureAlg`/`keyId` já preparados; exige cofre de chave | Terceiros não validam offline sem confiar na instituição | G | Decorrente |
-| A3 | **Antivírus nos arquivos de submissão** | F4, F6 | `scanStatus` é `SKIPPED` (`submission-service.ts`); integrar ClamAV ao worker | Arquivo malicioso armazenado e servido por URL assinada | M | Sim |
+| ~~A3~~ | ~~**Antivírus nos arquivos de submissão**~~ | F4, F6 | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. Driver de inspeção com o padrão em NÃO inspecionar, rotina `file-scan` no worker (de 5 em 5 minutos), portão de download nos dois caminhos que servem bytes de terceiro (submissão e material de palestrante), trilha da ameaça e ClamAV sob perfil próprio no compose. Ficou de fora `media_assets` (bucket público, leitura pela URL) e o anexo de proposta, que ainda não existe (**E46**) | — | — | — |
 | A4 | **Auditoria de leitura de dados pessoais** | F7 | A trilha registra mutações; quem **visualizou** não é registrado | Sem rastro em incidente de acesso indevido | M | Decorrente |
 | A6 | **Login social (Google/ORCID)** | F2 | Tabela `account` é multi-provedor; falta o provedor e as credenciais | Atrito de cadastro em público acadêmico | M | Sim |
 
@@ -193,7 +211,7 @@
 |---|---|---|---|---|---|---|
 | B5 | **`unstable_cache` → `use cache`** | F9 | API legada no diretório público | Dívida de atualização do framework | P | Sim |
 | B6 | **Adoção do `logger` nos serviços** | F13 (novo) | A FASE 13 migrou os pontos de operação; ~66 `console.*` seguem nos serviços (`catalog-service`, `certificate-service`, `raffle-service`, …) | Log sem estrutura nem redação nesses caminhos | M | Sim |
-| B7 | **Agendamento da manutenção de partições** | F13 (novo) | `npm run db:partitions` precisa de cron/orquestrador; o projeto não tem scheduler | Mês sem partição cai na `DEFAULT`; o resgate funciona, mas a retenção por `DROP` perde o sentido | P | Sim |
+| ~~B7~~ | ~~**Agendamento da manutenção de partições**~~ | F13 (novo) | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. A manutenção virou rotina do WORKER (`audit-partitions`, todo dia às 3h) e não depende mais de alguém configurar cron na máquina; a CLI (`npm run db:partitions`) continua existindo para quem opera sem worker, chamando o mesmo serviço | — | — | — |
 | B8 | **Política de retenção da auditoria** | F13 (novo) | Decisão de negócio (LGPD × guarda): nada é descartado hoje | A `DEFAULT` e o histórico crescem sem limite definido | P | Decorrente |
 | B9 | **Coletor de métricas (Prometheus/Grafana)** | F13 (novo) | O endpoint é o contrato; falta quem raspe e alerte | Métrica existe e ninguém lê; `bullmq_queue_up 0` não vira alerta | M | Decorrente |
 
@@ -249,7 +267,7 @@
 | E45 | **O recado é mão única: não há resposta nem thread** | FASE 32 (novo, ADR-156) | O participante recebe e lê (a ficha mostra "não lido"), mas não responde pela plataforma, e quem enviou não vê "respondeu". "Não lido" não é o mesmo que "não recebido" | A instituição fala e não ouve: dúvida sobre credenciamento vira ligação para a secretaria, fora do registro. O caminho é a resposta na própria caixa de entrada (uma thread por mensagem) e o indicador de resposta na ficha | M | Sim |
 | ~~E39~~ | ~~**A roleta tem duração fixa e não pode ser reexecutada nem desligada**~~ | FASE 30 | **Quitado na FASE 35**: botões de pausa/retomada e replay determinístico sobre lista real no palco, com atalhos `Espaço` e `R` (ADR-182) | — | — | — |
 | E46 | **A proposta de uma chamada não aceita anexo** | FASE 33 (novo, ADR-161/162) | O formulário público pede texto e os campos do TIPO (carga horária, público-alvo, minibiografia), e não tem upload — diferente da submissão de artigo, que anexa o PDF. A prontidão fora da ciência trata "sem arquivo" como AVISO, e o caminho de upload existe (FASE 23/24, com quota e assinatura real do arquivo) | A organização decide sobre um resumo de 150 caracteres e uma minibiografia, sem o plano de aula nem o currículo que costumam acompanhar a proposta — e a decisão fica mais pobre justamente nas chamadas em que ela é mais subjetiva. O caminho é reusar `requestUploadAction`/`confirmUploadAction` no formulário público, com visibilidade decidida como no material do palestrante | M | Sim |
-| E47 | **O proponente não é avisado da decisão (aceite ou recusa)** | FASE 33 (novo, ADR-165) | `recordDecision` grava situação, nota e auditoria, e nenhum e-mail sai; o proponente descobre o resultado entrando na plataforma com o protocolo em mãos. A esteira de e-mail existe (FASE 15) e a proposta já tem o template `PROPOSAL_RECEIVED` | Expectativa quebrada no ponto mais sensível: a pessoa enviou uma proposta e ficou sem resposta — e um e-mail de recusa bem escrito é metade do trabalho de organizar uma chamada. O caminho é um template `PROPOSAL_DECIDED`, disparado por `recordDecision` fora da transação, com `dedupeKey` por proposta × decisão e o parecer resumido quando houver | P | Sim |
+| ~~E47~~ | ~~**O proponente não é avisado da decisão (aceite ou recusa)**~~ | FASE 33 | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. Template `PROPOSAL_DECIDED`, disparado por `recordDecision` **fora da transação**, com `dedupeKey` por proposta × decisão, o parecer do comitê no aviso e os dois canais (caixa de entrada + outbox). Vale para a proposta de CHAMADA; o artigo do fluxo acadêmico continua acompanhando pela tela de submissões (limite declarado na ADR-189) | — | — | — |
 | E48 | **A confirmação de vaga é do CONJUNTO, não de cada exigência** | FASE 34 (novo, ADR-170) | A equipe confirma a vaga inteira: não há como registrar "recebeu o alimento, falta o brinquedo". A lista de exigências existe (tipo, descrição, observação) e aparece na tela e no aviso, mas o estado da confirmação é um só (`PENDING` → `CONFIRMED`) | Numa campanha com três itens, quem entregou dois fica no mesmo estado de quem não entregou nada — e a equipe resolve no balcão, no olho, ou aceita a confirmação parcial sem registro. A tela do balcão mostraria N caixas e o histórico diria exatamente o que foi recebido. O caminho é uma tabela de confirmações por exigência, com a confirmação geral derivada da regra "todas as obrigatórias cumpridas" (o estado da INSCRIÇÃO continua sendo um só) | M | Sim |
 | E49 | **Não há prazo-limite da atividade além dos N dias da inscrição** | FASE 34 (novo, ADR-173) | O organizador escolhe "5 dias", e quem se inscreve no último dia antes do evento tem prazo até depois do evento começar: a varredura olha o prazo da pessoa, não a data da atividade | Uma vaga retida pode ser liberada com a atividade já em andamento, e quem se inscreve em cima da hora e não confirma ocupa o lugar no dia. O caminho é um campo opcional de data-limite na atividade, com o prazo da pessoa sendo o MENOR entre "N dias" e a data-limite (a terceira opção que o humano não escolheu nesta fase) | P | Sim |
 
