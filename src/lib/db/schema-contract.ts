@@ -112,6 +112,13 @@ export const TENANT_SCOPED_TABLES = [
    */
   'email_messages',
   'tenant_invitations',
+  /**
+   * FASE 37 — exigências de confirmação POR INSCRIÇÃO. O snapshot do que a pessoa foi
+   * cobrada no dia da inscrição (com o veredito de cada item) é dado da instituição como
+   * qualquer outro: a fila da equipe lê o que falta e a confirmação automática da vaga
+   * depende de o checklist de uma instituição não aparecer na outra.
+   */
+  'registration_confirmation_items',
 ];
 
 /**

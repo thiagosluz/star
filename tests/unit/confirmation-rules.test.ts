@@ -243,8 +243,31 @@ describe('leitura das exigências gravadas', () => {
     ]);
 
     expect(parsed).toEqual([
-      { kind: 'DONATION', label: '1 kg de alimento', note: null },
-      { kind: 'PAYMENT', label: 'Taxa de R$ 30', note: 'Pix na secretaria' },
+      { kind: 'DONATION', label: '1 kg de alimento', note: null, required: true },
+      { kind: 'PAYMENT', label: 'Taxa de R$ 30', note: 'Pix na secretaria', required: true },
+    ]);
+  });
+
+  /**
+   * Opcional é `false` EXPLÍCITO (FASE 37). Todo o resto — campo ausente, `null`, texto —
+   * continua obrigatório, que é o que a FASE 34 já fazia com todas as exigências: o dado
+   * gravado antes desta fase não pode virar "opcional" por não ter o campo.
+   */
+  it('só o `false` explícito torna a exigência opcional', () => {
+    const parsed = parseConfirmationRequirements([
+      { kind: 'ITEM', label: 'Obrigatória por omissão' },
+      { kind: 'ITEM', label: 'Obrigatória declarada', required: true },
+      { kind: 'ITEM', label: 'Opcional', required: false },
+      { kind: 'ITEM', label: 'Valor estranho continua obrigatória', required: 'não' },
+      { kind: 'ITEM', label: 'Nulo continua obrigatória', required: null },
+    ]);
+
+    expect(parsed.map((requirement) => requirement.required)).toEqual([
+      true,
+      true,
+      false,
+      true,
+      true,
     ]);
   });
 

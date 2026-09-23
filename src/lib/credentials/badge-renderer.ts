@@ -36,6 +36,14 @@ import {
   pdfDate,
   wrapText,
 } from '@/lib/documents/pdf-text';
+import {
+  A4_HEIGHT_MM,
+  A4_WIDTH_MM,
+  DEFAULT_LABEL_LAYOUT,
+  labelPositions,
+  mmToPt,
+  type LabelSheetLayout,
+} from '@/domain/events/badge-print-rules';
 
 /** A4 retrato em pontos: 595 × 842. */
 const PAGE_WIDTH = 595;
@@ -75,17 +83,40 @@ function drawBadge(input: {
   height: number;
   badge: BadgeLabel;
   tenantName: string;
+  /** `false` na folha adesiva: a etiqueta já tem borda, e a moldura viraria tinta a mais. */
+  frame?: boolean;
 }): void {
-  const { operations, x, y, width, height, badge, tenantName } = input;
+  const { operations, x, y, width, height, badge, tenantName, frame = true } = input;
 
   // ── Moldura (marca de corte) ───────────────────────────────────────────────
-  operations.push('0.72 0.75 0.8 RG 0.5 w', `${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S`);
+  if (frame) {
+    operations.push('0.72 0.75 0.8 RG 0.5 w', `${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S`);
+  }
+
+  /**
+   * ── AS MEDIDAS ACOMPANHAM A CÉLULA (FASE 37) ───────────────────────────────
+   *
+   *  A folha A4 da FASE 31 tem células de ~269 × 193 pt e o desenho foi feito para
+   *  elas (QR de 96 pt, nome de 13 pt). A etiqueta adesiva é MENOS da metade disso
+   *  (63,5 × 33,9 mm ≈ 180 × 96 pt): manter os números fixos faria o QR (96 pt) estourar
+   *  a altura da etiqueta e o nome sair por cima do código.
+   *
+   *  A referência é a altura da célula da folha A4, e cada medida é o produto dela por
+   *  um fator com PISO — abaixo disso o texto fica ilegível e o QR deixa de ser lido.
+   *  Na folha A4 o fator é 1, então os números são exatamente os de antes (o teste da
+   *  fase anterior continua prendendo isso).
+   */
+  const scale = Math.min(1, Math.max(0.42, height / 193));
+  const padding = Math.max(5, 14 * scale);
+  const nameSize = Math.max(8, Math.round(13 * scale));
+  const codeSize = Math.max(7, Math.round(12 * scale));
+  const originSize = Math.max(5, Math.round(8 * scale));
 
   // ── QR Code como vetor, à esquerda ────────────────────────────────────────
   const qr = buildQrMatrix(badge.code);
-  const qrSize = Math.min(height - 34, 96);
+  const qrSize = Math.min(height - 34 * scale, Math.max(40, 96 * scale));
   const moduleSize = qrSize / qr.size;
-  const qrX = x + 14;
+  const qrX = x + padding;
   const qrY = y + (height - qrSize) / 2;
 
   operations.push('0 0 0 rg');
@@ -105,14 +136,13 @@ function drawBadge(input: {
   }
 
   // ── Textos, à direita do QR ───────────────────────────────────────────────
-  const textX = qrX + qrSize + 14;
-  const textWidth = x + width - 14 - textX;
+  const textX = qrX + qrSize + padding;
+  const textWidth = x + width - padding - textX;
 
   operations.push('0.06 0.09 0.16 rg');
 
-  const nameSize = 13;
   const nameLines = wrapText(badge.name, Math.max(8, Math.floor(textWidth / (nameSize * 0.55)))).slice(0, 2);
-  let cursor = y + height - 30;
+  let cursor = y + height - Math.max(16, 30 * scale);
 
   nameLines.forEach((line) => {
     operations.push(`BT /F2 ${nameSize} Tf ${textX.toFixed(2)} ${cursor.toFixed(2)} Td (${escapePdfText(line)}) Tj ET`);
@@ -122,15 +152,15 @@ function drawBadge(input: {
   // Código do crachá: é o que o monitor digita quando o leitor falha.
   operations.push('0.11 0.31 0.85 rg');
   operations.push(
-    `BT /F2 12 Tf ${textX.toFixed(2)} ${(y + 30).toFixed(2)} Td (${escapePdfText(badge.code)}) Tj ET`,
+    `BT /F2 ${codeSize} Tf ${textX.toFixed(2)} ${(y + Math.max(14, 30 * scale)).toFixed(2)} Td (${escapePdfText(badge.code)}) Tj ET`,
   );
 
   operations.push('0.42 0.45 0.5 rg');
 
   const subtitle = badge.subtitle ?? tenantName;
   operations.push(
-    `BT /F1 8 Tf ${textX.toFixed(2)} ${(y + 18).toFixed(2)} Td (${escapePdfText(
-      wrapText(subtitle, Math.max(10, Math.floor(textWidth / (8 * 0.5))))[0]!,
+    `BT /F1 ${originSize} Tf ${textX.toFixed(2)} ${(y + Math.max(7, 18 * scale)).toFixed(2)} Td (${escapePdfText(
+      wrapText(subtitle, Math.max(10, Math.floor(textWidth / (originSize * 0.5))))[0]!,
     )}) Tj ET`,
   );
 }
@@ -228,3 +258,101 @@ export function renderBadgeSheetPdf(document: BadgeSheetDocument): Buffer {
 
   return assemblePdf(objects);
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Folha de ETIQUETAS adesivas (FASE 37)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface BadgeLabelSheetDocument extends BadgeSheetDocument {
+  layout: LabelSheetLayout;
+}
+
+/**
+ * A folha de etiquetas adesivas.
+ *
+ * Três diferenças em relação à folha A4 da FASE 31, e todas têm motivo:
+ *
+ *   • **sem moldura** — a etiqueta JÁ tem borda; desenhar a marca de corte imprimiria
+ *     tinta em cima do recorte e sujaria a borda de todo crachá;
+ *   • **sem cabeçalho de página** — a folha inteira é etiqueta, e qualquer texto fora
+ *     da grade cairia no papel de suporte (ou na etiqueta do vizinho);
+ *   • **a posição vem do LAYOUT** (milímetros), não de uma grade fixa: é o que faz a
+ *     impressão cair dentro da etiqueta de qualquer modelo.
+ *
+ * A última página pode ficar incompleta: imprimir 3 crachás não gera uma folha em branco
+ * depois, e a etiqueta vazia simplesmente não é tocada (não se imprime na que sobra).
+ */
+export function renderBadgeLabelSheetPdf(document: BadgeLabelSheetDocument): Buffer {
+  const badges = [...document.badges];
+  const positions = labelPositions(document.layout);
+  const perPage = positions.length;
+  const pageCount = Math.max(1, Math.ceil(badges.length / perPage));
+  const fontCount = PDF_FONT_OBJECTS.length;
+  const pageWidth = mmToPt(A4_WIDTH_MM);
+  const pageHeight = mmToPt(A4_HEIGHT_MM);
+
+  const firstContents = 3 + fontCount;
+  const contentsRef = (page: number) => firstContents + page * 2;
+  const pageRef = (page: number) => contentsRef(page) + 1;
+  const infoRef = contentsRef(pageCount - 1) + 2;
+
+  const contents: string[] = [];
+
+  for (let page = 0; page < pageCount; page += 1) {
+    const operations: string[] = [];
+    const slice = badges.slice(page * perPage, (page + 1) * perPage);
+
+    slice.forEach((badge, index) => {
+      const position = positions[index];
+      if (!position) return;
+
+      drawBadge({
+        operations,
+        x: position.x,
+        y: position.y,
+        width: position.width,
+        height: position.height,
+        badge,
+        tenantName: document.tenantName,
+        frame: false,
+      });
+    });
+
+    contents.push(operations.join('\n'));
+  }
+
+  const issued = pdfDate(document.generatedAt);
+
+  const objects: string[] = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, page) => `${pageRef(page)} 0 R`).join(' ')}] /Count ${pageCount} >>`,
+    ...PDF_FONT_OBJECTS,
+  ];
+
+  contents.forEach((body, page) => {
+    const buffer = Buffer.from(body, 'latin1');
+
+    objects.push(`<< /Length ${buffer.length} >>\nstream\n${body}\nendstream`);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentsRef(page)} 0 R >>`,
+    );
+  });
+
+  objects.push(
+    `<< /Title (${escapePdfText(`Etiquetas · ${document.eventTitle}`)}) /Author (${escapePdfText(
+      document.tenantName,
+    )}) /Subject (${escapePdfText(
+      `${badges.length} crachá(s) · grade ${document.layout.columns}x${document.layout.rows} de ${document.layout.labelWidthMm}x${document.layout.labelHeightMm} mm`,
+    )}) /Creator (EventFlow) /Producer (EventFlow) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
+  );
+
+  if (objects.length !== infoRef) {
+    throw new Error(
+      `Numeração de objetos inconsistente nas etiquetas (esperado ${infoRef}, obtido ${objects.length}).`,
+    );
+  }
+
+  return assemblePdf(objects);
+}
+
+/** O layout padrão, reexportado para a tela e para os testes não importarem o domínio. */
+export const BADGE_LABEL_DEFAULT_LAYOUT = DEFAULT_LABEL_LAYOUT;

@@ -827,6 +827,8 @@ model Tenant {
   sponsorTiers        SponsorTier[]
   sponsors            Sponsor[]
   registrations       Registration[]
+  /// Exigências de confirmação por inscrição — FASE 37.
+  confirmationItems   RegistrationConfirmationItem[]
   attendances         Attendance[]
   submissions         Submission[]
   submissionAuthors   SubmissionAuthor[]
@@ -921,6 +923,8 @@ model User {
   attendances       Attendance[]
   /// Inscrições cuja vaga esta pessoa confirmou, como equipe (FASE 34).
   registrationsConfirmed Registration[] @relation("RegistrationConfirmedBy")
+  /// Exigências de confirmação que esta pessoa resolveu no balcão (FASE 37).
+  confirmationItemsResolved RegistrationConfirmationItem[] @relation("ConfirmationItemResolvedBy")
   submissions       Submission[]
   submissionAuthors SubmissionAuthor[]
   /// Chamadas de propostas que esta pessoa criou — FASE 33.
@@ -1928,6 +1932,20 @@ model Registration {
   xpTransactions XpTransaction[]
   confirmedBy    User?        @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
+  /**
+   * ─── As exigências DESTA inscrição (FASE 37, dívida E48) ──────────────────────
+   *
+   *  A FASE 34 guardava na ATIVIDADE a lista do que é preciso ("1 kg de alimento") e
+   *  a confirmação era do CONJUNTO: quem entregou dois itens de três ficava no mesmo
+   *  estado de quem não entregou nada.
+   *
+   *  Aqui cada exigência tem a própria linha, com o próprio veredito. As linhas são
+   *  criadas NO ATO DA INSCRIÇÃO (`snapshotRequirements`) — não na leitura —, pelo
+   *  mesmo motivo do certificado: o que a pessoa foi cobrada é um FATO do dia em que
+   *  ela se inscreveu, e editar a atividade depois não pode reescrevê-lo.
+   */
+  confirmationItems RegistrationConfirmationItem[]
+
   /// NÃO existe `@@unique([activityId, userId])` aqui de propósito.
   ///
   /// Um cancelamento é TERMINAL: a linha permanece com status CANCELED. Se a
@@ -1950,6 +1968,53 @@ model Registration {
   @@index([eventId, status])
   @@index([badgeToken])
   @@map("registrations")
+}
+
+/// Exigência de confirmação de UMA inscrição (FASE 37 — quita a dívida E48).
+///
+/// É o SNAPSHOT do que a atividade pedia no dia da inscrição, com o veredito de cada
+/// item: `PENDING` (ainda não recebido), `RECEIVED` (recebido no balcão) ou `WAIVED`
+/// (a equipe dispensou — quem faltou fomos nós, não a pessoa).
+///
+/// A confirmação da vaga continua sendo UMA, na inscrição (`Registration.status`): o
+/// que muda aqui é o CAMINHO — quando todas as exigências OBRIGATÓRIAS estão satisfeitas,
+/// a vaga se confirma sozinha, chamando a mesma transição que a equipe usaria.
+model RegistrationConfirmationItem {
+  id             String @id @default(uuid(7)) @db.Uuid
+  tenantId       String @db.Uuid
+  registrationId String @db.Uuid
+
+  /// Ordem do checklist (0-based). Fixada no snapshot: a tela nunca reordena.
+  position Int
+  /// Espelha `ConfirmationRequirementKind` do domínio.
+  kind     String  @db.VarChar(20)
+  label    String  @db.VarChar(140)
+  note     String? @db.VarChar(200)
+
+  /// Exigência obrigatória? Só as obrigatórias bloqueiam a confirmação automática.
+  required Boolean @default(true)
+
+  /// `PENDING` | `RECEIVED` | `WAIVED` — espelha o domínio, sem enum no banco.
+  status String @default("PENDING") @db.VarChar(20)
+
+  /// Quando e por quem o item foi resolvido (recebido ou dispensado).
+  resolvedAt   DateTime? @db.Timestamptz(6)
+  resolvedById String?   @db.Uuid
+  /// Observação do balcão ("entregou 2 kg", "pagou em dinheiro").
+  resolutionNote String? @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  resolvedBy   User?        @relation("ConfirmationItemResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  /// Uma linha por posição em cada inscrição: repetir o snapshot é erro, não duplicata.
+  @@unique([registrationId, position])
+  /// A fila da equipe lê "os itens destas inscrições" e a tela conta o que falta.
+  @@index([tenantId, registrationId, status])
+  @@map("registration_confirmation_items")
 }
 
 /// Registro de presença. Um por check-in/check-out — permite múltiplos

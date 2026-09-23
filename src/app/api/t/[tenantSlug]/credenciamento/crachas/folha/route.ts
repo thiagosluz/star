@@ -2,16 +2,15 @@ import { NextResponse } from 'next/server';
 
 import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
-import { withTenant } from '@/lib/db/tenant-client';
-import { listCredentialRoster } from '@/lib/events/credential-service';
-import { renderBadgeSheetPdf, type BadgeLabel } from '@/lib/credentials/badge-renderer';
+import { renderBadgeSheetPdf } from '@/lib/credentials/badge-renderer';
+import { badgeFileName, prepareBadgePrint } from '@/lib/events/badge-print-service';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  FOLHA DE CRACHÁS EM PDF (FASE 31)
+ *  FOLHA DE CRACHÁS EM PDF (FASE 31) — A4, para recortar
  *  `GET /api/t/<slug>/credenciamento/crachas/folha?eventId=<id>[&userIds=a,b,c]`
  *
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -20,7 +19,7 @@ export const runtime = 'nodejs';
  *  Impressão é DOWNLOAD: o navegador precisa abrir o arquivo numa aba nova (e o
  *  monitor precisa poder dar Ctrl+P). Server Action devolve estado para a tela, não
  *  um arquivo — e um `blob` montado no cliente duplicaria o renderizador no navegador.
- * *
+ *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE A ROTA NÃO FICA SOB `/eventos/<algo>/` (e o `eventId` vem na query)
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +35,10 @@ export const runtime = 'nodejs';
  *
  *  O QUE A ETIQUETA TEM: QR Code (com o código), o CÓDIGO por extenso e o NOME. Nada
  *  de dado pessoal além do nome — o QR carrega só o código.
+ *
+ *  Desde a FASE 37 a preparação do lote (quais crachás são válidos e a marcação de
+ *  impresso) vive em `prepareBadgePrint`, compartilhada com as etiquetas adesivas e com
+ *  o arquivo ZPL: três saídas de impressão, UMA regra.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export async function GET(
@@ -69,77 +72,31 @@ export async function GET(
     return NextResponse.json({ ok: false, code: auth.state.code, message: auth.state.message }, { status: 403 });
   }
 
-  const [tenant, event, roster] = await Promise.all([
-    withTenant(auth.tenantId, (tx) =>
-      tx.tenant.findUniqueOrThrow({ where: { id: auth.tenantId }, select: { name: true } }),
-    ),
-    withTenant(auth.tenantId, (tx) =>
-      tx.event.findFirstOrThrow({
-        where: { id: eventId, tenantId: auth.tenantId, deletedAt: null },
-        select: { title: true },
-      }),
-    ),
-    listCredentialRoster({ tenantId: auth.tenantId, eventId }),
-  ]);
+  const prepared = await prepareBadgePrint({
+    tenantId: auth.tenantId,
+    eventId,
+    actorId: auth.userId,
+    userIds,
+  });
 
-  if (!roster.ok) {
-    return NextResponse.json({ ok: false, code: roster.code, message: roster.message }, { status: 400 });
-  }
-
-  /**
-   * Sem seleção, a folha leva todos os crachás VÁLIDOS — revogado não se imprime (o
-   * código não vale mais, e uma etiqueta circulando com ele é um problema no balcão).
-   */
-  const chosen = roster.entries.filter(
-    (entry) =>
-      entry.credential !== null &&
-      entry.credential.state === 'ACTIVE' &&
-      (userIds.length === 0 || userIds.includes(entry.userId)),
-  );
-
-  if (chosen.length === 0) {
+  if (!prepared.ok) {
     return NextResponse.json(
-      {
-        ok: false,
-        code: 'NO_ELIGIBLE',
-        message: 'Nenhum crachá válido para imprimir. Emita os crachás que faltam antes de imprimir a folha.',
-      },
-      { status: 400 },
+      { ok: false, code: prepared.code, message: prepared.message },
+      { status: prepared.code === 'NOT_FOUND' ? 404 : 400 },
     );
   }
 
-  const badges: BadgeLabel[] = chosen.map((entry) => ({
-    name: entry.name,
-    code: entry.credential!.code,
-    subtitle: `${event.title}${entry.registrations.length > 0 ? ` · ${entry.registrations.length} inscrição(ões)` : ''}`,
-  }));
-
   const pdf = renderBadgeSheetPdf({
-    tenantName: tenant.name,
-    eventTitle: event.title,
+    tenantName: prepared.batch.tenantName,
+    eventTitle: prepared.batch.eventTitle,
     generatedAt: new Date(),
-    badges,
+    badges: prepared.batch.badges,
   });
-
-  /**
-   * A impressão é registrada: quem reimprime uma folha perdida precisa saber que a
-   * anterior já saiu — e a lista mostra "impresso" por crachá.
-   */
-  const credentialIds = chosen.map((entry) => entry.credential!.id);
-
-  await withTenant(auth.tenantId, (tx) =>
-    tx.eventCredential.updateMany({
-      where: { tenantId: auth.tenantId, id: { in: credentialIds } },
-      data: { printedAt: new Date(), printedById: auth.userId },
-    }),
-  );
-
-  const fileName = `crachas-${event.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.pdf`;
 
   return new Response(new Uint8Array(pdf), {
     headers: {
       'content-type': 'application/pdf',
-      'content-disposition': `inline; filename="${fileName}"`,
+      'content-disposition': `inline; filename="${badgeFileName(prepared.batch.eventSlug, 'pdf')}"`,
       'cache-control': 'no-store',
     },
   });

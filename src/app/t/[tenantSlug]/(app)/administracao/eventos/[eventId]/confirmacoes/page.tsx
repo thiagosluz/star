@@ -7,8 +7,9 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listConfirmationQueue } from '@/lib/events/confirmation-service';
-import { confirmRegistrationAction } from '@/app/actions/admin-actions';
+import { confirmRegistrationAction, resolveConfirmationItemAction } from '@/app/actions/admin-actions';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
+import { CONFIRMATION_ITEM_STATUS_LABELS } from '@/domain/events/confirmation-item-rules';
 
 export const metadata = { title: 'Confirmações de vaga' };
 export const dynamic = 'force-dynamic';
@@ -270,6 +271,86 @@ export default async function EventConfirmationsPage({
                               timeZone: queue.eventTimeZone,
                             }).format(row.registeredAt)}
                           </p>
+
+                          {/**
+                            * ─── O CHECKLIST ITEM POR ITEM (FASE 37) ─────────────────────
+                            *
+                            *  O balcão recebe UM item de cada vez: quem entrega o alimento
+                            *  e não trouxe o brinquedo fica com metade do checklist feito,
+                            *  e é isso que a fila passa a mostrar. A última exigência
+                            *  obrigatória fecha a vaga sozinha — o botão "Confirmar vaga"
+                            *  continua ali para quem não tem checklist (ou precisa
+                            *  confirmar apesar dele).
+                            */}
+                          {row.items.length > 0 ? (
+                            <div
+                              className="mt-2 space-y-1.5 rounded-md border border-border bg-surface-low p-2"
+                              data-testid={`confirmation-items-${row.registrationId}`}
+                            >
+                              <p className="text-xs font-medium" data-testid={`items-summary-${row.registrationId}`}>
+                                Checklist: {row.itemsSummary}
+                              </p>
+
+                              <ul className="space-y-1.5">
+                                {row.items.map((item) => (
+                                  <li
+                                    key={item.id}
+                                    className="flex flex-wrap items-center justify-between gap-2 text-xs"
+                                    data-testid={`confirmation-item-${row.registrationId}-${item.position}`}
+                                    data-item-status={item.status}
+                                  >
+                                    <span className="min-w-0">
+                                      <span
+                                        className={
+                                          item.status === 'PENDING'
+                                            ? 'text-foreground'
+                                            : 'text-muted-foreground line-through'
+                                        }
+                                      >
+                                        {item.label}
+                                      </span>
+                                      {item.required ? null : (
+                                        <span className="ml-1 text-muted-foreground">(opcional)</span>
+                                      )}
+                                      <span className="ml-1 text-muted-foreground">
+                                        · {CONFIRMATION_ITEM_STATUS_LABELS[item.status]}
+                                      </span>
+                                    </span>
+
+                                    {item.status === 'PENDING' ? (
+                                      <span className="flex shrink-0 gap-1">
+                                        <InlineActionForm
+                                          action={resolveConfirmationItemAction}
+                                          submitLabel="Recebido"
+                                          variant="outline"
+                                          testId={`receive-item-${row.registrationId}-${item.position}`}
+                                        >
+                                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                                          <input type="hidden" name="eventId" value={eventId} />
+                                          <input type="hidden" name="registrationId" value={row.registrationId} />
+                                          <input type="hidden" name="itemId" value={item.id} />
+                                          <input type="hidden" name="status" value="RECEIVED" />
+                                        </InlineActionForm>
+
+                                        <InlineActionForm
+                                          action={resolveConfirmationItemAction}
+                                          submitLabel="Dispensar"
+                                          variant="outline"
+                                          testId={`waive-item-${row.registrationId}-${item.position}`}
+                                        >
+                                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                                          <input type="hidden" name="eventId" value={eventId} />
+                                          <input type="hidden" name="registrationId" value={row.registrationId} />
+                                          <input type="hidden" name="itemId" value={item.id} />
+                                          <input type="hidden" name="status" value="WAIVED" />
+                                        </InlineActionForm>
+                                      </span>
+                                    ) : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
                         </div>
 
                         {/**

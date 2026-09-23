@@ -205,7 +205,54 @@ export default async function MyRegistrationsPage({
                       </p>
                     ) : null}
 
-                    {registration.confirmation.requirements.length > 0 ? (
+                    {/**
+                      * ── O CHECKLIST ITEM A ITEM (FASE 37) ─────────────────────────
+                      *
+                      *  Quando a inscrição tem itens, é ESTA a lista que vale: ela é o
+                      *  snapshot do que foi cobrado desta pessoa, com o estado que a
+                      *  equipe registrou no balcão. A lista de `requirements` (a
+                      *  configuração ATUAL da atividade) só aparece quando não há itens
+                      *  — inscrição anterior à FASE 37 ou atividade que ainda não teve
+                      *  o checklist gerado. Mostrar as duas faria a tela dizer duas
+                      *  coisas diferentes sobre a mesma vaga depois de uma edição.
+                      */}
+                    {registration.confirmation.items.length > 0 ? (
+                      <div
+                        className="space-y-0.5"
+                        data-testid="registration-confirmation-items"
+                        data-items-summary={registration.confirmation.itemsSummary}
+                      >
+                        <p className="text-muted-foreground">
+                          O que a organização registrou ({registration.confirmation.itemsSummary}):
+                        </p>
+                        <ul className="space-y-0.5">
+                          {registration.confirmation.items.map((item) => (
+                            <li
+                              key={item.id}
+                              className="flex flex-wrap items-baseline gap-x-2"
+                              data-testid={`registration-item-${item.id}`}
+                              data-item-status={item.status}
+                            >
+                              <span aria-hidden>
+                                {item.status === 'PENDING' ? '○' : '●'}
+                              </span>
+                              <span
+                                className={
+                                  item.status === 'PENDING' ? '' : 'text-muted-foreground line-through'
+                                }
+                              >
+                                {item.label}
+                                {item.required ? '' : ' (opcional)'}
+                                {item.note ? ` — ${item.note}` : ''}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {item.statusLabel}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : registration.confirmation.requirements.length > 0 ? (
                       <div data-testid="registration-confirmation-requirements">
                         <p className="text-muted-foreground">O que é preciso levar/apresentar:</p>
                         <ul className="ml-4 list-disc text-muted-foreground">

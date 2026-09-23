@@ -344,9 +344,18 @@ test.describe('confirmação de vaga com prazo', () => {
     await expect(card).toHaveAttribute('data-confirmation-state', 'PENDING');
     await expect(card).toContainText(/falta confirmar/i);
     await expect(card).toContainText(PLACE);
-    await expect(page.getByTestId('registration-confirmation-requirements')).toContainText(
-      REQUIREMENT,
-    );
+    /**
+     * ── A TELA MUDOU NA FASE 37, E DIZ MAIS ───────────────────────────────────
+     *
+     *  O que a pessoa vê agora é o CHECKLIST item a item, com o estado de cada exigência
+     *  (o que já foi recebido e o que falta): a mesma informação de antes — o que levar —
+     *  com o que o balcão registrou. O bloco antigo (`-requirements`) continua existindo
+     *  para quem NÃO tem itens: inscrição anterior à fase, ou atividade que só declara o
+     *  local. Por isso a asserção mudou de testid, e não de sentido.
+     */
+    const checklist = page.getByTestId('registration-confirmation-items');
+    await expect(checklist).toContainText(REQUIREMENT);
+    await expect(checklist).toContainText('A receber');
 
     /**
      * NÃO existe botão de confirmar para o participante: quem confirma é a equipe.

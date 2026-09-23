@@ -54,6 +54,13 @@ import {
   type ConfirmationState,
 } from '@/domain/events/confirmation-rules';
 import {
+  itemsSummary,
+  itemStatusLabel,
+  normalizeItemStatus,
+  snapshotRequirements,
+  type ConfirmationItemStatus,
+} from '@/domain/events/confirmation-item-rules';
+import {
   notifyConfirmationRequired,
   notifyWaitlistPromoted,
 } from '@/lib/events/registration-notices';
@@ -186,6 +193,12 @@ interface ActivityContext {
   confirmationPolicy: ConfirmationPolicy;
   /** Prazo em dias, contado da inscrição de cada pessoa. Nulo quando `AUTO`. */
   confirmationWindowDays: number | null;
+  /**
+   * A LISTA de exigências da atividade (JSON, FASE 34) — lida aqui para virar o
+   * SNAPSHOT da inscrição (FASE 37): o que a pessoa foi cobrada é um fato do dia em que
+   * ela se inscreveu, e editar a atividade depois não pode reescrevê-lo.
+   */
+  confirmationRequirements: unknown;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -321,9 +334,10 @@ async function attemptRegistration(
             endsAt: true,
             eventId: true,
             requiresRegistration: true,
-            /** Confirmação de vaga (FASE 34). */
+            /** Confirmação de vaga (FASE 34) e o snapshot das exigências (FASE 37). */
             confirmationPolicy: true,
             confirmationWindowDays: true,
+            confirmationRequirements: true,
             /** O teto da sala entra no limite efetivo (revisão da FASE 3). */
             room: { select: { capacity: true } },
           },
@@ -454,6 +468,7 @@ async function attemptRegistration(
             eventId: activity.eventId,
             confirmationPolicy: activity.confirmationPolicy,
             confirmationWindowDays: activity.confirmationWindowDays,
+            confirmationRequirements: activity.confirmationRequirements,
           },
           event.id,
           userId,
@@ -798,6 +813,38 @@ async function tryReserveSeat(
       },
       select: { id: true },
     });
+
+    /**
+     * ── O CHECKLIST NASCE COM A INSCRIÇÃO (FASE 37) ────────────────────────────
+     *
+     *  As exigências da atividade viram LINHAS desta inscrição, com o estado em aberto.
+     *  É o snapshot do que a pessoa foi cobrada — e é o que permite ao balcão marcar
+     *  item por item e a vaga se confirmar sozinha quando não faltar nenhum obrigatório.
+     *
+     *  Só nasce com a inscrição RETIDA: numa atividade de confirmação automática não há
+     *  o que conferir no balcão (a vaga já é da pessoa), e criar checklist ali seria
+     *  pedir uma conferência que ninguém vai fazer.
+     */
+    if (requiresConfirmation) {
+      const items = snapshotRequirements(
+        parseConfirmationRequirements(activity.confirmationRequirements),
+      );
+
+      if (items.length > 0) {
+        await tx.registrationConfirmationItem.createMany({
+          data: items.map((item) => ({
+            tenantId: input.tenantId,
+            registrationId: registration.id,
+            position: item.position,
+            kind: item.kind,
+            label: item.label,
+            note: item.note,
+            required: item.required,
+            status: 'PENDING',
+          })),
+        });
+      }
+    }
 
     return {
       status: requiresConfirmation ? 'PENDING' : 'CONFIRMED',
@@ -1544,14 +1591,14 @@ export async function promoteNextFromWaitlist(
   const next = await tx.registration.findFirst({
     where: { activityId, status: 'WAITLISTED', deletedAt: null },
     orderBy: [{ waitlistPosition: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, tenantId: true },
   });
 
   if (!next) return null;
 
   const activity = await tx.activity.findFirst({
     where: { id: activityId },
-    select: { eventId: true },
+    select: { eventId: true, confirmationRequirements: true },
   });
 
   if (!activity) return null;
@@ -1583,6 +1630,41 @@ export async function promoteNextFromWaitlist(
        SET "waitlistCount" = GREATEST("waitlistCount" - 1, 0)
      WHERE id = ${activityId}::uuid
   `;
+
+  /**
+   * ── QUEM É PROMOVIDO TAMBÉM RECEBE O CHECKLIST (FASE 37) ───────────────────
+   *
+   *  A vaga já está confirmada (decisão da promoção, FASE 34) — mas o que a atividade
+   *  cobra continua sendo cobrado. Sem o snapshot aqui, o balcão não teria onde marcar
+   *  "recebeu a doação" para quem entrou pela lista de espera: a única pessoa do evento
+   *  sem checklist seria justamente a última a ser chamada (armadilha 65 — todo caminho
+   *  que cria inscrição tem de criar o checklist).
+   *
+   *  A confirmação automática não se aplica: a vaga já está confirmada, e marcar o último
+   *  item devolve `ALREADY_CONFIRMED`, que o serviço do item absorve.
+   *
+   *  `skipDuplicates` porque o índice único `(registrationId, position)` é a garantia: uma
+   *  promoção que rodar duas vezes (varredura e botão do painel) não duplica o checklist.
+   */
+  const snapshot = snapshotRequirements(
+    parseConfirmationRequirements(activity.confirmationRequirements),
+  );
+
+  if (snapshot.length > 0) {
+    await tx.registrationConfirmationItem.createMany({
+      data: snapshot.map((item) => ({
+        tenantId: next.tenantId,
+        registrationId: next.id,
+        position: item.position,
+        kind: item.kind,
+        label: item.label,
+        note: item.note,
+        required: item.required,
+        status: 'PENDING',
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   await reindexWaitlist(tx, activityId);
 
@@ -1617,6 +1699,23 @@ async function reindexWaitlist(
 // ───────────────────────────────────────────────────────────────────────────────
 //  Consulta da própria inscrição
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Um item do checklist de confirmação, como o PARTICIPANTE o vê (FASE 37).
+ *
+ * O participante lê o rótulo e o estado; quem marca é a equipe — o checklist aqui é
+ * informação, não formulário.
+ */
+export interface MyConfirmationItem {
+  id: string;
+  position: number;
+  label: string;
+  note: string | null;
+  required: boolean;
+  status: ConfirmationItemStatus;
+  /** "A receber" / "Recebido" / "Dispensado pela organização". */
+  statusLabel: string;
+}
+
 export interface MyRegistration {
   id: string;
   status: RegistrationStatus;
@@ -1647,6 +1746,18 @@ export interface MyRegistration {
     countdown: string | null;
     /** O checklist do que levar/apresentar. */
     requirements: string[];
+    /**
+     * O checklist ITEM A ITEM desta inscrição (FASE 37) — o que a equipe marca no
+     * balcão e o que a vaga precisa ver satisfeito para se confirmar sozinha.
+     *
+     * Vem SEPARADO de `requirements` de propósito: `requirements` é a configuração
+     * ATUAL da atividade, e isto é o snapshot do que foi cobrado de quem se inscreveu.
+     * O organizador que editar a atividade amanhã muda o segundo e não o primeiro — e
+     * quem já está na fila continua devendo o que foi combinado com ele.
+     */
+    items: MyConfirmationItem[];
+    /** "2 de 3 itens" — o mesmo resumo que a equipe vê na fila. */
+    itemsSummary: string;
     place: string | null;
     confirmedAt: Date | null;
   } | null;
@@ -1683,6 +1794,22 @@ export async function listMyRegistrations(
           },
         },
         event: { select: { title: true, slug: true, timezone: true } },
+        /**
+         * O checklist da PRÓPRIA inscrição (FASE 37). Uma consulta só para todas as
+         * inscrições da lista: o Prisma resolve a relação por `IN`, e pedir os itens
+         * dentro do `map` faria N+1 numa tela que abre a cada visita.
+         */
+        confirmationItems: {
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            position: true,
+            label: true,
+            note: true,
+            required: true,
+            status: true,
+          },
+        },
       },
     }),
   );
@@ -1729,6 +1856,20 @@ export async function listMyRegistrations(
           if (policy !== 'REQUIRED') return null;
           if (state === 'NOT_REQUIRED') return null;
 
+          const items: MyConfirmationItem[] = row.confirmationItems.map((item) => {
+            const status = normalizeItemStatus(item.status);
+
+            return {
+              id: item.id,
+              position: item.position,
+              label: item.label,
+              note: item.note,
+              required: item.required,
+              status,
+              statusLabel: itemStatusLabel(status),
+            };
+          });
+
           return {
             state,
             deadlineLabel: row.confirmationDueAt
@@ -1740,6 +1881,8 @@ export async function listMyRegistrations(
             requirements: parseConfirmationRequirements(
               row.activity.confirmationRequirements,
             ).map(requirementLabel),
+            items,
+            itemsSummary: itemsSummary(items),
             place: row.activity.confirmationPlace,
             confirmedAt: row.confirmedAt,
           };

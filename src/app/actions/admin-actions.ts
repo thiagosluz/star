@@ -45,6 +45,7 @@ import {
 import { checkInByBadgeToken } from '@/lib/events/attendance-service';
 import { revokeCertificate } from '@/lib/certificates/certificate-service';
 import { confirmRegistration } from '@/lib/events/confirmation-service';
+import { resolveConfirmationItem } from '@/lib/events/confirmation-service';
 
 export interface AdminActionState {
   ok: boolean;
@@ -356,20 +357,30 @@ export async function deleteRoomAction(
 }
 
 /**
- * Lê as exigências da confirmação de vaga do formulário (FASE 34).
+ * Lê as exigências da confirmação de vaga do formulário (FASE 34, `required` na FASE 37).
  *
  * As linhas chegam em LISTAS PARALELAS (`requirementKind[]`, `requirementLabel[]`,
  * `requirementNote[]`), como a rubrica da chamada (FASE 33) e a autoria da submissão
  * (FASE 17): é o que permite adicionar e remover linhas na tela sem indexar nomes de
  * campo. Linha sem descrição é DESCARTADA aqui — o domínio recusaria a lista inteira
  * por causa de uma linha em branco que o organizador nem viu.
+ *
+ * ─── A OBRIGATORIEDADE VEM COMO ÍNDICES, NÃO COMO LISTA PARALELA ──────────────
+ *  Uma caixa marcada manda UM valor (o índice da linha) e uma desmarcada não manda
+ *  nada — diferente dos campos de texto, que mandam vazio. Ler `requirementRequired`
+ *  como lista paralela faria a marcação escorregar de linha na primeira vez que alguém
+ *  deixasse uma em branco no meio (as listas teriam tamanhos diferentes). O índice é a
+ *  chave, e ele resolve isso de uma vez.
  */
-function readConfirmationRequirements(formData: FormData): { kind: string; label: string; note: string }[] {
+function readConfirmationRequirements(
+  formData: FormData,
+): { kind: string; label: string; note: string; required: boolean }[] {
   const kinds = formData.getAll('requirementKind').map((value) => String(value));
   const labels = formData.getAll('requirementLabel').map((value) => String(value));
   const notes = formData.getAll('requirementNote').map((value) => String(value));
+  const requiredIndexes = new Set(formData.getAll('requirementRequired').map((value) => String(value)));
 
-  const rows: { kind: string; label: string; note: string }[] = [];
+  const rows: { kind: string; label: string; note: string; required: boolean }[] = [];
 
   for (let index = 0; index < labels.length; index += 1) {
     const label = (labels[index] ?? '').trim();
@@ -379,6 +390,7 @@ function readConfirmationRequirements(formData: FormData): { kind: string; label
       kind: (kinds[index] ?? '').trim(),
       label,
       note: (notes[index] ?? '').trim(),
+      required: requiredIndexes.has(String(index)),
     });
   }
 
@@ -577,6 +589,93 @@ export async function confirmRegistrationAction(
     message: `Vaga de ${result.personName} em “${result.activityTitle}” confirmada.${
       result.emailQueued ? ' O aviso foi enviado por e-mail.' : ''
     }`,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Confirmação POR ITEM (FASE 37 — dívida E48)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Marca UM item do checklist da inscrição: recebido ou dispensado pela organização.
+ *
+ * A permissão é a MESMA de confirmar a vaga (`registration:update:any`): quem recebe o
+ * item no balcão é quem confirma a vaga, e separar as duas permissões criaria o caso
+ * absurdo de alguém poder dizer "recebi o alimento" sem poder dizer "a vaga está dele".
+ *
+ * Quando esta marcação fecha o checklist, o SERVIÇO confirma a vaga pelo caminho de
+ * sempre — e o retorno diz isso à tela, para o balcão saber que não precisa clicar mais
+ * nada (`autoConfirmed`).
+ */
+export async function resolveConfirmationItemAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      registrationId: z.string().uuid(),
+      itemId: z.string().uuid(),
+      status: z.enum(['RECEIVED', 'WAIVED']),
+      note: z.string().trim().max(300).optional(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      registrationId: formData.get('registrationId'),
+      itemId: formData.get('itemId'),
+      status: formData.get('status'),
+      note: (formData.get('note') as string) || undefined,
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Item inválido.' };
+  }
+
+  const auth = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_UPDATE_ANY,
+  });
+  if (!auth.ok) return auth.state;
+
+  const request = await headers();
+
+  const result = await resolveConfirmationItem({
+    tenantId: auth.tenantId,
+    registrationId: parsed.data.registrationId,
+    itemId: parsed.data.itemId,
+    status: parsed.data.status,
+    actorId: auth.userId,
+    note: parsed.data.note ?? null,
+    ipAddress: request.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    userAgent: request.get('user-agent'),
+  });
+
+  /**
+   * A releitura é obrigatória mesmo quando nada visual mudou: o checklist daquela
+   * inscrição mudou de estado. E quando a vaga se confirma sozinha, a LINHA MUDA DE
+   * LISTA (sai de pendentes, entra em confirmadas) — sem revalidar, o balcão veria a
+   * vaga ainda pendente com o checklist completo (armadilha 76 ao contrário: a tela
+   * precisa refletir o fato que a action acabou de gravar).
+   */
+  revalidatePath(
+    tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/confirmacoes`),
+  );
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  const verb = result.status === 'RECEIVED' ? 'recebido' : 'dispensado pela organização';
+
+  return {
+    ok: true,
+    message: result.autoConfirmed
+      ? `“${result.label}” ${verb}. ${result.summary} — a vaga foi CONFIRMADA automaticamente.`
+      : `“${result.label}” ${verb}. ${result.summary}${
+          result.missingMessage ? ` · ${result.missingMessage}` : ''
+        }`,
   };
 }
 

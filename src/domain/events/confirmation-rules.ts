@@ -94,6 +94,15 @@ export interface ConfirmationRequirement {
   label: string;
   /** Detalhe opcional ("marca não importa", "pix: …"). */
   note: string | null;
+  /**
+   * A exigência é OBRIGATÓRIA? (FASE 37)
+   *
+   * Só as obrigatórias bloqueiam a confirmação automática da vaga: um item que a
+   * organização quer conferir, mas não cobra, aparece no checklist sem segurar a pessoa
+   * no balcão. Ausente = obrigatória, para o dado das fases anteriores continuar valendo
+   * como sempre valeu.
+   */
+  required?: boolean;
 }
 
 export const CONFIRMATION_REQUIREMENTS_MAX = 10;
@@ -134,6 +143,12 @@ export function parseConfirmationRequirements(value: unknown): ConfirmationRequi
       kind: row.kind,
       label: label.slice(0, CONFIRMATION_REQUIREMENT_LABEL_MAX),
       note: note ? note.slice(0, CONFIRMATION_REQUIREMENT_NOTE_MAX) : null,
+      /**
+       * `required` só existe como `false` explícito (FASE 37): qualquer outra coisa —
+       * campo ausente, `null`, texto — é OBRIGATÓRIA, que é o que a FASE 34 já fazia
+       * com todas as exigências. Dado antigo continua valendo como sempre valeu.
+       */
+      required: row.required !== false,
     });
 
     if (parsed.length >= CONFIRMATION_REQUIREMENTS_MAX) break;

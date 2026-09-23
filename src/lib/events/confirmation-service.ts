@@ -44,6 +44,13 @@ import {
 } from '@/domain/events/confirmation-rules';
 import { promoteNextFromWaitlist } from '@/lib/events/registration-service';
 import {
+  canAutoConfirm,
+  itemsProgress,
+  itemsSummary,
+  normalizeItemStatus,
+  type ConfirmationItem,
+} from '@/domain/events/confirmation-item-rules';
+import {
   notifyConfirmationDueSoon,
   notifyRegistrationConfirmed,
   notifyRegistrationReleased,
@@ -220,8 +227,191 @@ export async function confirmRegistration(input: ConfirmInput): Promise<ConfirmO
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Confirmar item por item (FASE 37 — dívida E48)
+// ───────────────────────────────────────────────────────────────────────────────
+export type ItemErrorCode = 'NOT_FOUND' | 'ALREADY_RESOLVED' | 'INVALID_INPUT' | 'INTERNAL';
+
+export type ItemOutcome =
+  | {
+      ok: true;
+      registrationId: string;
+      itemId: string;
+      label: string;
+      status: 'PENDING' | 'RECEIVED' | 'WAIVED';
+      /** Resumo do checklist DEPOIS da marcação ("2 de 3 itens"). */
+      summary: string;
+      /** `true` quando esta marcação fechou o checklist e a vaga se confirmou sozinha. */
+      autoConfirmed: boolean;
+      /** Mensagem do que ainda falta, quando não fechou. */
+      missingMessage: string | null;
+    }
+  | { ok: false; code: ItemErrorCode; message: string };
+
+/**
+ * Resolve UM item do checklist (recebido ou dispensado) e, se for o último obrigatório
+ * que faltava, **confirma a vaga**.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A CONFIRMAÇÃO AUTOMÁTICA CHAMA `confirmRegistration`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Porque a vaga é UMA: o caminho que a confirma (transição condicional, trilha, recibo
+ *  ao participante, promoção da lista de espera quando for o caso) já existe e está
+ *  testado. Reimplementar aqui "só a parte do update" daria duas confirmações no
+ *  sistema — e a segunda esqueceria o aviso ou a trilha (armadilha 55).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A ORDEM IMPORTA: MARCA PRIMEIRO, CONFIRMA DEPOIS
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A marcação do item é gravada e SÓ ENTÃO o checklist é lido de novo para decidir a
+ *  confirmação. Decidir antes de gravar deixaria a vaga confirmada com o item ainda em
+ *  aberto se a gravação falhasse.
+ *
+ *  A escrita do item é CONDICIONAL (`status = 'PENDING'`), como toda transição deste
+ *  projeto: dois cliques no balcão produzem um efeito só (invariante nº 5).
+ */
+export interface ResolveItemInput {
+  tenantId: string;
+  registrationId: string;
+  itemId: string;
+  /** Recebido ou dispensado pela organização. */
+  status: 'RECEIVED' | 'WAIVED';
+  actorId: string;
+  note?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+
+export async function resolveConfirmationItem(input: ResolveItemInput): Promise<ItemOutcome> {
+  const { tenantId, registrationId, itemId, status, actorId } = input;
+
+  try {
+    const resolved = await withTenant(tenantId, async (tx) => {
+      const item = await tx.registrationConfirmationItem.findFirst({
+        where: { id: itemId, registrationId, tenantId },
+        select: { id: true, position: true, label: true, status: true, required: true },
+      });
+
+      if (!item) return { kind: 'refusal' as const, code: 'NOT_FOUND' as const, message: 'Item não encontrado.' };
+
+      const claimed = await tx.registrationConfirmationItem.updateMany({
+        where: { id: item.id, status: 'PENDING' },
+        data: {
+          status,
+          resolvedAt: new Date(),
+          resolvedById: actorId,
+          resolutionNote: input.note?.trim() ? input.note.trim().slice(0, 300) : null,
+        },
+      });
+
+      if (claimed.count === 0) {
+        return {
+          kind: 'refusal' as const,
+          code: 'ALREADY_RESOLVED' as const,
+          message: `"${item.label}" já foi resolvido por outra pessoa do balcão.`,
+        };
+      }
+
+      await recordAudit(
+        {
+          tenantId,
+          userId: actorId,
+          action: 'UPDATE',
+          entityType: 'RegistrationConfirmationItem',
+          entityId: item.id,
+          changes: {
+            exigencia: { from: item.label, to: item.label },
+            situacao: { from: 'PENDING', to: status },
+            obrigatoria: { from: null, to: item.required ? 'sim' : 'não' },
+          },
+          ipAddress: input.ipAddress ?? null,
+          userAgent: input.userAgent ?? null,
+        },
+        tx,
+      );
+
+      const items = await tx.registrationConfirmationItem.findMany({
+        where: { registrationId, tenantId },
+        orderBy: { position: 'asc' },
+        select: { position: true, kind: true, label: true, note: true, required: true, status: true },
+      });
+
+      const normalized: ConfirmationItem[] = items.map((row) => ({
+        position: row.position,
+        kind: row.kind,
+        label: row.label,
+        note: row.note,
+        required: row.required,
+        status: normalizeItemStatus(row.status),
+      }));
+
+      return {
+        kind: 'resolved' as const,
+        itemId: item.id,
+        label: item.label,
+        summary: itemsSummary(normalized),
+        progress: itemsProgress(normalized),
+        autoCheck: canAutoConfirm(normalized),
+      };
+    });
+
+    if (resolved.kind === 'refusal') {
+      return { ok: false, code: resolved.code, message: resolved.message };
+    }
+
+    /**
+     * O checklist fechou? Então a vaga se confirma — pelo caminho de sempre. Se a
+     * inscrição já tiver sido confirmada (ou liberada por prazo) nesse meio-tempo, a
+     * recusa de `confirmRegistration` NÃO é erro para quem acabou de marcar o item: o
+     * item está gravado, e o que aconteceu com a vaga é outro fato.
+     */
+    let autoConfirmed = false;
+
+    if (resolved.autoCheck.ok) {
+      const confirmation = await confirmRegistration({
+        tenantId,
+        registrationId,
+        actorId,
+        ipAddress: input.ipAddress ?? null,
+        userAgent: input.userAgent ?? null,
+      });
+
+      autoConfirmed = confirmation.ok;
+
+      if (!confirmation.ok && confirmation.code !== 'ALREADY_CONFIRMED') {
+        console.error(
+          `[confirmacao] checklist completo, mas a vaga não confirmou (${registrationId}): ${confirmation.message}`,
+        );
+      }
+    }
+
+    return {
+      ok: true,
+      registrationId,
+      itemId: resolved.itemId,
+      label: resolved.label,
+      status,
+      summary: resolved.summary,
+      autoConfirmed,
+      missingMessage: resolved.autoCheck.ok ? null : resolved.autoCheck.message,
+    };
+  } catch (error) {
+    console.error(`[confirmacao] falha ao resolver o item: ${errorMessage(error)}`);
+
+    return { ok: false, code: 'INTERNAL', message: 'Não foi possível registrar o item.' };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  A fila de confirmações (equipe)
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O item como a TELA precisa dele: a regra pura (`ConfirmationItem`) mais o `id` que a
+ * ação usa para marcar. O domínio não conhece id — quem persiste é esta camada.
+ */
+export interface ConfirmationQueueItem extends ConfirmationItem {
+  id: string;
+}
+
 export interface ConfirmationQueueRow {
   registrationId: string;
   userId: string;
@@ -235,6 +425,14 @@ export interface ConfirmationQueueRow {
   state: ConfirmationState;
   /** O checklist do que a pessoa precisa trazer — é o que o balcão confere. */
   requirements: string[];
+  /**
+   * O checklist DESTA inscrição, com o veredito de cada item (FASE 37). Vazio quando a
+   * inscrição é anterior à fase e não tem exigências, ou quando a atividade não declara
+   * nenhuma — nos dois casos a confirmação continua sendo ato da equipe.
+   */
+  items: ConfirmationQueueItem[];
+  /** "2 de 3 itens" — o resumo que o balcão lê de relance. */
+  itemsSummary: string;
   place: string | null;
   registeredAt: Date;
   confirmedAt: Date | null;
@@ -477,6 +675,51 @@ export async function listConfirmationQueue(
       requirementLabel,
     );
 
+    /**
+     * ─── O CHECKLIST DE CADA INSCRIÇÃO (FASE 37) ────────────────────────────────
+     *
+     *  Uma consulta para todas as linhas da fila (e não uma por inscrição): a lista pode
+     *  ter dezenas de pendentes, e o balcão não pode esperar N idas ao banco para
+     *  desenhar a tela.
+     */
+    const listedIds = [...pendingRows.map((row) => row.id), ...confirmedRows.map((row) => row.id)];
+
+    const itemRows =
+      listedIds.length === 0
+        ? []
+        : await tx.registrationConfirmationItem.findMany({
+            where: { tenantId: input.tenantId, registrationId: { in: listedIds } },
+            orderBy: [{ registrationId: 'asc' }, { position: 'asc' }],
+            select: {
+              id: true,
+              registrationId: true,
+              position: true,
+              kind: true,
+              label: true,
+              note: true,
+              required: true,
+              status: true,
+            },
+          });
+
+    const itemsByRegistration = new Map<string, ConfirmationQueueItem[]>();
+
+    for (const row of itemRows) {
+      const list = itemsByRegistration.get(row.registrationId) ?? [];
+
+      list.push({
+        id: row.id,
+        position: row.position,
+        kind: row.kind,
+        label: row.label,
+        note: row.note,
+        required: row.required,
+        status: normalizeItemStatus(row.status),
+      });
+
+      itemsByRegistration.set(row.registrationId, list);
+    }
+
     const now = new Date();
 
     const toRow = (
@@ -489,27 +732,39 @@ export async function listConfirmationQueue(
         confirmedBy?: { name: string } | null;
       },
       status: 'PENDING' | 'CONFIRMED',
-    ): ConfirmationQueueRow => ({
-      registrationId: row.id,
-      userId: row.user.id,
-      personName: row.user.name,
-      emailMasked: maskEmail(row.user.email),
-      deadlineLabel: row.confirmationDueAt
-        ? confirmationDeadlineLabel(row.confirmationDueAt, event.timezone)
-        : null,
-      countdown: row.confirmationDueAt ? confirmationCountdown(row.confirmationDueAt, now) : '—',
-      state: confirmationStateOf({
-        policy: 'REQUIRED',
-        status,
-        dueAt: row.confirmationDueAt,
-        now,
-      }),
-      requirements,
-      place: selected.confirmationPlace,
-      registeredAt: row.createdAt,
-      confirmedAt: row.confirmedAt ?? null,
-      confirmedByName: row.confirmedBy?.name ?? null,
-    });
+    ): ConfirmationQueueRow => {
+      const items = itemsByRegistration.get(row.id) ?? [];
+
+      return {
+        registrationId: row.id,
+        userId: row.user.id,
+        personName: row.user.name,
+        emailMasked: maskEmail(row.user.email),
+        deadlineLabel: row.confirmationDueAt
+          ? confirmationDeadlineLabel(row.confirmationDueAt, event.timezone)
+          : null,
+        countdown: row.confirmationDueAt ? confirmationCountdown(row.confirmationDueAt, now) : '—',
+        state: confirmationStateOf({
+          policy: 'REQUIRED',
+          status,
+          dueAt: row.confirmationDueAt,
+          now,
+        }),
+        requirements,
+        /**
+         * O checklist DESTA inscrição (FASE 37) — com o item já resolvido e o que falta.
+         * A lista de `requirements` acima continua sendo o MODELO da atividade: ela serve
+         * para a tela mostrar o que a atividade pede hoje; os itens são o que a pessoa
+         * foi cobrada no dia em que se inscreveu.
+         */
+        items,
+        itemsSummary: itemsSummary(items),
+        place: selected.confirmationPlace,
+        registeredAt: row.createdAt,
+        confirmedAt: row.confirmedAt ?? null,
+        confirmedByName: row.confirmedBy?.name ?? null,
+      };
+    };
 
     return {
       eventTitle: event.title,

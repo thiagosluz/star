@@ -143,6 +143,33 @@ export function ConfirmationFields({
                 placeholder="Vale qualquer marca"
                 defaultValue={requirement?.note}
               />
+
+              {/**
+                * ─── OBRIGATÓRIA OU SÓ PARA CONFERIR (FASE 37) ──────────────────────────
+                *
+                *  Só as obrigatórias SEGURAM a vaga: quando todas elas estiverem
+                *  recebidas, a confirmação acontece sozinha. Um item desmarcado aparece
+                *  no checklist do balcão sem impedir a pessoa de entrar — é o "traz se
+                *  puder", que antes não existia e obrigava a organização a escolher entre
+                *  não pedir ou cobrar.
+                *
+                *  A LINHA NOVA NASCE MARCADA (`undefined !== false`). Desmarcada por
+                *  padrão, TODA exigência criada pela tela seria gravada como opcional — e
+                *  a vaga deixaria de ser segurada por quem a FASE 34 já segurava, sem
+                *  nenhuma tela dizendo isso. O padrão da TELA tem de ser o mesmo do
+                *  domínio: ausente = obrigatória.
+                */}
+              <label className="flex items-center gap-2 text-xs sm:col-span-3">
+                <input
+                  type="checkbox"
+                  name="requirementRequired"
+                  value={String(index)}
+                  defaultChecked={requirement?.required !== false}
+                  data-testid={`requirement-required-${index}`}
+                  className="size-3.5 rounded border-border"
+                />
+                A exigência {index + 1} é obrigatória (só ela segura a confirmação da vaga)
+              </label>
             </div>
           );
         })}

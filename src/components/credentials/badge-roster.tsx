@@ -57,6 +57,235 @@ function EmitButton({ label, testId }: { label: string; testId: string }) {
   );
 }
 
+/**
+ * ─── AS OUTRAS DUAS SAÍDAS DE IMPRESSÃO (FASE 37) ─────────────────────────────
+ *
+ *  A folha A4 serve para recortar. Quem tem **folha de etiqueta adesiva** ou **impressora
+ *  térmica** imprime direto, e as duas saídas dependem de MEDIDAS que só quem tem o
+ *  material em mãos conhece: a grade da folha (mm) e o rolo da térmica (mm × dpi).
+ *
+ *  Por isso os números ficam aqui, editáveis, com o padrão já preenchido: a primeira
+ *  impressão confere, e o que estiver 1 mm fora se acerta na tela — sem deploy, e sem
+ *  ninguém precisar abrir chamado. Os dois botões levam a MESMA seleção da lista.
+ */
+function BadgePrintOptions({
+  tenantSlug,
+  eventId,
+  selectedUserIds,
+}: {
+  tenantSlug: string;
+  eventId: string;
+  selectedUserIds: readonly string[];
+}) {
+  const [layout, setLayout] = useState({
+    colunas: '3',
+    linhas: '8',
+    largura: '63,5',
+    altura: '33,9',
+    margemEsquerda: '9,75',
+    margemSuperior: '12,9',
+    espacoHorizontal: '0',
+    espacoVertical: '0',
+  });
+  const [thermal, setThermal] = useState({
+    dpi: '203',
+    largura: '100',
+    altura: '50',
+    ampliacaoQr: '3',
+  });
+
+  const selection =
+    selectedUserIds.length > 0 ? `&userIds=${selectedUserIds.join(',')}` : '';
+  const base = `/api/t/${tenantSlug}/credenciamento/crachas/impressao?eventId=${eventId}`;
+
+  const labelsHref = `${base}&formato=etiquetas&colunas=${encodeURIComponent(
+    layout.colunas,
+  )}&linhas=${encodeURIComponent(layout.linhas)}&largura=${encodeURIComponent(
+    layout.largura,
+  )}&altura=${encodeURIComponent(layout.altura)}&margem-esquerda=${encodeURIComponent(
+    layout.margemEsquerda,
+  )}&margem-superior=${encodeURIComponent(layout.margemSuperior)}&espaco-horizontal=${encodeURIComponent(
+    layout.espacoHorizontal,
+  )}&espaco-vertical=${encodeURIComponent(layout.espacoVertical)}${selection}`;
+
+  const zplHref = `${base}&formato=zpl&dpi=${encodeURIComponent(thermal.dpi)}&largura=${encodeURIComponent(
+    thermal.largura,
+  )}&altura=${encodeURIComponent(thermal.altura)}&ampliacao-qr=${encodeURIComponent(
+    thermal.ampliacaoQr,
+  )}${selection}`;
+
+  const field = 'w-20 rounded-md border border-border bg-background px-2 py-1 text-xs';
+
+  return (
+    <details
+      className="rounded-lg border border-border bg-surface-low p-3 text-xs"
+      data-testid="badge-print-options"
+    >
+      <summary className="cursor-pointer font-medium">
+        Etiqueta adesiva e impressora térmica (medidas)
+      </summary>
+
+      <div className="mt-3 grid gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          <p className="font-medium text-foreground">Folha de etiquetas adesivas</p>
+          <p className="text-muted-foreground">
+            Padrão: 3 × 8 etiquetas de 63,5 × 33,9 mm centralizadas em A4. Confira na primeira
+            impressão e ajuste aqui.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1">
+              Colunas
+              <input
+                value={layout.colunas}
+                onChange={(event) => setLayout((c) => ({ ...c, colunas: event.target.value }))}
+                inputMode="numeric"
+                data-testid="label-columns"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Linhas
+              <input
+                value={layout.linhas}
+                onChange={(event) => setLayout((c) => ({ ...c, linhas: event.target.value }))}
+                inputMode="numeric"
+                data-testid="label-rows"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Largura (mm)
+              <input
+                value={layout.largura}
+                onChange={(event) => setLayout((c) => ({ ...c, largura: event.target.value }))}
+                data-testid="label-width"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Altura (mm)
+              <input
+                value={layout.altura}
+                onChange={(event) => setLayout((c) => ({ ...c, altura: event.target.value }))}
+                data-testid="label-height"
+                className={field}
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1">
+              Margem esquerda
+              <input
+                value={layout.margemEsquerda}
+                onChange={(event) => setLayout((c) => ({ ...c, margemEsquerda: event.target.value }))}
+                data-testid="label-margin-left"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Margem superior
+              <input
+                value={layout.margemSuperior}
+                onChange={(event) => setLayout((c) => ({ ...c, margemSuperior: event.target.value }))}
+                data-testid="label-margin-top"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Espaço entre colunas
+              <input
+                value={layout.espacoHorizontal}
+                onChange={(event) => setLayout((c) => ({ ...c, espacoHorizontal: event.target.value }))}
+                data-testid="label-gap-x"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Espaço entre linhas
+              <input
+                value={layout.espacoVertical}
+                onChange={(event) => setLayout((c) => ({ ...c, espacoVertical: event.target.value }))}
+                data-testid="label-gap-y"
+                className={field}
+              />
+            </label>
+          </div>
+
+          <a
+            href={labelsHref}
+            data-testid="badge-print-labels"
+            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 font-medium hover:bg-muted"
+          >
+            <Printer className="size-3.5" aria-hidden />
+            Baixar as etiquetas (PDF)
+          </a>
+        </div>
+
+        <div className="space-y-2">
+          <p className="font-medium text-foreground">Impressora térmica (ZPL II)</p>
+          <p className="text-muted-foreground">
+            Padrão: 203 dpi com etiqueta de 100 × 50 mm. O arquivo é texto — dá para abrir e
+            conferir antes de gastar etiqueta.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1">
+              Resolução
+              <select
+                value={thermal.dpi}
+                onChange={(event) => setThermal((c) => ({ ...c, dpi: event.target.value }))}
+                data-testid="thermal-dpi"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              >
+                <option value="203">203 dpi</option>
+                <option value="300">300 dpi</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              Largura (mm)
+              <input
+                value={thermal.largura}
+                onChange={(event) => setThermal((c) => ({ ...c, largura: event.target.value }))}
+                data-testid="thermal-width"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Altura (mm)
+              <input
+                value={thermal.altura}
+                onChange={(event) => setThermal((c) => ({ ...c, altura: event.target.value }))}
+                data-testid="thermal-height"
+                className={field}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              QR (1–10)
+              <input
+                value={thermal.ampliacaoQr}
+                onChange={(event) => setThermal((c) => ({ ...c, ampliacaoQr: event.target.value }))}
+                data-testid="thermal-qr"
+                className={field}
+              />
+            </label>
+          </div>
+
+          <a
+            href={zplHref}
+            data-testid="badge-print-zpl"
+            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 font-medium hover:bg-muted"
+          >
+            <Printer className="size-3.5" aria-hidden />
+            Baixar o arquivo ZPL
+          </a>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export function BadgeRoster({
   entries,
   tenantSlug,
@@ -142,6 +371,12 @@ export function BadgeRoster({
           </span>
         </div>
       </div>
+
+      <BadgePrintOptions
+        tenantSlug={tenantSlug}
+        eventId={eventId}
+        selectedUserIds={selectedWithCode.map((entry) => entry.userId)}
+      />
 
       {emitState ? (
         <p
