@@ -1107,3 +1107,136 @@ describe('leitura repetida do MESMO crachá', () => {
     expect(inside.target.openSession).not.toBeNull();
   });
 });
+
+describe('Resiliência de Balcão e Modos Estritos (FASE 35 · Dívidas E40 e E43)', () => {
+  async function personWithCredential(name: string, activityId: string | null): Promise<{ userId: string; code: string }> {
+    const userId = await createPerson(name);
+    await register(userId, activityId);
+
+    const issued = await issueCredentials({ tenantId, eventId, actorId, userIds: [userId] });
+    if (!issued.ok) throw new Error('crachá não emitido');
+
+    return { userId, code: issued.issued[0]!.code };
+  }
+
+  function sessionsOf(userId: string, activityId: string | null) {
+    return withTenant(tenantId, (tx) =>
+      tx.attendance.findMany({
+        where: { tenantId, userId, activityId },
+        select: { checkedInAt: true, checkedOutAt: true, minutesAttended: true, registrationId: true },
+        orderBy: { checkedInAt: 'asc' },
+      }),
+    );
+  }
+
+  it('no modo IN, bip duplo não fecha o credenciamento nem altera a sessão aberta', async () => {
+    const { userId, code } = await personWithCredential('Modo Entrada Estrito', liveActivityId);
+    const context = { kind: 'ACTIVITY' as const, activityId: liveActivityId };
+
+    // Primeiro bip: entrada normal
+    const first = await recordCredentialPresence({
+      tenantId,
+      eventId,
+      code,
+      context,
+      actorId,
+      mode: 'IN',
+      now: new Date('2026-09-21T15:00:00.000Z'),
+    });
+
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.action).toBe('CHECKED_IN');
+
+    // Segundo bip (acidental ou rajada do leitor de código de barras): modo IN preserva a entrada
+    const second = await recordCredentialPresence({
+      tenantId,
+      eventId,
+      code,
+      context,
+      actorId,
+      mode: 'IN',
+      now: new Date('2026-09-21T15:00:02.000Z'),
+    });
+
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.action).toBe('ALREADY_INSIDE');
+
+    // Confere que a sessão permanece aberta e não foi encerrada
+    const sessions = await sessionsOf(userId, liveActivityId);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.checkedOutAt).toBeNull();
+  });
+
+  it('no modo OUT, se não houver sessão aberta, avisa sem criar sessão fantasma', async () => {
+    const { userId, code } = await personWithCredential('Modo Saida Estrito', liveActivityId);
+    const context = { kind: 'ACTIVITY' as const, activityId: liveActivityId };
+
+    const result = await recordCredentialPresence({
+      tenantId,
+      eventId,
+      code,
+      context,
+      actorId,
+      mode: 'OUT',
+      now: new Date('2026-09-21T15:00:00.000Z'),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.action).toBe('NOT_INSIDE');
+    expect(result.warnings).toContain('Não havia entrada registrada neste contexto — nada a fechar.');
+
+    const sessions = await sessionsOf(userId, liveActivityId);
+    expect(sessions).toHaveLength(0);
+  });
+
+  it('idempotência via idempotencyKey evita duplicação de presença em sincronizações repetidas', async () => {
+    const { code } = await personWithCredential('Sincronizacao Idempotente', null);
+    const context = { kind: 'EVENT' as const };
+    const idempotencyKey = `idemp-${randomUUID()}`;
+    const readAt = new Date('2026-09-21T14:30:00.000Z');
+
+    const first = await recordCredentialPresence({
+      tenantId,
+      eventId,
+      code,
+      context,
+      actorId,
+      mode: 'IN',
+      readAt,
+      idempotencyKey,
+    });
+
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.action).toBe('CHECKED_IN');
+
+    // Segunda chamada com a mesma chave (ex.: timeout na rede móvel e reenvio da fila)
+    const second = await recordCredentialPresence({
+      tenantId,
+      eventId,
+      code,
+      context,
+      actorId,
+      mode: 'IN',
+      readAt,
+      idempotencyKey,
+    });
+
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.action).toBe('CHECKED_IN');
+    expect(second.warnings).toContain('Leitura já sincronizada anteriormente (idempotente).');
+
+    // Confere no banco que apenas um registro Attendance com esse qrNonce existe
+    const attendances = await withTenant(tenantId, (tx) =>
+      tx.attendance.findMany({
+        where: { tenantId, qrNonce: idempotencyKey },
+      }),
+    );
+    expect(attendances).toHaveLength(1);
+    expect(attendances[0]?.checkedInAt.toISOString()).toBe(readAt.toISOString());
+  });
+});

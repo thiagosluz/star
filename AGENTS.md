@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33 e 34 (F15, F21, F22, F29, F30, F31, F32, F33 e F34 entregues; a F18+ é a próxima)
-Testes ................. 1759 (Vitest: unit + integração) + 116 (Playwright E2E)
-ADRs ................... 178 (numeração GLOBAL e sequencial — a próxima é ADR-179)
+Fases concluídas ........ 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34 e 35 (F15, F21, F22, F29, F30, F31, F32, F33, F34 e F35 entregues; a F18+ é a próxima)
+Testes ................. 1772 (Vitest: unit + integração) + 116 (Playwright E2E)
+ADRs ................... 182 (numeração GLOBAL e sequencial — a próxima é ADR-183)
 Permissões ............. 60 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 41 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK

@@ -52,6 +52,15 @@ function contextOf(data: z.infer<typeof contextSchema>) {
     : ({ kind: 'EVENT' as const, activityId: null });
 }
 
+export interface SyncScanResult {
+  id: string;
+  ok: boolean;
+  message: string;
+  code?: string;
+  action?: string;
+  data?: Record<string, unknown>;
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  O balcão: registrar presença a partir do crachá
 // ───────────────────────────────────────────────────────────────────────────────
@@ -64,6 +73,8 @@ export async function recordPresenceAction(
       code: z.string().trim().min(3).max(64),
       /** `TOGGLE` é o botão único do balcão; `OUT` fecha a sessão abertas. */
       mode: z.enum(['IN', 'OUT', 'TOGGLE']).default('TOGGLE'),
+      readAt: z.string().datetime().optional(),
+      idempotencyKey: z.string().trim().max(128).optional(),
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
@@ -72,6 +83,8 @@ export async function recordPresenceAction(
       activityId: (formData.get('activityId') as string) || undefined,
       code: formData.get('code'),
       mode: formData.get('mode') ?? 'TOGGLE',
+      readAt: (formData.get('readAt') as string) || undefined,
+      idempotencyKey: (formData.get('idempotencyKey') as string) || undefined,
     });
 
   if (!parsed.success) {
@@ -100,6 +113,8 @@ export async function recordPresenceAction(
     context: contextOf(parsed.data),
     actorId: auth.userId,
     mode: parsed.data.mode,
+    readAt: parsed.data.readAt ? new Date(parsed.data.readAt) : undefined,
+    idempotencyKey: parsed.data.idempotencyKey,
   });
 
   const eventPath = tenantPath(parsed.data.tenantSlug, '/credenciamento');
@@ -145,6 +160,99 @@ export async function recordPresenceAction(
       rewarded,
     },
   };
+}
+
+/**
+ * Sincroniza em lote leituras offline enfileiradas no IndexedDB.
+ *
+ * Processa as leituras em ordem cronológica de `readAt`, preservando os minutos
+ * reais e aplicando idempotência via `idempotencyKey`.
+ */
+export async function syncOfflinePresencesAction(
+  tenantSlug: string,
+  eventId: string,
+  scans: Array<{
+    id: string;
+    contextKind: 'EVENT' | 'ACTIVITY';
+    activityId?: string | null;
+    code: string;
+    mode: 'IN' | 'OUT' | 'TOGGLE';
+    readAt: string;
+    idempotencyKey?: string;
+  }>,
+): Promise<SyncScanResult[]> {
+  if (!Array.isArray(scans) || scans.length === 0) return [];
+
+  const auth = await guardAction({
+    tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_CHECKIN,
+    allowedScopes: ['TENANT', 'EVENT'],
+    eventId,
+  });
+
+  if (!auth.ok) {
+    return scans.map((s) => ({
+      id: s.id,
+      ok: false,
+      code: auth.state.code ?? 'FORBIDDEN',
+      message: auth.state.message ?? 'Não autorizado.',
+    }));
+  }
+
+  const sorted = [...scans].sort((a, b) => a.readAt.localeCompare(b.readAt));
+  const results: SyncScanResult[] = [];
+
+  for (const scan of sorted) {
+    try {
+      const result = await recordCredentialPresence({
+        tenantId: auth.tenantId,
+        eventId,
+        code: scan.code,
+        context:
+          scan.contextKind === 'ACTIVITY'
+            ? { kind: 'ACTIVITY', activityId: scan.activityId ?? null }
+            : { kind: 'EVENT', activityId: null },
+        actorId: auth.userId,
+        mode: scan.mode,
+        readAt: new Date(scan.readAt),
+        idempotencyKey: scan.idempotencyKey,
+        source: 'QR_CODE_CHECKIN',
+      });
+
+      if (!result.ok) {
+        results.push({
+          id: scan.id,
+          ok: false,
+          code: result.code,
+          message: result.message,
+        });
+      } else {
+        results.push({
+          id: scan.id,
+          ok: true,
+          action: result.action,
+          message: `Sincronizado: ${result.action} para ${result.target.userName}.`,
+          data: {
+            userName: result.target.userName,
+            action: result.action,
+            minutes: result.minutes,
+          },
+        });
+      }
+    } catch (err) {
+      results.push({
+        id: scan.id,
+        ok: false,
+        code: 'INTERNAL',
+        message: err instanceof Error ? err.message : 'Falha ao sincronizar.',
+      });
+    }
+  }
+
+  const eventPath = tenantPath(tenantSlug, '/credenciamento');
+  revalidatePath(eventPath);
+
+  return results;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

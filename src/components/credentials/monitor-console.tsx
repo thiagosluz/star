@@ -1,42 +1,40 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { CheckCircle2, Loader2, ScanLine, TriangleAlert, UserCheck, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  ScanLine,
+  TriangleAlert,
+  UserCheck,
+  Wifi,
+  WifiOff,
+  XCircle,
+} from 'lucide-react';
 
-import type { CredentialActionState } from '@/app/actions/credential-actions';
+import {
+  syncOfflinePresencesAction,
+  type CredentialActionState,
+} from '@/app/actions/credential-actions';
 import { QrCameraReader } from '@/components/credentials/qr-camera-reader';
 import { describeAttendanceContext } from '@/domain/events/credential-rules';
+import { useOfflineQueue } from '@/components/credentials/use-offline-queue';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  MODO MONITOR — o balcão do credenciamento (FASE 31)
+ *  MODO MONITOR — o balcão do credenciamento (FASE 31 · OFFLINE-FIRST NA FASE 35)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O QUE O MONITOR FAZ, NESTA ORDEM
  *  ─────────────────────────────────────────────────────────────────────────────
  *    1. escolhe ONDE a leitura vale — a portaria do evento ou uma atividade;
- *    2. lê o crachá (câmera, leitor USB ou digitação);
- *    3. vê o NOME e o que aconteceu, em letras grandes, e segue para o próximo.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE O CONTEXTO VEM PRIMEIRO
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O crachá é um só, por pessoa: é o CONTEXTO que decide onde o fato é gravado —
- *  "chegou ao evento" ou "esteve nesta atividade, por N minutos". Escolher o contexto
- *  depois da leitura seria pedir ao monitor que guardasse na cabeça o que ele acabou
- *  de ler; escolher antes é o que ele já sabe (está na porta, ou está na sala).
- *
- *  A ATIVIDADE DE AGORA já vem sugerida: quem abre a tela no meio da programação
- *  quase sempre está credenciando a atividade que está acontecendo.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE A TELA NÃO PEDE CONFIRMAÇÃO
- *  ─────────────────────────────────────────────────────────────────────────────
- *  Com fila, um "confirma?" por pessoa dobra o tempo de cada leitura. O que protege
- *  contra o erro é o CONTRÁRIO: o resultado aparece grande, com o nome e a ação, e o
- *  monitor vê na hora que leu o crachá errado — e desfaz lendo de novo (o botão único
- *  entra/sai) ou fechando a sessão no painel.
+ *    2. escolhe o SENTIDO da leitura — Somente Entrada, Alternado ou Somente Saída
+ *       (FASE 35: evita fechamento indevido por bipes duplos na portaria);
+ *    3. lê o crachá (câmera, leitor USB ou digitação);
+ *    4. vê o NOME e o que aconteceu em letras grandes, inclusive quando a rede cai
+ *       (fila persistida em IndexedDB com sincronização idempotente).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export interface MonitorActivity {
@@ -60,10 +58,6 @@ type Feedback = {
 
 /**
  * Pausa a câmera enquanto a action está em curso.
- *
- * O `pending` do formulário é o único lugar confiável para saber que a gravação está
- * acontecendo — e a câmera precisa parar nesse instante, senão o mesmo crachá é lido
- * dez vezes enquanto a resposta não chega.
  */
 function ScanGate({ onRead }: { onRead: (code: string) => void }) {
   const { pending } = useFormStatus();
@@ -109,7 +103,37 @@ export function MonitorConsole({
   );
   const [activityId, setActivityId] = useState(nowActivity?.id ?? activities[0]?.id ?? '');
   const [code, setCode] = useState('');
-  const [mode, setMode] = useState<'TOGGLE' | 'IN' | 'OUT'>('TOGGLE');
+  const [mode, setMode] = useState<'TOGGLE' | 'IN' | 'OUT'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`eventflow_monitor_mode_${eventId}`);
+      if (saved === 'IN' || saved === 'OUT' || saved === 'TOGGLE') {
+        return saved;
+      }
+    }
+    return 'TOGGLE';
+  });
+  const [localFeedback, setLocalFeedback] = useState<Feedback | null>(null);
+
+  const handleModeChange = (newMode: 'TOGGLE' | 'IN' | 'OUT') => {
+    setMode(newMode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`eventflow_monitor_mode_${eventId}`, newMode);
+    }
+  };
+
+  // Integração com a Fila Offline (IndexedDB)
+  const onSyncBatch = useCallback(
+    async (scans: Parameters<typeof syncOfflinePresencesAction>[2]) => {
+      return syncOfflinePresencesAction(tenantSlug, eventId, scans);
+    },
+    [tenantSlug, eventId],
+  );
+
+  const { isOnline, summary, isSyncing, lastSyncResult, enqueue, syncQueue } = useOfflineQueue({
+    tenantSlug,
+    eventId,
+    onSyncBatch,
+  });
 
   const [state, formAction] = useActionState<CredentialActionState | null, FormData>(action, null);
   const [closeState, closeFormAction] = useActionState<CredentialActionState | null, FormData>(
@@ -121,48 +145,78 @@ export function MonitorConsole({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   /**
-   * O painel de resultado é DERIVADO do estado da action — sem cópia em estado local.
-   *
-   * A primeira versão copiava o resultado para um `useState` dentro de um efeito, e o
-   * React Compiler recusou (com razão): `setState` no corpo do efeito provoca render em
-   * cascata. Derivar é mais simples e não perde nada: cada resposta da action é um
-   * objeto novo, então o painel atualiza mesmo quando o código lido é o mesmo.
+   * O painel de resultado prioriza o feedback local mais recente (leitura offline imediata)
+   * ou o estado retornado pela action do servidor.
    */
-  const feedback: Feedback | null = state
-    ? {
-        ok: state.ok,
-        message: state.message ?? '',
-        details: state.details ?? [],
-        data: state.data,
-      }
-    : null;
+  const feedback: Feedback | null = localFeedback
+    ? localFeedback
+    : state
+      ? {
+          ok: state.ok,
+          message: state.message ?? '',
+          details: state.details ?? [],
+          data: state.data,
+        }
+      : null;
 
-  /**
-   * O foco volta para o campo quando a leitura termina: no balcão, o leitor USB digita
-   * no que estiver focado, e um clique perdido na tela faria a próxima leitura se
-   * perder. É só efeito de DOM — nada de estado.
-   */
   useEffect(() => {
-    if (state) inputRef.current?.focus();
+    if (state) {
+      inputRef.current?.focus();
+    }
   }, [state]);
 
-  const submitCode = (value: string) => {
-    /**
-     * O campo é limpo AQUI, e não num efeito depois da resposta: o valor já foi para
-     * a action, e um efeito limpando o campo é a corrida clássica com o reset
-     * assíncrono do React 19 (armadilha 56).
-     */
-    setCode(value);
-    setMode('TOGGLE');
+  const recordLocally = async (val: string, targetMode: 'TOGGLE' | 'IN' | 'OUT') => {
+    const trimmed = val.trim().toUpperCase();
+    if (!trimmed) return;
 
-    /**
-     * A submissão automática é do FORMULÁRIO (e não um `fetch`): a action é a mesma do
-     * botão, com a mesma autorização e o mesmo estado — um segundo caminho de gravação
-     * seria uma segunda regra (armadilha 55).
-     */
+    const readAt = new Date().toISOString();
+    await enqueue({
+      code: trimmed,
+      mode: targetMode,
+      contextKind,
+      activityId: contextKind === 'ACTIVITY' ? activityId : null,
+      readAt,
+    });
+
+    setCode('');
+    setLocalFeedback({
+      ok: true,
+      message: `Leitura guardada localmente no dispositivo (offline).`,
+      details: [`Instante: ${new Date(readAt).toLocaleTimeString('pt-BR')}. Será sincronizada assim que a rede retornar.`],
+      data: {
+        action: targetMode === 'OUT' ? 'CHECKED_OUT' : 'CHECKED_IN',
+        userName: trimmed,
+        code: trimmed,
+      },
+    });
+
+    inputRef.current?.focus();
+  };
+
+  const submitCode = (value: string) => {
+    setCode(value);
+
+    // Se estiver sem rede no navegador, salva direto na fila local sem travar o balcão
+    if (!isOnline) {
+      void recordLocally(value, mode);
+      return;
+    }
+
+    setLocalFeedback(null);
     requestAnimationFrame(() => {
       formRef.current?.requestSubmit();
     });
+  };
+
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    if (!isOnline) {
+      e.preventDefault();
+      if (code.trim()) {
+        void recordLocally(code, mode);
+      }
+      return;
+    }
+    setLocalFeedback(null);
   };
 
   const contextLabel = describeAttendanceContext({
@@ -178,15 +232,64 @@ export function MonitorConsole({
   return (
     <section className="space-y-4" data-testid="monitor-console">
       <header className="space-y-1">
-        <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-          <ScanLine className="size-5 text-primary" aria-hidden />
-          Modo monitor
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+            <ScanLine className="size-5 text-primary" aria-hidden />
+            Modo monitor
+          </h2>
+
+          {/* ── Status de Conectividade e Fila Offline (FASE 35) ──────────────── */}
+          <div className="flex items-center gap-2">
+            <span
+              data-testid="monitor-connection-status"
+              data-online={isOnline ? 'true' : 'false'}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border ${
+                !isOnline
+                  ? 'border-destructive/40 bg-destructive-soft text-destructive'
+                  : isSyncing
+                    ? 'border-warning/40 bg-warning-soft text-warning-strong'
+                    : 'border-success/40 bg-success-soft text-success-strong'
+              }`}
+            >
+              {!isOnline ? (
+                <WifiOff className="size-3.5 shrink-0" aria-hidden />
+              ) : (
+                <Wifi className="size-3.5 shrink-0" aria-hidden />
+              )}
+              {!isOnline ? 'Offline' : isSyncing ? 'Sincronizando' : 'Online'}
+            </span>
+
+            {summary.pending > 0 ? (
+              <span
+                data-testid="monitor-pending-count"
+                className="rounded-full bg-warning/20 px-2 py-0.5 text-xs font-semibold text-warning-strong"
+              >
+                {summary.pending} pendente(s)
+              </span>
+            ) : null}
+
+            {summary.pending > 0 && isOnline ? (
+              <button
+                type="button"
+                onClick={() => void syncQueue()}
+                disabled={isSyncing}
+                data-testid="sync-offline-queue"
+                className="inline-flex items-center gap-1 rounded border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted disabled:opacity-60"
+              >
+                <RefreshCw className={`size-3 ${isSyncing ? 'animate-spin' : ''}`} aria-hidden />
+                Sincronizar
+              </button>
+            ) : null}
+          </div>
+        </div>
+
         <p className="text-xs text-muted-foreground">
-          Escolha onde a leitura vale, leia o crachá e siga para o próximo. A câmera, o leitor USB e a
-          digitação registram o mesmo fato — e o contexto decide se ele é a chegada ao evento ou a
-          frequência na atividade.
+          Escolha onde a leitura vale e o sentido da portaria. Suporta operação offline-first contínua mesmo
+          com instabilidade de wi-fi ou telefonia móvel.
         </p>
+        {lastSyncResult ? (
+          <p className="text-xs text-muted-foreground italic">{lastSyncResult}</p>
+        ) : null}
       </header>
 
       {/* ── Contexto ─────────────────────────────────────────────────────────── */}
@@ -232,8 +335,67 @@ export function MonitorConsole({
         </p>
       </div>
 
+      {/* ── Controle Estrito de Modos no Balcão (FASE 35 · DÍVIDA E43) ───────── */}
+      <div className="space-y-1.5 rounded-lg border border-border bg-surface-low p-3" data-testid="monitor-mode-selector">
+        <span className="block text-xs font-medium text-foreground">Sentido da leitura / Modo de operação</span>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid="monitor-mode-in"
+            onClick={() => handleModeChange('IN')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold border transition ${
+              mode === 'IN'
+                ? 'bg-success text-success-foreground border-success shadow-xs'
+                : 'border-border bg-background hover:bg-muted text-muted-foreground'
+            }`}
+          >
+            <span className="size-2 rounded-full bg-current" />
+            Somente Entrada
+          </button>
+          <button
+            type="button"
+            data-testid="monitor-mode-toggle"
+            onClick={() => handleModeChange('TOGGLE')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold border transition ${
+              mode === 'TOGGLE'
+                ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                : 'border-border bg-background hover:bg-muted text-muted-foreground'
+            }`}
+          >
+            <span className="size-2 rounded-full bg-current" />
+            Alternado (Entrada / Saída)
+          </button>
+          <button
+            type="button"
+            data-testid="monitor-mode-out"
+            onClick={() => handleModeChange('OUT')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold border transition ${
+              mode === 'OUT'
+                ? 'bg-destructive text-destructive-foreground border-destructive shadow-xs'
+                : 'border-border bg-background hover:bg-muted text-muted-foreground'
+            }`}
+          >
+            <span className="size-2 rounded-full bg-current" />
+            Somente Saída
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {mode === 'IN'
+            ? 'Em "Somente Entrada", leituras duplas em rajada avisam que a pessoa já está dentro sem fechar a presença.'
+            : mode === 'OUT'
+              ? 'Em "Somente Saída", fecha sessões em aberto sem registrar novas entradas.'
+              : 'Em "Alternado", o sistema decide sozinho: entra quem está fora, sai quem está dentro.'}
+        </p>
+      </div>
+
       {/* ── Leitura ──────────────────────────────────────────────────────────── */}
-      <form ref={formRef} action={formAction} className="space-y-3" data-testid="monitor-form">
+      <form
+        ref={formRef}
+        action={formAction}
+        onSubmit={handleFormSubmit}
+        className="space-y-3"
+        data-testid="monitor-form"
+      >
         <input type="hidden" name="tenantSlug" value={tenantSlug} />
         <input type="hidden" name="eventId" value={eventId} />
         <input type="hidden" name="contextKind" value={contextKind} />
@@ -264,21 +426,18 @@ export function MonitorConsole({
         <ScanGate onRead={submitCode} />
 
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          <span className="text-muted-foreground">Leitura que fecha a sessão:</span>
+          <span className="text-muted-foreground">Atalho rápido para fechar sessão:</span>
           <button
             type="button"
             onClick={() => {
-              setMode('OUT');
+              handleModeChange('OUT');
               requestAnimationFrame(() => formRef.current?.requestSubmit());
             }}
             data-testid="monitor-checkout"
             className="rounded-md border border-border px-3 py-1.5 hover:bg-muted"
           >
-            Registrar saída
+            Registrar saída imediata
           </button>
-          <span className="text-muted-foreground">
-            (o botão principal decide sozinho: entra quem está fora, sai quem está dentro)
-          </span>
         </div>
       </form>
 

@@ -34,6 +34,7 @@ import {
   previewEligibility,
   reversePrizeDelivery,
   setRaffleVisibility,
+  updateRoundAnnouncement,
 } from '@/lib/raffles/raffle-service';
 
 export interface RaffleActionState {
@@ -481,6 +482,69 @@ export async function prepareRoundAction(
       roundId: result.roundId,
       roundNumber: result.roundNumber,
       seedCommitment: result.seedCommitment,
+    },
+  };
+}
+
+/**
+ * Atualiza os textos de anúncio (prêmio e patrocinador) de uma rodada (FASE 35 · Dívida E38).
+ */
+export async function updateRoundAnnouncementAction(
+  _prev: RaffleActionState | null,
+  formData: FormData,
+): Promise<RaffleActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      raffleId: z.string().uuid(),
+      roundId: z.string().uuid(),
+      ...prizeFields,
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      raffleId: formData.get('raffleId'),
+      roundId: formData.get('roundId'),
+      prizeTitle: (formData.get('prizeTitle') as string) || undefined,
+      prizeDescription: (formData.get('prizeDescription') as string) || undefined,
+      sponsorId: (formData.get('sponsorId') as string) || undefined,
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Verifique os dados do anúncio.' };
+  }
+
+  const auth = await guard(parsed.data.tenantSlug);
+  if (!auth.ok) return auth.state;
+
+  const result = await updateRoundAnnouncement({
+    tenantId: auth.tenantId,
+    raffleId: parsed.data.raffleId,
+    roundId: parsed.data.roundId,
+    actorId: auth.userId,
+    prizeTitle: parsed.data.prizeTitle ?? null,
+    prizeDescription: parsed.data.prizeDescription ?? null,
+    sponsorId: parsed.data.sponsorId ?? null,
+  });
+
+  revalidatePath(
+    tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`),
+  );
+
+  if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+  return {
+    ok: true,
+    message: `Anúncio da rodada ${result.roundNumber} atualizado com sucesso.`,
+    data: {
+      raffleId: result.raffleId,
+      roundId: result.roundId,
+      roundNumber: result.roundNumber,
+      prizeTitle: result.prizeTitle,
+      prizeDescription: result.prizeDescription,
+      sponsorId: result.sponsorId,
+      sponsorName: result.sponsorName,
     },
   };
 }

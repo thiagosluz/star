@@ -206,6 +206,7 @@ export async function checkIn(input: {
   now?: Date;
   ipAddress?: string | null;
   userAgent?: string | null;
+  qrNonce?: string | null;
 }): Promise<AttendanceResult<CheckinOutcome>> {
   try {
     const now = input.now ?? new Date();
@@ -278,6 +279,7 @@ export async function checkIn(input: {
           validatedById: input.staffUserId,
           ipAddress: input.ipAddress ?? null,
           userAgent: input.userAgent?.slice(0, 500) ?? null,
+          qrNonce: input.qrNonce ?? null,
         },
         select: { id: true },
       });

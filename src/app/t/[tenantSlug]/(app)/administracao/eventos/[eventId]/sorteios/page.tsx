@@ -37,6 +37,7 @@ import {
   previewRaffleAction,
   reversePrizeDeliveryAction,
   setRaffleVisibilityAction,
+  updateRoundAnnouncementAction,
 } from '@/app/actions/raffle-actions';
 
 export const metadata = { title: 'Sorteios' };
@@ -282,6 +283,7 @@ export default async function RafflesPage({
           drawAction={drawRaffleAction}
           prepareAction={prepareRoundAction}
           drawRoundAction={drawRoundAction}
+          updateRoundAction={updateRoundAnnouncementAction}
           cancelAction={cancelRaffleAction}
           deliverAction={markPrizeDeliveredAction}
           reverseAction={reversePrizeDeliveryAction}

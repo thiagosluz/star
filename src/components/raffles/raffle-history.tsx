@@ -153,6 +153,7 @@ function RoundsSection({
   sponsors,
   prepareAction,
   drawRoundAction,
+  updateRoundAction,
 }: {
   raffle: RaffleItem;
   tenantSlug: string;
@@ -160,6 +161,7 @@ function RoundsSection({
   sponsors: readonly { id: string; name: string }[];
   prepareAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   drawRoundAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  updateRoundAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
 }) {
   const [prepareState, prepareFormAction] = useActionState<RaffleActionState | null, FormData>(
     prepareAction,
@@ -169,6 +171,11 @@ function RoundsSection({
     drawRoundAction,
     null,
   );
+  const [updateState, updateFormAction] = useActionState<RaffleActionState | null, FormData>(
+    updateRoundAction,
+    null,
+  );
+  const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
 
   /**
    * Campos CONTROLADOS pelo mesmo motivo do console (armadilha 5/56): o React 19
@@ -207,53 +214,147 @@ function RoundsSection({
             key={round.id}
             data-testid={`raffle-round-${round.roundNumber}`}
             data-round-state={round.state}
-            className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-surface-low px-2 py-1 text-xs"
+            className="flex flex-col gap-1 rounded border border-border bg-surface-low p-2 text-xs"
           >
-            <span className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="code-data text-muted-foreground">{round.roundNumber}</span>
-              <span className="truncate font-medium">{round.prizeTitle ?? 'Prêmio surpresa'}</span>
-              {round.sponsorName ? (
-                <span className="truncate text-muted-foreground">por {round.sponsorName}</span>
-              ) : null}
-              <span className="rounded-full border border-border px-1.5 label-caps uppercase text-muted-foreground">
-                {round.state === 'DRAWN' ? 'apurada' : 'aguardando apuração'}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="code-data text-muted-foreground">{round.roundNumber}</span>
+                <span className="truncate font-medium">{round.prizeTitle ?? 'Prêmio surpresa'}</span>
+                {round.sponsorName ? (
+                  <span className="truncate text-muted-foreground">por {round.sponsorName}</span>
+                ) : null}
+                <span className="rounded-full border border-border px-1.5 label-caps uppercase text-muted-foreground">
+                  {round.state === 'DRAWN' ? 'apurada' : 'aguardando apuração'}
+                </span>
               </span>
-            </span>
 
-            <span className="flex shrink-0 flex-wrap items-center gap-2 text-muted-foreground">
-              {round.state === 'DRAWN' ? (
-                <>
-                  <span>
-                    {round.winnersCount} titular(es)
-                    {round.alternatesCount > 0 ? ` + ${round.alternatesCount} suplente(s)` : ''} entre{' '}
-                    {round.eligibleCount}
-                  </span>
-                  {round.drawnAtLabel ? <span>{round.drawnAtLabel}</span> : null}
-                </>
-              ) : (
-                <>
-                  <span>
-                    alvo: {round.winnersCount}
-                    {round.alternatesCount > 0 ? ` + ${round.alternatesCount}` : ''}
-                  </span>
-                  {drawHere ? (
-                    <form action={drawRoundFormAction}>
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="raffleId" value={raffle.id} />
-                      <input type="hidden" name="roundId" value={round.id} />
-                      <RoundButton
-                        label={`Sortear a rodada ${round.roundNumber}`}
-                        testId={`draw-round-${round.roundNumber}`}
-                      />
-                    </form>
-                  ) : null}
-                </>
-              )}
-            </span>
+              <span className="flex shrink-0 flex-wrap items-center gap-2 text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => setEditingRoundId(editingRoundId === round.id ? null : round.id)}
+                  data-testid={`edit-round-announcement-${round.roundNumber}`}
+                  className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                >
+                  {editingRoundId === round.id ? 'Fechar edição' : 'Editar anúncio'}
+                </button>
+
+                {round.state === 'DRAWN' ? (
+                  <>
+                    <span>
+                      {round.winnersCount} titular(es)
+                      {round.alternatesCount > 0 ? ` + ${round.alternatesCount} suplente(s)` : ''} entre{' '}
+                      {round.eligibleCount}
+                    </span>
+                    {round.drawnAtLabel ? <span>{round.drawnAtLabel}</span> : null}
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      alvo: {round.winnersCount}
+                      {round.alternatesCount > 0 ? ` + ${round.alternatesCount}` : ''}
+                    </span>
+                    {drawHere ? (
+                      <form action={drawRoundFormAction}>
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="raffleId" value={raffle.id} />
+                        <input type="hidden" name="roundId" value={round.id} />
+                        <RoundButton
+                          label={`Sortear a rodada ${round.roundNumber}`}
+                          testId={`draw-round-${round.roundNumber}`}
+                        />
+                      </form>
+                    ) : null}
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* Formulário de edição de anúncio (FASE 35 · Dívida E38) */}
+            {editingRoundId === round.id ? (
+              <form
+                action={updateFormAction}
+                className="mt-2 w-full space-y-2 rounded border border-border bg-background p-2"
+                data-testid={`edit-announcement-form-${round.roundNumber}`}
+              >
+                <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                <input type="hidden" name="eventId" value={eventId} />
+                <input type="hidden" name="raffleId" value={raffle.id} />
+                <input type="hidden" name="roundId" value={round.id} />
+
+                <p className="font-semibold text-foreground">Editar anúncio da rodada {round.roundNumber}</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs">
+                    <span className="block text-muted-foreground">Título do prêmio</span>
+                    <input
+                      name="prizeTitle"
+                      defaultValue={round.prizeTitle ?? ''}
+                      placeholder="Ex.: Fone de ouvido"
+                      data-testid={`edit-prize-title-${round.roundNumber}`}
+                      className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                    />
+                  </label>
+
+                  <label className="space-y-1 text-xs">
+                    <span className="block text-muted-foreground">Patrocinador</span>
+                    <select
+                      name="sponsorId"
+                      defaultValue=""
+                      data-testid={`edit-sponsor-${round.roundNumber}`}
+                      className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                    >
+                      <option value="">Sem patrocinador informado</option>
+                      {sponsors.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-1 text-xs sm:col-span-2">
+                    <span className="block text-muted-foreground">Descrição do prêmio</span>
+                    <input
+                      name="prizeDescription"
+                      defaultValue={round.prizeDescription ?? ''}
+                      placeholder="Descrição opcional"
+                      data-testid={`edit-prize-description-${round.roundNumber}`}
+                      className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="submit"
+                    data-testid={`save-round-announcement-${round.roundNumber}`}
+                    className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                  >
+                    Salvar anúncio
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingRoundId(null)}
+                    className="rounded border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            ) : null}
           </li>
         ))}
       </ol>
+
+      {updateState ? (
+        <p
+          role={updateState.ok ? 'status' : 'alert'}
+          data-testid={`round-update-feedback-${raffle.id}`}
+          className={`text-xs ${updateState.ok ? 'text-success-strong' : 'text-destructive'}`}
+        >
+          {updateState.message}
+        </p>
+      ) : null}
 
       {drawState ? (
         <p
@@ -394,6 +495,7 @@ function RaffleRow({
   deliverAction,
   reverseAction,
   visibilityAction,
+  updateRoundAction,
 }: {
   raffle: RaffleItem;
   tenantSlug: string;
@@ -406,6 +508,7 @@ function RaffleRow({
   deliverAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   reverseAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   visibilityAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  updateRoundAction?: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
 }) {
   const [drawState, drawFormAction] = useActionState<RaffleActionState | null, FormData>(drawAction, null);
   const [cancelState, cancelFormAction] = useActionState<RaffleActionState | null, FormData>(
@@ -672,6 +775,7 @@ function RaffleRow({
         sponsors={sponsors}
         prepareAction={prepareAction}
         drawRoundAction={drawRoundAction}
+        updateRoundAction={updateRoundAction ?? (async () => ({ ok: false, message: 'Ação não disponível' }))}
       />
 
       {/**
@@ -809,6 +913,7 @@ export function RaffleHistory({
   deliverAction,
   reverseAction,
   visibilityAction,
+  updateRoundAction,
   filter,
   filterQuery,
 }: {
@@ -826,6 +931,7 @@ export function RaffleHistory({
   deliverAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   reverseAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   visibilityAction: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
+  updateRoundAction?: (prev: RaffleActionState | null, formData: FormData) => Promise<RaffleActionState>;
   /** Filtro ativo, para a tela dizer o que está sendo mostrado (FASE 22, item G9). */
   filter: { status: string; from: string; to: string; active: boolean; description: string };
   /** O filtro serializado, para a paginação não perdê-lo. */
@@ -939,6 +1045,7 @@ export function RaffleHistory({
             deliverAction={deliverAction}
             reverseAction={reverseAction}
             visibilityAction={visibilityAction}
+            updateRoundAction={updateRoundAction}
           />
         ))}
       </ul>

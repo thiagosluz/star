@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Maximize2, Radio, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
+import { Maximize2, Pause, Play, Radio, RotateCcw, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
 
 import { ConfettiBurst } from '@/components/raffles/confetti-burst';
 
@@ -131,6 +131,30 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
   const [phase, setPhase] = useState<Phase>(model.state);
   const [rolling, setRolling] = useState(false);
   const [rollName, setRollName] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
+  const stepRef = useRef(0);
+  const delayRef = useRef(60);
+
+  const togglePause = useCallback(() => {
+    setIsPaused((prev) => {
+      const next = !prev;
+      isPausedRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const replayRoulette = useCallback(() => {
+    if (!model.currentRound || model.currentRound.rollNames.length === 0) return;
+    stepRef.current = 0;
+    delayRef.current = 60;
+    setIsPaused(false);
+    isPausedRef.current = false;
+    rollingRef.current = true;
+    setRollName(null);
+    setPhase('SORTEANDO');
+    setRolling(true);
+  }, [model.currentRound]);
 
   /**
    * O mesmo "está rolando" em um REF.
@@ -204,6 +228,10 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
         seenRoundId.current = `drawn-${drawn.roundNumber}`;
         setPhase('SORTEANDO');
         rollingRef.current = true;
+        stepRef.current = 0;
+        delayRef.current = 60;
+        setIsPaused(false);
+        isPausedRef.current = false;
         setRolling(true);
 
         if (refreshTimer) clearTimeout(refreshTimer);
@@ -300,7 +328,7 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
    *  passar — a tela revela direto, em vez de inventar.
    */
   useEffect(() => {
-    if (!rolling) return;
+    if (!rolling || isPaused) return;
 
     const round = model.currentRound;
     const names = round?.rollNames ?? [];
@@ -344,12 +372,13 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
       return () => clearTimeout(immediate);
     }
 
-    let step = 0;
-    let delay = 60;
     let timer: ReturnType<typeof setTimeout>;
 
     const tick = () => {
-      step += 1;
+      if (isPausedRef.current) return;
+      stepRef.current += 1;
+      const step = stepRef.current;
+      let delay = delayRef.current;
 
       // ~3 s de suspense e no máximo 24 quadros: o suficiente para a plateia sentir
       // a roleta, curto o suficiente para não virar espera.
@@ -365,13 +394,41 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
 
       setRollName(names[(step * 7) % names.length]!);
       delay = Math.min(380, Math.round(delay * 1.14));
+      delayRef.current = delay;
       timer = setTimeout(tick, delay);
     };
 
-    timer = setTimeout(tick, delay);
+    timer = setTimeout(tick, delayRef.current);
 
     return () => clearTimeout(timer);
-  }, [rolling, model.currentRound, router]);
+  }, [rolling, isPaused, model.currentRound, router]);
+
+  /**
+   * Atalhos de teclado no palco (FASE 35 · Dívida E39):
+   *   • Espaço: pausa/retoma a rotação da roleta
+   *   • Tecla R: reinicia a animação da roleta para a rodada atual
+   */
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (event.code === 'Space') {
+        if (rollingRef.current || phase === 'SORTEANDO') {
+          event.preventDefault();
+          togglePause();
+        }
+      } else if (event.code === 'KeyR') {
+        if (model.currentRound && (phase === 'REVELADO' || phase === 'SORTEANDO')) {
+          event.preventDefault();
+          replayRoulette();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [phase, model.currentRound, togglePause, replayRoulette]);
 
   const openFullscreen = () => {
     void document.documentElement.requestFullscreen?.().catch(() => {
@@ -470,7 +527,7 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
         {rollingNow ? (
           <section className="flex flex-col items-center gap-6" aria-live="polite">
             <p className="ef-stage-eyebrow text-muted-foreground" data-testid="stage-roll-label">
-              Sorteando · {round ? roundSubtitle(round) : 'rodada'}
+              Sorteando · {round ? roundSubtitle(round) : 'rodada'} {isPaused ? '(Pausado)' : ''}
             </p>
             <p
               key={rollName ?? 'roleta'}
@@ -483,6 +540,39 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
               <Sparkles className="size-4 animate-pulse text-primary" aria-hidden />
               {eligibleCount} participante(s) concorrendo nesta rodada
             </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {isPaused ? (
+                <button
+                  type="button"
+                  onClick={togglePause}
+                  data-testid="stage-resume-roleta"
+                  className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20"
+                >
+                  <Play className="size-3.5" aria-hidden />
+                  Continuar roleta
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={togglePause}
+                  data-testid="stage-pause-roleta"
+                  className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                >
+                  <Pause className="size-3.5" aria-hidden />
+                  Pausar roleta
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={replayRoulette}
+                data-testid="stage-replay-roleta"
+                className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+              >
+                <RotateCcw className="size-3.5" aria-hidden />
+                Reiniciar roleta
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -536,6 +626,20 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
                     </li>
                   ))}
                 </ol>
+              </div>
+            ) : null}
+
+            {round.rollNames.length > 0 ? (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={replayRoulette}
+                  data-testid="stage-replay-roleta"
+                  className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                >
+                  <RotateCcw className="size-3.5" aria-hidden />
+                  Repetir animação da roleta
+                </button>
               </div>
             ) : null}
           </section>

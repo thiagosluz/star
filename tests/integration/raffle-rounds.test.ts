@@ -29,6 +29,7 @@ import {
   getRaffleStageView,
   listRaffles,
   prepareRound,
+  updateRoundAnnouncement,
 } from '../../src/lib/raffles/raffle-service';
 
 const RUN = randomUUID().slice(0, 8);
@@ -612,5 +613,64 @@ describe('o resumo do histórico expõe as rodadas', () => {
     // Cada posição sabe de que rodada veio — é o que a entrega do prêmio usa.
     expect(raffle!.winners.map((winner) => winner.roundNumber)).toEqual([1, 2]);
     expect(raffle!.winners.map((winner) => winner.position)).toEqual([1, 2]);
+  });
+});
+
+describe('edição de anúncios da rodada (FASE 35 · Dívida E38)', () => {
+  it('permite atualizar prêmio, descrição e patrocinador de uma rodada preparada', async () => {
+    const created = await createPrepared({ title: `Edição Anúncio ${RUN}`, winnersCount: 1 });
+    const list = await listRaffles(tenantId, eventId, { pageSize: 10 });
+    if (!list.ok) throw new Error(list.message);
+    const raffle = list.raffles.find((r) => r.id === created.raffleId)!;
+    const round1 = raffle.rounds[0]!;
+
+    const updated = await updateRoundAnnouncement({
+      tenantId,
+      raffleId: created.raffleId,
+      roundId: round1.id,
+      actorId,
+      prizeTitle: 'Cafeteira Expresso',
+      prizeDescription: 'Cafeteira de inox 110V',
+    });
+
+    expect(updated.ok).toBe(true);
+
+    const live = await getRaffleLiveState({ tenantId, eventId, raffleId: created.raffleId });
+    expect(live?.pendingRound?.prizeTitle).toBe('Cafeteira Expresso');
+
+    const view = await getRaffleStageView({ tenantId, eventId, raffleId: created.raffleId });
+    expect(view).not.toBeNull();
+    expect(view!.currentRound?.prizeTitle).toBe('Cafeteira Expresso');
+    expect(view!.currentRound?.prizeDescription).toBe('Cafeteira de inox 110V');
+  });
+
+  it('permite corrigir anúncio de rodada apurada sem alterar o hash assinado', async () => {
+    const created = await createPrepared({ title: `Edição Pós-Apurada ${RUN}`, winnersCount: 1 });
+    const first = await drawRound({ tenantId, raffleId: created.raffleId, actorId });
+    if (!first.ok) throw new Error(first.message);
+
+    const listBefore = await listRaffles(tenantId, eventId, { pageSize: 10 });
+    if (!listBefore.ok) throw new Error(listBefore.message);
+    const raffleBefore = listBefore.raffles.find((r) => r.id === created.raffleId)!;
+    const round1 = raffleBefore.rounds[0]!;
+    const hashOriginal = round1.resultHash;
+
+    const updated = await updateRoundAnnouncement({
+      tenantId,
+      raffleId: created.raffleId,
+      roundId: round1.id,
+      actorId,
+      prizeTitle: 'Título Corrigido no Palco',
+    });
+
+    expect(updated.ok).toBe(true);
+
+    const listAfter = await listRaffles(tenantId, eventId, { pageSize: 10 });
+    if (!listAfter.ok) throw new Error(listAfter.message);
+    const raffleAfter = listAfter.raffles.find((r) => r.id === created.raffleId)!;
+    const round1After = raffleAfter.rounds[0]!;
+
+    expect(round1After.prizeTitle).toBe('Título Corrigido no Palco');
+    expect(round1After.resultHash).toBe(hashOriginal);
   });
 });

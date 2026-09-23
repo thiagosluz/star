@@ -109,6 +109,7 @@ function signatureOf(payload: Record<string, unknown>): string {
   return [
     raffle.status,
     raffle.pendingRound?.roundId ?? '',
+    raffle.pendingRound?.prizeTitle ?? '',
     raffle.lastDrawnRound?.roundId ?? '',
     raffle.lastDrawnRound?.resultHash ?? '',
     payload.eligibleCount ?? '',

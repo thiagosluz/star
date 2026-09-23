@@ -859,12 +859,14 @@ export async function recordCredentialPresence(input: {
   actorId: string;
   mode?: 'IN' | 'OUT' | 'TOGGLE';
   now?: Date;
+  readAt?: Date;
+  idempotencyKey?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
   /** Fonte gravada na presença — o toggle do balcão usa `QR_CODE_*`. */
   source?: 'QR_CODE_CHECKIN' | 'QR_CODE_CHECKOUT' | 'MANUAL_STAFF';
 }): Promise<CredentialResult<PresenceOutcome>> {
-  const now = input.now ?? new Date();
+  const now = input.readAt ?? input.now ?? new Date();
   const mode = input.mode ?? 'IN';
   const warnings: string[] = [];
 
@@ -902,6 +904,48 @@ export async function recordCredentialPresence(input: {
     }
 
     const { resolved } = locked;
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  IDEMPOTÊNCIA POR CHAVE DE LEITURA (FASE 35 · OFFLINE-FIRST)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Se a mesma leitura offline for sincronizada mais de uma vez ou reenviada por
+     *  oscilação de rede, o `qrNonce` (chave única da leitura) impede replays.
+     */
+    if (input.idempotencyKey) {
+      const existing = await withTenant(input.tenantId, (tx) =>
+        tx.attendance.findFirst({
+          where: {
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            qrNonce: input.idempotencyKey,
+          },
+          select: {
+            id: true,
+            checkedInAt: true,
+            checkedOutAt: true,
+            minutesAttended: true,
+          },
+        }),
+      );
+
+      if (existing) {
+        const target = await withTenant(input.tenantId, (tx) =>
+          buildScanTarget(tx, { tenantId: input.tenantId, eventId: input.eventId, context: input.context, resolved, now }),
+        );
+
+        return {
+          ok: true as const,
+          action: existing.checkedOutAt ? ('CHECKED_OUT' as const) : ('CHECKED_IN' as const),
+          attendanceId: existing.id,
+          minutes: existing.minutesAttended,
+          target,
+          warnings: ['Leitura já sincronizada anteriormente (idempotente).'],
+          rewarded: false,
+        };
+      }
+    }
+
     const usable = canUseCredential({ status: resolved.state === 'ACTIVE' ? 'ACTIVE' : 'REVOKED', revokedAt: resolved.state === 'REVOKED' ? now : null });
 
     if (!usable.ok) {
@@ -1113,6 +1157,7 @@ export async function recordCredentialPresence(input: {
         now,
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
+        qrNonce: input.idempotencyKey ?? null,
       });
 
       if (!checked.ok) {
@@ -1172,6 +1217,7 @@ export async function recordCredentialPresence(input: {
           validatedById: input.actorId,
           ipAddress: input.ipAddress ?? null,
           userAgent: input.userAgent?.slice(0, 500) ?? null,
+          qrNonce: input.idempotencyKey ?? null,
           minutesAttended: 0,
         },
         select: { id: true },

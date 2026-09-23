@@ -916,6 +916,146 @@ export async function prepareRound(input: {
   }
 }
 
+export interface UpdateRoundOutcome {
+  raffleId: string;
+  roundId: string;
+  roundNumber: number;
+  prizeTitle: string | null;
+  prizeDescription: string | null;
+  sponsorId: string | null;
+  sponsorName: string | null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ATUALIZAÇÃO DE ANÚNCIO DA RODADA (FASE 35 · DÍVIDA E38)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O PRÊMIO PODE SER CORRIGIDO DEPOIS DO ANÚNCIO (ADR-145 · ADR-181)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A rodada guarda o prêmio e o patrocinador como ANÚNCIO — fora do documento
+ *  assinado criptograficamente. Corrigir um typo no telão, o nome do patrocinador
+ *  ou a descrição do brinde não altera a semente, o compromisso, a lista publicada
+ *  nem o hash do resultado.
+ *
+ *  Esta função atualiza o anúncio e grava na trilha de auditoria (`AuditLog`),
+ *  mantendo a integridade auditável do sorteio.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export async function updateRoundAnnouncement(input: {
+  tenantId: string;
+  raffleId: string;
+  roundId: string;
+  actorId: string;
+  prizeTitle?: string | null;
+  prizeDescription?: string | null;
+  sponsorId?: string | null;
+}): Promise<RaffleResult<UpdateRoundOutcome>> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const raffle = await loadRaffle(tx, input.tenantId, input.raffleId);
+
+      if (!raffle) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Sorteio não encontrado.',
+        };
+      }
+
+      if (raffle.status === 'CANCELED') {
+        return {
+          ok: false as const,
+          code: 'CANCELED' as const,
+          message: 'Sorteio cancelado não pode ter anúncios alterados.',
+        };
+      }
+
+      const round = raffle.rounds.find((r) => r.id === input.roundId);
+      if (!round) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Rodada não encontrada neste sorteio.',
+        };
+      }
+
+      const sponsorId = await resolvePrizeSponsor(tx, {
+        tenantId: input.tenantId,
+        eventId: raffle.eventId,
+        sponsorId: input.sponsorId,
+      });
+
+      if (sponsorId === undefined) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Patrocinador não encontrado neste evento.',
+        };
+      }
+
+      const newPrizeTitle = normalizePrizeTitle(input.prizeTitle);
+      const newPrizeDescription = normalizePrizeDescription(input.prizeDescription);
+
+      const oldPrizeTitle = round.prizeTitle;
+      const oldPrizeDescription = round.prizeDescription;
+      const oldSponsorId = round.sponsorId;
+
+      await tx.raffleRound.update({
+        where: { id: round.id },
+        data: {
+          prizeTitle: newPrizeTitle,
+          prizeDescription: newPrizeDescription,
+          sponsorId: sponsorId ?? null,
+        },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'raffleRoundAnnouncement',
+          entityId: round.id,
+          changes: {
+            prizeTitle: { from: oldPrizeTitle, to: newPrizeTitle },
+            prizeDescription: { from: oldPrizeDescription, to: newPrizeDescription },
+            sponsorId: { from: oldSponsorId, to: sponsorId ?? null },
+          },
+        },
+        tx,
+      );
+
+      let sponsorName: string | null = null;
+      if (sponsorId) {
+        const sp = await tx.sponsor.findUnique({
+          where: { id: sponsorId },
+          select: { name: true },
+        });
+        sponsorName = sp?.name ?? null;
+      }
+
+      return {
+        ok: true as const,
+        raffleId: raffle.id,
+        roundId: round.id,
+        roundNumber: round.roundNumber,
+        prizeTitle: newPrizeTitle,
+        prizeDescription: newPrizeDescription,
+        sponsorId: sponsorId ?? null,
+        sponsorName,
+      };
+    });
+  } catch (error) {
+    console.error(`[raffles] falha ao atualizar anúncio da rodada: ${errorMessage(error)}`);
+    return {
+      ok: false as const,
+      code: 'INTERNAL',
+      message: 'Não foi possível atualizar o anúncio da rodada.',
+    };
+  }
+}
+
 /**
  * Apura UMA rodada: as posições seguintes do sorteio, com a semente dela.
  *

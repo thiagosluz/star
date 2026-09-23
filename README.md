@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33 e 34 concluídas (a F15 — Comunicação — saiu junto; a F18+ é a próxima) · **1759 testes** unitários/integração · **116 testes E2E**
+> **Estado:** FASES 1 a 17, 21, 22, 23, 24, 25, 29, 30, 31, 32, 33, 34 e 35 concluídas (F15, F21, F22, F29, F30, F31, F32, F33, F34 e F35 entregues; a F18+ é a próxima) · **1772 testes** unitários/integração · **116 testes E2E**
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -16,7 +16,8 @@ avaliação por pares e gamificação.
 > programação editável (rótulos em português) · **credenciamento por crachá** (um crachá por
 > pessoa, contexto da leitura, folha A4 e crachá na tela) · **central do participante**
 > (diretório de todos os eventos, ficha 360, recados com caixa de entrada e panorama da
-> instituição)
+> instituição) · **resiliência de balcão e palco** (credenciamento offline-first em IndexedDB,
+> modos estritos contra bipes duplos, edição imediata de anúncio no telão e controles de roleta)
 
 ---
 
@@ -464,6 +465,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [docs/fase-31-credenciamento-e-frequencia.md](docs/fase-31-credenciamento-e-frequencia.md) | **Credenciamento e frequência por crachá:** o **crachá** passou a existir (um código opaco `CR-XXXX-XXXX` por pessoa no evento), com **área de emissão individual e em massa**, **folha A4 em PDF** com QR + código + nome e **crachá online** do participante; o **modo monitor** lê o QR pela **câmera** (API nativa + decodificador local), pelo leitor USB ou por digitação, escolhendo o CONTEXTO (portaria × atividade) — e **credenciamento ≠ frequência**: a chegada é um fato, a sessão na atividade é outro, com entrada, saída e minutos com teto no fim da atividade | ADR-148 … 152 |
 | [docs/fase-30-sorteio-ao-vivo-em-rodadas.md](docs/fase-30-sorteio-ao-vivo-em-rodadas.md) | **Sorteio ao vivo, em rodadas:** cada apuração é um MOMENTO com o próprio compromisso de semente, prêmio, patrocinador e resultado assinado (payload v4); **"Criar para o palco"** faz o telão existir ANTES da apuração; a **roleta** passa os nomes reais da lista publicada e para no ganhador; quem ganhou uma rodada não concorre nas seguintes; auditoria e resultado público **por rodada** | ADR-144 … 147 |
 | [docs/fase-34-confirmacao-de-vaga.md](docs/fase-34-confirmacao-de-vaga.md) | **Confirmação de vaga com prazo:** o organizador escolhe no cadastro da atividade se a vaga é **automática** ou **exige confirmação**, com prazo em dias, **o que é preciso** (pagamento, doação, item, outro) e **onde confirmar**; a inscrição nasce **RETENDO a vaga** e a pessoa é avisada por **e-mail e na plataforma**; quem confirma é a **equipe**, na fila de confirmações; vencido o prazo, a vaga é **liberada automaticamente**, o primeiro da lista de espera é promovido e **os dois** são avisados | ADR-170 … 178 |
+| [`docs/fase-35-resiliencia-balcao-e-palco.md`](docs/fase-35-resiliencia-balcao-e-palco.md) | **Resiliência de balcão e palco:** credenciamento **offline-first em IndexedDB** com sincronização idempotente cronológica via `idempotencyKey` e `Attendance.qrNonce` (quita E40), **seletor estrito de sentidos** (`IN`, `TOGGLE`, `OUT`) no console do monitor imune a bipes duplos e rajada (quita E43), **edição desacoplada de anúncios** de rodada sem alterar o hash assinado com reatividade SSE no telão (quita E38) e **controles interativos de roleta no palco** com pausa/retomada, replay e atalhos de teclado (quita E39) | ADR-179 … 182 |
 | [`docs/armadilhas.md`](docs/armadilhas.md) | **Armadilhas conhecidas do projeto:** as 81 que custaram depuração real, com sintoma, causa raiz e correção — a tabela completa que o `AGENTS.md` referencia por número | — |
 | [`docs/fase-16-sorteios-de-ponta-a-ponta.md`](docs/fase-16-sorteios-de-ponta-a-ponta.md) | Sorteios de ponta a ponta: suplentes, entrega do prêmio, chance por minutos, commit-reveal com semente selada, resultado público com nome mascarado, paginação do histórico, prévia ao vivo e os gatilhos de carta de presença total e revisor destaque | ADR-085 … 091 |
 | [`docs/fase-14-quotas-e-planos.md`](docs/fase-14-quotas-e-planos.md) | Quotas de plano aplicadas (eventos e **membros da equipe** — a de **armazenamento** passou a ser aplicada na FASE 21), distinção entre membro e participante no modelo e nas listas, troca de plano e edição de quotas pela UI e tela de equipe na instituição | ADR-080 … 084 |
@@ -472,7 +474,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fase-11a-identidade-visual.md`](docs/fase-11a-identidade-visual.md) | Tokens da identidade, tipografia real, primitivos de UI, shell de navegação, guia de estilo vivo e trava mecânica com catraca de dívida | ADR-064 … 067 |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **143 decisões** registradas até aqui.
+> são **182 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
