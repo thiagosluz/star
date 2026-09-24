@@ -32,7 +32,7 @@ import {
   assemblePdf,
   buildQrMatrix,
   escapePdfText,
-  PDF_FONT_OBJECTS,
+  PDF_TEXT_FONT_OBJECTS,
   pdfDate,
   wrapText,
 } from '@/lib/documents/pdf-text';
@@ -175,7 +175,7 @@ function drawBadge(input: {
 export function renderBadgeSheetPdf(document: BadgeSheetDocument): Buffer {
   const badges = [...document.badges];
   const pageCount = Math.max(1, Math.ceil(badges.length / BADGES_PER_PAGE));
-  const fontCount = PDF_FONT_OBJECTS.length;
+  const fontCount = PDF_TEXT_FONT_OBJECTS.length;
 
   /**
    * Numeração de objetos (1-based), fixada ANTES de montar o corpo: a página precisa
@@ -231,7 +231,7 @@ export function renderBadgeSheetPdf(document: BadgeSheetDocument): Buffer {
   const objects: string[] = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, page) => `${pageRef(page)} 0 R`).join(' ')}] /Count ${pageCount} >>`,
-    ...PDF_FONT_OBJECTS,
+    ...PDF_TEXT_FONT_OBJECTS,
   ];
 
   contents.forEach((body, page) => {
@@ -286,7 +286,7 @@ export function renderBadgeLabelSheetPdf(document: BadgeLabelSheetDocument): Buf
   const positions = labelPositions(document.layout);
   const perPage = positions.length;
   const pageCount = Math.max(1, Math.ceil(badges.length / perPage));
-  const fontCount = PDF_FONT_OBJECTS.length;
+  const fontCount = PDF_TEXT_FONT_OBJECTS.length;
   const pageWidth = mmToPt(A4_WIDTH_MM);
   const pageHeight = mmToPt(A4_HEIGHT_MM);
 
@@ -325,7 +325,7 @@ export function renderBadgeLabelSheetPdf(document: BadgeLabelSheetDocument): Buf
   const objects: string[] = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, page) => `${pageRef(page)} 0 R`).join(' ')}] /Count ${pageCount} >>`,
-    ...PDF_FONT_OBJECTS,
+    ...PDF_TEXT_FONT_OBJECTS,
   ];
 
   contents.forEach((body, page) => {

@@ -610,6 +610,65 @@ export function buildCanonicalPayload(input: CanonicalCertificate): string {
   return JSON.stringify(ordered);
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  Conteúdo canônico — versão 2 (o documento com LAYOUT)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * A versão 2 do documento (FASE 40).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UMA VERSÃO NOVA, E NÃO UMA MUDANÇA NA 1
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O layout e o conteúdo congelado das variáveis mudam o que o documento AFIRMA, e
+ *  todo certificado já emitido tem o hash gravado no formato da versão 1. Recalcular
+ *  com campos a mais reprovaria a assinatura de tudo o que existe — o mesmo problema
+ *  que a FASE 30 resolveu com o payload versionado do sorteio (ADR-144).
+ *
+ *  Então a 1 continua verificável exatamente como nasceu, e a 2 vale para quem tem
+ *  layout (`layoutSnapshot`). A versão é DERIVADA da presença do snapshot, e não
+ *  gravada em coluna: com um campo a mais existiria o estado incoerente "versão 2 sem
+ *  layout".
+ */
+export interface CanonicalCertificateV2 {
+  version: 2;
+  validationCode: string;
+  tenantId: string;
+  eventId: string;
+  userId: string;
+  activityId: string | null;
+  kind: CertificateKind;
+  recipientName: string;
+  title: string;
+  bodyText: string;
+  workloadMinutes: number;
+  issuedAt: string;
+  /** Layout serializado de forma canônica — inclui a impressão da arte. */
+  layout: string;
+  /** Variáveis de conteúdo congeladas (ordem do catálogo). */
+  content: string;
+}
+
+export function buildCanonicalPayloadV2(input: CanonicalCertificateV2): string {
+  const ordered: CanonicalCertificateV2 = {
+    version: input.version,
+    validationCode: input.validationCode,
+    tenantId: input.tenantId,
+    eventId: input.eventId,
+    userId: input.userId,
+    activityId: input.activityId,
+    kind: input.kind,
+    recipientName: input.recipientName.trim(),
+    title: input.title.trim(),
+    bodyText: input.bodyText.trim(),
+    workloadMinutes: input.workloadMinutes,
+    issuedAt: input.issuedAt,
+    layout: input.layout,
+    content: input.content,
+  };
+
+  return JSON.stringify(ordered);
+}
+
 /** SHA-256 em hexadecimal do conteúdo canônico. */
 export function hashCanonicalPayload(payload: string): string {
   return createHash('sha256').update(payload, 'utf8').digest('hex');

@@ -114,33 +114,72 @@ export function pdfDate(date: Date): string {
  *  defeito que ninguém encontra olhando a tela. O certificado (uma página) e a
  *  folha de crachás (N páginas) montam o MESMO rodapé, com números de objeto
  *  diferentes; o que cada um desenha na página é problema do renderizador.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UM OBJETO PODE SER `Buffer` (FASE 40)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A arte de fundo do certificado entra como imagem JPEG, e os bytes dela são
+ *  BINÁRIOS. Passar por string funcionaria em `latin1` — byte vira caractere e volta
+ *  igual —, mas dependeria de nunca haver conversão de codificação no meio do
+ *  caminho. Com `Buffer`, o fluxo da imagem atravessa a montagem sem interpretação
+ *  nenhuma, e o offset da `xref` é medido em bytes de verdade.
  */
-export function assemblePdf(objects: readonly string[]): Buffer {
-  const header = '%PDF-1.4\n';
-  let pdf = header;
+export function assemblePdf(objects: readonly (string | Buffer)[]): Buffer {
+  const parts: Buffer[] = [Buffer.from('%PDF-1.4\n', 'latin1')];
   const offsets: number[] = [];
+  let cursor = parts[0]?.length ?? 0;
 
   objects.forEach((body, index) => {
-    offsets.push(Buffer.byteLength(pdf, 'latin1'));
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+    const header = Buffer.from(`${index + 1} 0 obj\n`, 'latin1');
+    const tail = Buffer.from('\nendobj\n', 'latin1');
+    const content = Buffer.isBuffer(body) ? body : Buffer.from(body, 'latin1');
+
+    offsets.push(cursor);
+    parts.push(header, content, tail);
+    cursor += header.length + content.length + tail.length;
   });
 
-  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
+  const xrefOffset = cursor;
   const total = objects.length + 1;
 
-  pdf += `xref\n0 ${total}\n0000000000 65535 f \n`;
+  let xref = `xref\n0 ${total}\n0000000000 65535 f \n`;
 
   for (const offset of offsets) {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+    xref += `${String(offset).padStart(10, '0')} 00000 n \n`;
   }
 
-  pdf += `trailer\n<< /Size ${total} /Root 1 0 R /Info ${objects.length} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  xref += `trailer\n<< /Size ${total} /Root 1 0 R /Info ${objects.length} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  parts.push(Buffer.from(xref, 'latin1'));
 
-  return Buffer.from(pdf, 'latin1');
+  return Buffer.concat(parts);
 }
 
-/** Objetos de fonte reutilizados pelos dois documentos (Helvetica e negrito). */
-export const PDF_FONT_OBJECTS = [
+/**
+ * Fontes dos documentos que JÁ EXISTIAM (certificado de desenho fixo e folha de
+ * crachás).
+ *
+ * Elas continuam sendo duas, e não cinco, de propósito: acrescentar objetos de fonte
+ * sem uso mudaria os bytes dos documentos que a plataforma já emite, sem mudar nada
+ * do que se vê. Documento emitido é documento — o desenho antigo continua sendo o
+ * desenho antigo, byte a byte.
+ */
+export const PDF_TEXT_FONT_OBJECTS = [
   '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
   '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+] as const;
+
+/**
+ * Todas as fontes padrão oferecidas ao editor visual (FASE 40).
+ *
+ * A ORDEM é contrato: os renderizadores referenciam as fontes por número de objeto
+ * (`/F1 5 0 R`), e as três últimas são as que o organizador escolhe entre serifa e
+ * monoespaçada. Continuam sendo as 14 fontes base do PDF, que não precisam ser
+ * embutidas — uma fonte da instituição (`.ttf`) mudaria o hash do documento e não é
+ * oferecida.
+ */
+export const PDF_FONT_OBJECTS = [
+  ...PDF_TEXT_FONT_OBJECTS,
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>',
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>',
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>',
 ] as const;

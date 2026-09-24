@@ -36,6 +36,7 @@ import {
   generateCertificate,
   requestCertificate,
 } from '../src/lib/certificates/certificate-service';
+import { saveCertificateTemplate } from '../src/lib/certificates/certificate-template-service';
 import { createRaffle, drawRaffle } from '../src/lib/raffles/raffle-service';
 import { issueCredentials } from '../src/lib/events/credential-service';
 import {
@@ -1096,6 +1097,27 @@ async function main() {
 
   const certificadosDemo: { quem: string; codigo: string; tipo: string }[] = [];
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  MODELO VISUAL DO CERTIFICADO (FASE 40)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Um modelo de demonstração para o minicurso, criado pelo SERVIÇO real (como todo
+   *  o resto do seed): o certificado do Bruno nasce com o layout, e o organizador
+   *  encontra o editor com um modelo já pronto para personalizar.
+   *
+   *  SEM ARTE: a arte é a identidade da instituição e quem a envia é ela. Um desenho
+   *  de exemplo embutido seria substituído no primeiro uso — e o caminho de upload
+   *  tem cobertura própria nos testes.
+   */
+  const modeloDemo = await saveCertificateTemplate({
+    tenantId: ufbaId,
+    actorId: ana,
+    name: 'Minicurso — clássico institucional (demonstração)',
+    eventId: congressoUfba,
+    kind: 'MINI_COURSE',
+    presetId: 'classico-institucional',
+  });
+
   for (const pedido of [
     { userId: bruno, kind: 'MINI_COURSE' as const, quem: 'Bruno (minicurso)' },
     { userId: ana, kind: 'AUTHOR' as const, quem: 'Ana (autoria)' },
@@ -1125,6 +1147,11 @@ async function main() {
   }
 
   console.log(`  ✓ certificação: ${certificadosDemo.length} certificado(s) de demonstração`);
+  console.log(
+    modeloDemo.ok
+      ? `    Modelo visual do minicurso: ${modeloDemo.templateId ? 'criado a partir do "Clássico institucional"' : ''} — edite em /t/ufba-demo/administracao/certificados/modelos`
+      : `  ! modelo visual de demonstração não criado: ${modeloDemo.message}`,
+  );
 
   // ── Sorteio de demonstração (FASE 8) ───────────────────────────────────────
   /**

@@ -1,5 +1,16 @@
 import Link from 'next/link';
-import { CalendarCog, FileBadge, HardDrive, History, Layers, ListChecks, Settings2, Ticket, Users } from 'lucide-react';
+import {
+  CalendarCog,
+  FileBadge,
+  HardDrive,
+  History,
+  Layers,
+  ListChecks,
+  Palette,
+  Settings2,
+  Ticket,
+  Users,
+} from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -98,6 +109,18 @@ export default async function AdminHomePage({
       icon: FileBadge,
       permission: PERMISSIONS.CERTIFICATE_ISSUE,
       metric: `${overview.certificates} certificado(s)`,
+    },
+    {
+      // FASE 40: sem esta linha, o editor visual só existia por endereço digitado —
+      // funcionalidade entregue e não ALCANÇÁVEL é funcionalidade que não existe para
+      // quem opera. A permissão é a mesma da tela de modelos (`event:manage`).
+      href: '/administracao/certificados/modelos',
+      label: 'Modelos de certificado',
+      description:
+        'Arte de fundo, variáveis e posicionamento do documento — o desenho congela em cada certificado emitido.',
+      icon: Palette,
+      permission: PERMISSIONS.EVENT_MANAGE,
+      metric: `${overview.certificateTemplates} modelo(s)`,
     },
     {
       href: '/credenciamento',
@@ -199,8 +222,10 @@ export default async function AdminHomePage({
           />
           <StatCard
             label="Certificados e materiais"
-            value={formatBytes(storage.certificateBytes + storage.speakerMaterialBytes)}
-            hint="Documentos gerados e apoio dos palestrantes"
+            value={formatBytes(
+              storage.certificateBytes + storage.speakerMaterialBytes + storage.certificateTemplateBytes,
+            )}
+            hint="Documentos gerados, arte dos modelos e apoio dos palestrantes"
             data-testid="storage-generated"
           />
         </div>

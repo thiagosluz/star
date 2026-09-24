@@ -13,8 +13,10 @@
 > a **FASE 32**, a **FASE 33** (que quitou o E25 e declarou E46–E47), a **FASE 34** (que
 > declarou E48–E49) e a **FASE 35**, com a **FASE 36** (que quitou A3, B7 e E47) e a
 > **FASE 37** (que quitou E41 e E48 e declarou o E50), a **FASE 38** (que quitou a METADE
-> do E50 — o quadro de demandas funciona sem JavaScript — e declarou E51–E52) e a **FASE 39**
-> (que declarou **E53**, a contagem conservadora do congelamento da rubrica), com as
+> do E50 — o quadro de demandas funciona sem JavaScript — e declarou E51–E52), a **FASE 39**
+> (que declarou **E53**, a contagem conservadora do congelamento da rubrica) e a **FASE 40**
+> (que declarou **E54**, CPF e título da apresentação sem fonte, e **E55**, o palco do editor
+> visual sem movimento por teclado), com as
 > **revisões
 > pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
@@ -98,12 +100,12 @@
 | B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 28 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, e a contagem que congela a rubrica da trilha é conservadora |
+| E. Jornada do participante | 30 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, e a contagem que congela a rubrica da trilha é conservadora |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **50** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **52** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -114,9 +116,11 @@
 > integralmente — ela quitou a **metade do E50** que dá para quitar sem reescrever uma dúzia
 > de telas (o quadro de demandas é operável sem JavaScript) — e declarou **E51** e **E52**,
 > levando o total a **49**. A **FASE 39** não quitou nada e declarou **E53** (a contagem
-> conservadora que congela a rubrica da trilha): **50**.
+> conservadora que congela a rubrica da trilha): **50**. A **FASE 40** também não quitou nada e
+> declarou **E54** (CPF e título da apresentação sem fonte) e **E55** (o palco não move por
+> teclado): **52**.
 >
-> O total é a **soma das tabelas de tema** (3+4+2+3+28+5+0+4+1 = 50 — o tema G ficou
+> O total é a **soma das tabelas de tema** (3+4+2+3+30+5+0+4+1 = 52 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -291,6 +295,8 @@
 | E52 | **O quadro de demandas carrega todos os cartões do evento** | FASE 38 (novo) | `loadDemandBoard` lê todas as demandas do quadro em uma consulta, com comentários contados. Um evento com centenas de demandas abertas (ou um histórico de anos) traz tudo para a tela | A tela é de OPERAÇÃO e precisa abrir rápido no dia do evento. O caminho é paginar por coluna, deixando as concluídas fora do primeiro carregamento (com um contador e "ver concluídas") | P | Sim |
 | E53 | **A contagem que congela a rubrica da TRILHA é conservadora** | FASE 39 (novo, ADR-217) | `assertRubricShapeFree` conta os pareceres de submissões da trilha sem verificar se aquela submissão realmente usa a rubrica DELA: a precedência é CHAMADA → TRILHA → PADRÃO, então uma submissão de chamada com rubrica própria entra na conta mesmo sem nunca ter lido a rubrica da trilha. Uma trilha pode congelar por um motivo que não é dela | O efeito é conservador (congela antes do necessário) e a mensagem diz o que foi contado, mas o organizador pode ficar sem editar sem entender por quê. O caminho é resolver a rubrica POR SUBMISSÃO na contagem (`resolveEffectiveRubric` por linha), trocando uma consulta por uma consulta por submissão avaliada | P | Sim |
 | E51 | **O quadro de demandas não reordena por teclado** | FASE 38 (novo, ADR-202) | O arrastar e soltar reordena e move entre colunas, e o formulário do cartão move de coluna — mas reordenar DENTRO da coluna só existe pelo gesto do mouse | A ordem é informação de prioridade: sem caminho por teclado, quem não usa mouse não consegue dizer "isto vem antes daquilo". O caminho é um par de botões "mover para cima/baixo" no cartão, chamando o MESMO `moveDemand` com o índice de destino (o serviço já aceita `toIndex`) | P | Sim |
+| E54 | **CPF e "título da apresentação" não existem como variável do certificado** | FASE 40 (novo, ADR-221) | O editor visual oferece 14 variáveis, e nenhuma delas é o documento do participante nem o título do trabalho aprovado: `User` não tem campo de CPF (o único `taxId` do schema é do patrocinador) e `Certificate` não se liga à `Submission` (liga-se a evento, pessoa e atividade). As duas foram PEDIDAS pelo humano e ficaram fora do escopo por decisão: variável sem fonte sai como rótulo vazio em documento formal | Instituições que emitem certificado de trabalho aprovado (e as que precisam do CPF por exigência de portaria) vão querer as duas. O caminho tem duas partes: (a) campo de documento no participante, com mascaramento em log e tela para ele preencher — decisão de privacidade, não de formulário; (b) `certificates.submissionId` (nulável) gravado na emissão do certificado de AUTOR, com o título congelado no `variableSnapshot` que a FASE 40 já criou | M | Sim |
+| E55 | **O palco do editor visual não move por teclado** | FASE 40 (novo, ADR-226) | Arrastar exige ponteiro. O formulário numérico ao lado cobre o caso (e funciona sem JavaScript), mas quem navega por teclado no PALCO não consegue mover a caixa — mesma família da E51 | O caminho é permitir mover/redimensionar a caixa selecionada com as setas (1 mm por toque, 10 mm com modificador), escrevendo nos mesmos campos. É melhoria de acessibilidade, com o teclado já funcionando no caminho alternativo | P | Sim |
 
 ### F. Gamificação
 

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Download, FileBadge, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Download, FileBadge, Palette, RefreshCw, ShieldAlert } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -88,20 +88,38 @@ export default async function AdminCertificatesPage({
             evento. Sem ele, a tela diz o que fazer — em vez de oferecer um botão que
             baixaria tudo.
           */}
-          {evento ? (
-            <a
-              href={`/api/t/${tenantSlug}/certificados/zip?evento=${evento}`}
-              data-testid="download-certificate-zip"
+          <div className="flex flex-wrap items-center gap-3">
+            {/*
+              ─── O EDITOR VISUAL (FASE 40) ──────────────────────────────────────────
+              A tela de modelos é a outra metade deste módulo: aqui se EMITE e se
+              acompanha, lá se DESENHA. Sem este link, o editor só existia por
+              endereço digitado — e funcionalidade entregue que ninguém alcança não
+              existe para quem opera.
+            */}
+            <Link
+              href={tenantPath(tenantSlug, '/administracao/certificados/modelos')}
+              data-testid="certificate-templates-link"
               className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
             >
-              <Download className="size-4" aria-hidden />
-              Baixar todos em ZIP
-            </a>
-          ) : (
-            <p className="text-xs text-muted-foreground" data-testid="zip-hint">
-              Escolha um evento no filtro para baixar o lote em ZIP.
-            </p>
-          )}
+              <Palette className="size-4" aria-hidden />
+              Modelos de certificado
+            </Link>
+
+            {evento ? (
+              <a
+                href={`/api/t/${tenantSlug}/certificados/zip?evento=${evento}`}
+                data-testid="download-certificate-zip"
+                className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                <Download className="size-4" aria-hidden />
+                Baixar todos em ZIP
+              </a>
+            ) : (
+              <p className="text-xs text-muted-foreground" data-testid="zip-hint">
+                Escolha um evento no filtro para baixar o lote em ZIP.
+              </p>
+            )}
+          </div>
         </div>
       </header>
 

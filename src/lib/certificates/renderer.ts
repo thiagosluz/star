@@ -29,7 +29,7 @@ import {
   buildQrMatrix,
   escapePdfText,
   escapeXml,
-  PDF_FONT_OBJECTS,
+  PDF_TEXT_FONT_OBJECTS,
   pdfDate,
   wrapText,
 } from '@/lib/documents/pdf-text';
@@ -64,6 +64,7 @@ export {
   escapePdfText,
   escapeXml,
   PDF_FONT_OBJECTS,
+  PDF_TEXT_FONT_OBJECTS,
   pdfDate,
   wrapText,
 } from '@/lib/documents/pdf-text';
@@ -238,7 +239,7 @@ export function renderCertificatePdf(document: CertificateDocument): Buffer {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_WIDTH} ${PDF_HEIGHT}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`,
     `<< /Length ${contentBuffer.length} >>\nstream\n${content}\nendstream`,
-    ...PDF_FONT_OBJECTS,
+    ...PDF_TEXT_FONT_OBJECTS,
     `<< /Title (${escapePdfText(document.title)}) /Author (${escapePdfText(document.tenantName)}) /Subject (${escapePdfText(document.validationCode)}) /Creator (EventFlow) /Producer (EventFlow) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
   ];
 

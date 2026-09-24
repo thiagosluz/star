@@ -613,4 +613,55 @@ describe('a fila da equipe devolve o checklist', () => {
 
     expect(vizinha.ok).toBe(false);
   });
+
+  /**
+   * ─── O EMPATE DA FILA TEM DE SER DESEMPATADO ─────────────────────────────────
+   *
+   *  Duas atividades REQUIRED que começam no MESMO horário e vencem no MESMO dia
+   *  (o prazo é o fim do dia local, então nascem empatadas) deixavam `ORDER BY
+   *  startsAt` decidir — e o Postgres não promete ordem entre iguais. A tela abria
+   *  numa atividade arbitrária, sem pendente nenhum, a cada consulta (armadilha 96).
+   *  Este teste prende o desempate: a atividade mais ANTIGA vem primeiro, e a
+   *  resposta é a mesma em consultas repetidas.
+   */
+  it('sem atividade escolhida, a fila abre sempre na MESMA — o empate é desempatado pela criação', async () => {
+    const maisAntiga = await withTenant(tenantId, (tx) =>
+      tx.activity.findFirstOrThrow({
+        where: { slug: `snapshot-${RUN}` },
+        select: { id: true },
+      }),
+    );
+
+    const primeira = await listConfirmationQueue({
+      tenantId,
+      eventId,
+      activityId: null,
+      search: null,
+    });
+    const segunda = await listConfirmationQueue({
+      tenantId,
+      eventId,
+      activityId: null,
+      search: null,
+    });
+
+    expect(primeira.ok && segunda.ok).toBe(true);
+    if (!primeira.ok || !segunda.ok) return;
+
+    expect(primeira.queue.selected?.activityId).toBe(maisAntiga.id);
+    expect(segunda.queue.selected?.activityId).toBe(maisAntiga.id);
+
+    /** E a ordem inteira da lista é estável entre consultas. */
+    expect(segunda.queue.activities.map((activity) => activity.id)).toEqual(
+      primeira.queue.activities.map((activity) => activity.id),
+    );
+
+    /** As duas atividades empatadas existem de verdade: o teste não passa por acidente. */
+    const empatadas = primeira.queue.activities.filter(
+      (activity) => activity.pending > 0 && activity.earliestDueAt !== null,
+    );
+    const prazos = new Set(empatadas.map((activity) => activity.earliestDueAt!.getTime()));
+    expect(empatadas.length).toBeGreaterThan(1);
+    expect(prazos.size).toBe(1);
+  });
 });

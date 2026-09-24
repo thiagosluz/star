@@ -5,18 +5,22 @@
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O QUE CONTA (decisão de produto da FASE 21)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  TUDO o que a plataforma guarda para a instituição, em quatro fontes:
+ *  TUDO o que a plataforma guarda para a instituição, em cinco fontes:
  *
- *    • `submission_files`  — os PDFs enviados por autores (cega e identificada);
- *    • `media_assets`      — o acervo de mídia (capas, logotipos, galeria);
- *    • `speaker_materials` — os materiais de apoio dos palestrantes;
- *    • `certificates`      — os PDF/SVG emitidos (ficam no bucket do evento).
+ *    • `submission_files`        — os PDFs enviados por autores (cega e identificada);
+ *    • `media_assets`            — o acervo de mídia (capas, logotipos, galeria);
+ *    • `speaker_materials`       — os materiais de apoio dos palestrantes;
+ *    • `certificates`            — os PDF/SVG emitidos (ficam no bucket do evento);
+ *    • `certificate_templates`   — a ARTE de fundo do certificado (FASE 40).
  *
  *  Medir só o que a instituição ENVIOU deixaria o número abaixo do real — e o teto
  *  do plano é sobre bytes guardados, não sobre bytes escolhidos. Os certificados
  *  ENTRAM na conta e NÃO são bloqueados por ela: o documento do participante não
  *  pode ficar refém da decisão de armazenamento da organização (ver
  *  `evaluateStorageQuota` e a dívida declarada no doc da fase).
+ *
+ *  A arte do modelo ENTRA e É bloqueada: enviar arte é ato de quem organiza, e a
+ *  recusa acontece antes do upload (com o motivo na tela), sem risco para ninguém.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  A VERIFICAÇÃO ACONTECE ANTES DE ASSINAR A URL
@@ -35,10 +39,12 @@ export interface StorageBreakdown {
   mediaBytes: number;
   speakerMaterialBytes: number;
   certificateBytes: number;
+  /** Arte de fundo dos modelos de certificado (FASE 40). */
+  certificateTemplateBytes: number;
 }
 
 export interface StorageUsage extends StorageBreakdown {
-  /** Soma das quatro fontes. */
+  /** Soma das cinco fontes. */
   totalBytes: number;
   maxBytes: number | null;
   usage: QuotaUsage;
@@ -47,7 +53,7 @@ export interface StorageUsage extends StorageBreakdown {
 /**
  * Uso de armazenamento da instituição, por origem.
  *
- * Uma leitura por fonte (quatro agregações) em vez de uma consulta por arquivo: o
+ * Uma leitura por fonte (cinco agregações) em vez de uma consulta por arquivo: o
  * número sai do banco, não de uma varredura do bucket — o objeto pode existir sem
  * registro apenas em caso de falha no meio do caminho, e nesse caso o certo é
  * reconciliar (dívida declarada), não somar o que ninguém registrou.
@@ -57,7 +63,7 @@ export interface StorageUsage extends StorageBreakdown {
  */
 export async function storageUsage(tenantId: string): Promise<StorageUsage> {
   return withTenant(tenantId, async (tx) => {
-    const [submissions, media, materials, certificates, tenant] = await Promise.all([
+    const [submissions, media, materials, certificates, templates, tenant] = await Promise.all([
       tx.submissionFile.aggregate({
         where: { tenantId },
         _sum: { sizeBytes: true },
@@ -74,6 +80,10 @@ export async function storageUsage(tenantId: string): Promise<StorageUsage> {
         where: { tenantId, storageKey: { not: null } },
         _sum: { sizeBytes: true },
       }),
+      tx.certificateTemplate.aggregate({
+        where: { tenantId, backgroundBytes: { not: null } },
+        _sum: { backgroundBytes: true },
+      }),
       tx.tenant.findUnique({ where: { id: tenantId }, select: { maxStorageBytes: true } }),
     ]);
 
@@ -81,8 +91,10 @@ export async function storageUsage(tenantId: string): Promise<StorageUsage> {
     const mediaBytes = media._sum.sizeBytes ?? 0;
     const speakerMaterialBytes = materials._sum.sizeBytes ?? 0;
     const certificateBytes = Number(certificates._sum.sizeBytes ?? 0);
+    const certificateTemplateBytes = Number(templates._sum.backgroundBytes ?? 0);
 
-    const totalBytes = submissionBytes + mediaBytes + speakerMaterialBytes + certificateBytes;
+    const totalBytes =
+      submissionBytes + mediaBytes + speakerMaterialBytes + certificateBytes + certificateTemplateBytes;
     const maxBytes = tenant ? Number(tenant.maxStorageBytes) : null;
 
     return {
@@ -90,6 +102,7 @@ export async function storageUsage(tenantId: string): Promise<StorageUsage> {
       mediaBytes,
       speakerMaterialBytes,
       certificateBytes,
+      certificateTemplateBytes,
       totalBytes,
       maxBytes,
       usage: evaluateQuotaUsage(totalBytes, maxBytes),

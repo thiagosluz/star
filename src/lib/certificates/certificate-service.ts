@@ -31,6 +31,7 @@ import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/pri
 import { BUCKETS, createDownloadUrl, putObjectBuffer } from '@/lib/storage/s3-client';
 import {
   buildCanonicalPayload,
+  buildCanonicalPayloadV2,
   buildCertificateText,
   computeWorkload,
   evaluateEligibility,
@@ -46,6 +47,23 @@ import {
   type WorkloadBreakdownEntry,
   type WorkloadResult,
 } from '@/domain/certificates/certificate-rules';
+import {
+  contentValuesFrom,
+  formatIssuedAtLabel,
+  resolveCertificateVariables,
+  serializeContentValues,
+  serializeLayout,
+  type CertificateVariableValues,
+} from '@/domain/certificates/certificate-layout-rules';
+import {
+  readStoredLayout,
+  readTemplateBackground,
+  resolveTemplateWithTx,
+} from '@/lib/certificates/certificate-template-service';
+import {
+  renderCertificateLayoutPdf,
+  renderCertificateLayoutSvg,
+} from '@/lib/certificates/layout-renderer';
 import { computeSpeakerWorkload } from '@/domain/speakers/speaker-rules';
 import { notifyCertificateIssued } from '@/lib/communication/notification-service';
 import { renderCertificatePdf, renderCertificateSvg } from '@/lib/certificates/renderer';
@@ -355,20 +373,79 @@ export async function requestCertificate(
       const validationCode = await allocateValidationCode(tx);
 
       const issuedAt = now;
-      const canonical = buildCanonicalPayload({
-        version: 1,
-        validationCode,
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  O MODELO VISUAL DECIDE A VERSÃO DO DOCUMENTO (FASE 40)
+       * ─────────────────────────────────────────────────────────────────────────
+       *  Sem modelo configurado, o certificado sai no desenho fixo da FASE 6 e o
+       *  conteúdo assinado continua sendo a versão 1 — nada muda para quem nunca
+       *  abriu o editor. Com modelo, o layout e as variáveis de conteúdo entram no
+       *  snapshot e no conteúdo canônico (versão 2).
+       *
+       *  As variáveis são CONGELADAS aqui, e não lidas na renderização: o nome do
+       *  evento, o nome da instituição e o título da atividade vivem em outras
+       *  tabelas, e uma edição posterior faria o MESMO documento (mesmo hash) sair
+       *  impresso diferente.
+       */
+      const template = await resolveTemplateWithTx(tx, {
         tenantId: input.tenantId,
         eventId: input.eventId,
-        userId: input.userId,
-        activityId: input.activityId ?? null,
         kind: input.kind,
-        recipientName: context.userName,
-        title: text.title,
-        bodyText: text.bodyText,
-        workloadMinutes: text.workloadMinutes,
-        issuedAt: issuedAt.toISOString(),
       });
+
+      const contentValues = template
+        ? contentValuesFrom(
+            resolveCertificateVariables({
+              recipientName: context.userName,
+              title: text.title,
+              bodyText: text.bodyText,
+              eventTitle: context.eventTitle,
+              activityTitle: context.activityTitle ?? '',
+              workloadLabel: text.workloadLabel,
+              period: text.period ?? '',
+              issuedAtLabel: formatIssuedAtLabel(issuedAt, context.timeZone),
+              tenantName: context.tenantName,
+              validationCode,
+              validationUrl: validationUrlFor(validationCode),
+              contentHash: '',
+              signature: '',
+              keyId: '',
+            }),
+          )
+        : null;
+
+      const canonical = template
+        ? buildCanonicalPayloadV2({
+            version: 2,
+            validationCode,
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            userId: input.userId,
+            activityId: input.activityId ?? null,
+            kind: input.kind,
+            recipientName: context.userName,
+            title: text.title,
+            bodyText: text.bodyText,
+            workloadMinutes: text.workloadMinutes,
+            issuedAt: issuedAt.toISOString(),
+            layout: serializeLayout(template.layout),
+            content: serializeContentValues(contentValues ?? {}),
+          })
+        : buildCanonicalPayload({
+            version: 1,
+            validationCode,
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            userId: input.userId,
+            activityId: input.activityId ?? null,
+            kind: input.kind,
+            recipientName: context.userName,
+            title: text.title,
+            bodyText: text.bodyText,
+            workloadMinutes: text.workloadMinutes,
+            issuedAt: issuedAt.toISOString(),
+          });
 
       const contentHash = hashCanonicalPayload(canonical);
       const { keyId, alg } = getSigningConfig();
@@ -394,6 +471,15 @@ export async function requestCertificate(
           signatureKeyId: keyId,
           signatureAlg: alg,
           mimeType: 'application/pdf',
+          /**
+           * O desenho vem do MODELO e é CONGELADO aqui: editar o modelo depois não
+           * pode mexer em documento já emitido. `layoutSnapshot` nulo é o que
+           * identifica a versão 1 do documento (desenho fixo da FASE 6), e é por isso
+           * que a versão do conteúdo canônico não precisa de coluna própria.
+           */
+          templateId: template?.templateId ?? null,
+          layoutSnapshot: template ? (template.layout as unknown as object) : undefined,
+          variableSnapshot: contentValues ? (contentValues as unknown as object) : undefined,
           /**
            * ─────────────────────────────────────────────────────────────────────
            *  O `issuedAt` É GRAVADO AGORA, E ISSO É OBRIGATÓRIO
@@ -550,6 +636,8 @@ export async function generateCertificate(input: {
           issuedAt: true,
           createdAt: true,
           revokedAt: true,
+          layoutSnapshot: true,
+          variableSnapshot: true,
         },
       });
 
@@ -604,8 +692,46 @@ export async function generateCertificate(input: {
       issuedAt,
     };
 
-    const pdf = renderCertificatePdf(document);
-    const svg = renderCertificateSvg(document);
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  QUAL DESENHO RENDERIZA ESTE CERTIFICADO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Com layout no snapshot, quem desenha é o editor visual, com o conteúdo
+     *  CONGELADO na emissão — e não o que está no banco hoje. Sem layout, o desenho
+     *  fixo da FASE 6 continua valendo: o arquivo de um certificado já emitido não
+     *  muda porque a fase seguinte chegou.
+     *
+     *  Layout sem conteúdo congelado é FALHA, não improviso: renderizar com os dados
+     *  de hoje imprimiria um documento que o hash não cobre.
+     */
+    const layout = readStoredLayout(certificate.layoutSnapshot);
+    let pdf: Buffer;
+    let svg: string;
+
+    if (layout) {
+      const stored = certificate.variableSnapshot;
+      const content = stored ? contentValuesFrom(stored as Record<string, string>) : null;
+
+      if (!content) {
+        throw new Error('Certificado com modelo visual sem o conteúdo congelado da emissão.');
+      }
+
+      const values = {
+        ...content,
+        hash: contentHash,
+        assinatura: signature,
+        chave: certificate.signatureKeyId ?? '',
+      } as CertificateVariableValues;
+
+      const backgroundBytes = await readTemplateBackground(layout);
+      const layoutDocument = { values, layout, backgroundBytes, issuedAt };
+
+      pdf = renderCertificateLayoutPdf(layoutDocument);
+      svg = renderCertificateLayoutSvg(layoutDocument);
+    } else {
+      pdf = renderCertificatePdf(document);
+      svg = renderCertificateSvg(document);
+    }
 
     const baseKey = `tenants/${input.tenantId}/events/${certificate.eventId}/certificates/${certificate.id}`;
     const bucket = BUCKETS.certificates();
@@ -1216,6 +1342,8 @@ export async function getPublicCertificate(rawCode: string): Promise<
           signatureKeyId: true,
           signatureAlg: true,
           validationCount: true,
+          layoutSnapshot: true,
+          variableSnapshot: true,
         },
       });
 
@@ -1244,22 +1372,53 @@ export async function getPublicCertificate(rawCode: string): Promise<
      * Se alguém alterar `bodyText` (ou qualquer campo coberto) por fora, o hash
      * deixa de casar e a assinatura não confere — que é exatamente o que a
      * assinatura existe para detectar.
+     *
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A VERSÃO DO DOCUMENTO É DERIVADA, NÃO GRAVADA (FASE 40)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Certificado com layout no snapshot é versão 2, e a verificação reconstrói o
+     *  payload com o LAYOUT (que carrega a impressão da arte) e com o CONTEÚDO
+     *  congelado das variáveis. Sem layout, é versão 1 — e ela continua sendo
+     *  reconstruída exatamente como nasceu, senão todo certificado antigo passaria a
+     *  reprovar. Ter uma coluna de versão criaria o estado incoerente "versão 2 sem
+     *  layout"; o snapshot é o que existe de fato.
      */
     const issuedAt = row.issuedAt ?? row.createdAt;
-    const canonical = buildCanonicalPayload({
-      version: 1,
-      validationCode: row.validationCode,
-      tenantId: row.tenantId,
-      eventId: row.eventId,
-      userId: row.userId,
-      activityId: row.activityId,
-      kind: row.kind,
-      recipientName: row.recipientName,
-      title: row.title,
-      bodyText: row.bodyText,
-      workloadMinutes: row.workloadMinutes,
-      issuedAt: issuedAt.toISOString(),
-    });
+    const storedLayout = readStoredLayout(row.layoutSnapshot);
+
+    const canonical = storedLayout
+      ? buildCanonicalPayloadV2({
+          version: 2,
+          validationCode: row.validationCode,
+          tenantId: row.tenantId,
+          eventId: row.eventId,
+          userId: row.userId,
+          activityId: row.activityId,
+          kind: row.kind,
+          recipientName: row.recipientName,
+          title: row.title,
+          bodyText: row.bodyText,
+          workloadMinutes: row.workloadMinutes,
+          issuedAt: issuedAt.toISOString(),
+          layout: serializeLayout(storedLayout),
+          content: serializeContentValues(
+            contentValuesFrom((row.variableSnapshot as Record<string, string> | null) ?? {}),
+          ),
+        })
+      : buildCanonicalPayload({
+          version: 1,
+          validationCode: row.validationCode,
+          tenantId: row.tenantId,
+          eventId: row.eventId,
+          userId: row.userId,
+          activityId: row.activityId,
+          kind: row.kind,
+          recipientName: row.recipientName,
+          title: row.title,
+          bodyText: row.bodyText,
+          workloadMinutes: row.workloadMinutes,
+          issuedAt: issuedAt.toISOString(),
+        });
 
     const recomputedHash = hashCanonicalPayload(canonical);
     const hashMatches = recomputedHash === row.contentHash;

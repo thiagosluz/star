@@ -136,6 +136,14 @@ export const TENANT_SCOPED_TABLES = [
   'demand_events',
   'event_teams',
   'event_team_members',
+  /**
+   * FASE 40 — modelo visual do certificado (arte de fundo e layout). A identidade
+   * visual é da INSTITUIÇÃO: o modelo de uma não pode ser aplicado nem lido pelo
+   * certificado de outra, e a RLS é o que garante isso mesmo numa consulta que
+   * esqueça o filtro. O layout mora em `JSON` e o snapshot da emissão fica em
+   * `certificates`, que já está sob RLS.
+   */
+  'certificate_templates',
 ];
 
 /**

@@ -1514,6 +1514,8 @@ export interface AdminOverview {
   attendees: number;
   submissions: number;
   certificates: number;
+  /** Modelos visuais de certificado da instituição (FASE 40). */
+  certificateTemplates: number;
   cards: number;
   missions: number;
   /** Equipe: vínculos `kind = MEMBER` que ocupam vaga na quota do plano (FASE 14). */
@@ -1532,6 +1534,7 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       attendees,
       submissions,
       certificates,
+      certificateTemplates,
       cards,
       missions,
       members,
@@ -1544,6 +1547,7 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       tx.registration.count({ where: { tenantId, status: 'ATTENDED' } }),
       tx.submission.count({ where: { tenantId, deletedAt: null } }),
       tx.certificate.count({ where: { tenantId } }),
+      tx.certificateTemplate.count({ where: { tenantId } }),
       tx.cardTemplate.count({ where: { tenantId, deletedAt: null } }),
       tx.taskDefinition.count({ where: { tenantId, deletedAt: null } }),
       // Mesmo critério da quota do plano: equipe ativa ou convidada (um convite
@@ -1567,6 +1571,7 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       attendees,
       submissions,
       certificates,
+      certificateTemplates,
       cards,
       missions,
       members,

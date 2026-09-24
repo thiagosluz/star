@@ -444,6 +444,8 @@ export interface ConfirmationQueueActivity {
   id: string;
   title: string;
   startsAt: Date;
+  /** Existe para o DESEMPATE da ordem da fila — não é exibido na tela. */
+  createdAt: Date;
   windowDays: number | null;
   place: string | null;
   pending: number;
@@ -524,11 +526,22 @@ export async function listConfirmationQueue(
         deletedAt: null,
         confirmationPolicy: 'REQUIRED',
       },
-      orderBy: { startsAt: 'asc' },
+      /**
+       * ─── DESEMPATE DETERMINÍSTICO ───────────────────────────────────────────────
+       *
+       *  `ORDER BY startsAt` sozinho NÃO define ordem: duas atividades que começam no
+       *  mesmo horário (o caso comum de uma programação montada em bloco) voltam do
+       *  Postgres em ordem arbitrária — e é `activities[0]` que a tela seleciona quando
+       *  ninguém escolheu uma atividade. Sem o desempate, a fila abria numa atividade
+       *  diferente a cada consulta (armadilha 96). `createdAt` e `id` fecham a ordem:
+       *  a atividade mais antiga primeiro, e o id como último critério.
+       */
+      orderBy: [{ startsAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
         title: true,
         startsAt: true,
+        createdAt: true,
         confirmationWindowDays: true,
         confirmationPlace: true,
         confirmationRequirements: true,
@@ -583,6 +596,7 @@ export async function listConfirmationQueue(
         id: activity.id,
         title: activity.title,
         startsAt: activity.startsAt,
+        createdAt: activity.createdAt,
         windowDays: activity.confirmationWindowDays,
         place: activity.confirmationPlace,
         pending: countOf(activity.id, ['PENDING']),
@@ -597,6 +611,9 @@ export async function listConfirmationQueue(
        *  selecionada, e o organizador leria "Ninguém aguardando confirmação" enquanto
        *  uma vaga vencia na atividade seguinte. Quem tem pendente vem primeiro, e o
        *  critério entre eles é o prazo mais curto: a fila é uma fila de TEMPO.
+       *
+       *  O comparador REPETE o desempate do banco (início → criação → id): a ordem
+       *  final não pode depender de qual das duas fontes foi consultada primeiro.
        */
       .sort((a, b) => {
         if (a.pending > 0 && b.pending === 0) return -1;
@@ -609,7 +626,15 @@ export async function listConfirmationQueue(
           if (dueA !== dueB) return dueA - dueB;
         }
 
-        return a.startsAt.getTime() - b.startsAt.getTime();
+        if (a.startsAt.getTime() !== b.startsAt.getTime()) {
+          return a.startsAt.getTime() - b.startsAt.getTime();
+        }
+
+        if (a.createdAt.getTime() !== b.createdAt.getTime()) {
+          return a.createdAt.getTime() - b.createdAt.getTime();
+        }
+
+        return a.id.localeCompare(b.id);
       });
 
     const selected =

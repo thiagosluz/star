@@ -810,46 +810,48 @@ model Tenant {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  memberships         UserTenantProfile[]
-  roleAssignments     RoleAssignment[]
-  events              Event[]
-  rooms               Room[]
-  activities          Activity[]
-  activitySpeakers    ActivitySpeaker[]
+  memberships          UserTenantProfile[]
+  roleAssignments      RoleAssignment[]
+  events               Event[]
+  rooms                Room[]
+  activities           Activity[]
+  activitySpeakers     ActivitySpeaker[]
   /// Palestrantes da instituição e seus materiais — FASE 25.
-  speakerProfiles     SpeakerProfile[]
-  speakerMaterials    SpeakerMaterial[]
-  tracks              Track[]
-  eventPages          EventPage[]
-  eventPageVersions   EventPageVersion[]
-  pageBlocks          PageBlock[]
-  mediaAssets         MediaAsset[]
-  sponsorTiers        SponsorTier[]
-  sponsors            Sponsor[]
-  registrations       Registration[]
+  speakerProfiles      SpeakerProfile[]
+  speakerMaterials     SpeakerMaterial[]
+  tracks               Track[]
+  eventPages           EventPage[]
+  eventPageVersions    EventPageVersion[]
+  pageBlocks           PageBlock[]
+  mediaAssets          MediaAsset[]
+  sponsorTiers         SponsorTier[]
+  sponsors             Sponsor[]
+  registrations        Registration[]
   /// Exigências de confirmação por inscrição — FASE 37.
-  confirmationItems   RegistrationConfirmationItem[]
-  attendances         Attendance[]
-  submissions         Submission[]
-  submissionAuthors   SubmissionAuthor[]
-  submissionFiles     SubmissionFile[]
-  reviewAssignments   ReviewAssignment[]
-  reviews             Review[]
-  reviewConflicts     ReviewConflict[]
-  raffles             Raffle[]
-  raffleWinners       RaffleWinner[]
+  confirmationItems    RegistrationConfirmationItem[]
+  attendances          Attendance[]
+  submissions          Submission[]
+  submissionAuthors    SubmissionAuthor[]
+  submissionFiles      SubmissionFile[]
+  reviewAssignments    ReviewAssignment[]
+  reviews              Review[]
+  reviewConflicts      ReviewConflict[]
+  raffles              Raffle[]
+  raffleWinners        RaffleWinner[]
   /// Crachás emitidos para este evento — FASE 31.
-  eventCredentials    EventCredential[]
+  eventCredentials     EventCredential[]
   /// Recados enviados no contexto deste evento — FASE 32.
-  participantMessages ParticipantMessage[]
-  cardTemplates       CardTemplate[]
-  userCards           UserCard[]
-  xpProfiles          UserXpProfile[]
-  xpTransactions      XpTransaction[]
-  taskDefinitions     TaskDefinition[]
-  userTaskProgress    UserTaskProgress[]
-  certificates        Certificate[]
-  auditLogs           AuditLog[]
+  participantMessages  ParticipantMessage[]
+  cardTemplates        CardTemplate[]
+  userCards            UserCard[]
+  xpProfiles           UserXpProfile[]
+  xpTransactions       XpTransaction[]
+  taskDefinitions      TaskDefinition[]
+  userTaskProgress     UserTaskProgress[]
+  certificates         Certificate[]
+  /// FASE 40 — modelos visuais do certificado desta instituição.
+  certificateTemplates CertificateTemplate[]
+  auditLogs            AuditLog[]
 
   /// FASE 4 — avaliação por pares.
   reviewerExpertise    ReviewerExpertise[]
@@ -863,16 +865,16 @@ model Tenant {
   calls             CallForProposals[]
 
   /// FASE 38 — quadro de demandas internas do evento.
-  demandBoards      DemandBoard[]
-  demandColumns     DemandColumn[]
-  demands           Demand[]
-  demandAssignees   DemandAssignee[]
-  demandComments    DemandComment[]
-  demandMentions    DemandMention[]
-  demandEvents      DemandEvent[]
+  demandBoards     DemandBoard[]
+  demandColumns    DemandColumn[]
+  demands          Demand[]
+  demandAssignees  DemandAssignee[]
+  demandComments   DemandComment[]
+  demandMentions   DemandMention[]
+  demandEvents     DemandEvent[]
   /// FASE 38 — equipes do evento (quem executa as demandas).
-  eventTeams        EventTeam[]
-  eventTeamMembers  EventTeamMember[]
+  eventTeams       EventTeam[]
+  eventTeamMembers EventTeamMember[]
 
   @@index([status])
   @@index([deletedAt])
@@ -927,29 +929,31 @@ model User {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  accounts          Account[]
-  sessions          Session[]
-  memberships       UserTenantProfile[]
-  roleAssignments   RoleAssignment[]
-  registrations     Registration[]
-  attendances       Attendance[]
+  accounts                  Account[]
+  sessions                  Session[]
+  memberships               UserTenantProfile[]
+  roleAssignments           RoleAssignment[]
+  registrations             Registration[]
+  attendances               Attendance[]
   /// Inscrições cuja vaga esta pessoa confirmou, como equipe (FASE 34).
-  registrationsConfirmed Registration[] @relation("RegistrationConfirmedBy")
+  registrationsConfirmed    Registration[]                 @relation("RegistrationConfirmedBy")
   /// Exigências de confirmação que esta pessoa resolveu no balcão (FASE 37).
   confirmationItemsResolved RegistrationConfirmationItem[] @relation("ConfirmationItemResolvedBy")
-  submissions       Submission[]
-  submissionAuthors SubmissionAuthor[]
+  submissions               Submission[]
+  submissionAuthors         SubmissionAuthor[]
   /// Chamadas de propostas que esta pessoa criou — FASE 33.
-  callsCreated      CallForProposals[]  @relation("CallCreatedBy")
-  reviews           Review[]
-  reviewAssignments ReviewAssignment[]
-  activitySpeakers  ActivitySpeaker[]
-  cards             UserCard[]
-  xpTransactions    XpTransaction[]
-  userProgress      UserTaskProgress[]
-  xpProfiles        UserXpProfile[]
-  certificates      Certificate[]
-  auditLogs         AuditLog[]
+  callsCreated              CallForProposals[]             @relation("CallCreatedBy")
+  reviews                   Review[]
+  reviewAssignments         ReviewAssignment[]
+  activitySpeakers          ActivitySpeaker[]
+  cards                     UserCard[]
+  xpTransactions            XpTransaction[]
+  userProgress              UserTaskProgress[]
+  xpProfiles                UserXpProfile[]
+  certificates              Certificate[]
+  /// FASE 40 — modelos visuais criados por esta pessoa.
+  certificateTemplates      CertificateTemplate[]          @relation("CertificateTemplateCreatedBy")
+  auditLogs                 AuditLog[]
 
   /// Configuração de revisor (áreas de atuação), uma por instituição — FASE 4.
   /// É uma lista porque a mesma pessoa pode revisar para instituições
@@ -998,15 +1002,15 @@ model User {
   invitationsAccepted  TenantInvitation[] @relation("TenantInvitationAcceptedBy")
 
   /// Demandas internas que esta pessoa criou — FASE 38.
-  demandsCreated       Demand[]           @relation("DemandCreatedBy")
+  demandsCreated       Demand[]          @relation("DemandCreatedBy")
   /// Demandas atribuídas a esta pessoa — FASE 38.
-  demandAssignments    DemandAssignee[]   @relation("DemandAssignedTo")
+  demandAssignments    DemandAssignee[]  @relation("DemandAssignedTo")
   /// Comentários que esta pessoa escreveu nas demandas — FASE 38.
   demandComments       DemandComment[]
   /// Menções que esta pessoa recebeu em comentários — FASE 38.
   demandMentions       DemandMention[]
   /// Linhas da linha do tempo cujo ator é esta pessoa — FASE 38.
-  demandEvents         DemandEvent[]      @relation("DemandEventActor")
+  demandEvents         DemandEvent[]     @relation("DemandEventActor")
   /// Equipes do evento de que esta pessoa faz parte — FASE 38.
   eventTeamMemberships EventTeamMember[]
 
@@ -1246,36 +1250,38 @@ model Event {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  activities          Activity[]
-  rooms               Room[]
-  tracks              Track[]
-  registrations       Registration[]
-  submissions         Submission[]
-  pages               EventPage[]
-  sponsors            Sponsor[]
-  sponsorTiers        SponsorTier[]
-  roleAssignments     RoleAssignment[]
-  cardTemplates       CardTemplate[]
-  taskDefinitions     TaskDefinition[]
-  certificates        Certificate[]
-  attendances         Attendance[]
-  userCards           UserCard[]
-  xpTransactions      XpTransaction[]
-  raffles             Raffle[]
-  mediaAssets         MediaAsset[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activities           Activity[]
+  rooms                Room[]
+  tracks               Track[]
+  registrations        Registration[]
+  submissions          Submission[]
+  pages                EventPage[]
+  sponsors             Sponsor[]
+  sponsorTiers         SponsorTier[]
+  roleAssignments      RoleAssignment[]
+  cardTemplates        CardTemplate[]
+  taskDefinitions      TaskDefinition[]
+  certificates         Certificate[]
+  /// FASE 40 — modelos visuais restritos a este evento (a precedência é do domínio).
+  certificateTemplates CertificateTemplate[]
+  attendances          Attendance[]
+  userCards            UserCard[]
+  xpTransactions       XpTransaction[]
+  raffles              Raffle[]
+  mediaAssets          MediaAsset[]
   /// Crachás emitidos para este evento — FASE 31.
-  eventCredentials    EventCredential[]
+  eventCredentials     EventCredential[]
   /// Recados ligados a este evento (opcional no recado) — FASE 32.
-  participantMessages ParticipantMessage[]
+  participantMessages  ParticipantMessage[]
   /// Chamadas de propostas do evento — FASE 33.
-  calls               CallForProposals[]
+  calls                CallForProposals[]
   /// Quadro de demandas internas — UM por evento (FASE 38).
-  demandBoard         DemandBoard?
+  demandBoard          DemandBoard?
   /// Demandas internas do evento — FASE 38.
-  demands             Demand[]
+  demands              Demand[]
   /// Equipes que executam as demandas deste evento — FASE 38.
-  eventTeams          EventTeam[]
+  eventTeams           EventTeam[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -1350,17 +1356,17 @@ model Activity {
   /// ─── Confirmação de vaga com prazo (FASE 34) ─────────────────────────────
   /// Escolha do ORGANIZADOR. `AUTO` (padrão) = a vaga é confirmada na inscrição;
   /// `REQUIRED` = a inscrição retém a vaga e a equipe precisa confirmá-la.
-  confirmationPolicy ConfirmationPolicy @default(AUTO)
+  confirmationPolicy       ConfirmationPolicy @default(AUTO)
   /// Prazo, em DIAS, contado da inscrição de cada pessoa. `null` quando `AUTO`.
-  confirmationWindowDays Int?
+  confirmationWindowDays   Int?
   /// O que é preciso para confirmar — `[{ kind, label, note }]`. O formato é do
   /// domínio (`parseConfirmationRequirements`), que descarta linha malformada em vez
   /// de derrubar a leitura.
-  confirmationRequirements Json @default("[]")
+  confirmationRequirements Json               @default("[]")
   /// Onde confirmar (secretaria, balcão, sala) — texto do organizador.
-  confirmationPlace        String? @db.VarChar(300)
+  confirmationPlace        String?            @db.VarChar(300)
   /// Orientações gerais da confirmação.
-  confirmationInstructions String? @db.Text
+  confirmationInstructions String?            @db.Text
 
   /// A atividade exige inscrição INDIVIDUAL?
   ///
@@ -1917,7 +1923,7 @@ model Registration {
   /// ─── Confirmação de vaga com prazo (FASE 34) ─────────────────────────────
   /// Quando o prazo desta inscrição vence (fim do dia, no FUSO DO EVENTO). NULO nas
   /// atividades de confirmação automática.
-  confirmationDueAt DateTime? @db.Timestamptz(6)
+  confirmationDueAt      DateTime? @db.Timestamptz(6)
   /// Quando o lembrete "falta pouco para o prazo" foi gravado. É a chave de
   /// idempotência do aviso: a varredura roda de hora em hora e não pode repetir.
   confirmationReminderAt DateTime? @db.Timestamptz(6)
@@ -1927,8 +1933,8 @@ model Registration {
   /// registro de que a instituição recebeu o pagamento/doação/item, e não uma
   /// declaração da própria pessoa — o que ela assinaria sozinha não é prova para
   /// quem cobra.
-  confirmedAt   DateTime? @db.Timestamptz(6)
-  confirmedById String?   @db.Uuid
+  confirmedAt            DateTime? @db.Timestamptz(6)
+  confirmedById          String?   @db.Uuid
 
   /// Consentimentos LGPD (imagem, dados, comunicações).
   consentImage Boolean   @default(false)
@@ -1961,19 +1967,17 @@ model Registration {
 
   attendances    Attendance[]
   xpTransactions XpTransaction[]
-  confirmedBy    User?        @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedBy    User?           @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
   /**
    * ─── As exigências DESTA inscrição (FASE 37, dívida E48) ──────────────────────
-   *
-   *  A FASE 34 guardava na ATIVIDADE a lista do que é preciso ("1 kg de alimento") e
-   *  a confirmação era do CONJUNTO: quem entregou dois itens de três ficava no mesmo
-   *  estado de quem não entregou nada.
-   *
-   *  Aqui cada exigência tem a própria linha, com o próprio veredito. As linhas são
-   *  criadas NO ATO DA INSCRIÇÃO (`snapshotRequirements`) — não na leitura —, pelo
-   *  mesmo motivo do certificado: o que a pessoa foi cobrada é um FATO do dia em que
-   *  ela se inscreveu, e editar a atividade depois não pode reescrevê-lo.
+   * A FASE 34 guardava na ATIVIDADE a lista do que é preciso ("1 kg de alimento") e
+   * a confirmação era do CONJUNTO: quem entregou dois itens de três ficava no mesmo
+   * estado de quem não entregou nada.
+   * Aqui cada exigência tem a própria linha, com o próprio veredito. As linhas são
+   * criadas NO ATO DA INSCRIÇÃO (`snapshotRequirements`) — não na leitura —, pelo
+   * mesmo motivo do certificado: o que a pessoa foi cobrada é um FATO do dia em que
+   * ela se inscreveu, e editar a atividade depois não pode reescrevê-lo.
    */
   confirmationItems RegistrationConfirmationItem[]
 
@@ -2029,10 +2033,10 @@ model RegistrationConfirmationItem {
   status String @default("PENDING") @db.VarChar(20)
 
   /// Quando e por quem o item foi resolvido (recebido ou dispensado).
-  resolvedAt   DateTime? @db.Timestamptz(6)
-  resolvedById String?   @db.Uuid
+  resolvedAt     DateTime? @db.Timestamptz(6)
+  resolvedById   String?   @db.Uuid
   /// Observação do balcão ("entregou 2 kg", "pagou em dinheiro").
-  resolutionNote String? @db.VarChar(300)
+  resolutionNote String?   @db.VarChar(300)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
@@ -2359,13 +2363,13 @@ model SubmissionFile {
   /// Versão do arquivo (reenvios em revisão).
   version    Int    @default(1)
 
-  isCurrent  Boolean @default(true)
+  isCurrent   Boolean   @default(true)
   /// Resultado da varredura antivírus (ClamAV/serviço externo).
   ///
   /// `PENDING` aguardando inspeção · `CLEAN` inspecionado e limpo · `INFECTED`
   /// bloqueado · `SKIPPED` NÃO inspecionado (driver desligado — o valor diz a
   /// verdade em vez de afirmar uma verificação que não aconteceu).
-  scanStatus String  @default("PENDING") @db.VarChar(20)
+  scanStatus  String    @default("PENDING") @db.VarChar(20)
   /// Quando a inspeção terminou (nulo enquanto pendente ou não inspecionado).
   scannedAt   DateTime? @db.Timestamptz(6)
   /// Motivo registrado quando a inspeção falha ou encontra algo.
@@ -2869,6 +2873,54 @@ model UserTaskProgress {
 //  CERTIFICAÇÃO
 // ───────────────────────────────────────────────────────────────────────────────
 
+/// ─────────────────────────────────────────────────────────────────────────────
+///  MODELO VISUAL DO CERTIFICADO (FASE 40)
+///
+///  O desenho deixou de ser código: arte de fundo (JPEG, no bucket privado) e
+///  elementos posicionados em MILÍMETROS, com variáveis resolvidas na renderização.
+///  O modelo é da INSTITUIÇÃO e pode ser específico de um EVENTO e de um TIPO de
+///  certificado — a precedência é:
+///
+///    EVENTO + TIPO  →  EVENTO  →  INSTITUIÇÃO + TIPO  →  INSTITUIÇÃO  →  PADRÃO
+///
+///  `eventId` e `kind` nulos NÃO significam "qualquer um": significam a AUSÊNCIA
+///  daquele nível de especificidade. Como o PostgreSQL trata NULLs como distintos em
+///  índice único, a exclusividade de cada combinação é garantida por ÍNDICES
+///  PARCIAIS escritos à mão na migração — sem eles, dois modelos para o mesmo par
+///  fariam o desenho escolhido depender da ordem das linhas.
+/// ─────────────────────────────────────────────────────────────────────────────
+model CertificateTemplate {
+  id       String           @id @default(uuid(7)) @db.Uuid
+  tenantId String           @db.Uuid
+  eventId  String?          @db.Uuid
+  kind     CertificateKind?
+
+  name String @db.VarChar(120)
+
+  /// Layout em milímetros (página, arte e elementos). A FORMA é validada no domínio,
+  /// e ele é a fonte única da arte: chave no bucket, impressão (SHA-256), medidas e
+  /// orientação vivem DENTRO do layout, e não em colunas paralelas.
+  layout Json
+
+  /// Bytes da arte, DERIVADOS do layout e gravados para a quota de armazenamento
+  /// somar sem varrer JSON a cada consulta (FASE 21 conta TUDO o que a instituição
+  /// guarda). Nulo quando o modelo não tem arte.
+  backgroundBytes BigInt?
+
+  createdById String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event        Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("CertificateTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  certificates Certificate[]
+
+  @@index([tenantId, eventId, kind])
+  @@map("certificate_templates")
+}
+
 model Certificate {
   id         String  @id @default(uuid(7)) @db.Uuid
   tenantId   String  @db.Uuid
@@ -2925,20 +2977,40 @@ model Certificate {
   revokedAt     DateTime? @db.Timestamptz(6)
   revokedReason String?   @db.VarChar(400)
 
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  MODELO VISUAL (FASE 40)
+  /// ─────────────────────────────────────────────────────────────────────────────
+  /// Modelo aplicado na emissão — rastreio de QUAL desenho foi usado. Nulo nos
+  /// certificados anteriores à FASE 40 (desenho fixo da FASE 6).
+  templateId String? @db.Uuid
+
+  /// Layout CONGELADO na emissão, com a impressão (SHA-256) da arte. É o snapshot
+  /// que impede uma edição do modelo de reescrever um documento já emitido — a mesma
+  /// razão do `bodyText` congelado desde a FASE 6.
+  layoutSnapshot Json?
+
+  /// Variáveis de CONTEÚDO congeladas na emissão (nome, evento, instituição,
+  /// atividade, período…). Sem elas, renomear o evento faria o MESMO documento
+  /// (mesmo hash) sair impresso diferente — e o hash deixaria de provar algo.
+  variableSnapshot Json?
+
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activity   Activity?   @relation(fields: [activityId], references: [id], onDelete: SetNull)
-  attendance Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event      Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity   Activity?            @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  attendance Attendance?          @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  template   CertificateTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, userId, eventId, activityId, kind])
   @@index([tenantId, eventId, status])
   @@index([tenantId, userId, status])
   @@index([validationCode])
   @@index([status, createdAt])
+  /// Excluir um modelo percorre os certificados que o usaram (FASE 40).
+  @@index([templateId])
   @@map("certificates")
 }
 
@@ -3199,10 +3271,10 @@ model DemandBoard {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event    Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  columns  DemandColumn[]
-  demands  Demand[]
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event   Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  columns DemandColumn[]
+  demands Demand[]
 
   /// Um quadro por evento — e a criação das colunas padrão fica idempotente.
   @@unique([eventId])
@@ -3224,7 +3296,7 @@ model DemandColumn {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   board   DemandBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
   demands Demand[]
 
@@ -3236,20 +3308,20 @@ model DemandColumn {
 
 /// A demanda: o cartão do quadro.
 model Demand {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @db.Uuid
-  boardId  String @db.Uuid
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  boardId  String  @db.Uuid
   /// Redundante com `board.eventId` DE PROPÓSITO: o quadro é 1:1 com o evento e
   /// nunca muda de evento, então não há divergência possível — e a coluna é o que
   /// permite a varredura de prazos filtrar e indexar por evento (fuso, rotina) sem
   /// atravessar o quadro a cada linha.
-  eventId  String @db.Uuid
-  columnId String @db.Uuid
+  eventId  String  @db.Uuid
+  columnId String  @db.Uuid
   /// Equipe responsável (opcional: a demanda pode ser de pessoas e não de equipe).
   teamId   String? @db.Uuid
 
   /// Ordem dentro da coluna. Índice simples (ver o cabeçalho da seção).
-  position Int     @default(0)
+  position Int @default(0)
 
   title       String  @db.VarChar(160)
   description String? @db.Text
@@ -3269,12 +3341,12 @@ model Demand {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  board     DemandBoard     @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  column    DemandColumn    @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  team      EventTeam?      @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  createdBy User?           @relation("DemandCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board     DemandBoard      @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  event     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  column    DemandColumn     @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  team      EventTeam?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  createdBy User?            @relation("DemandCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   assignees DemandAssignee[]
   comments  DemandComment[]
   events    DemandEvent[]
@@ -3357,9 +3429,9 @@ model DemandMention {
 /// lê ("fulano moveu para Em andamento"). Guardar as duas pontas (de → para) é o
 /// que permite mostrar a mudança sem depender do estado atual da linha.
 model DemandEvent {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @db.Uuid
-  demandId String @db.Uuid
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  demandId String  @db.Uuid
   actorId  String? @db.Uuid
 
   /// `CREATED` | `MOVED` | `ASSIGNED` | `UNASSIGNED` | `UPDATED` | `COMPLETED` |
@@ -3393,8 +3465,8 @@ model EventTeam {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event   Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event   Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
   members EventTeamMember[]
   demands Demand[]
 
