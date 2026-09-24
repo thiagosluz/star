@@ -70,6 +70,132 @@ export const SPONSOR_TIER_DEFAULT_RANK: Record<SponsorTierKey, number> = {
 export const MAX_TIER_BENEFITS = 12;
 export const MAX_SPONSORS_PER_TIER = 200;
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  Vitrine da cota: cor e tamanho da logo (FASE 41)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Escala da logo na página pública.
+ *
+ * É ESCALA, e não um número de pixels digitado, porque o tamanho aqui não é
+ * preferência de layout: é a HIERARQUIA que o patrocinador comprou — Diamante
+ * aparece maior que Prata, e é isso que a cota vendeu. Quatro degraus calibrados
+ * mantêm a página coerente e impedem que um "400" digitado por engano empurre a
+ * seção inteira para fora do desenho (mesma régua da armadilha 87: medida que o
+ * sistema não entende não é substituída em silêncio, é recusada).
+ */
+export const SPONSOR_LOGO_SCALES = ['SMALL', 'MEDIUM', 'LARGE', 'FEATURE'] as const;
+
+export type SponsorLogoScale = (typeof SPONSOR_LOGO_SCALES)[number];
+
+export const SPONSOR_LOGO_SCALE_LABELS: Record<SponsorLogoScale, string> = {
+  SMALL: 'Pequena',
+  MEDIUM: 'Média',
+  LARGE: 'Grande',
+  FEATURE: 'Destaque',
+};
+
+/** Altura da logo na página pública, em pixels. */
+export const SPONSOR_LOGO_HEIGHT_PX: Record<SponsorLogoScale, number> = {
+  SMALL: 28,
+  MEDIUM: 44,
+  LARGE: 64,
+  FEATURE: 96,
+};
+
+/** Largura máxima da logo: sem teto, uma marca deitada vira uma faixa na página. */
+export const SPONSOR_LOGO_MAX_WIDTH_PX: Record<SponsorLogoScale, number> = {
+  SMALL: 128,
+  MEDIUM: 200,
+  LARGE: 260,
+  FEATURE: 340,
+};
+
+export const DEFAULT_SPONSOR_LOGO_SCALE: SponsorLogoScale = 'MEDIUM';
+
+/**
+ * Leitura tolerante da escala (valor desconhecido cai no padrão).
+ *
+ * É leitura de DADO já gravado, não de formulário: uma cota antiga, criada antes
+ * desta fase, não tem o campo — e o padrão é o que ela já fazia na prática.
+ */
+export function parseSponsorLogoScale(value: unknown): SponsorLogoScale {
+  return SPONSOR_LOGO_SCALES.includes(value as SponsorLogoScale)
+    ? (value as SponsorLogoScale)
+    : DEFAULT_SPONSOR_LOGO_SCALE;
+}
+
+/**
+ * Cores sugeridas na tela.
+ *
+ * O organizador CLICA e a cor entra no campo, que continua sendo texto livre
+ * (hexadecimal ou `oklch()`): a sugestão é atalho, não allowlist — a identidade da
+ * instituição não cabe numa lista de sete.
+ */
+export const SPONSOR_TIER_COLOR_SUGGESTIONS = [
+  { label: 'Ouro', value: '#b45309' },
+  { label: 'Prata', value: '#64748b' },
+  { label: 'Bronze', value: '#92400e' },
+  { label: 'Azul', value: '#1d4ed8' },
+  { label: 'Verde', value: '#15803d' },
+  { label: 'Vinho', value: '#9f1239' },
+  { label: 'Grafite', value: '#334155' },
+] as const;
+
+/** Tom do cartão da cota na página pública. */
+export interface SponsorTierTint {
+  /** Fundo do cartão: tom suave por cima do fundo da seção. */
+  surface: string;
+  /** Borda do cartão. */
+  border: string;
+  /** A cor CHEIA — vai no marcador ao lado do título da cota, nunca atrás de texto. */
+  accent: string;
+}
+
+/**
+ * Força do tom do cartão, em porcentagem da cor da cota.
+ *
+ * 16% é o valor que se lê como PASTEL sobre o fundo claro da página (o mesmo efeito
+ * dos cartões do exemplo que originou a fase) e continua discreto no tema escuro.
+ * Com 10% o cartão ficava quase branco e a hierarquia não aparecia — foi visto na
+ * tela, não deduzido: a primeira versão saiu fraca.
+ */
+export const SPONSOR_TIER_TINT_PERCENT = 16;
+
+/** Força da borda: mais firme que o fundo, para o cartão ter contorno definido. */
+export const SPONSOR_TIER_BORDER_PERCENT = 45;
+
+/**
+ * Traduz a cor da cota no tom do cartão.
+ *
+ * Duas decisões que não são cosméticas:
+ *
+ *  1. a cor é VALIDADA antes de virar CSS (o mesmo `colorSchema` da página
+ *     pública). Ela entra num `style` inline; um valor como `red; background:
+ *     url(...)` sairia do contexto em que foi colocado;
+ *  2. o tom suave sai de `color-mix`, e não de uma cor calculada em JavaScript:
+ *     funciona igual para hexadecimal e para `oklch()`, e acompanha o tema claro
+ *     ou escuro da página, porque mistura com `transparent` por cima do fundo.
+ *
+ * A cor cheia NUNCA vira fundo de cartão com texto por cima: `#facc15` com texto
+ * branco é ilegível, e legibilidade não é escolha do organizador.
+ *
+ * Cota sem cor devolve `null`, e o cartão fica neutro: não escolher cor é resposta
+ * legítima, não campo faltando.
+ */
+export function sponsorTierTint(color: string | null | undefined): SponsorTierTint | null {
+  const parsed = colorSchema.safeParse(color ?? '');
+
+  if (!parsed.success) return null;
+
+  const accent = parsed.data;
+
+  return {
+    surface: `color-mix(in oklab, ${accent} ${SPONSOR_TIER_TINT_PERCENT}%, transparent)`,
+    border: `color-mix(in oklab, ${accent} ${SPONSOR_TIER_BORDER_PERCENT}%, transparent)`,
+    accent,
+  };
+}
+
 /** Espaço reservado no orçamento do evento: reais, sem centavos. */
 export const MAX_TIER_PRICE_CENTS = 100_000_000;
 
@@ -78,6 +204,13 @@ export const tierInputSchema = z.object({
   name: z.string().trim().min(3, 'O nome da cota precisa ter ao menos 3 caracteres.').max(80),
   description: z.string().trim().max(400).optional(),
   color: colorSchema.optional(),
+  /**
+   * Degrau da logo na página pública (FASE 41).
+   *
+   * A escala é da COTA, e não do patrocinador: o tamanho é a hierarquia comprada,
+   * e quem cadastra a empresa não é quem negociou a cota.
+   */
+  logoScale: z.enum(SPONSOR_LOGO_SCALES).default(DEFAULT_SPONSOR_LOGO_SCALE),
   rank: z.coerce.number().int().min(0).max(1000).default(0),
   priceCents: z.coerce.number().int().min(0).max(MAX_TIER_PRICE_CENTS).default(0),
   currency: z

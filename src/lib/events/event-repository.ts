@@ -26,6 +26,7 @@ import {
   readSocialLinks,
   type SocialLinks,
 } from '@/domain/speakers/speaker-rules';
+import { parseSponsorLogoScale, type SponsorLogoScale } from '@/domain/events/sponsor-rules';
 
 export interface TenantContext {
   tenantId: string;
@@ -330,6 +331,19 @@ export interface PublicEventDetail extends PublicEventSummary {
     tierId: string | null;
     tierName: string | null;
     tierKey: string | null;
+    /**
+     * Vitrine da cota (FASE 41): a cor escolhida pelo organizador e o degrau da
+     * logo. Vêm para a página pública junto do patrocinador porque é a COTA que
+     * decide o desenho — o card tingido e o tamanho da marca são a hierarquia que
+     * o patrocinador comprou, e não uma preferência de quem cadastrou a empresa.
+     *
+     * A escala chega já normalizada (`parseSponsorLogoScale` no mapper): valor
+     * desconhecido no banco vira o degrau padrão em vez de virar ausência de
+     * tamanho no HTML.
+     */
+    tierColor: string | null;
+    tierLogoScale: SponsorLogoScale;
+    tierDescription: string | null;
     displayOrder: number;
   }[];
 }
@@ -561,7 +575,9 @@ async function loadEventDetail(
             websiteUrl: true,
             tierId: true,
             displayOrder: true,
-            tier: { select: { name: true, key: true, rank: true } },
+            tier: {
+              select: { name: true, key: true, rank: true, color: true, logoScale: true, description: true },
+            },
           },
         },
         tracks: {
@@ -601,6 +617,9 @@ async function loadEventDetail(
       tierId: sponsor.tierId,
       tierName: sponsor.tier?.name ?? null,
       tierKey: sponsor.tier?.key ?? null,
+      tierColor: sponsor.tier?.color ?? null,
+      tierLogoScale: parseSponsorLogoScale(sponsor.tier?.logoScale),
+      tierDescription: sponsor.tier?.description ?? null,
       displayOrder: sponsor.displayOrder,
     }));
 

@@ -375,24 +375,32 @@ export function BlockContentFields({
       ) : null}
 
       {type === 'SPONSORS' ? (
-        <Shell
-          label="Mostrar apenas uma cota"
-          hint="Sem escolha, o bloco exibe todos os patrocinadores do evento, agrupados por cota."
-        >
-          <select
-            name="tierId"
-            defaultValue={values.tierId}
-            aria-label="Mostrar apenas uma cota"
-            className="h-11 w-full rounded-sm border border-border bg-card px-3 text-sm text-foreground"
+        <>
+          <Shell
+            label="Descrição de apoio"
+            hint="Uma linha de agradecimento sob o título do bloco (opcional)."
           >
-            <option value="">Todas as cotas</option>
-            {tierOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Shell>
+            <Input name="description" defaultValue={values.description} aria-label="Descrição de apoio" />
+          </Shell>
+          <Shell
+            label="Mostrar apenas uma cota"
+            hint="Sem escolha, o bloco exibe todos os patrocinadores do evento, agrupados por cota."
+          >
+            <select
+              name="tierId"
+              defaultValue={values.tierId}
+              aria-label="Mostrar apenas uma cota"
+              className="h-11 w-full rounded-sm border border-border bg-card px-3 text-sm text-foreground"
+            >
+              <option value="">Todas as cotas</option>
+              {tierOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Shell>
+        </>
       ) : null}
 
       {type === 'COUNTDOWN' ? (

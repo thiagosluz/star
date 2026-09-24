@@ -27,6 +27,12 @@ const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'landing-f17';
 const EVENT_SLUG = `evento-f17-e2e-${RUN_ID}`;
 
+/** PNG 1×1 válido — a assinatura do arquivo é o que a validação de imagem confere. */
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 let tenantId: string;
 let eventId: string;
 let trackId: string;
@@ -336,6 +342,118 @@ test.describe('página pública, patrocínio e autoria', () => {
     });
     expect(stored.isActive).toBe(false);
     expect(stored.deletedAt).toBeNull();
+  });
+
+  test('a cota escolhe COR e TAMANHO da logo, e a página pública muda os dois (FASE 41)', async ({
+    page,
+  }) => {
+    await signInAs(page, adminEmail);
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores`);
+
+    /**
+     * ─── A COTA NOVA NASCE COM COR E TAMANHO ────────────────────────────────────
+     *
+     *  Antes desta fase o campo de cor existia só dentro do "Editar cota" (recolhido)
+     *  e o tamanho não existia em lugar nenhum: toda logo saía com a mesma altura na
+     *  página pública. O cenário monta DUAS cotas com degraus diferentes e mede o
+     *  resultado na página — é a única prova de que o tamanho é a hierarquia
+     *  comprada, e não um número guardado sem leitor.
+     */
+    const grande = page.getByTestId('create-tier');
+    await grande.getByLabel('Nome da cota').fill(`Vitrine Grande ${RUN_ID}`);
+    await grande.getByLabel('Ordem de exibição').fill('70');
+    await grande.getByTestId('tier-style-new-scale').selectOption('FEATURE');
+    await grande.getByTestId('tier-style-new-color').fill('#b45309');
+    await grande.getByTestId('admin-submit').click();
+    await expect(page.getByTestId('tier-list')).toContainText(`Vitrine Grande ${RUN_ID}`, {
+      timeout: 20_000,
+    });
+
+    const pequena = page.getByTestId('create-tier');
+    await pequena.getByLabel('Nome da cota').fill(`Vitrine Pequena ${RUN_ID}`);
+    await pequena.getByLabel('Ordem de exibição').fill('80');
+    await pequena.getByTestId('tier-style-new-scale').selectOption('SMALL');
+    // A cor sai pelo ATALHO (a amostra) em vez de digitada: é o caminho que o
+    // organizador usa, e ele precisa escrever no mesmo campo que o servidor lê.
+    await pequena.getByTestId('tier-style-new-swatch-prata').click();
+    await pequena.getByTestId('admin-submit').click();
+    await expect(page.getByTestId('tier-list')).toContainText(`Vitrine Pequena ${RUN_ID}`, {
+      timeout: 20_000,
+    });
+
+    /**
+     * A LISTA da tela mostra o degrau escolhido — sem isso, o organizador não tem
+     * como saber o que já configurou sem abrir cota por cota.
+     */
+    await expect(page.getByTestId('tier-list')).toContainText('logo destaque');
+
+    // ── Um patrocinador em cada cota, cada um com a SUA logo ──────────────────
+    for (const [nomeCota, nomeEmpresa] of [
+      [`Vitrine Grande ${RUN_ID}`, `Marca Grande ${RUN_ID}`],
+      [`Vitrine Pequena ${RUN_ID}`, `Marca Pequena ${RUN_ID}`],
+    ] as const) {
+      const form = page.getByTestId('create-sponsor');
+      await form.getByLabel('Nome').fill(nomeEmpresa);
+      /** O rótulo da opção é o nome da cota, e cotas ilimitadas não têm sufixo. */
+      await form.getByLabel('Cota').selectOption({ label: nomeCota });
+      await form.getByTestId('admin-submit').click();
+      await expect(page.getByTestId('sponsor-list')).toContainText(nomeEmpresa, { timeout: 20_000 });
+
+      /**
+       * A logo entra pela esteira real (assinatura do arquivo + bucket). Sem ela, o
+       * cartão do patrocinador é só o NOME — e aí o tamanho da cota não teria o que
+       * dimensionar, que é justamente o que este cenário mede.
+       */
+      const linha = page.locator('li[data-testid^="sponsor-"]').filter({ hasText: nomeEmpresa });
+      const uploader = linha.getByTestId('asset-uploader-SPONSOR_LOGO');
+
+      await uploader.getByLabel('Logotipo do patrocinador').setInputFiles({
+        name: `logo-${RUN_ID}.png`,
+        mimeType: 'image/png',
+        buffer: PNG_1X1,
+      });
+      await uploader.getByRole('button', { name: /Enviar imagem/i }).click();
+      await expect(uploader.getByTestId('asset-status-SPONSOR_LOGO')).toContainText(/vinculada/i, {
+        timeout: 30_000,
+      });
+    }
+
+    // ── Página pública: cartões diferentes, por cota ──────────────────────────
+    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
+
+    const faixaGrande = page.locator('[data-testid="sponsor-tier"][data-tier-scale="FEATURE"]').first();
+    const faixaPequena = page.locator('[data-testid="sponsor-tier"][data-tier-scale="SMALL"]').first();
+
+    /**
+     * Com logo, o NOME do patrocinador é o `alt` da imagem (não há texto) — então a
+     * asserção é sobre a imagem acessível, e não sobre o texto da faixa: procurar o
+     * nome como texto não acharia nada e o teste reprovaria com o produto certo.
+     */
+    await expect(faixaGrande.getByRole('img', { name: `Marca Grande ${RUN_ID}` })).toBeVisible();
+    await expect(faixaPequena.getByRole('img', { name: `Marca Pequena ${RUN_ID}` })).toBeVisible();
+
+    await expect(faixaGrande).toContainText(`Vitrine Grande ${RUN_ID}`);
+    await expect(faixaPequena).toContainText(`Vitrine Pequena ${RUN_ID}`);
+
+    /**
+     * O cartão da cota colorida traz o tom no `style` (é DADO, e vai inline de
+     * propósito: a cor não é token do sistema, é a cor que o patrocinador comprou).
+     */
+    const cartaoGrande = faixaGrande.getByTestId('sponsor-card').first();
+    await expect(cartaoGrande).toHaveAttribute('style', /color-mix/);
+
+    /**
+     * E a diferença de tamanho é MEDIDA, não presumida: as duas logos são o MESMO
+     * PNG (1×1), então a única coisa que pode deixar um cartão mais alto que o outro
+     * é o degrau escolhido na cota. Comparar atributo provaria apenas que o dado
+     * chegou; medir prova que ele virou desenho.
+     */
+    const alturaGrande = (await cartaoGrande.boundingBox())?.height ?? 0;
+    const alturaPequena = (await faixaPequena.getByTestId('sponsor-card').first().boundingBox())?.height ?? 0;
+
+    expect(alturaGrande).toBeGreaterThan(0);
+    expect(alturaGrande).toBeGreaterThan(alturaPequena);
   });
 
   test('o autor edita a lista de coautores, com ordem e correspondente (E6)', async ({ page }) => {

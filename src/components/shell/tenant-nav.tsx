@@ -11,12 +11,14 @@ import {
   FileText,
   Gauge,
   GraduationCap,
+  Handshake,
   Inbox,
   Layers,
   Mail,
   Medal,
   Mic,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Timer,
   Users,
@@ -77,8 +79,22 @@ export function buildTenantNav(input: {
    * exatamente para quem precisa aceitá-lo.
    */
   hasPendingSpeakerInvite?: boolean;
+  /**
+   * Existe convite de PATROCINADOR pendente para o e-mail desta conta? (FASE 42)
+   *
+   * Mesma razão do convite de palestrante: o papel `SPONSOR` nasce com o aceite, e
+   * quem foi convidado precisa de um caminho de clique até o convite — sem ele, a
+   * única porta seria a URL que chegou por e-mail, e a área do patrocinador ficaria
+   * invisível para quem ainda não tem vínculo.
+   */
+  hasPendingSponsorInvite?: boolean;
 }): ShellNavGroup[] {
-  const { tenantSlug, principal, hasPendingSpeakerInvite = false } = input;
+  const {
+    tenantSlug,
+    principal,
+    hasPendingSpeakerInvite = false,
+    hasPendingSponsorInvite = false,
+  } = input;
 
   /**
    * O predicado do item, escolhido pelo TIPO da permissão.
@@ -103,6 +119,13 @@ export function buildTenantNav(input: {
       : scopes.some((scope) => can(principal, permission, { scope }));
 
   const isSpeaker = allowedFor(PERMISSIONS.SPEAKER_PROFILE_UPDATE_OWN);
+
+  /**
+   * A área do patrocinador tem DUAS portas, como o portal do palestrante: quem tem o
+   * papel (nasceu com o aceite) e quem foi convidado e ainda não aceitou. O rótulo
+   * segue a porta, e quem não é nem uma coisa nem outra não vê o item.
+   */
+  const isSponsor = holdsPermission(principal, PERMISSIONS.SPONSOR_READ);
 
   const href = (path: string) => tenantPath(tenantSlug, path);
 
@@ -175,6 +198,27 @@ export function buildTenantNav(input: {
           label: 'Minhas mensagens',
           icon: <Inbox className="size-4" aria-hidden />,
           permission: PERMISSIONS.REGISTRATION_READ_OWN,
+        },
+        {
+          /**
+           * Meus compartilhamentos (FASE 42): onde a pessoa vê o que autorizou aos
+           * patrocinadores e revoga quando quiser. A porta é PESSOAL — a mesma das
+           * próprias inscrições — e a consulta filtra por `userId` da sessão.
+           */
+          href: href('/meus-compartilhamentos'),
+          label: 'Meus compartilhamentos',
+          icon: <ShieldCheck className="size-4" aria-hidden />,
+          permission: PERMISSIONS.REGISTRATION_READ_OWN,
+        },
+        {
+          /**
+           * Área do patrocinador (FASE 42). Mesmo desenho do portal do palestrante:
+           * duas portas, um item.
+           */
+          href: href('/patrocinador'),
+          label: isSponsor ? 'Área do patrocinador' : 'Convite de patrocinador',
+          icon: <Handshake className="size-4" aria-hidden />,
+          visible: isSponsor || hasPendingSponsorInvite,
         },
         {
           href: href('/cartas'),

@@ -46,6 +46,7 @@ import {
   updatePageBlock,
 } from '../src/lib/admin/landing-service';
 import { saveSponsor, saveSponsorTier } from '../src/lib/admin/sponsor-service';
+import { saveSponsorQrCode } from '../src/lib/sponsors/sponsor-portal-service';
 import { sendParticipantMessage } from '../src/lib/participants/message-service';
 import { saveCall, setCallPublished } from '../src/lib/proposals/call-service';
 import { submitProposal } from '../src/lib/proposals/proposal-service';
@@ -1217,6 +1218,7 @@ async function main() {
 
   let blocosDemo = 0;
   let patrocinioDemo = 'não configurado';
+  let patrocinioQrDemo = '';
 
   if (pagina.ok) {
     const blocos: { type: PageBlockType; content: Record<string, unknown> }[] = [
@@ -1318,7 +1320,8 @@ async function main() {
       key: 'GOLD',
       name: 'Ouro',
       description: 'Cota com logo em destaque na página e estande no evento.',
-      color: '#f59e0b',
+      color: '#b45309',
+      logoScale: 'LARGE',
       rank: 10,
       priceCents: 1_500_000,
       currency: 'BRL',
@@ -1326,12 +1329,58 @@ async function main() {
       benefits: ['Logo na página pública', 'Estande de 9 m²', 'Duas inscrições cortesia'],
     });
 
+    /**
+     * A SEGUNDA COTA existe para a vitrine da FASE 41 ter o que comparar: uma cota
+     * de logo GRANDE e outra de logo PEQUENA, com cores diferentes, é o que mostra
+     * na página de demonstração que o tamanho é a hierarquia comprada — e não um
+     * desenho fixo para todo mundo.
+     */
+    const cotaPrata = await saveSponsorTier({
+      tenantId: ufbaId,
+      eventId: congressoUfba,
+      actorId: ana,
+      key: 'SILVER',
+      name: 'Prata',
+      description: 'Cota de apoio, com a marca no site e uma inscrição cortesia.',
+      color: '#64748b',
+      logoScale: 'SMALL',
+      rank: 20,
+      priceCents: 500_000,
+      currency: 'BRL',
+      maxSponsors: 5,
+      benefits: ['Logo na página pública', 'Uma inscrição cortesia'],
+    });
+
+    if (cotaPrata.ok) {
+      await saveSponsor({
+        tenantId: ufbaId,
+        eventId: congressoUfba,
+        actorId: ana,
+        name: 'Gráfica Universitária',
+        description: 'Patrocinador de demonstração.',
+        websiteUrl: 'https://example.org/grafica',
+        logoUrl: null,
+        tierId: cotaPrata.tierId,
+        contactName: null,
+        contactEmail: null,
+        contactPhone: null,
+        taxId: null,
+        contractValueCents: 500_000,
+        contractStart: days(-20),
+        contractEnd: days(120),
+        displayOrder: 0,
+        isActive: true,
+      });
+    }
+
     if (cota.ok) {
+      let primeiroPatrocinadorId: string | null = null;
+
       for (const patrocinador of [
         { name: 'Instituto de Tecnologia Aberta', websiteUrl: 'https://example.org/ita' },
         { name: 'Editora Ciência Viva', websiteUrl: 'https://example.org/ciencia-viva' },
       ]) {
-        await saveSponsor({
+        const salvo = await saveSponsor({
           tenantId: ufbaId,
           eventId: congressoUfba,
           actorId: ana,
@@ -1350,9 +1399,35 @@ async function main() {
           displayOrder: 0,
           isActive: true,
         });
+
+        if (salvo.ok && !primeiroPatrocinadorId) {
+          primeiroPatrocinadorId = salvo.sponsorId;
+        }
       }
 
-      patrocinioDemo = '1 cota (Ouro) e 2 patrocinadores';
+      /**
+       * Um QR de estande no primeiro patrocinador da cota Ouro: é ele que dá o que
+       * LER na demonstração — a página pública do QR abre sem login e o crédito
+       * depende da leitura, não do consentimento.
+       */
+      if (primeiroPatrocinadorId) {
+        const qr = await saveSponsorQrCode({
+          tenantId: ufbaId,
+          actorId: ana,
+          sponsorId: primeiroPatrocinadorId,
+          eventId: congressoUfba,
+          label: 'Estande no congresso',
+          xpAmount: 80,
+          cardTemplateId: null,
+          consentDays: 90,
+        });
+
+        if (qr.ok) {
+          patrocinioQrDemo = `/t/ufba-demo/patrocinio/${qr.code}`;
+        }
+      }
+
+      patrocinioDemo = '2 cotas (Ouro e Prata) e 3 patrocinadores — cores e tamanhos diferentes (FASE 41)';
     }
   }
 
@@ -1871,6 +1946,13 @@ async function main() {
   console.log(`    Quadro:  /t/ufba-demo/administracao/eventos/<id>/demandas`);
   console.log(`    Equipes: /t/ufba-demo/administracao/eventos/<id>/equipes`);
   console.log(`    ${demandasDemo}`);
+  console.log(`\n  Experiência do patrocinador (FASE 42):`);
+  if (patrocinioQrDemo) {
+    console.log(`    Ler o QR:  http://localhost:3000${patrocinioQrDemo}`);
+  }
+  console.log(`    Área:      /t/ufba-demo/patrocinador            (só leitura, por vínculo)`);
+  console.log(`    Compartilhamentos: /t/ufba-demo/meus-compartilhamentos`);
+  console.log(`    QR, equipe e contatos: .../administracao/eventos/<id>/patrocinadores`);
   console.log(`\n  Subdomínios (com ROOT_DOMAIN=lvh.me):`);
   console.log(`    http://ufba-demo.lvh.me:3000/eventos`);
   console.log(`    http://fiocruz-demo.lvh.me:3000/eventos`);

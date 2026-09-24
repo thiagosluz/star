@@ -94,6 +94,7 @@ const tier = (overrides: Record<string, unknown> = {}) => ({
   name: 'Ouro',
   description: 'Cota com logo em destaque.',
   color: '#f59e0b',
+  logoScale: 'MEDIUM' as const,
   rank: 10,
   priceCents: 1_500_000,
   currency: 'BRL',
@@ -119,6 +120,8 @@ describe('cotas', () => {
     expect(row?.name).toBe('Ouro');
     expect(row?.benefits).toEqual(['Logo na página', 'Estande de 9 m²']);
     expect(row?.remaining).toBeNull(); // 0 = ilimitado
+    expect(row?.color).toBe('#f59e0b');
+    expect(row?.logoScale).toBe('MEDIUM');
   });
 
   it('recusa nome de cota repetido no MESMO evento', async () => {
@@ -160,6 +163,118 @@ describe('cotas', () => {
           'maxSponsors' in entry.changes,
       ),
     ).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('vitrine da cota — cor e tamanho da logo (FASE 41)', () => {
+  it('grava cor e degrau, e a página pública recebe os dois com a descrição da cota', async () => {
+    const created = await saveSponsorTier(
+      tier({
+        name: 'Diamante',
+        key: 'DIAMOND',
+        rank: 0,
+        color: '#b45309',
+        logoScale: 'FEATURE',
+        description: 'A marca no topo da página, acima de todas.',
+        maxSponsors: 0,
+      }),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    await saveSponsor({
+      tenantId,
+      eventId,
+      actorId,
+      name: 'Diamante da Vitrine',
+      description: null,
+      websiteUrl: 'https://example.org/diamante',
+      logoUrl: null,
+      tierId: created.tierId,
+      contactName: null,
+      contactEmail: null,
+      contactPhone: null,
+      taxId: null,
+      contractValueCents: null,
+      contractStart: null,
+      contractEnd: null,
+      displayOrder: 0,
+      isActive: true,
+    });
+
+    const publicEvent = await getPublicEvent(tenantId, EVENT_SLUG);
+    const sponsor = publicEvent?.sponsors.find((entry) => entry.name === 'Diamante da Vitrine');
+
+    expect(sponsor?.tierColor).toBe('#b45309');
+    expect(sponsor?.tierLogoScale).toBe('FEATURE');
+    expect(sponsor?.tierDescription).toContain('topo da página');
+
+    /**
+     * E a cota SEM cor continua chegando com `tierColor: null` — o cartão neutro é
+     * um resultado esperado, não um erro de leitura.
+     */
+    const neutra = await saveSponsorTier(
+      tier({ name: 'Sem cor', key: 'CUSTOM', rank: 90, color: undefined, logoScale: 'SMALL' }),
+    );
+    expect(neutra.ok).toBe(true);
+
+    const board = await listSponsorBoard(tenantId, eventId);
+    const row = board?.tiers.find((entry) => entry.name === 'Sem cor');
+    expect(row?.color).toBeNull();
+    expect(row?.logoScale).toBe('SMALL');
+  });
+
+  it('degrau desconhecido no banco NÃO chega à tela: a leitura cai no padrão', async () => {
+    const created = await saveSponsorTier(
+      tier({ name: 'Cota estranha', key: 'CUSTOM', rank: 95, logoScale: 'LARGE' }),
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    // Escrito por fora do serviço: é o que uma migração futura (ou um valor legado)
+    // poderia deixar no banco, e o desenho não pode ficar sem tamanho por isso.
+    await withTenant(tenantId, (tx) =>
+      tx.sponsorTier.update({ where: { id: created.tierId }, data: { logoScale: 'ENORME' } }),
+    );
+
+    const board = await listSponsorBoard(tenantId, eventId);
+    expect(board?.tiers.find((entry) => entry.id === created.tierId)?.logoScale).toBe('MEDIUM');
+  });
+
+  it('a trilha registra cor e escala quando ELAS mudam — e não quando não mudam', async () => {
+    const changed = await saveSponsorTier(
+      tier({ tierId: goldTierId, name: 'Ouro', color: '#15803d', logoScale: 'LARGE' }),
+    );
+    expect(changed.ok).toBe(true);
+
+    const comMudanca = async () =>
+      (await listAuditLog(tenantId, { limit: 200 })).filter(
+        (entry) => entry.entityType === 'sponsorTier' && entry.action === 'UPDATE' && 'color' in entry.changes,
+      );
+
+    const primeiro = await comMudanca();
+    expect(primeiro).toHaveLength(1);
+    expect(primeiro[0]!.changes).toHaveProperty('logoScale');
+
+    /**
+     * ─── A AUDITORIA NÃO PODE MENTIR SOBRE O QUE MUDOU ──────────────────────────
+     *
+     *  `diffFields` compara o que foi LIDO antes com o que está sendo gravado. Se o
+     *  `select` da leitura não trouxesse `color`/`logoScale`, os dois chegariam
+     *  `undefined` e a trilha diria "a cor mudou" em TODA edição — inclusive quando
+     *  ninguém tocou nela.
+     *
+     *  A contagem é feita por ENTRADA que menciona a cor, e não pela "última": duas
+     *  gravações no mesmo milissegundo empatam, e um teste que depende da ordem de
+     *  empate é o próximo teste instável do projeto.
+     */
+    const repetida = await saveSponsorTier(
+      tier({ tierId: goldTierId, name: 'Ouro', color: '#15803d', logoScale: 'LARGE' }),
+    );
+    expect(repetida.ok).toBe(true);
+
+    expect(await comMudanca()).toHaveLength(1);
   });
 });
 

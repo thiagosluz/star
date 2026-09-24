@@ -144,6 +144,17 @@ export const TENANT_SCOPED_TABLES = [
    * `certificates`, que já está sob RLS.
    */
   'certificate_templates',
+  /**
+   * FASE 42 — experiência do patrocinador (vínculo, QR e leitura).
+   *
+   * As três carregam dado de TERCEIRO: o vínculo diz quem entra na área do
+   * patrocinador, o QR diz o que a organização cadastrou para ele e a LEITURA
+   * guarda o contato autorizado pelo participante. Vazamento aqui não é só
+   * desconforto: é dado pessoal chegando a um patrocinador que não é o dono dele.
+   */
+  'sponsor_users',
+  'sponsor_qr_codes',
+  'sponsor_scans',
 ];
 
 /**

@@ -374,6 +374,18 @@ enum CardTrigger {
   MANUAL_GRANT
   STREAK
   EVENT_ATTENDANCE_FULL
+  /// Carta concedida ao ler o QR de um patrocinador (FASE 42).
+  SPONSOR_QR
+}
+
+/// Situação do vínculo entre uma pessoa e um patrocinador (FASE 42).
+enum SponsorUserStatus {
+  /// Convite emitido, ainda não aceito.
+  INVITED
+  /// Vinculado: entra na área do patrocinador.
+  ACTIVE
+  /// Vínculo desfeito pela organização (a linha fica para a trilha).
+  REMOVED
 }
 
 enum XpSourceKind {
@@ -387,6 +399,8 @@ enum XpSourceKind {
   BONUS
   ADMIN_ADJUSTMENT
   REFERRAL
+  /// Visita ao estande por QR do patrocinador (FASE 42).
+  SPONSOR_QR
 }
 
 enum TaskKind {
@@ -826,6 +840,10 @@ model Tenant {
   mediaAssets          MediaAsset[]
   sponsorTiers         SponsorTier[]
   sponsors             Sponsor[]
+  /// Experiência do patrocinador — FASE 42.
+  sponsorUsers         SponsorUser[]
+  sponsorQrCodes       SponsorQrCode[]
+  sponsorScans         SponsorScan[]
   registrations        Registration[]
   /// Exigências de confirmação por inscrição — FASE 37.
   confirmationItems    RegistrationConfirmationItem[]
@@ -947,6 +965,9 @@ model User {
   reviewAssignments         ReviewAssignment[]
   activitySpeakers          ActivitySpeaker[]
   cards                     UserCard[]
+  /// Experiência do patrocinador — FASE 42 (vínculo e visitas desta pessoa).
+  sponsorLinks              SponsorUser[]
+  sponsorScans              SponsorScan[]
   xpTransactions            XpTransaction[]
   userProgress              UserTaskProgress[]
   xpProfiles                UserXpProfile[]
@@ -1259,6 +1280,9 @@ model Event {
   pages                EventPage[]
   sponsors             Sponsor[]
   sponsorTiers         SponsorTier[]
+  /// Experiência do patrocinador — FASE 42 (o QR e a visita pertencem a um evento).
+  sponsorQrCodes       SponsorQrCode[]
+  sponsorScans         SponsorScan[]
   roleAssignments      RoleAssignment[]
   cardTemplates        CardTemplate[]
   taskDefinitions      TaskDefinition[]
@@ -1819,6 +1843,13 @@ model SponsorTier {
   name        String         @db.VarChar(80)
   description String?        @db.VarChar(400)
   color       String?        @db.VarChar(9)
+  /// Degrau da logo na página pública (FASE 41): `SMALL`, `MEDIUM`, `LARGE`, `FEATURE`.
+  ///
+  /// Guardado como texto, e não como enum do banco, pela mesma razão das demais
+  /// uniões: acrescentar um degrau é uma linha no domínio, não uma migração de
+  /// tipo. O valor é lido por `parseSponsorLogoScale`, que cai no padrão quando
+  /// não reconhece — cota antiga (sem o campo) continua desenhando como antes.
+  logoScale   String         @default("MEDIUM") @db.VarChar(12)
   /// Ordem de exibição (Diamante = 0).
   rank        Int            @default(0)
   /// Valor comercial da cota, para relatórios financeiros.
@@ -1882,21 +1913,162 @@ model Sponsor {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event        Event?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tier         SponsorTier?  @relation(fields: [tierId], references: [id], onDelete: SetNull)
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event        Event?          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tier         SponsorTier?    @relation(fields: [tierId], references: [id], onDelete: SetNull)
   /// Cadastro do qual este foi copiado.
-  source       Sponsor?      @relation("SponsorCopiedFrom", fields: [sourceSponsorId], references: [id], onDelete: SetNull)
+  source       Sponsor?        @relation("SponsorCopiedFrom", fields: [sourceSponsorId], references: [id], onDelete: SetNull)
   /// Cópias geradas a partir deste cadastro.
-  copies       Sponsor[]     @relation("SponsorCopiedFrom")
+  copies       Sponsor[]       @relation("SponsorCopiedFrom")
   /// Rodadas de sorteio cujo prêmio este patrocinador deu — FASE 30.
-  raffleRounds RaffleRound[] @relation("RaffleRoundSponsor")
+  raffleRounds RaffleRound[]   @relation("RaffleRoundSponsor")
+  /// Pessoas do patrocinador com acesso à área dele (FASE 42).
+  users        SponsorUser[]
+  /// QR codes deste patrocinador (FASE 42).
+  qrCodes      SponsorQrCode[]
+  /// Visitas lidas nos QRs deste patrocinador (FASE 42).
+  scans        SponsorScan[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, eventId, isActive])
   @@index([tierId])
   @@index([sourceSponsorId])
   @@map("sponsors")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  EXPERIÊNCIA DO PATROCINADOR — vínculo, QR e leitura (FASE 42)
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Vínculo entre uma PESSOA e um patrocinador cadastrado.
+///
+/// A linha nasce de duas formas, e as duas convivem: CONVITE (com token hasheado e
+/// e-mail que prova a posse do endereço) e VÍNCULO MANUAL pela equipe. Em ambos os
+/// casos quem entra precisa de conta — o que o convite acrescenta é a prova de que
+/// o endereço é de quem aceitou.
+model SponsorUser {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @db.Uuid
+  sponsorId String @db.Uuid
+
+  /// Preenchido quando a pessoa aceitou (ou foi vinculada à mão).
+  userId          String?   @db.Uuid
+  /// Endereço convidado — é contra ele que o aceite confere.
+  invitedEmail    String?   @db.VarChar(255)
+  /// SHA-256 do token do convite; o token em claro aparece UMA vez.
+  inviteTokenHash String?   @db.VarChar(64)
+  inviteExpiresAt DateTime? @db.Timestamptz(6)
+
+  status SponsorUserStatus @default(INVITED)
+
+  invitedById String?   @db.Uuid
+  acceptedAt  DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sponsor Sponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// UM vínculo ativo por (patrocinador, pessoa) — a mesma pessoa não entra duas vezes.
+  @@unique([sponsorId, userId])
+  /// UM convite pendente por (patrocinador, endereço): regerar invalida o anterior.
+  @@unique([sponsorId, invitedEmail])
+  @@index([tenantId, userId, status])
+  @@index([inviteTokenHash])
+  @@map("sponsor_users")
+}
+
+/// QR code que a organização cadastra para um patrocinador.
+///
+/// O código é PÚBLICO (impresso no estande) e não é segredo: o que ele faz é
+/// identificar o patrocinador, o evento em que a visita acontece, quanto XP a
+/// visita vale e por quantos dias a autorização do contato vale.
+model SponsorQrCode {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @db.Uuid
+  sponsorId String @db.Uuid
+  eventId   String @db.Uuid
+
+  /// Só o miolo do código (`ABCDEFGH`); a formatação com prefixo é da tela.
+  code  String @db.VarChar(16)
+  label String @db.VarChar(120)
+
+  /// Quanto XP a visita vale. `0` = QR que só capta contato.
+  xpAmount       Int     @default(0)
+  /// Carta concedida na visita (opcional).
+  cardTemplateId String? @db.Uuid
+
+  /// Prazo da autorização do contato, em dias (FASE 42 / LGPD).
+  consentDays Int @default(90)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime? @db.Timestamptz(6)
+
+  createdById String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sponsor      Sponsor       @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  cardTemplate CardTemplate? @relation(fields: [cardTemplateId], references: [id], onDelete: SetNull)
+  scans        SponsorScan[]
+
+  /// O código identifica UM QR dentro da instituição.
+  @@unique([tenantId, code])
+  @@index([tenantId, sponsorId, isActive])
+  @@index([tenantId, eventId])
+  @@map("sponsor_qr_codes")
+}
+
+/// A LEITURA de um QR por uma pessoa: é o crédito E o consentimento.
+///
+/// ─── UMA LINHA POR (QR, PESSOA) ────────────────────────────────────────────────
+/// O índice único é a idempotência do crédito: reler o mesmo QR não credita de
+/// novo (o que impediria o farm de XP) e não duplica o contato na lista do
+/// patrocinador. A visita sem autorização é gravada do MESMO jeito, com os campos
+/// de consentimento nulos: ela conta para o patrocinador como número, e não como
+/// contato — é o que `evaluateLeadAccess` decide na leitura.
+model SponsorScan {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @db.Uuid
+  qrCodeId  String @db.Uuid
+  sponsorId String @db.Uuid
+  eventId   String @db.Uuid
+  userId    String @db.Uuid
+
+  /// Consentimento (FASE 42 / LGPD). Nulo = visita sem autorização.
+  consentedAt    DateTime? @db.Timestamptz(6)
+  expiresAt      DateTime? @db.Timestamptz(6)
+  revokedAt      DateTime? @db.Timestamptz(6)
+  /// Texto EXATO que a pessoa leu, e a versão dele.
+  consentText    String?   @db.Text
+  consentVersion String?   @db.VarChar(8)
+  /// Os dois únicos campos compartilhados — congelados no ato da autorização.
+  sharedName     String?   @db.VarChar(160)
+  sharedEmail    String?   @db.VarChar(255)
+
+  /// O que esta leitura creditou (para a prestação de contas do patrocínio).
+  xpAwarded      Int     @default(0)
+  cardTemplateId String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  qrCode  SponsorQrCode @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  sponsor Sponsor       @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  event   Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// UM crédito e UM contato por pessoa e por QR.
+  @@unique([qrCodeId, userId])
+  @@index([tenantId, sponsorId, consentedAt])
+  @@index([tenantId, userId])
+  @@map("sponsor_scans")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -2658,6 +2830,8 @@ model CardTemplate {
 
   userCards       UserCard[]
   taskDefinitions TaskDefinition[]
+  /// QR de patrocinador que concede esta carta na visita — FASE 42.
+  sponsorQrCodes  SponsorQrCode[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, eventId, rarity])

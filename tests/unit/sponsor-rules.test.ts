@@ -12,18 +12,28 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CONTRACT_STATE_LABELS,
+  DEFAULT_SPONSOR_LOGO_SCALE,
   MAX_TIER_BENEFITS,
+  SPONSOR_LOGO_HEIGHT_PX,
+  SPONSOR_LOGO_MAX_WIDTH_PX,
+  SPONSOR_LOGO_SCALES,
+  SPONSOR_LOGO_SCALE_LABELS,
+  SPONSOR_TIER_BORDER_PERCENT,
+  SPONSOR_TIER_COLOR_SUGGESTIONS,
   SPONSOR_TIER_DEFAULT_RANK,
   SPONSOR_TIER_KEYS,
   SPONSOR_TIER_LABELS,
+  SPONSOR_TIER_TINT_PERCENT,
   evaluateContractState,
   evaluateTierCapacity,
   maskTaxId,
   nextSlugCandidate,
   parseBenefits,
+  parseSponsorLogoScale,
   slugifySponsorName,
   sortSponsorsForDisplay,
   sponsorInputSchema,
+  sponsorTierTint,
   tierInputSchema,
 } from '../../src/domain/events/sponsor-rules';
 
@@ -248,5 +258,97 @@ describe('sponsorInputSchema e parseBenefits()', () => {
   it('devolve lista vazia para entrada ausente', () => {
     expect(parseBenefits(null)).toEqual([]);
     expect(parseBenefits('')).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('vitrine da cota — cor e tamanho da logo (FASE 41)', () => {
+  it('todo degrau tem rótulo, altura e largura máxima — e a escala é CRESCENTE', () => {
+    let previousHeight = 0;
+
+    for (const scale of SPONSOR_LOGO_SCALES) {
+      expect(SPONSOR_LOGO_SCALE_LABELS[scale], `sem rótulo: ${scale}`).toBeTruthy();
+      expect(SPONSOR_LOGO_HEIGHT_PX[scale]).toBeGreaterThan(previousHeight);
+      expect(SPONSOR_LOGO_MAX_WIDTH_PX[scale]).toBeGreaterThan(0);
+
+      previousHeight = SPONSOR_LOGO_HEIGHT_PX[scale];
+    }
+  });
+
+  it('a logo nunca é mais alta que a largura máxima permitida (senão vira faixa)', () => {
+    for (const scale of SPONSOR_LOGO_SCALES) {
+      expect(SPONSOR_LOGO_MAX_WIDTH_PX[scale]).toBeGreaterThan(SPONSOR_LOGO_HEIGHT_PX[scale]);
+    }
+  });
+
+  it('valor desconhecido no banco cai no degrau padrão, sem quebrar o desenho', () => {
+    expect(parseSponsorLogoScale('ENORME')).toBe(DEFAULT_SPONSOR_LOGO_SCALE);
+    expect(parseSponsorLogoScale(null)).toBe(DEFAULT_SPONSOR_LOGO_SCALE);
+    expect(parseSponsorLogoScale(undefined)).toBe(DEFAULT_SPONSOR_LOGO_SCALE);
+    expect(parseSponsorLogoScale('FEATURE')).toBe('FEATURE');
+  });
+
+  it('a cota sem cor devolve cartão NEUTRO — não escolher cor é resposta legítima', () => {
+    expect(sponsorTierTint(null)).toBeNull();
+    expect(sponsorTierTint('')).toBeNull();
+    expect(sponsorTierTint('   ')).toBeNull();
+  });
+
+  it('a cor vira tom suave com a cor CHEIA só no destaque', () => {
+    const tint = sponsorTierTint('#b45309');
+
+    expect(tint).not.toBeNull();
+    expect(tint!.accent).toBe('#b45309');
+
+    /**
+     * O fundo é sempre um TOM (a força está no domínio, em porcentagem), e a cor
+     * cheia só aparece no marcador: cor cheia atrás de texto é ilegível.
+     */
+    expect(tint!.surface).toContain('color-mix');
+    expect(tint!.surface).toContain('#b45309');
+    expect(tint!.surface).toContain(`${SPONSOR_TIER_TINT_PERCENT}%`);
+    expect(tint!.surface).not.toBe('#b45309');
+    expect(tint!.border).toContain('color-mix');
+    expect(tint!.border).toContain(`${SPONSOR_TIER_BORDER_PERCENT}%`);
+    expect(SPONSOR_TIER_BORDER_PERCENT).toBeGreaterThan(SPONSOR_TIER_TINT_PERCENT);
+  });
+
+  it('aceita oklch() (o formato que a tela anuncia) e mistura do mesmo jeito', () => {
+    const tint = sponsorTierTint('oklch(0.62 0.19 259)');
+
+    expect(tint?.accent).toBe('oklch(0.62 0.19 259)');
+    expect(tint?.surface).toContain('oklch(0.62 0.19 259)');
+  });
+
+  it('RECUSA o que não é cor — a cor entra num style inline, e o contexto não pode ser escapado', () => {
+    for (const invalid of [
+      'red',
+      'rgb(1,2,3)',
+      '#12345',
+      '#b45309; background: url(https://x.test/a.png)',
+      'oklch(0.62 0.19 259); color: red',
+    ]) {
+      expect(sponsorTierTint(invalid), `deveria recusar: ${invalid}`).toBeNull();
+    }
+  });
+
+  it('as cores sugeridas são válidas para o MESMO validador que o serviço usa', () => {
+    for (const suggestion of SPONSOR_TIER_COLOR_SUGGESTIONS) {
+      expect(sponsorTierTint(suggestion.value), `sugestão inválida: ${suggestion.label}`).not.toBeNull();
+    }
+  });
+
+  it('a cota nasce com o degrau padrão e recusa degrau que não existe', () => {
+    const base = { name: 'Cota Ouro' };
+
+    expect(tierInputSchema.parse(base).logoScale).toBe(DEFAULT_SPONSOR_LOGO_SCALE);
+    expect(tierInputSchema.parse({ ...base, logoScale: 'FEATURE' }).logoScale).toBe('FEATURE');
+    expect(tierInputSchema.safeParse({ ...base, logoScale: 'GIGANTE' }).success).toBe(false);
+  });
+
+  it('a cota aceita a cor em hexadecimal E em oklch(), e recusa o resto', () => {
+    expect(tierInputSchema.safeParse({ name: 'Cota Ouro', color: '#b45309' }).success).toBe(true);
+    expect(tierInputSchema.safeParse({ name: 'Cota Ouro', color: 'oklch(0.62 0.19 259)' }).success).toBe(true);
+    expect(tierInputSchema.safeParse({ name: 'Cota Ouro', color: 'dourado' }).success).toBe(false);
   });
 });

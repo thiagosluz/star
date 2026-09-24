@@ -44,6 +44,12 @@ export const XP_SOURCES: Readonly<Record<XpSourceKind, number>> = {
   BONUS: 0,
   ADMIN_ADJUSTMENT: 0,
   REFERRAL: 250,
+  /**
+   * A visita ao estande vale 0 por PADRÃO porque o valor é do QR (`xpAmount`): o
+   * patrocinador Diamante pode valer mais que o Prata, e um padrão aqui somaria
+   * crédito que ninguém escolheu.
+   */
+  SPONSOR_QR: 0,
 } as const;
 
 /** Rótulos em pt-BR para o extrato de XP. */
@@ -58,6 +64,7 @@ export const XP_SOURCE_LABELS: Readonly<Record<XpSourceKind, string>> = {
   BONUS: 'Bônus',
   ADMIN_ADJUSTMENT: 'Ajuste administrativo',
   REFERRAL: 'Indicação',
+  SPONSOR_QR: 'Visita a patrocinador',
 };
 
 // ───────────────────────────────────────────────────────────────────────────────

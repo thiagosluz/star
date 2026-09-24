@@ -33,11 +33,13 @@ import {
   isAlreadySponsored,
   maskTaxId,
   nextSlugCandidate,
+  parseSponsorLogoScale,
   planSponsorSync,
   planSponsorCopy,
   slugifySponsorName,
   sortSponsorsForDisplay,
   type ContractState,
+  type SponsorLogoScale,
   type SponsorTierKey,
 } from '@/domain/events/sponsor-rules';
 
@@ -62,6 +64,8 @@ export interface SponsorTierRow {
   name: string;
   description: string | null;
   color: string | null;
+  /** Degrau da logo na página pública (FASE 41). */
+  logoScale: SponsorLogoScale;
   rank: number;
   priceCents: number;
   currency: string;
@@ -131,6 +135,7 @@ export async function listSponsorBoard(
           name: true,
           description: true,
           color: true,
+          logoScale: true,
           rank: true,
           priceCents: true,
           currency: true,
@@ -177,6 +182,12 @@ export async function listSponsorBoard(
         name: tier.name,
         description: tier.description,
         color: tier.color,
+        /**
+         * A escala passa pelo parser do domínio na LEITURA, e não só na escrita: o
+         * banco guarda texto, e uma cota antiga (ou um valor que uma migração futura
+         * traga) não pode chegar à tela como `undefined` e sair sem tamanho.
+         */
+        logoScale: parseSponsorLogoScale(tier.logoScale),
         rank: tier.rank,
         priceCents: tier.priceCents,
         currency: tier.currency,
@@ -255,6 +266,8 @@ export interface SaveTierInput {
   name: string;
   description: string | null;
   color: string | null;
+  /** Degrau da logo na página pública (FASE 41). */
+  logoScale: SponsorLogoScale;
   rank: number;
   priceCents: number;
   currency: string;
@@ -281,6 +294,7 @@ export async function saveSponsorTier(
         name: input.name.trim(),
         description: input.description?.trim() || null,
         color: input.color?.trim() || null,
+        logoScale: parseSponsorLogoScale(input.logoScale),
         rank: input.rank,
         priceCents: input.priceCents,
         currency: input.currency.toUpperCase(),
@@ -291,7 +305,20 @@ export async function saveSponsorTier(
       if (input.tierId) {
         const before = await tx.sponsorTier.findFirst({
           where: { id: input.tierId, eventId: input.eventId, tenantId: input.tenantId },
-          select: { id: true, name: true, rank: true, maxSponsors: true, priceCents: true },
+          /**
+           * Os campos aqui são exatamente os que a trilha compara: campo fora do
+           * `select` chega `undefined` no `diffFields` e vira "mudou" em TODA edição
+           * — auditoria que diz que a cor mudou quando ninguém tocou nela.
+           */
+          select: {
+            id: true,
+            name: true,
+            rank: true,
+            maxSponsors: true,
+            priceCents: true,
+            color: true,
+            logoScale: true,
+          },
         });
 
         if (!before) {
@@ -326,7 +353,7 @@ export async function saveSponsorTier(
             action: 'UPDATE',
             entityType: 'sponsorTier',
             entityId: before.id,
-            changes: diffFields(before, data, ['name', 'rank', 'maxSponsors', 'priceCents']),
+            changes: diffFields(before, data, ['name', 'rank', 'maxSponsors', 'priceCents', 'color', 'logoScale']),
           },
           tx,
         );

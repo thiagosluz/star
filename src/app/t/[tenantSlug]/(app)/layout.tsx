@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getRequestContext, loadPrincipal } from '@/lib/auth/session';
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 import { hasPendingSpeakerInvite } from '@/lib/speakers/speaker-portal-service';
+import { hasPendingSponsorInvite } from '@/lib/sponsors/sponsor-portal-service';
 import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
 import { AccountBlock } from '@/components/shell/account-block';
 import { AppShell } from '@/components/shell/app-shell';
@@ -125,6 +126,12 @@ export default async function TenantLayout({
           tenantId: tenant.id,
           userEmail: context.user.email,
         }),
+        /**
+         * O convite de PATROCINADOR abre o mesmo tipo de porta (FASE 42): o papel
+         * `SPONSOR` nasce com o aceite, e sem esta consulta quem foi convidado veria o
+         * painel sem nenhum caminho até o convite.
+         */
+        hasPendingSponsorInvite: await hasPendingSponsorInvite(tenant.id, context.user.email),
       })}
       account={
         <AccountBlock

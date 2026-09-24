@@ -27,7 +27,9 @@ export type XpSourceKind =
   | 'TASK_COMPLETED'
   | 'BONUS'
   | 'ADMIN_ADJUSTMENT'
-  | 'REFERRAL';
+  | 'REFERRAL'
+  /** Visita ao estande por QR do patrocinador (FASE 42). */
+  | 'SPONSOR_QR';
 
 export const XP_SOURCE_KINDS: readonly XpSourceKind[] = [
   'CHECKIN',
@@ -40,6 +42,7 @@ export const XP_SOURCE_KINDS: readonly XpSourceKind[] = [
   'BONUS',
   'ADMIN_ADJUSTMENT',
   'REFERRAL',
+  'SPONSOR_QR',
 ];
 
 /** Raridade da carta. Espelha `enum CardRarity`. */
@@ -66,7 +69,9 @@ export type CardTrigger =
   | 'LEVEL_UP'
   | 'MANUAL_GRANT'
   | 'STREAK'
-  | 'EVENT_ATTENDANCE_FULL';
+  | 'EVENT_ATTENDANCE_FULL'
+  /** Carta concedida ao ler o QR de um patrocinador (FASE 42). */
+  | 'SPONSOR_QR';
 
 export const CARD_TRIGGERS: readonly CardTrigger[] = [
   'CHECKIN',
@@ -81,6 +86,7 @@ export const CARD_TRIGGERS: readonly CardTrigger[] = [
   'MANUAL_GRANT',
   'STREAK',
   'EVENT_ATTENDANCE_FULL',
+  'SPONSOR_QR',
 ];
 
 /**
@@ -103,6 +109,7 @@ export const CARD_TRIGGER_LABELS: Readonly<Record<CardTrigger, string>> = {
   MANUAL_GRANT: 'A organização concedeu esta carta a você',
   STREAK: 'Você manteve a sequência de participação',
   EVENT_ATTENDANCE_FULL: 'Você esteve em todas as atividades do evento',
+  SPONSOR_QR: 'Você visitou um patrocinador do evento',
 };
 
 export function cardTriggerLabel(trigger: string): string {

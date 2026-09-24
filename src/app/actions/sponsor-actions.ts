@@ -29,12 +29,15 @@ import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
+  DEFAULT_SPONSOR_LOGO_SCALE,
+  SPONSOR_LOGO_SCALES,
   SPONSOR_TIER_KEYS,
   parseBenefits,
   sponsorInputSchema,
   tierInputSchema,
   type SponsorTierKey,
 } from '@/domain/events/sponsor-rules';
+import { colorSchema } from '@/domain/events/landing-page';
 import {
   copySponsorToEvent,
   deleteSponsorTier,
@@ -130,7 +133,14 @@ const tierFormSchema = z.object({
   key: z.enum(SPONSOR_TIER_KEYS as unknown as [SponsorTierKey, ...SponsorTierKey[]]),
   name: z.string().trim().min(3, 'O nome da cota precisa ter ao menos 3 caracteres.').max(80),
   description: z.string().trim().max(400).optional(),
-  color: z.string().trim().max(9).optional(),
+  /**
+   * A cor passa pelo MESMO schema do domínio (`colorSchema`), e não por um
+   * `max(9)` local: o campo se anuncia como "hexadecimal ou oklch()", e o limite
+   * de 9 caracteres recusava todo `oklch(...)` — a tela oferecia um formato que a
+   * ação não aceitava (FASE 41).
+   */
+  color: colorSchema.optional().or(z.literal('')),
+  logoScale: z.enum(SPONSOR_LOGO_SCALES).default(DEFAULT_SPONSOR_LOGO_SCALE),
   rank: z.coerce.number().int().min(0).max(1000).default(0),
   priceCents: z.coerce.number().int().min(0).default(0),
   currency: z.string().trim().length(3).default('BRL'),
@@ -165,6 +175,7 @@ export async function saveTierAction(
     name: formData.get('name'),
     description: nullable(formData.get('description')) ?? undefined,
     color: nullable(formData.get('color')) ?? undefined,
+    logoScale: formData.get('logoScale') || DEFAULT_SPONSOR_LOGO_SCALE,
     rank: formData.get('rank') || 0,
     priceCents: reaisToCents(formData.get('priceReais')),
     currency: formData.get('currency') || 'BRL',
@@ -193,6 +204,7 @@ export async function saveTierAction(
     name: data.name,
     description: data.description,
     color: data.color,
+    logoScale: data.logoScale,
     rank: data.rank,
     priceCents: data.priceCents,
     currency: data.currency,
@@ -221,6 +233,7 @@ export async function saveTierAction(
     name: data.name,
     description: data.description ?? null,
     color: data.color ?? null,
+    logoScale: domainCheck.data.logoScale,
     rank: data.rank,
     priceCents: data.priceCents,
     currency: data.currency,

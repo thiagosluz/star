@@ -6,13 +6,24 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
+import { withTenant } from '@/lib/db/tenant-client';
 import { listSponsorBoard, listSponsorCandidates } from '@/lib/admin/sponsor-service';
 import {
+  DEFAULT_SPONSOR_LOGO_SCALE,
+  SPONSOR_LOGO_SCALE_LABELS,
   SPONSOR_TIER_KEYS,
   SPONSOR_TIER_LABELS,
   type ContractState,
 } from '@/domain/events/sponsor-rules';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
+import { SponsorTierStyleFields } from '@/components/admin/sponsor-tier-style';
+import { SponsorExperiencePanel } from '@/components/admin/sponsor-experience-panel';
+import {
+  listSponsorLeads,
+  listSponsorQrCodes,
+  listSponsorTeam,
+} from '@/lib/sponsors/sponsor-portal-service';
+import { sponsorQrSheet, type SponsorQrSheet } from '@/lib/sponsors/sponsor-qr-sheet';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { AssetUploader } from '@/components/admin/asset-uploader';
 import {
@@ -37,7 +48,6 @@ const TIER_OPTIONS = SPONSOR_TIER_KEYS.map((key) => ({
   label: SPONSOR_TIER_LABELS[key],
 }));
 
-/** Tom do selo de vigência — contrato vencido precisa saltar aos olhos. */
 const CONTRACT_TONE: Record<ContractState, string> = {
   ACTIVE: 'text-success-strong',
   SCHEDULED: 'text-muted-foreground',
@@ -45,8 +55,30 @@ const CONTRACT_TONE: Record<ContractState, string> = {
   UNKNOWN: 'text-muted-foreground',
 };
 
+/** Mesma formatação da tela de patrocínio da organização (centavos → moeda). */
 function formatMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(cents / 100);
+}
+
+/**
+ * Cartas ativas da instituição, para o QR conceder uma delas na visita.
+ *
+ * A leitura passa por `withTenant` (RLS): o seletor só oferece carta DESTA
+ * instituição — o serviço ainda reconfere antes de gravar, porque o id chega do
+ * formulário.
+ */
+async function listCardTemplateOptions(
+  tenantId: string,
+): Promise<{ value: string; label: string }[]> {
+  return withTenant(tenantId, async (tx) => {
+    const cards = await tx.cardTemplate.findMany({
+      where: { tenantId, deletedAt: null, isActive: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+
+    return cards.map((card) => ({ value: card.id, label: card.name }));
+  });
 }
 
 function toDateInput(value: Date | null): string {
@@ -97,6 +129,37 @@ export default async function EventSponsorsPage({
    * "já está aqui" do que esconder o nome e o organizador procurar por ele.
    */
   const candidates = await listSponsorCandidates(tenantId, eventId);
+
+  /**
+   * ─── EXPERIÊNCIA DO PATROCINADOR (FASE 42) ─────────────────────────────────
+   *
+   *  O QR do estande, quem tem acesso à área do patrocinador e os contatos que
+   *  autorizaram a partilha. As consultas são por patrocinador (poucos por evento) e
+   *  rodam em paralelo — a tela já carregava o quadro inteiro antes desta fase.
+   *
+   *  As CARTAS vêm do catálogo da instituição: o QR só pode conceder carta que
+   *  existe, e o serviço recusa id de outra instituição.
+   */
+  const [qrPorPatrocinador, equipePorPatrocinador, contatosPorPatrocinador, cartas] = await Promise.all([
+    Promise.all(board.sponsors.map((sponsor) => listSponsorQrCodes(tenantId, sponsor.id))),
+    Promise.all(board.sponsors.map((sponsor) => listSponsorTeam(tenantId, sponsor.id))),
+    Promise.all(board.sponsors.map((sponsor) => listSponsorLeads(tenantId, sponsor.id))),
+    listCardTemplateOptions(tenantId),
+  ]);
+
+  /**
+   * ─── A IMAGEM DE CADA QR ───────────────────────────────────────────────────
+   *
+   *  Gerada no SERVIDOR (o pacote `qrcode` não vai para o navegador) e indexada por
+   *  id, para o painel mostrar a peça que a organização imprime. O endereço dentro
+   *  do QR é absoluto — quem aponta a câmera não tem a página aberta.
+   */
+  const qrSheets: Record<string, SponsorQrSheet> = {};
+  await Promise.all(
+    qrPorPatrocinador.flat().map(async (qr) => {
+      qrSheets[qr.id] = await sponsorQrSheet({ tenantSlug, code: qr.code });
+    }),
+  );
 
   const candidateOptions = [
     { value: '', label: candidates.length > 0 ? 'Selecione um patrocinador…' : 'Nenhum patrocinador em outros eventos' },
@@ -168,7 +231,8 @@ export default async function EventSponsorsPage({
                       />
                       {tier.name}
                       <span className="text-xs font-normal text-muted-foreground">
-                        {SPONSOR_TIER_LABELS[tier.key]} · ordem {tier.rank}
+                        {SPONSOR_TIER_LABELS[tier.key]} · ordem {tier.rank} · logo{' '}
+                        {SPONSOR_LOGO_SCALE_LABELS[tier.logoScale].toLowerCase()}
                       </span>
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -217,9 +281,14 @@ export default async function EventSponsorsPage({
                         <Field label="Limite de patrocinadores" name="maxSponsors" type="number" min={0} defaultValue={tier.maxSponsors} hint="0 = ilimitado" />
                         <Field label="Valor comercial (R$)" name="priceReais" defaultValue={(tier.priceCents / 100).toFixed(2)} />
                         <Field label="Moeda" name="currency" defaultValue={tier.currency} />
-                        <Field label="Cor" name="color" defaultValue={tier.color} hint="Hexadecimal ou oklch()" />
                         <Field label="Descrição" name="description" defaultValue={tier.description} />
                       </div>
+
+                      <SponsorTierStyleFields
+                        color={tier.color}
+                        logoScale={tier.logoScale}
+                        testPrefix={`tier-style-${tier.id}`}
+                      />
 
                       <Field
                         label="Benefícios (um por linha)"
@@ -254,6 +323,15 @@ export default async function EventSponsorsPage({
               <Field label="Valor comercial (R$)" name="priceReais" placeholder="15000,00" />
               <Field label="Moeda" name="currency" defaultValue="BRL" />
             </div>
+
+            {/* Cor e tamanho no cadastro de cota NOVA: eram o que faltava para a
+                vitrine — a cor existia só no "Editar cota" (recolhido) e o tamanho
+                não existia em lugar nenhum (FASE 41). */}
+            <SponsorTierStyleFields
+              color={null}
+              logoScale={DEFAULT_SPONSOR_LOGO_SCALE}
+              testPrefix="tier-style-new"
+            />
 
             <Field label="Benefícios (um por linha)" name="benefits" placeholder={'Logo no site\nEstande de 9 m²'} />
           </AdminForm>
@@ -517,6 +595,23 @@ export default async function EventSponsorsPage({
           </div>
         </div>
       </section>
+
+      {/* ── Leitura por QR e acesso do patrocinador (FASE 42) ─────────────── */}
+      <SponsorExperiencePanel
+        tenantSlug={tenantSlug}
+        eventId={eventId}
+        sponsors={board.sponsors.map((sponsor) => ({ id: sponsor.id, name: sponsor.name }))}
+        qrRows={qrPorPatrocinador.flat()}
+        qrSheets={qrSheets}
+        teamRows={board.sponsors.flatMap((sponsor, index) =>
+          (equipePorPatrocinador[index] ?? []).map((line) => ({ ...line, sponsorId: sponsor.id })),
+        )}
+        leads={board.sponsors.flatMap((sponsor, index) =>
+          (contatosPorPatrocinador[index] ?? []).map((lead) => ({ ...lead, sponsorId: sponsor.id })),
+        )}
+        eventOptions={[{ value: eventId, label: event.title }]}
+        cardOptions={cartas}
+      />
     </main>
   );
 }

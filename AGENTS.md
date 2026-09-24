@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 40 (F15, F21–F25, F29–F40 entregues; a F18+ é a próxima)
-Testes ................. 2146 (Vitest: unit + integração) + 142 (Playwright E2E)
-ADRs ................... 226 (numeração GLOBAL e sequencial — a próxima é ADR-227)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 42 (F15, F21–F25, F29–F42 entregues; a F43+ é a próxima)
+Testes ................. 2202 (Vitest: unit + integração) + 146 (Playwright E2E)
+ADRs ................... 232 (numeração GLOBAL e sequencial — a próxima é ADR-233)
 Permissões ............. 65 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 52 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2146+ testes passando
+npm test              # esperado: 2202+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 142+ testes passando
+npm run test:e2e      # esperado: 146+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,19 +127,18 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 96 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 97 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md)**, e a seção 10 manda lê-la antes de mexer em
 > qualquer coisa. Os números são estáveis e citados no código e nos documentos de fase — não
-> renumere. As três mais recentes, como amostra do que a regra protege:
+> renumere. As duas mais recentes, como amostra do que a regra protege:
 
-* **94 — Migração editada sem `prisma generate`**: o client velho falha só no UPDATE (que retorna
-  a linha inteira) e passa no create. Erro de coluna inexistente em UMA operação = client
-  desatualizado, não banco errado.
-* **95 — `setState` em efeito**: se o valor é função de outro, DERIVE (`useMemo`/expressão) em vez
-  de guardar em estado e sincronizar num efeito — e para hidratação use `useSyncExternalStore`.
 * **96 — Ordem por chave que empata**: quando a ordem decide QUAL registro é o escolhido por
   padrão, a chave precisa ser única (início → criação → id); `ORDER BY startsAt` sozinho devolve
   ordem arbitrária entre iguais, e a tela abre num registro diferente a cada consulta.
+* **97 — Erro engolido DENTRO da transação**: um `catch` que só registra o erro não ressuscita a
+  transação — e o `COMMIT` de uma transação abortada é `ROLLBACK` **sem erro** no PostgreSQL. O
+  serviço responde `ok` e nada foi gravado. Concessão de papel, auditoria e efeito colateral vão
+  **DEPOIS do commit**, e quem confere antes de inserir não precisa de `catch`.
 
 ---
 
@@ -223,14 +222,9 @@ contrato reprovando se ela voltar (ADR-191, armadilhas 82–83).
 
 ### Lote de certificados em ZIP (FASE 36)
 
-GET `/api/t/<slug>/certificados/zip?evento=<eventId>` (`certificate:issue`) — a tela é
-`/t/<slug>/administracao/certificados` → filtro do EVENTO → "Baixar todos em ZIP".
-
-O lote é montado em **fluxo**: `planEventCertificateZip` devolve só o plano (bucket, chave, nome) e
-cada PDF é lido e escrito um por vez (um evento de 3.000 certificados não cabe em memória).
-Certificado em geração **não entra** e é contado; objeto que falhou no bucket é **pulado** e a
-contagem sai no cabeçalho `x-certificados-fora-do-lote`. O acesso entra na trilha como `EXPORT`,
-com quem baixou (ADR-188).
+GET `/api/t/<slug>/certificados/zip?evento=<eventId>` (`certificate:issue`) monta o lote em
+**fluxo** (um PDF por vez, nada de lote em memória), contando o que ficou de fora no cabeçalho
+`x-certificados-fora-do-lote` e registrando `EXPORT` na trilha (ADR-188).
 
 ### Quotas e planos (FASE 14)
 
@@ -780,19 +774,14 @@ do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **lega
 
 ### Dados de demonstração
 
-Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, **5 atividades** (uma delas **exige
-confirmação de vaga**, com doação e local), 1 trilha com
-rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, 2 certificados
-emitidos (códigos impressos no fim do seed), **1 sorteio apurado**, **1 página pública
-publicada** (6 blocos, tema próprio, 1 cota com 2 patrocinadores), **11 versões no
-histórico** dessa página, a página do simpósio com **janela completa de exibição**
-(entra no ar em 7 dias, sai em 21 — datas no fuso `America/Bahia` do evento) e o
-**acervo de mídia** da instituição com as imagens de capa, logotipos e galeria
-registradas, **1 palestrante** (Bruno, no minicurso de Rust) com perfil, vínculo com a
-atividade, conta vinculada e um material público de apoio, **2 chamadas de propostas
-publicadas** (palestrantes, sem trilha, e minicursos, com rubrica própria) com **1 proposta
-recebida** (protocolo impresso no fim do seed) e **1 vaga RETIDA** aguardando confirmação
-(carla, com o prazo impresso no fuso de `America/Bahia`). Percursos em `README.md` §6.
+Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, **5 atividades** (uma com confirmação de
+vaga), 1 trilha com rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, **2
+certificados** (códigos no fim do seed), **1 sorteio apurado**, **1 página pública publicada**
+(tema próprio, **2 cotas de patrocínio com cor e tamanho diferentes**), **11 versões no
+histórico**, a página do simpósio com **janela de exibição** (fuso `America/Bahia`), o **acervo de
+mídia**, **1 palestrante** (Bruno) com perfil, vínculo, conta e material, **2 chamadas publicadas**
+com **1 proposta recebida**, **1 vaga RETIDA** (carla) e **1 QR de estande** (FASE 42, endereço no
+fim do seed). Percursos no `README.md` §6.
 
 ---
 
@@ -888,7 +877,9 @@ tests/{unit,integration,e2e}
 | 38 | **Quadro de demandas internas do evento** (Kanban por evento com colunas configuráveis, equipes com líder, prazo no fuso do evento, comentários com menção avisando por e-mail e caixa de entrada, e o cartão movido por arrastar **ou** por formulário — o quadro funciona sem JavaScript); quitou a METADE da **E50** e declarou **E51** e **E52**) — escopo definido pelo humano | ✅ |
 | 39 | **Rubrica com número livre de critérios** (1 a 12 critérios, com a chave **derivada do rótulo**; a **edição de trilha**, que não existia; e a rubrica **congelada a partir do primeiro parecer** — só rótulo, descrição e ordem seguem livres); declarou **E53**) — escopo definido pelo humano | ✅ |
 | 40 | **Editor visual do certificado** (arte de fundo da instituição, texto por **variáveis**, posicionamento **arrastando ou digitando milímetros** — funciona sem JavaScript —, cinco modelos prontos, prévia pelo mesmo renderizador do PDF e bloco probatório obrigatório; o desenho **congela no certificado** e sem modelo vale o desenho antigo); declarou **E54** e **E55**) — escopo definido pelo humano | ✅ |
-| 18+ | *a definir pelo humano* | ⏳ |
+| 41 | **Vitrine do patrocínio** (a cota define **cor** e **tamanho da logo** na página pública — Pequena · Média · Grande · Destaque —, com **prévia do cartão** no cadastro e amostras de cor como atalho; a página desenha uma faixa por cota com **cartões tingidos**; a coluna de cor existia desde a FASE 17 e **não tinha leitor**); não declarou dívida) — escopo definido pelo humano | ✅ |
+| 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite por token hasheado **ou** vínculo direto pela equipe — e não pelo papel; **QR do estande** com XP e/ou carta, creditados **uma vez por pessoa por QR**; na leitura pública a pessoa escolhe **autorizar** ou **registrar sem compartilhar**, com o MESMO crédito nos dois caminhos (LGPD art. 8º §3º); lead de **nome e e-mail** com texto lido, prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
+| 43+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
 > identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
@@ -896,25 +887,21 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**52 itens abertos**, soma das tabelas de
-tema — A=3, B=4, C=2, D=3, E=30, F=5, G=0, H=4, I=1; o tema G ficou ZERADO na FASE 22) está em
-**`docs/dividas-tecnicas.md`**, com o histórico do que cada fase quitou e o que declarou de
-novo. O total publicado até a FASE 35 (55) somava linhas **já riscadas** — a correção da
-contagem está no próprio documento. A FASE 36 quitou **A3**, **B7** e **E47**; a FASE 37 quitou
-**E41** e **E48** e declarou **E50**; a FASE 38 quitou a **metade da E50** e declarou **E51** e
-**E52**; a FASE 39 declarou **E53** (a contagem de pareceres da trilha é conservadora); e a
-FASE 40 declarou **E54** (CPF e título da apresentação sem fonte) e **E55** (o palco do editor
-visual não move por teclado).
-Leia antes de propor a próxima fase: ele já diz o que falta, o que foi quitado e a ordem
-sugerida.
+**Dívidas técnicas:** o levantamento consolidado (**54 itens abertos**; A=3, B=4, C=2, D=3,
+E=32, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**,
+com o histórico do que cada fase quitou e declarou. O total publicado até a FASE 35 (55)
+somava linhas **já riscadas**; vale a contagem linha a linha do documento. Quitados: **A3, B7,
+E47** (F36) e **E41, E48** (F37). Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39),
+**E54/E55** (F40) e **E56/E57** (F42) — as FASES 41 e 42 não quitaram item deste levantamento.
+Leia antes de propor a próxima fase: ele diz o que falta e a ordem sugerida.
 
 ---
 
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 96 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-40-editor-visual-do-certificado.md`; a referência de comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-42-experiencia-do-patrocinador.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

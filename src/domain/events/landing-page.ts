@@ -349,6 +349,13 @@ export const blockContentSchemas: Record<PageBlockType, z.ZodType> = {
   SPEAKERS: z.object({ title: labelSchema.optional() }),
   SPONSORS: z.object({
     title: labelSchema.optional(),
+    /**
+     * Parágrafo de apoio sob o título ("O patrocínio destas empresas torna o
+     * evento possível…") — FASE 41. É texto da PÁGINA, e não da cota: a descrição
+     * de cada cota vive nela, porque é a mesma em toda página que mostrar aquela
+     * faixa.
+     */
+    description: z.string().trim().max(300).optional(),
     /** Filtra por cota: o bloco mostra só os patrocinadores daquela cota. */
     tierId: z.string().uuid().optional(),
   }),

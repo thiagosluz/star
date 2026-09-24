@@ -16,7 +16,9 @@
 > do E50 — o quadro de demandas funciona sem JavaScript — e declarou E51–E52), a **FASE 39**
 > (que declarou **E53**, a contagem conservadora do congelamento da rubrica) e a **FASE 40**
 > (que declarou **E54**, CPF e título da apresentação sem fonte, e **E55**, o palco do editor
-> visual sem movimento por teclado), com as
+> visual sem movimento por teclado), a **FASE 41** (que não mexeu neste levantamento) e a
+> **FASE 42** (que declarou **E56**, o contato de patrocinador aceito sem quota de equipe, e
+> **E57**, o teto de QRs por patrocinador que não existe), com as
 > **revisões
 > pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
@@ -100,12 +102,12 @@
 | B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 30 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, e a contagem que congela a rubrica da trilha é conservadora |
+| E. Jornada do participante | 32 | 8 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, não há tela para autorizar o nome no resultado público, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe e não há teto de QR por patrocinador |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **52** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **54** | **13** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -118,9 +120,14 @@
 > levando o total a **49**. A **FASE 39** não quitou nada e declarou **E53** (a contagem
 > conservadora que congela a rubrica da trilha): **50**. A **FASE 40** também não quitou nada e
 > declarou **E54** (CPF e título da apresentação sem fonte) e **E55** (o palco não move por
-> teclado): **52**.
+> teclado): **52**. A **FASE 41** (vitrine do patrocínio) não quitou nem declarou item nenhum —
+> ela deu LEITOR à coluna de cor da cota, que existia sem consumidor desde a FASE 17. A **FASE 42**
+> (experiência do patrocinador) também não quitou item deste levantamento e declarou **E56** (o
+> contato de patrocinador aceito entra como `PARTICIPANT` e **não** consome a quota de equipe —
+> decisão de negócio a confirmar) e **E57** (não há teto de QR por patrocinador nem aviso de QR
+> repetido no mesmo evento): **54**.
 >
-> O total é a **soma das tabelas de tema** (3+4+2+3+30+5+0+4+1 = 52 — o tema G ficou
+> O total é a **soma das tabelas de tema** (3+4+2+3+32+5+0+4+1 = 54 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -297,6 +304,8 @@
 | E51 | **O quadro de demandas não reordena por teclado** | FASE 38 (novo, ADR-202) | O arrastar e soltar reordena e move entre colunas, e o formulário do cartão move de coluna — mas reordenar DENTRO da coluna só existe pelo gesto do mouse | A ordem é informação de prioridade: sem caminho por teclado, quem não usa mouse não consegue dizer "isto vem antes daquilo". O caminho é um par de botões "mover para cima/baixo" no cartão, chamando o MESMO `moveDemand` com o índice de destino (o serviço já aceita `toIndex`) | P | Sim |
 | E54 | **CPF e "título da apresentação" não existem como variável do certificado** | FASE 40 (novo, ADR-221) | O editor visual oferece 14 variáveis, e nenhuma delas é o documento do participante nem o título do trabalho aprovado: `User` não tem campo de CPF (o único `taxId` do schema é do patrocinador) e `Certificate` não se liga à `Submission` (liga-se a evento, pessoa e atividade). As duas foram PEDIDAS pelo humano e ficaram fora do escopo por decisão: variável sem fonte sai como rótulo vazio em documento formal | Instituições que emitem certificado de trabalho aprovado (e as que precisam do CPF por exigência de portaria) vão querer as duas. O caminho tem duas partes: (a) campo de documento no participante, com mascaramento em log e tela para ele preencher — decisão de privacidade, não de formulário; (b) `certificates.submissionId` (nulável) gravado na emissão do certificado de AUTOR, com o título congelado no `variableSnapshot` que a FASE 40 já criou | M | Sim |
 | E55 | **O palco do editor visual não move por teclado** | FASE 40 (novo, ADR-226) | Arrastar exige ponteiro. O formulário numérico ao lado cobre o caso (e funciona sem JavaScript), mas quem navega por teclado no PALCO não consegue mover a caixa — mesma família da E51 | O caminho é permitir mover/redimensionar a caixa selecionada com as setas (1 mm por toque, 10 mm com modificador), escrevendo nos mesmos campos. É melhoria de acessibilidade, com o teclado já funcionando no caminho alternativo | P | Sim |
+| E56 | **O aceite do convite de patrocinador cria vínculo `PARTICIPANT`, que não conta na quota de membros** | FASE 42 (novo, §3.5) | O contato comercial da empresa costuma não ter vínculo nenhum com a instituição, e exigir vínculo para aceitar criaria o impasse já conhecido (sem vínculo não se aceita, e sem aceitar não há vínculo). O aceite faz o `upsert` de `user_tenant_profiles` com `kind = PARTICIPANT` — a mesma régua da inscrição pública e do convite de palestrante, e por isso **não** consome a quota de membros do plano | É decisão de NEGÓCIO, não de código: a instituição pode querer contar contatos de patrocinador como equipe (eles entram no painel, aparecem na área do patrocinador e recebem avisos). Confirmar com o humano antes de mudar; o caminho seria `kind = MEMBER` com a quota aplicada no aceite, como no convite de equipe (FASE 15) | P | Sim |
+| E57 | **Não há limite de QR por patrocinador nem aviso de QR repetido no mesmo evento** | FASE 42 (novo, ADR-232) | Um patrocinador pode ter dez QRs no mesmo estande e nada impede nem avisa. O crédito continua correto (um XP por pessoa **por QR**, garantido pelo índice único de `sponsor_scans`), mas cada código novo é uma chance nova de creditar a mesma gente | O número de "visitas" da área do patrocinador deixa de ser comparável entre patrocinadores, e a organização perde o controle do que está impresso. O caminho é um teto por patrocinador por evento (campo na cota ou constante do serviço) e um aviso na tela quando o mesmo patrocinador já tem QR naquele evento | P | Sim |
 
 ### F. Gamificação
 

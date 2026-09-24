@@ -1,0 +1,11 @@
+-- FASE 41 — vitrine do patrocínio: o degrau da logo na página pública.
+--
+-- A coluna nasce com DEFAULT porque as cotas que já existem precisam de um valor, e
+-- 'MEDIUM' é exatamente o que elas fazem hoje na prática: toda logo sai com a mesma
+-- altura. Assim a página de quem já usa o sistema não muda de desenho no dia da
+-- migração — quem quiser a hierarquia visita a tela e escolhe o degrau.
+--
+-- Texto, e não enum do banco: acrescentar um degrau passa a ser uma linha no domínio
+-- (`SPONSOR_LOGO_SCALES`), e o valor desconhecido é lido pelo domínio, que cai no
+-- padrão em vez de quebrar o desenho.
+ALTER TABLE "sponsor_tiers" ADD COLUMN "logoScale" VARCHAR(12) NOT NULL DEFAULT 'MEDIUM';

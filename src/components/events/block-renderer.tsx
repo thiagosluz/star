@@ -22,6 +22,13 @@ import type {
   PublicEventDetail,
 } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import {
+  SPONSOR_LOGO_HEIGHT_PX,
+  SPONSOR_LOGO_MAX_WIDTH_PX,
+  sponsorTierTint,
+  type SponsorLogoScale,
+  type SponsorTierTint,
+} from '@/domain/events/sponsor-rules';
 import { CALL_STATE_LABELS } from '@/domain/proposals/call-rules';
 import type { CallView } from '@/lib/proposals/call-service';
 import { Section, SectionHeading } from '@/components/events/theme-scope';
@@ -236,63 +243,200 @@ function SponsorsBlock({
   if (visible.length === 0) return null;
 
   const title = readString(content, 'title');
+  const description = readString(content, 'description');
 
-  // Agrupa por cota preservando a ordem de rank vinda do repositório.
-  const byTier = new Map<string, PublicEventDetail['sponsors']>();
+  /**
+   * Agrupa por cota NA ORDEM em que o repositório entregou.
+   *
+   * A ordem já vem decidida (`sortSponsorsForDisplay`: rank da cota → ordem dentro
+   * da cota → nome), então agrupar preservando a primeira aparição é o que faz a
+   * faixa do Diamante vir antes da do Ouro sem uma segunda regra de ordenação aqui
+   * — duas regras de ordem é como as duas versões divergem.
+   *
+   * A chave é o `tierId` (e não o nome, como antes): duas cotas podem ter nomes
+   * parecidos, e o nome é editável — a VITRINE da cota (cor, escala, descrição)
+   * viaja com o id, não com o texto.
+   */
+  const byTier = new Map<string, { name: string; list: PublicEventDetail['sponsors'] }>();
   for (const sponsor of visible) {
-    const key = sponsor.tierName ?? 'Patrocinadores';
-    const list = byTier.get(key) ?? [];
-    list.push(sponsor);
-    byTier.set(key, list);
+    const key = sponsor.tierId ?? '__sem-cota__';
+    const group = byTier.get(key) ?? { name: sponsor.tierName ?? 'Patrocinadores', list: [] };
+    group.list.push(sponsor);
+    byTier.set(key, group);
   }
 
   return (
     <Section id="patrocinadores">
       <SectionHeading eyebrow="Apoio" title={title ?? 'Patrocinadores'} />
-      <div className="space-y-[calc(1.5rem*var(--ef-spacing-scale,1))]">
-        {[...byTier.entries()].map(([tier, list]) => (
-          <div key={tier} className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider opacity-60">
-              {tier}
-            </h3>
-            <ul className="flex flex-wrap items-center gap-6">
-              {list.map((sponsor) => (
-                <li key={sponsor.id}>
-                  {sponsor.websiteUrl ? (
-                    <a
-                      href={sponsor.websiteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow"
-                      className="flex items-center gap-2 opacity-80 transition hover:opacity-100"
-                    >
-                      <SponsorLogo sponsor={sponsor} />
-                      <ExternalLink className="size-3" aria-hidden />
-                    </a>
-                  ) : (
-                    <SponsorLogo sponsor={sponsor} />
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+
+      {description ? (
+        <p className="max-w-2xl text-sm opacity-70" data-testid="sponsors-description">
+          {description}
+        </p>
+      ) : null}
+
+      <div className="space-y-[calc(2rem*var(--ef-spacing-scale,1))]">
+        {[...byTier.entries()].map(([key, group]) => {
+          const first = group.list[0]!;
+          const tint = sponsorTierTint(first.tierColor);
+
+          return (
+            <div
+              key={key}
+              className="space-y-3"
+              data-testid="sponsor-tier"
+              data-tier-id={key}
+              data-tier-scale={first.tierLogoScale}
+            >
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider opacity-60">
+                {tint ? (
+                  /**
+                   * Marcador da cota: uma BARRA na cor, e não o título pintado. Texto
+                   * na cor da cota é o caminho mais curto para um título ilegível
+                   * (`#facc15` em fundo claro) — a cor identifica, o texto permanece
+                   * legível.
+                   */
+                  <span
+                    aria-hidden
+                    className="inline-block h-3.5 w-1 rounded-full"
+                    style={{ backgroundColor: tint.accent }}
+                  />
+                ) : null}
+                {group.name}
+              </h3>
+
+              {first.tierDescription ? (
+                <p className="max-w-2xl text-xs opacity-70">{first.tierDescription}</p>
+              ) : null}
+
+              <ul className="flex flex-wrap items-stretch gap-4">
+                {group.list.map((sponsor) => (
+                  <li key={sponsor.id} className="flex">
+                    <SponsorCard sponsor={sponsor} tint={tint} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </Section>
   );
 }
 
-function SponsorLogo({ sponsor }: { sponsor: PublicEventDetail['sponsors'][number] }) {
+/**
+ * O cartão do patrocinador (FASE 41).
+ *
+ * Duas decisões, e as duas são sobre a marca de TERCEIRO que está na página:
+ *
+ *  • o fundo é o TOM da cor da cota (10% sobre o fundo da seção) e o texto nunca
+ *    fica por cima da cor cheia — legibilidade não é escolha do organizador;
+ *  • sem cor escolhida, o cartão é neutro e continua legível: "não escolhi cor" é
+ *    resposta legítima, não campo pendente.
+ *
+ * O `color-mix` mistura com `transparent` por cima do fundo, então o mesmo valor
+ * funciona no tema claro e no escuro sem ninguém recalcular nada.
+ */
+function SponsorCard({
+  sponsor,
+  tint,
+}: {
+  sponsor: PublicEventDetail['sponsors'][number];
+  tint: SponsorTierTint | null;
+}) {
+  const height = SPONSOR_LOGO_HEIGHT_PX[sponsor.tierLogoScale];
+  const maxWidth = SPONSOR_LOGO_MAX_WIDTH_PX[sponsor.tierLogoScale];
+
+  const card = (
+    <>
+      <SponsorLogo sponsor={sponsor} height={height} maxWidth={maxWidth} />
+      {sponsor.websiteUrl ? <ExternalLink className="size-3 shrink-0 opacity-50" aria-hidden /> : null}
+    </>
+  );
+
+  const className =
+    'flex h-full items-center justify-center gap-2 rounded-lg border px-5 py-4 transition hover:opacity-100' +
+    (tint ? ' opacity-90' : ' border-border opacity-80');
+
+  const style = tint
+    ? { backgroundColor: tint.surface, borderColor: tint.border }
+    : { borderColor: 'color-mix(in oklab, var(--ef-text) 12%, transparent)' };
+
+  if (!sponsor.websiteUrl) {
+    return (
+      <div className={className} style={style} data-testid="sponsor-card">
+        {card}
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={sponsor.websiteUrl}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className={className}
+      style={style}
+      data-testid="sponsor-card"
+    >
+      {card}
+    </a>
+  );
+}
+
+/**
+ * Tamanho do NOME quando a instituição não subiu o arquivo da logo.
+ *
+ * Sem isto, a escala da cota só valeria para quem tem arquivo: um patrocinador
+ * cadastrado só com o nome sairia do mesmo tamanho em qualquer degrau — e a
+ * hierarquia que a cota vendeu desapareceria justamente para quem ainda não tem a
+ * marca em arquivo (que é o caso comum no começo do evento).
+ *
+ * Os degraus usam a ESCALA tipográfica do sistema (token, não pixel arbitrário): a
+ * trava do design continua valendo, e o nome nunca fica maior que um título.
+ */
+const SPONSOR_NAME_CLASS: Record<SponsorLogoScale, string> = {
+  SMALL: 'text-sm',
+  MEDIUM: 'text-base',
+  LARGE: 'text-lg',
+  FEATURE: 'text-xl',
+};
+
+function SponsorLogo({
+  sponsor,
+  height,
+  maxWidth,
+}: {
+  sponsor: PublicEventDetail['sponsors'][number];
+  height: number;
+  maxWidth: number;
+}) {
   if (sponsor.logoUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={sponsor.logoUrl}
         alt={sponsor.name}
-        className="h-10 w-auto max-w-40 object-contain"
+        /**
+         * Altura e largura vêm da ESCALA da cota, em `style` inline: são dado, não
+         * classe. A escala também sai em `data-logo-scale`, e é isso que o teste
+         * mede — comparar pixel de imagem é frágil, o degrau é o contrato.
+         */
+        className="w-auto object-contain"
+        style={{ height: `${height}px`, maxWidth: `${maxWidth}px` }}
+        data-logo-scale={sponsor.tierLogoScale}
       />
     );
   }
-  return <span className="text-sm font-medium opacity-80">{sponsor.name}</span>;
+
+  return (
+    <span
+      className={`font-medium opacity-80 ${SPONSOR_NAME_CLASS[sponsor.tierLogoScale]}`}
+      data-logo-scale={sponsor.tierLogoScale}
+    >
+      {sponsor.name}
+    </span>
+  );
 }
 
 function FaqBlock({ content }: { content: unknown }) {
