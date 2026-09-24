@@ -81,7 +81,18 @@ export async function getAlbum(tenantId: string, userId: string): Promise<CardRe
     const data = await withTenant(tenantId, async (tx) => {
       const [templates, owned] = await Promise.all([
         tx.cardTemplate.findMany({
-          where: { tenantId, deletedAt: null },
+          where: {
+            tenantId,
+            /**
+             * ── CARTA EXCLUÍDA CONTINUA NO ÁLBUM DE QUEM A GANHOU (FASE 43) ──────
+             *
+             *  Excluir uma carta pára de concedê-la e a tira do catálogo — mas ela é
+             *  uma CONQUISTA de quem já a recebeu. Sem esta ressalva, a exclusão
+             *  apagaria do álbum alheio o que a pessoa conquistou, que é exatamente o
+             *  que uma coleção não pode fazer. Quem NÃO tem deixa de vê-la.
+             */
+            OR: [{ deletedAt: null }, { userCards: { some: { tenantId, userId } } }],
+          },
           orderBy: [{ rarity: 'asc' }, { name: 'asc' }],
           select: {
             id: true,

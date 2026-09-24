@@ -33,6 +33,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
+import { rewardRaffleWonById } from '@/lib/gamification/hooks';
 import {
   MAX_ALTERNATES,
   MAX_WINNERS,
@@ -1076,7 +1077,7 @@ export async function drawRound(input: {
   const now = input.now ?? new Date();
 
   try {
-    return await withTenant(input.tenantId, async (tx) => {
+    const drawn = await withTenant(input.tenantId, async (tx) => {
       /**
        * ───────────────────────────────────────────────────────────────────────────
        *  TRAVA PESSIMISTA — O PRIMEIRO CLIQUE VENCE
@@ -1438,6 +1439,32 @@ export async function drawRound(input: {
         alternatesDrawn,
       };
     });
+
+    /**
+     * ── SER SORTEADO MOVE A GAMIFICAÇÃO (FASE 43) ─────────────────────────────
+     *
+     *  A apuração está GRAVADA (rodada, posições e assinatura) — o crédito é
+     *  consequência, e por isso sai depois do commit e sem poder falhar (invariante 8):
+     *  um erro ao conceder a carta não pode desfazer um sorteio já anunciado.
+     *
+     *  Só o GANHADOR (`WINNER`): o suplente é a reserva, e creditá-lo premiaria um
+     *  prêmio que talvez nunca exista. O XP é 0 de propósito — o prêmio é a
+     *  recompensa —, e o que o fato concede é a carta e o progresso de missão.
+     */
+    if (drawn.ok) {
+      for (const winner of drawn.winners) {
+        if (winner.kind !== 'WINNER') continue;
+
+        await rewardRaffleWonById({
+          tenantId: input.tenantId,
+          userId: winner.userId,
+          roundId: drawn.roundId,
+          position: winner.position,
+        });
+      }
+    }
+
+    return drawn;
   } catch (error) {
     /**
      * Corrida perdida no índice único `(raffleId, userId)`: significa que uma

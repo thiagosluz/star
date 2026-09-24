@@ -1003,6 +1003,28 @@ export const rewardKeys = {
     `submission:${tenantId}:${submissionId}:accepted`,
   reviewCompleted: (tenantId: string, reviewId: string) => `review:${tenantId}:${reviewId}`,
   taskClaimed: (tenantId: string, progressId: string) => `task:${tenantId}:${progressId}`,
+  /**
+   * Inscrição confirmada: a chave é o ALVO (pessoa + evento/atividade), não a linha.
+   *
+   * Por que não a inscrição: cancelar e se inscrever de novo cria uma linha nova, e a
+   * chave por linha pagaria 30 XP a cada volta — farm trivial, sem nenhum fato novo.
+   * Com o alvo, cada destino paga UMA vez para sempre, e a promoção da lista de espera
+   * e a confirmação do balcão continuam creditando pelo MESMO caminho (a pessoa pediu
+   * a vaga uma vez, e a vaga se confirmou depois).
+   */
+  registrationConfirmed: (tenantId: string, userId: string, targetId: string) =>
+    `registration:${tenantId}:${userId}:${targetId}`,
+  /** Certificado emitido: um por documento (a pessoa pode ter vários). */
+  certificateIssued: (tenantId: string, certificateId: string) =>
+    `certificate:${tenantId}:${certificateId}`,
+  /**
+   * Sorteio: a chave é (rodada, posição) porque quem ganha é a POSIÇÃO.
+   *
+   * Desfazer a entrega do prêmio (FASE 22) não devolve a posição, e sortear de novo a
+   * mesma rodada é recusado — então a posição é um fato estável.
+   */
+  raffleWon: (tenantId: string, roundId: string, position: number) =>
+    `raffle:${tenantId}:${roundId}:${position}`,
   /** Ajuste manual: cada chamada é um fato novo e ganha chave própria. */
   manual: (tenantId: string, userId: string) => `manual:${tenantId}:${userId}:${randomUUID()}`,
 } as const;

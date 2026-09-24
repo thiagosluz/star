@@ -228,3 +228,214 @@ export async function rewardReviewCompletedById(input: {
     return null;
   }
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  OS FATOS QUE FALTAVAM (FASE 43)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Inscrição confirmada, certificado emitido e sorteio ganho aconteciam no sistema
+ *  desde as primeiras fases e não moviam nada: nem XP, nem carta, nem missão. As
+ *  três funções abaixo fecham isso, com a mesma regra das outras — **nunca lançam**,
+ *  e por isso são chamadas DEPOIS do commit do fato.
+ *
+ *  A inscrição tem TRÊS portas para o mesmo estado (inscrição direta, promoção da
+ *  lista de espera e confirmação de vaga) e por isso a idempotência é pela INSCRIÇÃO:
+ *  quem chegar primeiro credita, os outros dois não.
+ */
+export async function rewardRegistrationConfirmed(input: {
+  tenantId: string;
+  userId: string;
+  registrationId: string;
+  eventId: string | null;
+  activityId: string | null;
+}): Promise<HookOutcome> {
+  try {
+    /**
+     * O alvo é a ATIVIDADE quando há uma, e o EVENTO quando é a inscrição do evento:
+     * é ele que identifica "esta vaga", e é o que faz cancelar e voltar a se inscrever
+     * não pagar de novo.
+     */
+    const targetId = input.activityId ?? input.eventId ?? input.registrationId;
+
+    const result = await awardForEvent({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      source: 'REGISTRATION_CONFIRMED',
+      idempotencyKey: rewardKeys.registrationConfirmed(input.tenantId, input.userId, targetId),
+      reason: input.activityId ? 'Inscrição confirmada em atividade' : 'Inscrição confirmada no evento',
+      eventId: input.eventId,
+      activityId: input.activityId,
+      registrationId: input.registrationId,
+    });
+
+    if (!result.ok) {
+      logHookFailure('registration-confirmed', result.message);
+      return null;
+    }
+
+    return result;
+  } catch (error) {
+    logHookFailure('registration-confirmed', error instanceof Error ? error.message : 'erro');
+    return null;
+  }
+}
+
+/**
+ * Inscrição confirmada: resolve pessoa, evento e atividade a partir da INSCRIÇÃO.
+ *
+ * A releitura do estado não é desconfiança: é o que permite chamar o gancho de
+ * QUALQUER caminho que confirme uma vaga — a inscrição direta, a promoção da lista
+ * de espera e a confirmação do balcão — sem que cada um precise carregar o contexto
+ * até aqui. Se a linha não estiver `CONFIRMED`, não há fato: a resposta é `null`.
+ */
+export async function rewardRegistrationConfirmedById(input: {
+  tenantId: string;
+  registrationId: string;
+}): Promise<HookOutcome> {
+  try {
+    const registration = await withTenant(input.tenantId, (tx) =>
+      tx.registration.findFirst({
+        where: { id: input.registrationId, deletedAt: null },
+        select: { userId: true, eventId: true, activityId: true, status: true },
+      }),
+    );
+
+    if (!registration || registration.status !== 'CONFIRMED') return null;
+
+    return await rewardRegistrationConfirmed({
+      tenantId: input.tenantId,
+      userId: registration.userId,
+      registrationId: input.registrationId,
+      eventId: registration.eventId,
+      activityId: registration.activityId,
+    });  } catch (error) {
+    logHookFailure('registration-confirmed-by-id', error instanceof Error ? error.message : 'erro');
+    return null;
+  }
+}
+
+/** Certificado emitido: resolve titular e evento a partir do documento. */
+export async function rewardCertificateIssuedById(input: {
+  tenantId: string;
+  certificateId: string;
+}): Promise<HookOutcome> {
+  try {
+    const certificate = await withTenant(input.tenantId, (tx) =>
+      tx.certificate.findFirst({
+        where: { id: input.certificateId },
+        select: { userId: true, eventId: true },
+      }),
+    );
+
+    if (!certificate) return null;
+
+    return await rewardCertificateIssued({
+      tenantId: input.tenantId,
+      userId: certificate.userId,
+      certificateId: input.certificateId,
+      eventId: certificate.eventId,
+    });
+  } catch (error) {
+    logHookFailure('certificate-issued-by-id', error instanceof Error ? error.message : 'erro');
+    return null;
+  }
+}
+
+/** Posição premiada: resolve o evento a partir da RODADA apurada. */
+export async function rewardRaffleWonById(input: {
+  tenantId: string;
+  userId: string;
+  roundId: string;
+  position: number;
+}): Promise<HookOutcome> {
+  try {
+    const round = await withTenant(input.tenantId, (tx) =>
+      tx.raffleRound.findFirst({
+        where: { id: input.roundId },
+        select: { raffle: { select: { eventId: true } } },
+      }),
+    );
+
+    return await rewardRaffleWon({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      roundId: input.roundId,
+      position: input.position,
+      eventId: round?.raffle.eventId ?? null,
+    });
+  } catch (error) {
+    logHookFailure('raffle-won-by-id', error instanceof Error ? error.message : 'erro');
+    return null;
+  }
+}
+
+/**
+ * Certificado emitido.
+ *
+ * O crédito é de quem PEDIU o documento (é ele o titular), e o fato é o documento
+ * existir — não o arquivo ter sido gerado: o PDF pode ser reprocessado depois, e a
+ * promessa "emitido" já vale com código e assinatura.
+ */
+export async function rewardCertificateIssued(input: {
+  tenantId: string;
+  userId: string;
+  certificateId: string;
+  eventId: string | null;
+}): Promise<HookOutcome> {
+  try {
+    const result = await awardForEvent({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      source: 'CERTIFICATE_ISSUED',
+      idempotencyKey: rewardKeys.certificateIssued(input.tenantId, input.certificateId),
+      reason: 'Certificado emitido',
+      eventId: input.eventId,
+    });
+
+    if (!result.ok) {
+      logHookFailure('certificate-issued', result.message);
+      return null;
+    }
+
+    return result;
+  } catch (error) {
+    logHookFailure('certificate-issued', error instanceof Error ? error.message : 'erro');
+    return null;
+  }
+}
+
+/**
+ * Posição premiada numa rodada.
+ *
+ * Só o GANHADOR entra: suplente não ganhou nada ainda — ele é a reserva, e creditar
+ * o suplente daria XP por um prêmio que talvez nunca exista. A entrega do prêmio
+ * (FASE 16/22) é outro fato e não muda isto: a posição é a mesma.
+ */
+export async function rewardRaffleWon(input: {
+  tenantId: string;
+  userId: string;
+  roundId: string;
+  position: number;
+  eventId: string | null;
+}): Promise<HookOutcome> {
+  try {
+    const result = await awardForEvent({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      source: 'RAFFLE_WON',
+      idempotencyKey: rewardKeys.raffleWon(input.tenantId, input.roundId, input.position),
+      reason: `Sorteado na ${input.position}ª posição`,
+      eventId: input.eventId,
+    });
+
+    if (!result.ok) {
+      logHookFailure('raffle-won', result.message);
+      return null;
+    }
+
+    return result;
+  } catch (error) {
+    logHookFailure('raffle-won', error instanceof Error ? error.message : 'erro');
+    return null;
+  }
+}

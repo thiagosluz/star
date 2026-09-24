@@ -29,7 +29,13 @@ export type XpSourceKind =
   | 'ADMIN_ADJUSTMENT'
   | 'REFERRAL'
   /** Visita ao estande por QR do patrocinador (FASE 42). */
-  | 'SPONSOR_QR';
+  | 'SPONSOR_QR'
+  /** Inscrição confirmada — no evento ou numa atividade (FASE 43). */
+  | 'REGISTRATION_CONFIRMED'
+  /** Certificado emitido para a própria pessoa (FASE 43). */
+  | 'CERTIFICATE_ISSUED'
+  /** Posição premiada numa rodada de sorteio (FASE 43). */
+  | 'RAFFLE_WON';
 
 export const XP_SOURCE_KINDS: readonly XpSourceKind[] = [
   'CHECKIN',
@@ -43,7 +49,41 @@ export const XP_SOURCE_KINDS: readonly XpSourceKind[] = [
   'ADMIN_ADJUSTMENT',
   'REFERRAL',
   'SPONSOR_QR',
+  'REGISTRATION_CONFIRMED',
+  'CERTIFICATE_ISSUED',
+  'RAFFLE_WON',
 ];
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS ORIGENS QUE O FORMULÁRIO DE MISSÃO PODE OFERECER (FASE 43)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Só entra aqui a origem que ALGUM caminho do sistema emite de verdade. O
+ *  formulário oferecia `REFERRAL` ("Indique alguém") e `BONUS`, e nenhum dos dois
+ *  tinha emissor: a missão nascia impossível de completar, e o organizador só
+ *  descobria quando ninguém progredia. Os dois valores continuam no enum — há
+ *  histórico gravado com eles —, mas deixaram de ser uma promessa na tela.
+ *
+ *  O teste `gamification-facts.test.ts` prende a regra: toda origem oferecida aqui
+ *  tem um emissor declarado, e as duas aposentadas ficam de fora.
+ */
+export const MISSION_TRIGGER_KINDS: readonly XpSourceKind[] = [
+  'CHECKIN',
+  'ACTIVITY_ATTENDANCE',
+  'MINI_COURSE_COMPLETION',
+  'SUBMISSION_SUBMITTED',
+  'SUBMISSION_ACCEPTED',
+  'REVIEW_COMPLETED',
+  'TASK_COMPLETED',
+  'ADMIN_ADJUSTMENT',
+  'SPONSOR_QR',
+  'REGISTRATION_CONFIRMED',
+  'CERTIFICATE_ISSUED',
+  'RAFFLE_WON',
+];
+
+/** Origens que existem no enum mas NÃO têm emissor: não viram missão. */
+export const RETIRED_XP_SOURCE_KINDS: readonly XpSourceKind[] = ['REFERRAL', 'BONUS'];
 
 /** Raridade da carta. Espelha `enum CardRarity`. */
 export type CardRarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';
@@ -71,7 +111,13 @@ export type CardTrigger =
   | 'STREAK'
   | 'EVENT_ATTENDANCE_FULL'
   /** Carta concedida ao ler o QR de um patrocinador (FASE 42). */
-  | 'SPONSOR_QR';
+  | 'SPONSOR_QR'
+  /** Inscrição confirmada no evento ou numa atividade (FASE 43). */
+  | 'REGISTRATION_CONFIRMED'
+  /** Certificado emitido (FASE 43). */
+  | 'CERTIFICATE_ISSUED'
+  /** Posição premiada numa rodada de sorteio (FASE 43). */
+  | 'RAFFLE_WON';
 
 export const CARD_TRIGGERS: readonly CardTrigger[] = [
   'CHECKIN',
@@ -87,6 +133,9 @@ export const CARD_TRIGGERS: readonly CardTrigger[] = [
   'STREAK',
   'EVENT_ATTENDANCE_FULL',
   'SPONSOR_QR',
+  'REGISTRATION_CONFIRMED',
+  'CERTIFICATE_ISSUED',
+  'RAFFLE_WON',
 ];
 
 /**
@@ -110,6 +159,9 @@ export const CARD_TRIGGER_LABELS: Readonly<Record<CardTrigger, string>> = {
   STREAK: 'Você manteve a sequência de participação',
   EVENT_ATTENDANCE_FULL: 'Você esteve em todas as atividades do evento',
   SPONSOR_QR: 'Você visitou um patrocinador do evento',
+  REGISTRATION_CONFIRMED: 'Sua inscrição foi confirmada',
+  CERTIFICATE_ISSUED: 'Você emitiu um certificado',
+  RAFFLE_WON: 'Você foi sorteado numa rodada do evento',
 };
 
 export function cardTriggerLabel(trigger: string): string {

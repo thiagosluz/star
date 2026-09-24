@@ -39,7 +39,7 @@ autorizados por ele mesmo** — com consentimento registrado, com prazo e revog�
 | Migrações | **1** — 3 tabelas novas + 2 valores de enum (36 → **37**) |
 | Tabelas de tenant | **52 → 55** (`sponsor_users`, `sponsor_qr_codes`, `sponsor_scans`, todas sob RLS + FORCE) |
 | Testes novos | **46** — 27 unitários, 16 de integração e **3 E2E** (a suíte vai de **2159** para **2202**; o E2E, de **143** para **146**) |
-| Defeitos reais encontrados | **2** — a transação que virava `ROLLBACK` em silêncio (armadilha **97**) e **o QR que existia como código e não como imagem** (achado na revisão do humano, §5); mais 2 defeitos do PRÓPRIO cenário E2E |
+| Defeitos reais encontrados | **3** — a transação que virava `ROLLBACK` em silêncio (armadilha **97**), **o QR que existia como código e não como imagem** (achado na revisão do humano, §5) e **o enum do gatilho novo aparecendo cru em duas telas** (achado na auditoria dos gatilhos, §5); mais 2 defeitos do PRÓPRIO cenário E2E |
 | Dívidas quitadas | **nenhuma** — a fase não estava amarrada a dívida |
 | Dívidas novas | **2** — **E56** (o aceite do convite cria vínculo `PARTICIPANT`, que não conta na quota — falta confirmar a regra com o humano) e **E57** (não há limite de QRs por patrocinador nem aviso de QR duplicado por evento) |
 | Armadilhas novas | **1** — **97** (erro engolido dentro da transação) |
@@ -193,6 +193,7 @@ manter o contato sem a origem seria guardar dado sem base (por isso a tela diz o
 | 2 | O cenário E2E travou preenchendo o campo do convite, com a tela **certa** na frente | O cenário clicava duas vezes no mesmo `<summary>` ("Convidar ou vincular pessoa"), e o segundo clique FECHAVA o `<details>` — o campo seguinte ficava invisível | O painel é aberto **uma vez** e os dois formulários (vínculo e convite) são usados dentro dele; o cenário passou a afirmar que o campo está visível antes de preencher. **Clicar em `<summary>` é alternar, não abrir** |
 | 3 | O clique em "Revogar" não fazia nada no E2E | O botão do formulário em linha, quando tem confirmação, é o que ABRE o diálogo (`-open`); o envio é o botão de dentro dele. O cenário procurava o `inline-submit` que só existe sem confirmação | O teste clica no gatilho (`revoke-…-open`) e confirma no diálogo — medindo o caminho que a pessoa percorre, com a consequência escrita à vista |
 | 4 | **O estande ficou sem peça: o QR existia como CÓDIGO e não como imagem.** O painel mostrava "QR criado. O código é 29SM4ZCR — imprima no estande", e não havia o que imprimir. **Achado na revisão do humano, antes da aprovação da fase** — nenhum teste pegou, porque todos mediam o que a fase tinha decidido medir (crédito, consentimento, lead) | A fase tratou o QR como DADO e parou aí: o endereço e o código saíram em texto, e o ato que a funcionalidade promete — **a câmera do participante lendo o código** — não tinha suporte. O sistema já sabia desenhar QR (certificado, folha de crachás, telão do sorteio), e nada disso foi usado aqui: **o teste do caminho de leitura começava depois do que a pessoa precisava fazer** | A imagem passou a ser gerada no servidor (`sponsor-qr-sheet`) e aparece nos DOIS lados (painel e área do patrocinador), com download em **PNG** (imprimir na hora) e **SVG** (cartaz, sem serrilhar). O E2E deixou de confiar no `data:` da imagem: ele **decodifica o QR com o mesmo `jsqr` do leitor de crachá** e compara com o endereço esperado — a única prova de que a peça aponta para o lugar certo |
+| 5 | **O gatilho novo apareceu CRU em duas telas: `SPONSOR_QR` no seletor de "Nova carta" e na frase da missão do participante.** Achado na **auditoria dos gatilhos** pedida pelo humano, depois da entrega | Os dois mapas de rótulo das telas eram `Record<string, string>` e caíam no `?? trigger` (ou `?? definition.trigger`): aceitavam qualquer chave, então acrescentar um valor ao enum **não reprovava nada** — o enum ia para a tela e o fallback escondia a falta. É a família da armadilha 75 (valor novo sem leitor), agora do lado do rótulo | Os dois mapas passaram a ser **fechados pelo tipo** (`Record<CardTrigger, string>` e `Record<XpSourceKind, string>`), então gatilho/origem sem rótulo **não compila** — o `AdminCardRow.trigger` virou tipo do domínio para permitir a indexação fechada. Um teste unitário prende os dois mapas do DOMÍNIO (`CARD_TRIGGER_LABELS`, `XP_SOURCE_LABELS`) contra o fallback e contra o enum cru |
 
 ---
 
@@ -201,7 +202,7 @@ manter o contato sem a origem seria guardar dado sem base (por isso a tela diz o
 ```text
 npm run lint ...................... 0 erros, 0 warnings
 npm run typecheck ................. 0 erros
-npm test .......................... 95 arquivos · 2202 testes passando
+npm test .......................... 95 arquivos · 2203 testes passando
 npm run build ..................... ✓ Compiled successfully · 7 rotas novas listadas
 npm run db:verify ................. Contrato íntegro.
 npm run db:verify:isolation ....... 9/9 verificações passaram.
@@ -305,5 +306,5 @@ psql "$DATABASE_URL" -c 'SELECT q.code, q.label, q."xpAmount", q."consentDays", 
 * [x] A **RLS** isola as três tabelas novas (a vizinha não vê QR, vínculo nem leitura)
 * [x] O menu tem as **duas portas** (papel ou convite pendente) e "Meus compartilhamentos"
 * [x] A trava do **sistema de design** continua verde (tokens, escala, zero cor literal em componente)
-* [x] Toda a suíte verde (**2202** testes + **146** E2E), com os testes das fases anteriores intactos
+* [x] Toda a suíte verde (**2203** testes + **146** E2E), com os testes das fases anteriores intactos
 * [x] Documentação da fase, README, `AGENTS.md`, armadilha 97 e dívidas (E56, E57) atualizados

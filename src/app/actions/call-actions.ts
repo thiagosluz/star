@@ -52,6 +52,10 @@ import {
 } from '@/lib/proposals/call-service';
 import { submitProposal } from '@/lib/proposals/proposal-service';
 import { acceptProposal } from '@/lib/proposals/acceptance-service';
+import {
+  rewardSubmissionAcceptedById,
+  rewardSubmissionSubmittedById,
+} from '@/lib/gamification/hooks';
 
 export interface CallActionState extends ActionGuardState {
   /** Protocolo devolvido a quem propôs — é com ele que a organização acha a proposta. */
@@ -456,6 +460,17 @@ export async function submitProposalAction(
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
 
   /**
+   * ── A PROPOSTA ENVIADA TAMBÉM É UM TRABALHO SUBMETIDO (FASE 43) ─────────────
+   *
+   *  A proposta é uma `Submission` (FASE 33) e passa pelo mesmo motor do artigo, mas o
+   *  gancho de gamificação só existia no caminho do fluxo acadêmico: quem submetia pela
+   *  chamada não recebia nada. O gancho é o mesmo, com a chave da submissão.
+   *
+   *  Depois do commit e sem poder falhar (invariante 8).
+   */
+  await rewardSubmissionSubmittedById({ tenantId: context.tenantId, submissionId: result.submissionId });
+
+  /**
    * A confirmação diz o que aconteceu com o E-MAIL, e não só "enviado": a proposta
    * está gravada (o protocolo é a prova), e o e-mail pode ter ficado na fila. Prometer
    * entrega quando ela não aconteceu faria a pessoa esperar por uma mensagem que não vem.
@@ -599,6 +614,18 @@ export async function acceptProposalAction(
    *  primeira metade deixaria o silêncio de volta na próxima navegação.
    */
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
+
+  /**
+   * ── ACEITAR A PROPOSTA PAGA O MESMO XP QUE O COMITÊ PAGA (FASE 43) ──────────
+   *
+   *  O aceite entra por `recordDecision`, o MESMO motor do comitê — mas o prêmio
+   *  estava só na action do painel do comitê, então a mesma decisão valia XP por uma
+   *  porta e nada pela outra. Aqui entra o MESMO gancho, e a chave de idempotência é
+   *  derivada da SUBMISSÃO: se as duas portas decidirem, quem chegar primeiro credita.
+   *
+   *  Depois do commit e sem poder falhar (invariante 8).
+   */
+  await rewardSubmissionAcceptedById({ tenantId: auth.tenantId, submissionId: data.submissionId });
 
   /**
    * A resposta diz o que ficou PENDENTE. Aceitar sem criar a atividade e sem convidar é

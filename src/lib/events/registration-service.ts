@@ -73,6 +73,7 @@ import {
   type ParticipantLinkDecision,
 } from '@/domain/events/public-registration-rules';
 import { recordAudit } from '@/lib/admin/audit';
+import { rewardRegistrationConfirmedById } from '@/lib/gamification/hooks';
 import {
   kindAfterPublicRegistration,
   type MembershipKind as MembershipKindName,
@@ -268,6 +269,21 @@ export async function registerForActivity(
             `[inscricoes] aviso de confirmação não saiu: ${notice.message ?? 'motivo desconhecido'}`,
           );
         }
+      }
+
+      /**
+       * ── INSCRIÇÃO CONFIRMADA NA ATIVIDADE (FASE 43) ──────────────────────────
+       *
+       *  Só a vaga GARANTIDA credita: `WAITLISTED` espera a promoção e `PENDING`
+       *  espera o balcão — nos dois casos o crédito sai do caminho que confirmar a
+       *  vaga (promoção/confirmação), com a MESMA chave de idempotência (a inscrição).
+       *  Creditá-los aqui pagaria por uma vaga que pode nunca existir.
+       */
+      if (outcome.ok && outcome.status === 'CONFIRMED') {
+        await rewardRegistrationConfirmedById({
+          tenantId: input.tenantId,
+          registrationId: outcome.registrationId,
+        });
       }
 
       return outcome;
@@ -1030,7 +1046,25 @@ export async function registerForEvent(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const outcome = await attemptEventRegistration(input);
 
-    if (outcome.ok || !isTransientFailure(outcome.code)) return outcome;
+    if (outcome.ok || !isTransientFailure(outcome.code)) {
+      /**
+       * ── A INSCRIÇÃO CONFIRMADA MOVE A GAMIFICAÇÃO (FASE 43) ──────────────────
+       *
+       *  DEPOIS do commit e sem poder falhar (invariante 8): a vaga está reservada, e
+       *  um erro ao creditar XP não pode desfazer a inscrição de ninguém. O gancho
+       *  relê o estado no banco e só credita se a linha estiver `CONFIRMED` — as
+       *  linhas `EVENT_AUTO` das atividades abertas nascem aqui também, e elas NÃO
+       *  são ato do participante (por isso não passam por aqui).
+       */
+      if (outcome.ok) {
+        await rewardRegistrationConfirmedById({
+          tenantId: input.tenantId,
+          registrationId: outcome.registrationId,
+        });
+      }
+
+      return outcome;
+    }
 
     const backoff = Math.min(15 * 2 ** attempt, 200);
     await new Promise((resolve) => setTimeout(resolve, backoff + Math.random() * backoff));
@@ -1552,6 +1586,17 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
       if (!notice.ok) {
         console.error(`[inscricoes] aviso de promoção não saiu: ${notice.message ?? 'motivo desconhecido'}`);
       }
+
+      /**
+       * Quem sai da espera e ocupa a vaga recebe o crédito de "inscrição confirmada"
+       * (FASE 43) — ele pediu a vaga antes, e a confirmação é agora. A chave é a
+       * inscrição, então quem já tiver sido creditado (impossível aqui, mas possível
+       * num caminho futuro) não recebe duas vezes.
+       */
+      await rewardRegistrationConfirmedById({
+        tenantId,
+        registrationId: outcome.promoted.registrationId,
+      });
     }
 
     return outcome;

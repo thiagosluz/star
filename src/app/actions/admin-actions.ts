@@ -39,6 +39,8 @@ import {
   saveTrack,
 } from '@/lib/admin/catalog-service';
 import {
+  deleteCardTemplate,
+  deleteMission,
   retryCertificateGeneration,
   saveCardTemplate,
   saveMission,
@@ -927,6 +929,90 @@ export async function saveMissionAction(
   return result.ok
     ? { ok: true, message: result.created ? 'Missão criada.' : 'Missão atualizada.' }
     : { ok: false, code: result.code, message: result.message, details: result.details };
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  EXCLUIR CARTA E MISSÃO (FASE 43)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A exclusão é **lógica** nos dois casos, e a mensagem diz o que aconteceu com o que
+ *  já foi conquistado: nada. A carta sai do catálogo mas fica no álbum de quem a
+ *  ganhou; a missão sai da lista mas o progresso e o XP resgatado continuam.
+ *
+ *  A carta em uso como prêmio é RECUSADA pelo serviço, com a contagem — a tela já
+ *  mostra onde ela é usada, então a recusa chega como confirmação do que estava à
+ *  vista, não como surpresa.
+ */
+export async function deleteCardTemplateAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const auth = await guard({
+    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    permission: PERMISSIONS.CARD_TEMPLATE_MANAGE,
+  });
+  if (!auth.ok) return auth.state;
+
+  const cardTemplateId = String(formData.get('cardTemplateId') ?? '');
+  if (!z.string().uuid().safeParse(cardTemplateId).success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Carta inválida.' };
+  }
+
+  const result = await deleteCardTemplate({
+    tenantId: auth.tenantId,
+    actorId: auth.userId,
+    cardTemplateId,
+  });
+
+  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas'));
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  return {
+    ok: true,
+    message:
+      result.ownedBy > 0
+        ? `Carta excluída do catálogo. Ela continua no álbum de ${result.ownedBy} pessoa(s) que já a ganharam.`
+        : 'Carta excluída do catálogo.',
+  };
+}
+
+export async function deleteMissionAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const auth = await guard({
+    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    permission: PERMISSIONS.TASK_MANAGE,
+  });
+  if (!auth.ok) return auth.state;
+
+  const taskDefinitionId = String(formData.get('taskDefinitionId') ?? '');
+  if (!z.string().uuid().safeParse(taskDefinitionId).success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Missão inválida.' };
+  }
+
+  const result = await deleteMission({
+    tenantId: auth.tenantId,
+    actorId: auth.userId,
+    taskDefinitionId,
+  });
+
+  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/missoes'));
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  return {
+    ok: true,
+    message:
+      result.completions > 0
+        ? `Missão excluída. As ${result.completions} pessoa(s) que progrediram mantêm o histórico e o XP já resgatado.`
+        : 'Missão excluída.',
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

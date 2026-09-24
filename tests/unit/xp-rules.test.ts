@@ -16,6 +16,7 @@ import {
   PRESTIGE_COST_XP,
   STREAK_MILESTONES,
   XP_SOURCES,
+  XP_SOURCE_LABELS,
   applyStreak,
   dayKey,
   levelFromXp,
@@ -27,7 +28,7 @@ import {
   xpToNextLevel,
   xpToReachLevel,
 } from '../../src/domain/gamification/xp-rules';
-import { XP_SOURCE_KINDS } from '../../src/domain/gamification/types';
+import { CARD_TRIGGERS, XP_SOURCE_KINDS, cardTriggerLabel } from '../../src/domain/gamification/types';
 
 const TZ = 'America/Bahia'; // UTC−3, sem horário de verão
 
@@ -45,6 +46,26 @@ describe('tabela de XP', () => {
     expect(XP_SOURCES.TASK_COMPLETED).toBe(0);
     expect(XP_SOURCES.BONUS).toBe(0);
     expect(XP_SOURCES.ADMIN_ADJUSTMENT).toBe(0);
+  });
+
+  /**
+   * O rótulo é a ÚLTIMA barreira contra o enum cru na tela.
+   *
+   * A FASE 42 acrescentou `SPONSOR_QR` e ele apareceu como "SPONSOR_QR" no seletor de
+   * gatilho da carta e na frase da missão, porque os mapas das telas aceitavam
+   * qualquer chave e caíam no `?? trigger`. Os mapas das telas agora são fechados pelo
+   * tipo (não compilam sem rótulo); estes dois, que são do domínio, são presos aqui.
+   */
+  it('toda origem de XP e todo gatilho de carta têm rótulo em português', () => {
+    for (const source of XP_SOURCE_KINDS) {
+      expect(XP_SOURCE_LABELS[source], `origem sem rótulo: ${source}`).toBeTruthy();
+      expect(XP_SOURCE_LABELS[source]).not.toBe(source);
+    }
+
+    for (const trigger of CARD_TRIGGERS) {
+      expect(cardTriggerLabel(trigger), `gatilho sem frase: ${trigger}`).not.toBe(trigger);
+      expect(cardTriggerLabel(trigger)).not.toBe('Conquista desbloqueada');
+    }
   });
 
   it('valoriza o esforço científico acima da presença', () => {

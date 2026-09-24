@@ -432,6 +432,10 @@ function round2(value: number): number {
  * `LEVEL_UP`, `STREAK`, `MANUAL_GRANT`…; o de XP tem `BONUS`,
  * `ADMIN_ADJUSTMENT`, `REFERRAL`). Mapear explicitamente evita a suposição
  * silenciosa de que os nomes coincidem.
+ *
+ * `SPONSOR_QR` fica FORA de propósito: quem concede a carta da visita é o próprio
+ * fluxo da leitura, com a carta escolhida no QR (`sponsor_qr_codes.cardTemplateId`).
+ * Mapear aqui daria uma segunda concessão por sorteio — a carta sairia em dobro.
  */
 export const XP_SOURCE_TO_CARD_TRIGGER: Readonly<Partial<Record<XpSourceKind, CardTrigger>>> = {
   CHECKIN: 'CHECKIN',
@@ -440,6 +444,9 @@ export const XP_SOURCE_TO_CARD_TRIGGER: Readonly<Partial<Record<XpSourceKind, Ca
   SUBMISSION_SUBMITTED: 'SUBMISSION_SUBMITTED',
   SUBMISSION_ACCEPTED: 'SUBMISSION_ACCEPTED',
   REVIEW_COMPLETED: 'REVIEW_COMPLETED',
+  REGISTRATION_CONFIRMED: 'REGISTRATION_CONFIRMED',
+  CERTIFICATE_ISSUED: 'CERTIFICATE_ISSUED',
+  RAFFLE_WON: 'RAFFLE_WON',
 };
 
 export function cardTriggerForSource(source: XpSourceKind): CardTrigger | null {

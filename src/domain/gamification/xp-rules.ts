@@ -50,6 +50,24 @@ export const XP_SOURCES: Readonly<Record<XpSourceKind, number>> = {
    * crédito que ninguém escolheu.
    */
   SPONSOR_QR: 0,
+  /**
+   * Inscrever-se vale MENOS que comparecer (40): a inscrição é intenção, e a
+   * presença é o fato. Quem inverte essa ordem transforma "clicar em inscrever" em
+   * estratégia de XP.
+   */
+  REGISTRATION_CONFIRMED: 30,
+  /**
+   * O certificado é a prova de um caminho concluído — e a pessoa pode ter mais de
+   * um (participante, autor, palestrante). Cada um vale por si: são três trabalhos
+   * diferentes, não três prêmios pelo mesmo.
+   */
+  CERTIFICATE_ISSUED: 50,
+  /**
+   * Ser sorteado vale 0 de XP de propósito: o prêmio JÁ é a recompensa, e dar pontos
+   * por sorte premiaria o acaso. O fato continua existindo porque ele move missões e
+   * concede a carta de "sorteado" — sem inventar pontuação.
+   */
+  RAFFLE_WON: 0,
 } as const;
 
 /** Rótulos em pt-BR para o extrato de XP. */
@@ -65,6 +83,9 @@ export const XP_SOURCE_LABELS: Readonly<Record<XpSourceKind, string>> = {
   ADMIN_ADJUSTMENT: 'Ajuste administrativo',
   REFERRAL: 'Indicação',
   SPONSOR_QR: 'Visita a patrocinador',
+  REGISTRATION_CONFIRMED: 'Inscrição confirmada',
+  CERTIFICATE_ISSUED: 'Certificado emitido',
+  RAFFLE_WON: 'Sorteio ganho',
 };
 
 // ───────────────────────────────────────────────────────────────────────────────

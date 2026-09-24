@@ -58,6 +58,11 @@ export type AdminErrorCode =
   | 'ROOM_NAME_TAKEN'
   /** A sala está em uso por atividades — excluir apagaria a referência em silêncio. */
   | 'ROOM_IN_USE'
+  /**
+   * A carta é prêmio de uma missão ou de um QR de patrocinador em vigor (FASE 43):
+   * excluí-la deixaria a promessa sem prêmio, e a recusa diz quantos são.
+   */
+  | 'CARD_IN_USE'
   /** A capacidade nova da sala ficaria abaixo de atividade já configurada/ocupada. */
   | 'ROOM_CAPACITY_BELOW_USAGE'
   /** O plano da instituição atingiu o limite de eventos (FASE 12, item C2). */

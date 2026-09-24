@@ -26,7 +26,7 @@ import {
   withExpiry,
   type ProgressState,
 } from '@/domain/gamification/task-rules';
-import type { TaskKind, TaskProgressStatus } from '@/domain/gamification/types';
+import type { TaskKind, TaskProgressStatus, XpSourceKind } from '@/domain/gamification/types';
 import {
   awardForEvent,
   grantCardForTrigger,
@@ -64,7 +64,15 @@ export interface MissionView {
   displayOrder: number;
 }
 
-const TRIGGER_LABELS: Record<string, string> = {
+/**
+ * O que a PESSOA lê na missão: uma instrução, não o nome do evento interno.
+ *
+ * O tipo é fechado (`Record<XpSourceKind, string>`) de propósito. Com
+ * `Record<string, string>`, a FASE 42 acrescentou `SPONSOR_QR` às origens de XP e a
+ * missão passou a mostrar o enum CRU para o participante — o `?? definition.trigger`
+ * escondia a falta. Fechado, origem nova sem frase **não compila**.
+ */
+const TRIGGER_LABELS: Readonly<Record<XpSourceKind, string>> = {
   CHECKIN: 'Faça o credenciamento no evento',
   ACTIVITY_ATTENDANCE: 'Participe de uma atividade',
   MINI_COURSE_COMPLETION: 'Conclua um minicurso',
@@ -75,6 +83,10 @@ const TRIGGER_LABELS: Record<string, string> = {
   BONUS: 'Bônus',
   ADMIN_ADJUSTMENT: 'Ajuste da organização',
   REFERRAL: 'Indique alguém',
+  SPONSOR_QR: 'Visite o estande de um patrocinador',
+  REGISTRATION_CONFIRMED: 'Confirme sua inscrição',
+  CERTIFICATE_ISSUED: 'Emita um certificado',
+  RAFFLE_WON: 'Seja sorteado numa rodada',
 };
 
 /**

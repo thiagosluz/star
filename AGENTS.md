@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 42 (F15, F21–F25, F29–F42 entregues; a F43+ é a próxima)
-Testes ................. 2202 (Vitest: unit + integração) + 146 (Playwright E2E)
-ADRs ................... 232 (numeração GLOBAL e sequencial — a próxima é ADR-233)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 43 (F15, F21–F25, F29–F43 entregues; a F44+ é a próxima)
+Testes ................. 2228 (Vitest: unit + integração) + 148 (Playwright E2E)
+ADRs ................... 235 (numeração GLOBAL e sequencial — a próxima é ADR-236)
 Permissões ............. 65 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2202+ testes passando
+npm test              # esperado: 2228+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 146+ testes passando
+npm run test:e2e      # esperado: 148+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -170,7 +170,7 @@ BullMQ — é assim que se sabe se o worker está vivo. O log estruturado
 
 Pool em modo **transação**: seguro porque o contexto de tenant é `SET LOCAL` (invariante nº 2) e o
 projeto não usa recurso de sessão (advisory lock, `LISTEN`/`NOTIFY`, prepared statement nomeado).
-Para o runtime usá-lo, aponte `APP_DATABASE_URL` para a 6432. Prova: `npm run db:verify:pooling`.
+Prova: `npm run db:verify:pooling`.
 
 ### Partições da auditoria (FASE 13 · operação desde a FASE 36)
 
@@ -192,13 +192,11 @@ docker compose --profile av up -d clamav   # perfil próprio; ~1 GB de assinatur
 # .env: SCAN_DRIVER=clamav · CLAMAV_HOST=clamav · CLAMAV_PORT=3310
 ```
 
-Três regras que quebram fácil: **`INFECTED` nunca é servido**, com a inspeção ligada ou desligada
-(desligar o antivírus não devolve à circulação o que já foi identificado); **`PENDING` só é
-bloqueado ENQUANTO a inspeção está ligada** (o estado honesto do arquivo sem inspeção é
-`SKIPPED`); e **inspeção indisponível NÃO é veredito** — o arquivo continua `PENDING` para a
-próxima passada (`INFECTED` por indisponibilidade bloquearia gente inocente; `CLEAN` seria pior).
-O portão vale onde a aplicação media os bytes (submissão e material de palestrante) e **não** em
-`media_assets`, bucket público (ADR-187).
+Três regras que quebram fácil: **`INFECTED` nunca é servido** (nem com a inspeção desligada
+depois); **`PENDING` só é bloqueado ENQUANTO a inspeção está ligada** (o estado honesto do arquivo
+sem inspeção é `SKIPPED`); e **inspeção indisponível NÃO é veredito** — o arquivo continua
+`PENDING` para a próxima passada. O portão vale onde a aplicação media os bytes (submissão e
+material de palestrante) e **não** em `media_assets`, bucket público (ADR-187).
 
 ### Tarefas automáticas e painel de rotinas (FASE 36)
 
@@ -701,9 +699,7 @@ ainda não concluída fica FORA, com o motivo no `workloadBreakdown`, e o certif
 evento encerrado + credenciamento registrado (ADR-117/118).
 
 O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), porque o papel é
-concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO. Exigir
-escopo de tenant na entrada recusaria o caso normal — foi um dos defeitos que o E2E da fase
-pegou (armadilha 42 mostra a outra metade, no `Field`).
+concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO (armadilha 42).
 
 **Duas portas para o portal.** Além de quem já é palestrante, entra quem tem **convite
 pendente para o e-mail da conta** — o papel nasce com o aceite, então exigi-lo para chegar ao
@@ -776,12 +772,11 @@ do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **lega
 
 Dois tenants (`ufba-demo`, `fiocruz-demo`), 2 eventos, **5 atividades** (uma com confirmação de
 vaga), 1 trilha com rubrica, 2 perfis de revisor, 7 cartas, 6 missões, 9 fatos de XP, **2
-certificados** (códigos no fim do seed), **1 sorteio apurado**, **1 página pública publicada**
-(tema próprio, **2 cotas de patrocínio com cor e tamanho diferentes**), **11 versões no
-histórico**, a página do simpósio com **janela de exibição** (fuso `America/Bahia`), o **acervo de
-mídia**, **1 palestrante** (Bruno) com perfil, vínculo, conta e material, **2 chamadas publicadas**
-com **1 proposta recebida**, **1 vaga RETIDA** (carla) e **1 QR de estande** (FASE 42, endereço no
-fim do seed). Percursos no `README.md` §6.
+certificados**, **1 sorteio apurado**, **1 página pública publicada** (tema próprio, **2 cotas de
+patrocínio com cor e tamanho diferentes**), **11 versões no histórico**, a página do simpósio com
+**janela de exibição** (fuso `America/Bahia`), o **acervo de mídia**, **1 palestrante** (Bruno) com
+perfil, vínculo, conta e material, **2 chamadas publicadas** com **1 proposta recebida**, **1 vaga
+RETIDA** (carla) e **1 QR de estande** (FASE 42). Percursos no `README.md` §6.
 
 ---
 
@@ -869,8 +864,8 @@ tests/{unit,integration,e2e}
 | 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) — escopo definido pelo humano; **+ revisão da FASE 29**: o telão só era alcançável já apurado | ✅ |
 | 31 | Credenciamento e frequência por crachá (**um código por pessoa** no evento, com o **contexto da leitura** decidindo o fato; **chegada ≠ frequência**, com sessão por visita e minutos com teto no fim da atividade; área de crachás com emissão em massa, **folha A4** em PDF, **crachá online** e **modo monitor** com câmera, leitor USB e digitação) — escopo definido pelo humano | ✅ |
 | 32 | Central do participante e inteligência da instituição (**diretório** de todos os participantes — união de vínculo e inscrição —, **ficha 360** com eventos, frequência, certificados, cartas, XP e comunicação, **recado** por e-mail e caixa de entrada, **panorama** com taxa de comparecimento no fuso da instituição, **exportação em CSV** com trilha e abertura de ficha auditada) — escopo definido pelo humano | ✅ |
-| 33 | Chamadas de propostas (**chamada como entidade** com tipo, janela, cegueira, **rubrica própria** — precedência CHAMADA → TRILHA → PADRÃO — e limite por autor POR CHAMADA; a proposta **é uma submissão** com campos por tipo e **formulário público**; bloco posicionado pelo organizador na página; **protocolo de aceite** com a decisão do comitê e criar a atividade/convidar o palestrante como escolhas — o convite quita a dívida **E25**) — escopo definido pelo humano | ✅ |
-| 34 | Confirmação de vaga com prazo (**escolha do organizador** por atividade: automática × exige confirmação, com prazo, o que é preciso e onde confirmar; a inscrição nasce **retendo a vaga**; **avisos por e-mail e na plataforma**; vencido o prazo, a vaga é **liberada**, o próximo da lista de espera é promovido e os dois são avisados; **fila de confirmações** ordenada pela urgência) — escopo definido pelo humano | ✅ |
+| 33 | Chamadas de propostas (**chamada como entidade** com tipo, janela, cegueira, **rubrica própria** — CHAMADA → TRILHA → PADRÃO — e limite por autor POR CHAMADA; a proposta **é uma submissão** com campos por tipo e **formulário público**; bloco posicionado pelo organizador; **protocolo de aceite** com a decisão do comitê e criar a atividade/convidar o palestrante como escolhas — o convite quita **E25**) — escopo definido pelo humano | ✅ |
+| 34 | Confirmação de vaga com prazo (**escolha do organizador** por atividade: automática × exige confirmação, com prazo, o que é preciso e onde confirmar; a inscrição nasce **retendo a vaga**; **avisos por e-mail e na plataforma**; vencido o prazo a vaga é **liberada**, o próximo da lista de espera é promovido e os dois são avisados; **fila** ordenada pela urgência) — escopo definido pelo humano | ✅ |
 | 35 | Resiliência de balcão e palco (**operação sem rede** no credenciamento, **sentido da leitura** no balcão — entrada × saída × alternar —, prêmio e patrocinador da rodada corrigíveis pela tela e **controles do palco** com pausa/replay/atalhos; quitou **E38, E39, E40 e E43**) — escopo definido pelo humano | ✅ |
 | 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), **lote de certificados em ZIP** montado em fluxo e **aviso de decisão ao proponente** da chamada; quitou **A3, B7 e E47**) — escopo definido pelo humano | ✅ |
 | 37 | Crachá em **etiqueta adesiva** (PDF com grade configurável) e em **impressora térmica** (ZPL II configurável), e **confirmação de vaga por ITEM** (checklist snapshot da inscrição, com a vaga confirmada quando as obrigatórias acabam); quitou **E41** e **E48**) — escopo definido pelo humano | ✅ |
@@ -878,8 +873,9 @@ tests/{unit,integration,e2e}
 | 39 | **Rubrica com número livre de critérios** (1 a 12 critérios, com a chave **derivada do rótulo**; a **edição de trilha**, que não existia; e a rubrica **congelada a partir do primeiro parecer** — só rótulo, descrição e ordem seguem livres); declarou **E53**) — escopo definido pelo humano | ✅ |
 | 40 | **Editor visual do certificado** (arte de fundo da instituição, texto por **variáveis**, posicionamento **arrastando ou digitando milímetros** — funciona sem JavaScript —, cinco modelos prontos, prévia pelo mesmo renderizador do PDF e bloco probatório obrigatório; o desenho **congela no certificado** e sem modelo vale o desenho antigo); declarou **E54** e **E55**) — escopo definido pelo humano | ✅ |
 | 41 | **Vitrine do patrocínio** (a cota define **cor** e **tamanho da logo** na página pública — Pequena · Média · Grande · Destaque —, com **prévia do cartão** no cadastro e amostras de cor como atalho; a página desenha uma faixa por cota com **cartões tingidos**; a coluna de cor existia desde a FASE 17 e **não tinha leitor**); não declarou dívida) — escopo definido pelo humano | ✅ |
-| 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite por token hasheado **ou** vínculo direto pela equipe — e não pelo papel; **QR do estande** com XP e/ou carta, creditados **uma vez por pessoa por QR**; na leitura pública a pessoa escolhe **autorizar** ou **registrar sem compartilhar**, com o MESMO crédito nos dois caminhos (LGPD art. 8º §3º); lead de **nome e e-mail** com texto lido, prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
-| 43+ | *a definir pelo humano* | ⏳ |
+| 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe **autorizar** ou não, com o MESMO crédito (LGPD art. 8º §3º); lead de **nome e e-mail** com prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
+| 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP nas três portas, chave no ALVO contra farm), **certificado emitido** (50 XP na geração), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada** (enviar e aceitar); tirou "Indicação" e "Bônus" do formulário (sem emissor) e achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
+| 44+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
 > identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
@@ -887,13 +883,14 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**54 itens abertos**; A=3, B=4, C=2, D=3,
-E=32, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**,
+**Dívidas técnicas:** o levantamento consolidado (**56 itens abertos**; A=3, B=4, C=2, D=3,
+E=34, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**,
 com o histórico do que cada fase quitou e declarou. O total publicado até a FASE 35 (55)
 somava linhas **já riscadas**; vale a contagem linha a linha do documento. Quitados: **A3, B7,
 E47** (F36) e **E41, E48** (F37). Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39),
-**E54/E55** (F40) e **E56/E57** (F42) — as FASES 41 e 42 não quitaram item deste levantamento.
-Leia antes de propor a próxima fase: ele diz o que falta e a ordem sugerida.
+**E54/E55** (F40), **E56/E57** (F42) e **E58/E59** (F43) — as FASES 41, 42 e 43 não quitaram
+item deste levantamento. Leia antes de propor a próxima fase: ele diz o que falta e a ordem
+sugerida.
 
 ---
 
@@ -901,7 +898,7 @@ Leia antes de propor a próxima fase: ele diz o que falta e a ordem sugerida.
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-42-experiencia-do-patrocinador.md`; a referência de comunicação é
+   fase entregue** (`docs/fase-43-catalogo-de-gamificacao.md`; a referência de comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

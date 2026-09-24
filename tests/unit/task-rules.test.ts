@@ -79,6 +79,30 @@ describe('parseTaskTarget()', () => {
     expect(parseTaskTarget({ total: 4 }).target.count).toBe(4);
   });
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `null` É "SEM LIMITE" (defeito real, encontrado na FASE 43)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O formulário de missão manda a chave SEMPRE, com `null` quando o campo fica em
+   *  branco. A validação antiga só olhava `!== undefined` e recusava
+   *  "`minutes` deve ser um inteiro maior que zero" — ou seja, criar missão PELA TELA
+   *  era impossível com o campo de minutos vazio, que é o caso normal. Nenhum teste
+   *  pegava porque o caminho da tela nunca era exercitado.
+   */
+  it('trata `null` como ausente — e não como valor inválido', () => {
+    const { target, errors } = parseTaskTarget({ count: null, minutes: null, trackId: null });
+
+    expect(errors).toHaveLength(0);
+    expect(target.count).toBe(DEFAULT_TARGET.count);
+    expect(target.minutes).toBeNull();
+  });
+
+  it('continua recusando valor inválido de verdade', () => {
+    const { errors } = parseTaskTarget({ count: 1, minutes: 0 });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('minutes');
+  });
+
   it('descarta filtros em branco', () => {
     const { target } = parseTaskTarget({ count: 1, activityType: '   ', trackId: '' });
     expect(target.activityType).toBeNull();

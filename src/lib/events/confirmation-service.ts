@@ -30,6 +30,7 @@
 import { systemClient, withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
+import { rewardRegistrationConfirmedById } from '@/lib/gamification/hooks';
 import {
   EXPIRY_CANCEL_REASON,
   canConfirmRegistration,
@@ -207,6 +208,21 @@ export async function confirmRegistration(input: ConfirmInput): Promise<ConfirmO
      * consequência. Falha de provedor não desfaz confirmação (invariante 8).
      */
     const notice = await notifyRegistrationConfirmed({
+      tenantId,
+      registrationId: prepared.registrationId,
+    });
+
+    /**
+     * ── A VAGA CONFIRMADA FECHA O FATO PARA A PESSOA (FASE 43) ──────────────────
+     *
+     *  Quem se inscreveu numa atividade que exige confirmação ficou com a vaga RETIDA
+     *  e não recebeu crédito nenhum na hora (seria pagar por uma vaga em risco). A
+     *  confirmação é o momento em que a inscrição passa a valer — e é agora que o
+     *  crédito sai, com a chave da INSCRIÇÃO (quem passar primeiro credita).
+     *
+     *  Depois do commit e sem poder falhar (invariante 8).
+     */
+    await rewardRegistrationConfirmedById({
       tenantId,
       registrationId: prepared.registrationId,
     });

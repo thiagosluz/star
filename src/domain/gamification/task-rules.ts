@@ -60,13 +60,32 @@ export function parseTaskTarget(raw: unknown): { target: TaskTarget; errors: str
 
   const record = raw as Record<string, unknown>;
 
-  const count = toPositiveInt(record.count ?? record.total);
-  if (record.count !== undefined && count === null) {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `null` É "SEM LIMITE", NÃO UM ERRO (defeito real, encontrado na FASE 43)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A chave presente com valor `null` significa "o organizador não pediu mínimo" — é
+   *  o que o próprio tipo de `TaskTarget` diz (`minutes: number | null`). A checagem
+   *  antiga olhava só `!== undefined`, então `{ minutes: null }` caía na validação,
+   *  `Number(null)` dava 0 e a criação de missão PELA TELA era recusada com
+   *  "`minutes` deve ser um inteiro maior que zero" — sempre que o campo de minutos
+   *  ficava em branco, que é o caso normal. Nenhum teste pegava porque o caminho da
+   *  tela nunca era exercitado (o E2E anterior criava missões pelo banco).
+   *
+   *  A regra vale para as duas chaves numéricas: `null` = ausente; valor inválido
+   *  (zero, negativo, texto) continua sendo erro, e é isso que o organizador precisa
+   *  saber.
+   */
+  const rawCount = record.count ?? record.total;
+  const hasCount = rawCount !== undefined && rawCount !== null;
+  const count = hasCount ? toPositiveInt(rawCount) : null;
+  if (hasCount && count === null) {
     errors.push('`count` deve ser um inteiro maior que zero.');
   }
 
-  const minutes = record.minutes === undefined ? null : toPositiveInt(record.minutes);
-  if (record.minutes !== undefined && minutes === null) {
+  const hasMinutes = record.minutes !== undefined && record.minutes !== null;
+  const minutes = hasMinutes ? toPositiveInt(record.minutes) : null;
+  if (hasMinutes && minutes === null) {
     errors.push('`minutes` deve ser um inteiro maior que zero.');
   }
 

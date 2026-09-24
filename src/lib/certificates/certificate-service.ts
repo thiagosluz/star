@@ -66,6 +66,7 @@ import {
 } from '@/lib/certificates/layout-renderer';
 import { computeSpeakerWorkload } from '@/domain/speakers/speaker-rules';
 import { notifyCertificateIssued } from '@/lib/communication/notification-service';
+import { rewardCertificateIssuedById } from '@/lib/gamification/hooks';
 import { renderCertificatePdf, renderCertificateSvg } from '@/lib/certificates/renderer';
 import { getSigningConfig, isSigningConfigured, signContentHash, verifySignature } from '@/lib/certificates/signer';
 
@@ -774,6 +775,22 @@ export async function generateCertificate(input: {
      * emissão inline quanto pelo worker — quem emite, avisa.
      */
     await notifyCertificateIssued({
+      tenantId: input.tenantId,
+      certificateId: certificate.id,
+    });
+
+    /**
+     * ── O CERTIFICADO EMITIDO MOVE A GAMIFICAÇÃO (FASE 43) ──────────────────────
+     *
+     *  Aqui e não em `issueCertificate`, porque ESTE é o ponto por onde os dois
+     *  caminhos passam: a emissão imediata da tela e a geração pelo worker. Registrar
+     *  no pedido pagaria por um PDF que pode falhar, e o documento só é promessa
+     *  cumprida quando existe.
+     *
+     *  Depois do commit e sem poder falhar (invariante 8): o arquivo já está no
+     *  storage e o banco já diz `ISSUED`.
+     */
+    await rewardCertificateIssuedById({
       tenantId: input.tenantId,
       certificateId: certificate.id,
     });

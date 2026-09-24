@@ -376,6 +376,12 @@ enum CardTrigger {
   EVENT_ATTENDANCE_FULL
   /// Carta concedida ao ler o QR de um patrocinador (FASE 42).
   SPONSOR_QR
+  /// Carta concedida quando a inscrição é confirmada (FASE 43).
+  REGISTRATION_CONFIRMED
+  /// Carta concedida quando a pessoa emite um certificado (FASE 43).
+  CERTIFICATE_ISSUED
+  /// Carta concedida a quem é sorteado numa rodada (FASE 43).
+  RAFFLE_WON
 }
 
 /// Situação do vínculo entre uma pessoa e um patrocinador (FASE 42).
@@ -401,6 +407,12 @@ enum XpSourceKind {
   REFERRAL
   /// Visita ao estande por QR do patrocinador (FASE 42).
   SPONSOR_QR
+  /// Inscrição confirmada — no evento ou numa atividade (FASE 43).
+  REGISTRATION_CONFIRMED
+  /// Certificado emitido para a própria pessoa (FASE 43).
+  CERTIFICATE_ISSUED
+  /// Posição premiada numa rodada de sorteio (FASE 43).
+  RAFFLE_WON
 }
 
 enum TaskKind {
