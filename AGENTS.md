@@ -16,10 +16,10 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 43 (F15, F21–F25, F29–F43 entregues; a F44+ é a próxima)
-Testes ................. 2228 (Vitest: unit + integração) + 148 (Playwright E2E)
-ADRs ................... 235 (numeração GLOBAL e sequencial — a próxima é ADR-236)
-Permissões ............. 65 (11 papéis, 4 escopos)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 44 (F15, F21–F25, F29–F44 entregues; a F45+ é a próxima)
+Testes ................. 2272 (Vitest: unit + integração) + 150 (Playwright E2E)
+ADRs ................... 243 (numeração GLOBAL e sequencial — a próxima é ADR-244)
+Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2228+ testes passando
+npm test              # esperado: 2272+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -301,16 +301,16 @@ Link + QR do telão ...... /t/<slug>/administracao/eventos/<eventId>/sorteios �
 Conferir fora do site ... npx tsx prisma/scripts/audit-raffle.ts --semente <hex> --lista lista.json
 ```
 
-Cinco regras que quebram fácil: **a seleção do sorteio vive em `draw-selection.ts`, sem
-import de runtime**, e é ela que o servidor E o navegador usam — reimplementar no cliente
-faria a auditoria validar outra regra; **o documento canônico da lista é
-`[{ index, code, minutes }]`** (o `userId` fica fora do hash: não decide o sorteio);
-**o payload do resultado é versão 4 desde a FASE 30**, com o hash da lista e o NÚMERO DA
-RODADA assinados (a 3, a 2 e a 1 seguem verificáveis, cada uma no seu formato); **o código público (`P-…`) é derivado de
-(sorteio, participante)** e é o que liga a linha da lista à posição do ganhador; e **a
-auditoria declara o que NÃO prova** — o compromisso amarra a semente, não a lista, porque
-o credenciamento continua até a apuração (dívida E36). O telão é público desde a criação
-(dívida E37) e **não relaxa a privacidade**: o nome chega mascarado do servidor.
+Cinco regras que quebram fácil: **a seleção vive em `draw-selection.ts`**, sem import de
+runtime, e é a MESMA no servidor e no navegador (reimplementar no cliente faria a auditoria
+validar outra regra); **o documento canônico da lista é `[{ index, code, minutes }]`** (o
+`userId` fica fora do hash: não decide o sorteio); **o payload do resultado é versão 4 desde a
+FASE 30**, com o hash da lista e o NÚMERO DA RODADA assinados (a 3, a 2 e a 1 seguem
+verificáveis, cada uma no seu formato); **o código público (`P-…`) é derivado de (sorteio,
+participante)** e liga a linha da lista à posição do ganhador; e **a auditoria declara o que
+NÃO prova** — o compromisso amarra a semente, não a lista, porque o credenciamento continua
+até a apuração (dívida E36). O telão é público desde a criação (E37) e **não relaxa a
+privacidade**: o nome chega mascarado do servidor.
 
 ### Sorteio ao vivo, em rodadas (FASE 30)
 
@@ -328,17 +328,14 @@ Auditoria ............... uma seção por rodada (compromisso, lista e reproduç
 ```
 
 Cinco regras que quebram fácil: **cada rodada tem a PRÓPRIA semente** — revelar a da rodada
-1 entregaria os ganhadores da 2 a quem lesse o telão (ADR-144); **as POSIÇÕES continuam entre
-as rodadas** (a rodada 2 entrega a 2ª posição do sorteio, e a entrega do prêmio é por
-`positionId` desde a FASE 16); **o prêmio e o patrocinador são ANÚNCIO e ficam FORA do
-documento assinado** — corrigir o texto não pode invalidar um resultado publicado (ADR-145),
-e há teste unitário prendendo isso; **a roleta é apresentação, não sorteio**: ela passa os
-nomes REAIS da lista publicada daquela rodada, depois de o servidor assinar o resultado
-(ADR-146), e **a lista nasce na APURAÇÃO** — enquanto o telão ainda tem em mãos a rodada
-anunciada ele ESPERA a releitura em vez de revelar sem roleta (a rodada apurada sem lista,
-do histórico antigo, é que revela direto, em vez de inventar nomes — armadilha 78); e **uma
-rodada preparada por vez** — dois compromissos no ar deixariam o telão sem saber o que
-anunciar.
+1 entregaria os ganhadores da 2 (ADR-144); **as POSIÇÕES continuam entre as rodadas**, e a
+entrega do prêmio é por `positionId` desde a FASE 16; **o prêmio e o patrocinador são ANÚNCIO
+e ficam FORA do documento assinado** — corrigir o texto não pode invalidar resultado
+publicado (ADR-145), com teste unitário prendendo isso; **a roleta é apresentação, não
+sorteio**: ela passa os nomes REAIS da lista publicada depois de o servidor assinar
+(ADR-146), e **a lista nasce na APURAÇÃO** — o telão ESPERA a releitura em vez de revelar sem
+roleta (a rodada antiga sem lista revela direto, em vez de inventar nomes — armadilha 78); e
+**uma rodada preparada por vez**, senão o telão não sabe o que anunciar.
 
 A rodada 1 do histórico foi **copiada** pela migração para `raffle_rounds`, e as colunas de
 semente/lista do sorteio são **legado congelado** desde então. O fluxo ao vivo assina por
@@ -557,8 +554,9 @@ vivo negocia o transporte** na mesma rota (SSE com o polling como caminho de vol
 
 **Privacidade:** `User.isPublicProfile` nasceu `true` e ninguém podia escolher — o nome dos
 ganhadores saía COMPLETO no resultado público, contra a regra documentada. O padrão passou a
-`false` e as linhas existentes foram normalizadas (ADR-139, armadilha 58). Falta a tela para
-quem QUER se identificar (dívida E35).
+`false` e as linhas existentes foram normalizadas (ADR-139, armadilha 58). A tela da escolha
+chegou na FASE 44 (dívida **E35** quitada): o nome completo no resultado público é um
+interruptor do perfil público.
 
 ### Sorteios (FASE 16)
 
@@ -739,28 +737,17 @@ driver `log` é o modo de operação de desenvolvimento e de teste — a suíte 
 
 ### Contas do seed — **não têm senha**
 
-`ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e
-tenancy; elas **não têm linha em `account`**, então login por senha falha — e isso é
-intencional. Para usar a interface com elas:
-
-1. crie uma conta em `/signup`;
-2. vincule-a (`user_tenant_profiles`, `status = ACTIVE`, com `tenantId`) e conceda um
-   papel (`role_assignments`, ex. `role = 'ADMIN'`, `scope = 'TENANT'`).
-
-O caminho mais rápido é reaproveitar `tests/e2e/helpers.ts` (`linkUser` + `grantRole`)
-ou o Prisma Studio (`npm run db:studio`).
+`ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e tenancy;
+elas **não têm linha em `account`**, então login por senha falha — é intencional. Para
+usá-las na interface: crie uma conta em `/signup`, vincule-a (`user_tenant_profiles`,
+`status = ACTIVE`, com `tenantId`) e conceda um papel (`role_assignments`, ex. `ADMIN`,
+escopo `TENANT`) — o caminho mais rápido é `tests/e2e/helpers.ts`.
 
 ### Contas de teste com senha — o caminho rápido para testar a interface
 
-```bash
-npm run db:seed:dev      # uma conta por perfil (os 10 papéis + estados de borda)
-# senha de todas: a de SEED_TEST_PASSWORD no .env   ·   doc: docs/contas-de-teste.md
-```
-
-16 contas `@eventflow.test`: `superadmin@`, `owner@`, `admin@`, `organizador@`,
-`organizador-evento@`, `presidente@`, `revisor@`, `palestrante@`, `equipe@`,
-`equipe-evento@`, `participante@`, `patrocinador@`, `multi@`, `convidado@`, `suspenso@`, `semvinculo@`.
-O script é idempotente, **regrava a senha** em cada execução e **recusa rodar com
+`npm run db:seed:dev` cria **16 contas** `@eventflow.test` (uma por perfil, mais os estados de
+borda; nomes e papéis em `docs/contas-de-teste.md`), com a senha de `SEED_TEST_PASSWORD` no
+`.env`. O script é idempotente, **regrava a senha** em cada execução e **recusa rodar com
 `NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por
 `reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
 
@@ -875,7 +862,8 @@ tests/{unit,integration,e2e}
 | 41 | **Vitrine do patrocínio** (a cota define **cor** e **tamanho da logo** na página pública — Pequena · Média · Grande · Destaque —, com **prévia do cartão** no cadastro e amostras de cor como atalho; a página desenha uma faixa por cota com **cartões tingidos**; a coluna de cor existia desde a FASE 17 e **não tinha leitor**); não declarou dívida) — escopo definido pelo humano | ✅ |
 | 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe **autorizar** ou não, com o MESMO crédito (LGPD art. 8º §3º); lead de **nome e e-mail** com prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
 | 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP nas três portas, chave no ALVO contra farm), **certificado emitido** (50 XP na geração), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada** (enviar e aceitar); tirou "Indicação" e "Bônus" do formulário (sem emissor) e achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
-| 44+ | *a definir pelo humano* | ⏳ |
+| 44 | **Perfil público do participante** (`/u/<handle>` com **quinze campos** de visibilidade em três níveis — internet · quem participa desta instituição · só eu —, pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa**: o `user` é global e a RLS não o protege; `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; a trilha guarda a decisão, não a bio; quitou a **E35** e achou 4 defeitos reais, entre eles a **posição relativa invertida**; declarou **E60/E61/E62**) | ✅ |
+| 45+ | *a definir pelo humano* | ⏳ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
 > identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
@@ -883,14 +871,12 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**56 itens abertos**; A=3, B=4, C=2, D=3,
-E=34, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**,
-com o histórico do que cada fase quitou e declarou. O total publicado até a FASE 35 (55)
-somava linhas **já riscadas**; vale a contagem linha a linha do documento. Quitados: **A3, B7,
-E47** (F36) e **E41, E48** (F37). Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39),
-**E54/E55** (F40), **E56/E57** (F42) e **E58/E59** (F43) — as FASES 41, 42 e 43 não quitaram
-item deste levantamento. Leia antes de propor a próxima fase: ele diz o que falta e a ordem
-sugerida.
+**Dívidas técnicas:** o levantamento consolidado (**58 itens abertos**; A=3, B=4, C=2, D=3,
+E=36, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**,
+com o histórico do que cada fase quitou e declarou. Quitados: **A3, B7, E47** (F36), **E41,
+E48** (F37) e **E35** (F44). Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39),
+**E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43) e **E60/E61/E62** (F44). Leia antes de
+propor a próxima fase: ele diz o que falta e a ordem sugerida.
 
 ---
 
@@ -898,7 +884,7 @@ sugerida.
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-43-catalogo-de-gamificacao.md`; a referência de comunicação é
+   fase entregue** (`docs/fase-44-perfil-publico-do-participante.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

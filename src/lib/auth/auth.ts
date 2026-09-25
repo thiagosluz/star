@@ -180,9 +180,18 @@ export const auth = betterAuth({
 
   user: {
     additionalFields: {
-      publicHandle: { type: 'string', required: false, input: true },
-      headline: { type: 'string', required: false, input: true },
-      country: { type: 'string', required: false, input: true },
+      /**
+       * ─── CAMPOS DO PERFIL PÚBLICO SÃO SÓ DE SAÍDA (FASE 44) ─────────────────
+       *
+       *  Eles continuam no objeto do usuário (o layout lê `publicHandle`), mas NÃO
+       *  podem ser escritos pela API de autenticação: quem grava é o serviço do perfil
+       *  público, que valida forma, palavras reservadas, unicidade e a espera entre
+       *  trocas. Com `input: true`, um `POST /api/auth/update-user` aceitaria
+       *  `publicHandle: "admin"` e passaria por cima de todas as regras.
+       */
+      publicHandle: { type: 'string', required: false, input: false },
+      headline: { type: 'string', required: false, input: false },
+      country: { type: 'string', required: false, input: false },
     },
   },
 

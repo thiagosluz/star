@@ -134,6 +134,17 @@ export const PERMISSIONS = {
   // ── Conteúdo / Landing page ─────────────────────────────────────────────────
   PAGE_MANAGE: 'page:manage',
 
+  // ── Perfil público do participante (FASE 44) ────────────────────────────────
+  /**
+   * A pessoa mantém o PRÓPRIO perfil público: `@handle`, bio, interesses, links e a
+   * decisão de visibilidade de cada campo.
+   *
+   * `:own` porque o dado é dela: a permissão sozinha não basta — o serviço escreve
+   * sempre na linha do `userId` que veio da SESSÃO, e nunca em outra pessoa. É a
+   * única porta que edita identidade global (`user`), e por isso ela é estreita.
+   */
+  PROFILE_MANAGE_OWN: 'profile:manage:own',
+
   // ── Central do participante (FASE 32) ───────────────────────────────────────
   /**
    * Ver o diretório de participantes da instituição (todos os eventos) e abrir a
@@ -431,6 +442,11 @@ const PARTICIPANT_PERMISSIONS: Permission[] = [
   PERMISSIONS.XP_READ_OWN,
   PERMISSIONS.CERTIFICATE_READ_OWN,
   PERMISSIONS.SPONSOR_READ,
+  /**
+   * O perfil público é de QUEM PARTICIPA, e por isso está nesta lista: ela é o
+   * "mínimo que todo usuário tem". Publicar a própria vitrine não é ato de equipe.
+   */
+  PERMISSIONS.PROFILE_MANAGE_OWN,
 ];
 
 /**
@@ -504,6 +520,8 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     PERMISSIONS.REVIEW_SUBMIT_OWN,
     PERMISSIONS.REVIEW_READ_OWN,
     PERMISSIONS.SPONSOR_READ,
+    /** Revisor é uma PESSOA na instituição: também publica o próprio perfil (FASE 44). */
+    PERMISSIONS.PROFILE_MANAGE_OWN,
   ],
 
   // FINANCE cuida do comercial: patrocínios e relatórios.
@@ -515,6 +533,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     PERMISSIONS.SPONSOR_MANAGE,
     PERMISSIONS.SPONSOR_READ,
     PERMISSIONS.REGISTRATION_READ_ANY,
+    PERMISSIONS.PROFILE_MANAGE_OWN,
   ],
 
   // SPEAKER apresenta: gerencia o próprio material e a própria presença.
@@ -537,6 +556,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
      */
     PERMISSIONS.SPEAKER_PROFILE_UPDATE_OWN,
     PERMISSIONS.SPEAKER_MATERIAL_MANAGE_OWN,
+    PERMISSIONS.PROFILE_MANAGE_OWN,
   ],
 
   // STAFF opera credenciamento no dia do evento.
@@ -561,6 +581,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     PERMISSIONS.DEMAND_READ,
     PERMISSIONS.DEMAND_MANAGE,
     PERMISSIONS.DEMAND_ASSIGN_OWN_TEAM,
+    PERMISSIONS.PROFILE_MANAGE_OWN,
   ],
 
   PARTICIPANT: PARTICIPANT_PERMISSIONS,
@@ -570,6 +591,8 @@ export const ROLE_PERMISSIONS: Record<RoleKey, readonly Permission[]> = {
     PERMISSIONS.TENANT_READ,
     PERMISSIONS.EVENT_READ,
     PERMISSIONS.SPONSOR_READ,
+    /** O contato da empresa é uma PESSOA: o perfil dela é dela (FASE 44). */
+    PERMISSIONS.PROFILE_MANAGE_OWN,
   ],
 };
 

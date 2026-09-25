@@ -212,15 +212,24 @@ export function CheckboxField({
   name,
   defaultChecked = false,
   hint,
+  value,
 }: {
   label: string;
   name: string;
   defaultChecked?: boolean;
   hint?: string;
+  /**
+   * Valor enviado quando marcado (FASE 44).
+   *
+   * Sem ele, um grupo de checkboxes com o MESMO nome manda apenas "on" — e o servidor
+   * não sabe QUAL item foi escolhido. É o que a escolha de eventos do perfil público
+   * precisa: N caixas, um nome só, N identificadores.
+   */
+  value?: string;
 }) {
   return (
     <label className="flex items-start gap-2.5 text-sm">
-      <Checkbox name={name} defaultChecked={defaultChecked} className="mt-0.5" />
+      <Checkbox name={name} value={value} defaultChecked={defaultChecked} className="mt-0.5" />
       <span className="min-w-0">
         <span className="font-medium text-foreground">{label}</span>
         {hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}

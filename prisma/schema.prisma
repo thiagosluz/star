@@ -940,6 +940,25 @@ model User {
   orcidId      String? @db.VarChar(19)
   lattesId     String? @db.VarChar(32)
 
+  /**
+   * ─── PERFIL PÚBLICO DO PARTICIPANTE (FASE 44) ───────────────────────────────
+   *
+   *  As colunas acima nasceram com o modelo e ficaram sem leitor: `bio`, `headline`
+   *  e `country` não eram lidas por ninguém, e `publicHandle` só aparecia no ranking.
+   *  A FASE 44 dá tela e página a elas — e estas colunas novas são o que faltava
+   *  para a PESSOA decidir o que aparece.
+   */
+  /// Nível de visibilidade por campo (`{ displayName: 'PUBLIC', xp: 'PRIVATE', … }`).
+  profileAudiences Json @default("{}")
+  /// Interesses DECLARADOS pela pessoa (nunca inferidos do comportamento).
+  publicInterests  String[] @default([])
+  /// Site pessoal exibido no perfil (http/https, validado no domínio).
+  publicSiteUrl    String?  @db.VarChar(1024)
+  /// Ser achável em buscadores. `false` de propósito: ter página ≠ ser encontrado.
+  profileIndexable Boolean  @default(false)
+  /// Última troca de `@handle` — a espera entre trocas mora no domínio.
+  usernameChangedAt DateTime? @db.Timestamptz(6)
+
   /// O nome pode aparecer COMPLETO em resultado público (sorteio) — consentimento.
   ///
   /// O padrão é `false`, e isso é a regra, não um detalhe: publicar "Fulano ganhou o
@@ -1152,6 +1171,18 @@ model UserTenantProfile {
   invitedAt    DateTime? @db.Timestamptz(6)
   joinedAt     DateTime? @db.Timestamptz(6)
   lastAccessAt DateTime? @db.Timestamptz(6)
+
+  /**
+   * ─── PERFIL PÚBLICO NESTA INSTITUIÇÃO (FASE 44) ─────────────────────────────
+   *
+   *  O perfil é POR INSTITUIÇÃO (o `@handle` é da pessoa, os dados são de cada
+   *  casa). Estes dois campos são o que só faz sentido por vínculo: aparecer no
+   *  diretório DESTA comunidade, e quais eventos DESTA casa a pessoa quer listar.
+   */
+  /// Aparecer na lista pública de participantes desta instituição.
+  listedInDirectory Boolean  @default(false)
+  /// Eventos desta instituição que a pessoa escolheu mostrar no perfil.
+  publicEventIds    String[] @default([])
 
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)

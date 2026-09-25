@@ -10,6 +10,7 @@ import {
   Compass,
   FileText,
   Gauge,
+  Globe,
   GraduationCap,
   Handshake,
   Inbox,
@@ -219,6 +220,17 @@ export function buildTenantNav(input: {
           label: isSponsor ? 'Área do patrocinador' : 'Convite de patrocinador',
           icon: <Handshake className="size-4" aria-hidden />,
           visible: isSponsor || hasPendingSponsorInvite,
+        },
+        {
+          /**
+           * Meu perfil público (FASE 44): a vitrine da pessoa — o que ela escolheu
+           * mostrar. A porta é PESSOAL (`profile:manage:own`) e a posse é a própria
+           * sessão: ninguém edita o perfil de outra pessoa.
+           */
+          href: href('/meu-perfil-publico'),
+          label: 'Meu perfil público',
+          icon: <Globe className="size-4" aria-hidden />,
+          permission: PERMISSIONS.PROFILE_MANAGE_OWN,
         },
         {
           href: href('/cartas'),
