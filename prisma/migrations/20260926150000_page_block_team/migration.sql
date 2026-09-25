@@ -1,0 +1,31 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  BLOCO "EQUIPE DO EVENTO" — a vitrine (FASE 45)
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  ESCRITA À MÃO (armadilha 53)
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Acrescentar um valor a um ENUM não é expressável pelo `prisma migrate dev` sem
+--  que ele também proponha RENAME/DROP dos índices parciais escritos à mão pelas
+--  fases anteriores (o `schema.prisma` não os declara). Aqui ficou só o valor novo.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE `ALTER TYPE` SOZINHO, E NADA MAIS
+--  ─────────────────────────────────────────────────────────────────────────────
+--  No PostgreSQL, um valor recém-adicionado a um enum **não pode ser USADO na mesma
+--  transação** que o adicionou. Uma migração que criasse o valor e já inserisse um
+--  bloco `TEAM` falharia com "unsafe use of new value of enum type" — por isso este
+--  arquivo tem UMA instrução, e o bloco é criado depois, pelo serviço.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  O QUE MAIS MUDOU, E POR QUE NÃO APARECE AQUI
+--  ─────────────────────────────────────────────────────────────────────────────
+--  `user.publicSocialLinks` (também da FASE 45) veio na migração anterior
+--  (`20260926140000_public_contacts`), junto com a decisão de visibilidade que a
+--  governa: as duas são coisas diferentes — uma amplia o catálogo de BLOCOS, a outra
+--  guarda o CONTATO da pessoa — e separá-las deixa o histórico legível.
+--
+--  Nada de RLS, GRANT ou backfill: `page_blocks` já é tenant-scoped com policy e
+--  FORCE, e a concessão é por tabela. Nenhum bloco existente muda de tipo.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+ALTER TYPE "PageBlockType" ADD VALUE IF NOT EXISTS 'TEAM';

@@ -30,6 +30,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import type { CardRarity } from '@/domain/gamification/types';
+import type { PublicContacts } from '@/domain/profile/public-contacts';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Visibilidade
@@ -91,6 +92,7 @@ export const PUBLIC_PROFILE_FIELDS = [
   'bio',
   'interests',
   'links',
+  'contacts',
   'level',
   'xp',
   'streak',
@@ -111,6 +113,7 @@ export const PUBLIC_PROFILE_FIELD_LABELS: Readonly<Record<PublicProfileField, st
   bio: 'Sobre você',
   interests: 'Interesses',
   links: 'ORCID, Lattes e site',
+  contacts: 'E-mail e redes sociais',
   level: 'Nível, título e prestígio',
   xp: 'XP total',
   streak: 'Dias seguidos de participação',
@@ -130,6 +133,8 @@ export const PUBLIC_PROFILE_FIELD_HINTS: Readonly<Record<PublicProfileField, str
   bio: 'Um parágrafo curto sobre você.',
   interests: 'Escritos por você — o sistema nunca deduz interesse do que você assistiu.',
   links: 'ORCID, Lattes e o seu site.',
+  contacts:
+    'O seu e-mail de conta e as redes que você preencheu abaixo. É o único campo que publica contato direto: desligado (padrão), ninguém vê nem o e-mail nem as redes.',
   level: 'Nível, título e prestígio.',
   xp: 'O número exato de XP. Desligado, a página mostra o nível e poupa comparações.',
   streak: 'Quantos dias seguidos de participação.',
@@ -148,6 +153,14 @@ export const DEFAULT_PROFILE_AUDIENCES: Readonly<Record<PublicProfileField, Prof
   bio: 'PUBLIC',
   interests: 'PUBLIC',
   links: 'PUBLIC',
+  /**
+   * Contato direto é o único campo que nasce FECHADO entre os de identidade.
+   *
+   * Não é timidez: e-mail e rede social são convite para qualquer um falar com a
+   * pessoa, e a página é a internet aberta (a FASE 22 já custou caro por um
+   * consentimento que nascia ligado — ADR-139). Quem QUER ser encontrado liga.
+   */
+  contacts: 'PRIVATE',
   level: 'PUBLIC',
   xp: 'ATTENDEES_ONLY',
   streak: 'ATTENDEES_ONLY',
@@ -176,6 +189,8 @@ export const PUBLIC_PROFILE_SHARE_KEYS = [
   'siteUrl',
   'orcidId',
   'lattesId',
+  'email',
+  'socialLinks',
   'level',
   'levelTitle',
   'prestige',
@@ -600,6 +615,10 @@ export interface PublicProfileSource {
   siteUrl: string | null;
   orcidId: string | null;
   lattesId: string | null;
+  /** E-mail de contato da pessoa — só sai com o campo `contacts` autorizado. */
+  email: string | null;
+  /** LinkedIn, Instagram, GitHub e YouTube (FASE 45). */
+  socialLinks: PublicContacts;
   level: number;
   levelTitle: string;
   prestige: number;
@@ -632,6 +651,8 @@ export interface PublicProfilePayload {
   siteUrl?: string | null;
   orcidId?: string | null;
   lattesId?: string | null;
+  email?: string | null;
+  socialLinks?: PublicContacts;
   level?: number;
   levelTitle?: string;
   prestige?: number;
@@ -653,6 +674,7 @@ const SHARE_KEYS_BY_FIELD: Readonly<Record<PublicProfileField, readonly PublicPr
   bio: ['bio'],
   interests: ['interests'],
   links: ['siteUrl', 'orcidId', 'lattesId'],
+  contacts: ['email', 'socialLinks'],
   level: ['level', 'levelTitle', 'prestige'],
   xp: ['xp'],
   streak: ['streak'],
@@ -711,6 +733,12 @@ export function buildPublicProfile(input: {
           break;
         case 'lattesId':
           payload.lattesId = source.lattesId;
+          break;
+        case 'email':
+          payload.email = source.email;
+          break;
+        case 'socialLinks':
+          payload.socialLinks = source.socialLinks;
           break;
         case 'level':
           payload.level = source.level;

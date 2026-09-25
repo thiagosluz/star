@@ -22,6 +22,7 @@ import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { LandingThemeFields } from '@/components/admin/landing-theme-fields';
 import { BlockContentFields } from '@/components/admin/block-content-fields';
 import { blockContentToValues } from '@/components/admin/block-content-values';
+import { listEventTeamOptions } from '@/lib/events/team-directory';
 import { AssetUploader } from '@/components/admin/asset-uploader';
 import {
   addBlockAction,
@@ -95,6 +96,12 @@ export default async function EventLandingPageEditor({
   const tierOptions = (board?.tiers ?? []).map((tier) => ({
     value: tier.id,
     label: `${tier.name} (${tier.sponsorCount} patrocinador(es))`,
+  }));
+
+  /** Equipes do evento, para o filtro do bloco de equipe (FASE 45). */
+  const teamOptions = (await listEventTeamOptions(tenantId, eventId)).map((team) => ({
+    value: team.id,
+    label: `${team.name} (${team.memberCount} pessoa(s))`,
   }));
 
   /**
@@ -447,6 +454,7 @@ export default async function EventLandingPageEditor({
                               type={block.type}
                               values={values}
                               tierOptions={tierOptions}
+                              teamOptions={teamOptions}
                               libraryOptions={libraryOptions}
                               uploadContext={{
                                 tenantSlug,

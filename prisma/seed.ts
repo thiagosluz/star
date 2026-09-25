@@ -1268,6 +1268,18 @@ async function main() {
        * na renderização — a ordem do seed não importa.
        */
       { type: 'CALL_FOR_PROPOSALS', content: { title: 'Chamadas abertas', includeClosed: false } },
+      /**
+       * O bloco de EQUIPE (FASE 45) entra com o texto de apoio e sem filtro de equipe:
+       * a página mostra todas as equipes ativas do evento com a etiqueta de cada uma —
+       * que é o que o organizador vê na primeira vez que adiciona o bloco.
+       */
+      {
+        type: 'TEAM',
+        content: {
+          title: 'A equipe por trás do evento',
+          description: 'Quem trabalha para que tudo aconteça no dia.',
+        },
+      },
       { type: 'SPONSORS', content: {} },
     ];
 

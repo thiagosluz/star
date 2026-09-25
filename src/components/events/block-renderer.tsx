@@ -3,6 +3,8 @@ import {
   ArrowRight,
   CalendarDays,
   Clock,
+  Link2,
+  Mail,
   MapPin,
   Mic,
   Star,
@@ -31,6 +33,8 @@ import {
 } from '@/domain/events/sponsor-rules';
 import { CALL_STATE_LABELS } from '@/domain/proposals/call-rules';
 import type { CallView } from '@/lib/proposals/call-service';
+import { hasPublicContacts, PUBLIC_CONTACT_LABELS, PUBLIC_CONTACT_NETWORKS } from '@/domain/profile/public-contacts';
+import { teamInitials } from '@/domain/events/team-rules';
 import { Section, SectionHeading } from '@/components/events/theme-scope';
 import { SpeakerGallery } from '@/components/events/speaker-gallery';
 
@@ -865,6 +869,131 @@ function RegistrationCtaBlock({
   );
 }
 
+/**
+ * Equipe do evento (FASE 45).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O BLOCO NÃO DEIXA O ORGANIZADOR ESCREVER A EQUIPE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O corpo do bloco é a equipe REAL do evento — as mesmas `event_teams` que organizam
+ *  as demandas internas. Uma lista digitada à mão na página continuaria mostrando quem
+ *  saiu da equipe em março, e o organizador teria dois lugares para manter a mesma
+ *  verdade (a mesma régua do bloco de palestrantes, FASE 25).
+ *
+ *  O que o organizador escolhe é o TÍTULO, o texto de apoio e, se quiser, UMA equipe.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O CARTÃO NÃO DECIDE PRIVACIDADE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Ele recebe `organizers` já montado (`buildPublicTeam`): quem não autorizou foto
+ *  chega com `avatarUrl: null` e cai nas iniciais; quem não autorizou contato chega
+ *  sem e-mail e sem links. Nada de `if` de privacidade aqui — a página não é uma
+ *  segunda régua (o comentário da página do perfil público diz o mesmo desde a F44).
+ */
+function TeamBlock({
+  organizers,
+  teams,
+  content,
+}: {
+  organizers: PublicEventDetail['organizers'];
+  teams: PublicEventDetail['teams'];
+  content: unknown;
+}) {
+  const title = readString(content, 'title');
+  const description = readString(content, 'description');
+  const teamId = readString(content, 'teamId');
+
+  const chosen = teamId ? teams.find((team) => team.id === teamId) : null;
+  const cards = teamId ? organizers.filter((card) => card.labels.includes(chosen?.name ?? '')) : organizers;
+
+  if (cards.length === 0) return null;
+
+  return (
+    <Section id="equipe">
+      <SectionHeading
+        eyebrow="Quem organiza"
+        title={title ?? (chosen ? chosen.name : 'Equipe do evento')}
+        description={
+          description ??
+          (chosen
+            ? `Quem está à frente de ${chosen.name}.`
+            : 'As pessoas que fazem este evento acontecer.')
+        }
+      />
+      <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4" data-testid="team-block">
+        {cards.map((card) => (
+          <li key={card.userId} className="space-y-2 text-center" data-testid="team-card">
+            <div className="relative mx-auto w-full max-w-44 overflow-hidden rounded-lg border border-border bg-surface-low">
+              {card.avatarUrl ? (
+                /**
+                 * A foto é a MESMA do perfil na plataforma e já passou pela régua de
+                 * visibilidade — se está aqui, a pessoa autorizou.
+                 */
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={card.avatarUrl}
+                  alt={card.name}
+                  className="aspect-4/5 w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div
+                  className="flex aspect-4/5 w-full items-center justify-center text-3xl font-semibold text-muted-foreground"
+                  aria-hidden
+                >
+                  {teamInitials(card.name)}
+                </div>
+              )}
+              {card.labels.length > 0 ? (
+                <span className="absolute inset-x-2 bottom-2 rounded-md bg-inverse-surface/90 px-2 py-1 text-xs font-medium text-inverse-on-surface">
+                  {card.labels.join(' / ')}
+                </span>
+              ) : null}
+            </div>
+
+            <p className="font-medium leading-tight">{card.name}</p>
+
+            {card.email || hasPublicContacts(card.links) ? (
+              <div
+                className="flex items-center justify-center gap-2 text-muted-foreground"
+                data-testid="team-contacts"
+              >
+                {card.email ? (
+                  <a
+                    href={`mailto:${card.email}`}
+                    aria-label={`Enviar e-mail para ${card.name}`}
+                    title={card.email}
+                    className="rounded-md p-1 hover:text-foreground"
+                  >
+                    <Mail className="size-4" aria-hidden />
+                  </a>
+                ) : null}
+                {PUBLIC_CONTACT_NETWORKS.map((network) => {
+                  const url = card.links[network];
+                  if (!url) return null;
+
+                  return (
+                    <a
+                      key={network}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      aria-label={`${PUBLIC_CONTACT_LABELS[network]} de ${card.name}`}
+                      className="rounded-md p-1 hover:text-foreground"
+                    >
+                      <Link2 className="size-4" aria-hidden />
+                    </a>
+                  );
+                })}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Dispatcher
 // ───────────────────────────────────────────────────────────────────────────────
@@ -922,6 +1051,8 @@ export function BlockRenderer({
           eventSlug={event.slug}
         />
       );
+    case 'TEAM':
+      return <TeamBlock organizers={event.organizers} teams={event.teams} content={content} />;
     case 'TRACKS':
       return <TracksBlock tracks={event.tracks} content={content} />;
     case 'CALL_FOR_PROPOSALS':

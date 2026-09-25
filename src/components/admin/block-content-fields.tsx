@@ -57,6 +57,7 @@ export function BlockContentFields({
   type,
   values,
   tierOptions,
+  teamOptions = [],
   libraryOptions = [],
   uploadContext,
 }: {
@@ -64,6 +65,13 @@ export function BlockContentFields({
   values: BlockContentValues;
   /** Cotas disponíveis, para o filtro do bloco de patrocinadores. */
   tierOptions: { value: string; label: string }[];
+  /**
+   * Equipes do evento (FASE 45), para o filtro do bloco de equipe.
+   *
+   * Vazio é o caso normal de um evento que ainda não montou equipe: o bloco mostra
+   * todas as equipes ativas, e o seletor só oferece "todas".
+   */
+  teamOptions?: { value: string; label: string }[];
   /**
    * Imagens já enviadas pela instituição (FASE 24, item E14).
    *
@@ -394,6 +402,35 @@ export function BlockContentFields({
             >
               <option value="">Todas as cotas</option>
               {tierOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Shell>
+        </>
+      ) : null}
+
+      {type === 'TEAM' ? (
+        <>
+          <Shell
+            label="Descrição de apoio"
+            hint="Uma linha sob o título do bloco (opcional)."
+          >
+            <Input name="description" defaultValue={values.description} aria-label="Descrição de apoio" />
+          </Shell>
+          <Shell
+            label="Mostrar apenas uma equipe"
+            hint="Sem escolha, o bloco exibe todas as equipes ativas do evento, com a etiqueta de cada uma."
+          >
+            <select
+              name="teamId"
+              defaultValue={values.teamId}
+              aria-label="Mostrar apenas uma equipe"
+              className="h-11 w-full rounded-sm border border-border bg-card px-3 text-sm text-foreground"
+            >
+              <option value="">Todas as equipes do evento</option>
+              {teamOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

@@ -456,6 +456,18 @@ function readBlockContent(type: PageBlockType, formData: FormData): unknown {
     case 'SPONSORS':
       return { title, ...(nullable(formData.get('tierId')) ? { tierId: text(formData.get('tierId')) } : {}) };
 
+    /**
+     * O bloco de EQUIPE (FASE 45), como o de chamadas, guarda só a decoração e o
+     * filtro: o corpo é a equipe real do evento, lida na renderização. Copiar nomes
+     * para dentro do bloco continuaria mostrando quem saiu da equipe em março.
+     */
+    case 'TEAM':
+      return {
+        title,
+        description: nullable(formData.get('description')) ?? undefined,
+        ...(nullable(formData.get('teamId')) ? { teamId: text(formData.get('teamId')) } : {}),
+      };
+
     case 'COUNTDOWN':
       return { title, label: nullable(formData.get('label')) ?? undefined };
 

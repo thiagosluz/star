@@ -186,6 +186,7 @@ export const PAGE_BLOCK_TYPES = [
   'RICH_TEXT',
   'SCHEDULE',
   'SPEAKERS',
+  'TEAM',
   'SPONSORS',
   'FAQ',
   'GALLERY',
@@ -252,6 +253,7 @@ export const RECOMMENDED_BLOCK_ORDER: readonly PageBlockType[] = [
   'TRACKS',
   'CALL_FOR_PROPOSALS',
   'SPEAKERS',
+  'TEAM',
   'SCHEDULE',
   'VENUE_MAP',
   'SPONSORS',
@@ -267,6 +269,7 @@ export const BLOCK_LABELS: Record<PageBlockType, string> = {
   RICH_TEXT: 'Texto',
   SCHEDULE: 'Agenda',
   SPEAKERS: 'Palestrantes',
+  TEAM: 'Equipe do evento',
   SPONSORS: 'Patrocinadores',
   FAQ: 'Perguntas frequentes',
   GALLERY: 'Galeria',
@@ -347,6 +350,16 @@ export const blockContentSchemas: Record<PageBlockType, z.ZodType> = {
   RICH_TEXT: z.object({ title: labelSchema.optional(), body: textSchema.default('') }),
   SCHEDULE: z.object({ title: labelSchema.optional() }),
   SPEAKERS: z.object({ title: labelSchema.optional() }),
+  TEAM: z.object({
+    title: labelSchema.optional(),
+    /**
+     * Parágrafo de apoio sob o título ("Quem faz este evento acontecer…"). É texto
+     * da PÁGINA: o corpo do bloco é a equipe real, lida na renderização.
+     */
+    description: z.string().trim().max(300).optional(),
+    /** Filtra por equipe: o bloco mostra só os membros daquela equipe. */
+    teamId: z.string().uuid().optional(),
+  }),
   SPONSORS: z.object({
     title: labelSchema.optional(),
     /**
@@ -398,6 +411,8 @@ export const BLOCK_DESCRIPTIONS: Record<PageBlockType, string> = {
   RICH_TEXT: 'Texto livre sobre o evento. Aceita parágrafos; HTML não é interpretado.',
   SCHEDULE: 'Agenda com as atividades cadastradas, com link direto para a inscrição.',
   SPEAKERS: 'Palestrantes das atividades, sem repetir nomes.',
+  TEAM:
+    'A equipe que organiza o evento, com a etiqueta de cada área. Lê as equipes do evento (a mesma lista usada nas demandas internas) — quem não autorizou foto aparece com as iniciais, e o contato só sai se a pessoa permitir.',
   SPONSORS: 'Logotipos dos patrocinadores, agrupados por cota.',
   FAQ: 'Perguntas frequentes em pares pergunta/resposta.',
   GALLERY: 'Galeria de imagens por URL (edições anteriores, local, divulgação).',
@@ -427,6 +442,7 @@ export const DEFAULT_BLOCK_CONTENT: Record<PageBlockType, unknown> = {
   RICH_TEXT: { title: 'Sobre o evento', body: '' },
   SCHEDULE: {},
   SPEAKERS: {},
+  TEAM: {},
   SPONSORS: {},
   FAQ: { items: [] },
   GALLERY: { images: [] },
@@ -592,6 +608,8 @@ export function summarizeBlockContent(type: PageBlockType, content: unknown): st
       return title || 'Agenda das atividades cadastradas';
     case 'SPEAKERS':
       return title || 'Palestrantes das atividades';
+    case 'TEAM':
+      return title || 'Equipe do evento';
     case 'TRACKS':
       return title || 'Trilhas da chamada de trabalhos';
     case 'CALL_FOR_PROPOSALS':

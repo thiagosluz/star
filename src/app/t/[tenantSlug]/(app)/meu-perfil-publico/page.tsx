@@ -18,6 +18,11 @@ import {
   USERNAME_MAX_LENGTH,
   USERNAME_MIN_LENGTH,
 } from '@/domain/profile/public-profile-rules';
+import {
+  PUBLIC_CONTACT_LABELS,
+  PUBLIC_CONTACT_NETWORKS,
+  type PublicContactNetwork,
+} from '@/domain/profile/public-contacts';
 import { getPublicProfileSettings } from '@/lib/profile/public-profile-service';
 import {
   AdminForm,
@@ -30,6 +35,21 @@ import { savePublicProfileAction } from '@/app/actions/public-profile-actions';
 
 export const metadata = { title: 'Meu perfil público' };
 export const dynamic = 'force-dynamic';
+
+/** Exemplo de cada rede: o placeholder é o que evita a pessoa colar o endereço errado. */
+const CONTACT_PLACEHOLDERS: Readonly<Record<PublicContactNetwork, string>> = {
+  linkedin: 'linkedin.com/in/seu-nome',
+  instagram: '@seu-perfil',
+  github: 'github.com/seu-usuario',
+  youtube: 'youtube.com/@seu-canal',
+};
+
+const CONTACT_HINTS: Readonly<Record<PublicContactNetwork, string>> = {
+  linkedin: 'Endereço do seu perfil. Vazio não mostra nada.',
+  instagram: 'Pode digitar só o @usuário — o endereço é montado sozinho.',
+  github: 'Endereço do seu perfil ou de um repositório.',
+  youtube: 'Canal, playlist ou vídeo.',
+};
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -192,6 +212,32 @@ export default async function MyPublicProfilePage({
               hint="Os 16 dígitos do endereço lattes.cnpq.br. Vazio não mostra nada."
             />
           </div>
+        </section>
+
+        <section className="space-y-3" data-testid="my-profile-contacts">
+          <SectionHeading
+            title="Como falar com você"
+            description="Estes campos alimentam o cartão do seu perfil e a vitrine da equipe dos eventos que você organiza — e só aparecem se você autorizar em “E-mail e redes sociais”, abaixo."
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {PUBLIC_CONTACT_NETWORKS.map((network) => (
+              <Field
+                key={network}
+                label={PUBLIC_CONTACT_LABELS[network]}
+                name={`contact_${network}`}
+                placeholder={CONTACT_PLACEHOLDERS[network]}
+                defaultValue={settings.contacts[network] ?? ''}
+                hint={CONTACT_HINTS[network]}
+              />
+            ))}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            O <strong>e-mail</strong> é o do seu cadastro
+            {settings.email ? ` (${settings.email})` : ''} e não tem campo aqui: ele sai
+            junto das redes, quando você autoriza o campo “E-mail e redes sociais”.
+          </p>
         </section>
 
         <section className="space-y-3">

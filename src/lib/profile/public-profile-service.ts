@@ -30,6 +30,11 @@ import { resolveArt } from '@/domain/gamification/card-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { publicBaseUrl } from '@/lib/public-url';
 import {
+  readPublicContacts,
+  sanitizePublicContacts,
+  type PublicContacts,
+} from '@/domain/profile/public-contacts';
+import {
   DEFAULT_PROFILE_AUDIENCES,
   MAX_INTERESTS,
   PUBLIC_BIO_MAX_LENGTH,
@@ -83,6 +88,10 @@ export interface PublicProfileSettings {
   siteUrl: string | null;
   orcidId: string | null;
   lattesId: string | null;
+  /** Redes de contato que a pessoa preencheu (FASE 45). O e-mail vem do cadastro. */
+  contacts: PublicContacts;
+  /** O e-mail do cadastro — exibido na tela só para a pessoa saber o que publica. */
+  email: string;
   avatarUrl: string | null;
   audiences: Record<PublicProfileField, ProfileAudience>;
   indexable: boolean;
@@ -110,6 +119,7 @@ export async function getPublicProfileSettings(input: {
           where: { id: input.userId },
           select: {
             name: true,
+            email: true,
             image: true,
             publicHandle: true,
             bio: true,
@@ -118,6 +128,7 @@ export async function getPublicProfileSettings(input: {
             lattesId: true,
             publicSiteUrl: true,
             publicInterests: true,
+            publicSocialLinks: true,
             profileAudiences: true,
             profileIndexable: true,
             isPublicProfile: true,
@@ -171,6 +182,8 @@ export async function getPublicProfileSettings(input: {
         siteUrl: data.user.publicSiteUrl,
         orcidId: data.user.orcidId,
         lattesId: data.user.lattesId,
+        contacts: readPublicContacts(data.user.publicSocialLinks),
+        email: data.user.email,
         avatarUrl: data.user.image,
         audiences: parseProfileAudiences(data.user.profileAudiences),
         indexable: data.user.profileIndexable,
@@ -202,6 +215,15 @@ export interface SavePublicProfileInput {
   /** Identificadores acadêmicos digitados pela pessoa (`null` limpa). */
   orcidId: string | null;
   lattesId: string | null;
+  /**
+   * Redes de contato cruas do formulário.
+   *
+   * AUSENTE **preserva** o que está gravado, e mapa vazio LIMPA — a mesma régua do
+   * `taxId` do patrocinador (FASE 17): a tela manda as quatro redes sempre (vazias
+   * quando a pessoa apagou), mas um chamador que não conhece o campo não pode apagar
+   * o contato de ninguém por omissão.
+   */
+  contacts?: Record<string, unknown>;
   /** A matriz crua do formulário — validada campo a campo. */
   audiences: Record<string, unknown>;
   indexable: boolean;
@@ -266,6 +288,21 @@ export async function savePublicProfile(
   const lattes = normalizeLattesId(input.lattesId);
   if (!lattes.ok) {
     return { ok: false as const, code: 'INVALID_INPUT' as const, message: lattes.message };
+  }
+
+  const contacts = sanitizePublicContacts(input.contacts);
+
+  if (!contacts.ok) {
+    /**
+     * Recusa com TODOS os motivos de uma vez: quem colou um endereço errado precisa
+     * saber qual campo é, e não descobrir um por vez a cada salvamento.
+     */
+    return {
+      ok: false as const,
+      code: 'INVALID_INPUT' as const,
+      message: 'Confira os contatos informados.',
+      details: contacts.errors,
+    };
   }
 
   const disclosed = PUBLIC_PROFILE_FIELDS.filter((field) => audienceMatrix[field] !== 'PRIVATE');
@@ -334,6 +371,10 @@ export async function savePublicProfile(
           publicSiteUrl: siteUrl,
           orcidId: orcid.value,
           lattesId: lattes.value,
+          /** Ausente preserva (ver `SavePublicProfileInput.contacts`). */
+          ...(input.contacts === undefined
+            ? {}
+            : { publicSocialLinks: contacts.contacts as unknown as object }),
           profileAudiences: audienceMatrix as unknown as object,
           profileIndexable: input.indexable,
           isPublicProfile: input.publicNameInResults,
@@ -469,6 +510,12 @@ export async function getPublicProfile(input: {
         select: {
           id: true,
           name: true,
+          /**
+           * O e-mail entra no select porque o campo `contacts` o publica quando a
+           * pessoa autoriza (FASE 45). Ele NÃO tem chave própria em `links`: mora no
+           * mesmo nível de visibilidade das redes, e o padrão é fechado.
+           */
+          email: true,
           image: true,
           publicHandle: true,
           bio: true,
@@ -477,6 +524,7 @@ export async function getPublicProfile(input: {
           lattesId: true,
           publicSiteUrl: true,
           publicInterests: true,
+          publicSocialLinks: true,
           profileAudiences: true,
           profileIndexable: true,
         },
@@ -708,6 +756,12 @@ export async function getPublicProfile(input: {
       siteUrl: person.publicSiteUrl,
       orcidId: person.orcidId,
       lattesId: person.lattesId,
+      /**
+       * Os contatos entram na FONTE já validados; quem decide se saem é a matriz —
+       * `buildPublicProfile` só publica as chaves dos campos autorizados.
+       */
+      email: person.email,
+      socialLinks: readPublicContacts(person.publicSocialLinks),
       level,
       levelTitle: levelTitle(level),
       prestige: xp?.prestigeLevel ?? 0,

@@ -484,6 +484,8 @@ enum PageBlockType {
   RICH_TEXT
   SCHEDULE
   SPEAKERS
+  /// Equipe do evento na vitrine (FASE 45) — lê as `event_teams` na renderização.
+  TEAM
   SPONSORS
   FAQ
   GALLERY
@@ -954,6 +956,17 @@ model User {
   publicInterests  String[] @default([])
   /// Site pessoal exibido no perfil (http/https, validado no domínio).
   publicSiteUrl    String?  @db.VarChar(1024)
+  /**
+   * Redes de contato da pessoa (FASE 45): `{ linkedin?, instagram?, github?, youtube? }`.
+   *
+   *   • Vive aqui, e não num vínculo, porque o contato é DA PESSOA — a mesma escolha
+   *     vale no perfil público e na vitrine da equipe de qualquer evento;
+   *   • só sai daqui quando o campo `contacts` da matriz está autorizado, e o padrão
+   *     dele é FECHADO (ADR-139: consentimento não nasce ligado);
+   *   • site, Lattes e ORCID NÃO entram aqui: cada um tem a própria coluna, e duas
+   *     fontes para o mesmo link fariam a página mostrar o endereço antigo.
+   */
+  publicSocialLinks Json    @default("{}")
   /// Ser achável em buscadores. `false` de propósito: ter página ≠ ser encontrado.
   profileIndexable Boolean  @default(false)
   /// Última troca de `@handle` — a espera entre trocas mora no domínio.

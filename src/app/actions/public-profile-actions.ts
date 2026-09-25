@@ -7,6 +7,7 @@ import { guardSelfServiceAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { PUBLIC_PROFILE_FIELDS, PROFILE_AUDIENCES } from '@/domain/profile/public-profile-rules';
+import { PUBLIC_CONTACT_NETWORKS } from '@/domain/profile/public-contacts';
 import { savePublicProfile } from '@/lib/profile/public-profile-service';
 import type { AdminActionState } from '@/app/actions/admin-actions';
 
@@ -43,6 +44,24 @@ function readAudiences(formData: FormData): Record<string, string> {
     if (typeof value === 'string' && audienceSchema.safeParse(value).success) {
       raw[field] = value;
     }
+  }
+
+  return raw;
+}
+
+/**
+ * Contatos vêm como N campos (`contact_<rede>`), um por rede.
+ *
+ * Não passa por validação de forma aqui: quem decide o que é um LinkedIn válido é o
+ * domínio (`sanitizePublicContacts`), no serviço — a action só entrega o que o
+ * formulário mandou, e a recusa sai com o motivo por campo.
+ */
+function readContacts(formData: FormData): Record<string, string> {
+  const raw: Record<string, string> = {};
+
+  for (const network of PUBLIC_CONTACT_NETWORKS) {
+    const value = formData.get(`contact_${network}`);
+    if (typeof value === 'string') raw[network] = value;
   }
 
   return raw;
@@ -90,6 +109,7 @@ export async function savePublicProfileAction(
     siteUrl: (formData.get('siteUrl') as string | null) ?? null,
     orcidId: (formData.get('orcidId') as string | null) ?? null,
     lattesId: (formData.get('lattesId') as string | null) ?? null,
+    contacts: readContacts(formData),
     audiences: readAudiences(formData),
     indexable: formData.get('indexable') === 'on',
     listedInDirectory: formData.get('listedInDirectory') === 'on',

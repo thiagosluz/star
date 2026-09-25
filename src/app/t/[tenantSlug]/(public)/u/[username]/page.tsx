@@ -8,6 +8,7 @@ import {
   GraduationCap,
   Handshake,
   Lock,
+  Mail,
   Sparkles,
   Trophy,
 } from 'lucide-react';
@@ -16,6 +17,11 @@ import { getRequestContext } from '@/lib/auth/session';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RARITY_LABELS } from '@/domain/gamification/card-rules';
 import { lattesUrl, orcidUrl } from '@/domain/profile/public-profile-rules';
+import {
+  hasPublicContacts,
+  PUBLIC_CONTACT_LABELS,
+  PUBLIC_CONTACT_NETWORKS,
+} from '@/domain/profile/public-contacts';
 import { type CardRarity } from '@/domain/gamification/types';
 import { getPublicProfile } from '@/lib/profile/public-profile-service';
 import { Avatar, Badge, Card, CardContent, SectionHeading } from '@/components/ui';
@@ -219,6 +225,42 @@ export default async function PublicProfilePage({
                 site pessoal <ExternalLink className="size-3" aria-hidden />
               </a>
             ) : null}
+          </div>
+        ) : null}
+
+        {/**
+         * Contato (FASE 45): e-mail e redes sociais saem JUNTOS, e só quando a pessoa
+         * autoriza o campo "E-mail e redes sociais" — que nasce desligado. O cartão da
+         * equipe do evento lê a MESMA autorização (`buildPublicTeam`), então ligar aqui
+         * liga lá também: é uma decisão, não duas.
+         */}
+        {profile.email || hasPublicContacts(profile.socialLinks) ? (
+          <div className="flex flex-wrap items-center gap-3 text-sm" data-testid="profile-contacts">
+            {profile.email ? (
+              <a
+                href={`mailto:${profile.email}`}
+                className="inline-flex items-center gap-1.5 underline underline-offset-4"
+              >
+                <Mail className="size-3.5" aria-hidden />
+                {profile.email}
+              </a>
+            ) : null}
+            {PUBLIC_CONTACT_NETWORKS.map((network) => {
+              const url = profile.socialLinks?.[network];
+              if (!url) return null;
+
+              return (
+                <a
+                  key={network}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="inline-flex items-center gap-1.5 underline underline-offset-4"
+                >
+                  {PUBLIC_CONTACT_LABELS[network]} <ExternalLink className="size-3" aria-hidden />
+                </a>
+              );
+            })}
           </div>
         ) : null}
       </header>

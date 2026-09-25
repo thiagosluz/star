@@ -27,6 +27,9 @@ import {
   type SocialLinks,
 } from '@/domain/speakers/speaker-rules';
 import { parseSponsorLogoScale, type SponsorLogoScale } from '@/domain/events/sponsor-rules';
+import { buildPublicTeam, type PublicTeamCard } from '@/domain/events/team-rules';
+import { parseProfileAudiences } from '@/domain/profile/public-profile-rules';
+import { readPublicContacts } from '@/domain/profile/public-contacts';
 
 export interface TenantContext {
   tenantId: string;
@@ -346,6 +349,25 @@ export interface PublicEventDetail extends PublicEventSummary {
     tierDescription: string | null;
     displayOrder: number;
   }[];
+  /**
+   * As EQUIPES do evento, com os cartões já montados (FASE 45).
+   *
+   * Vem do bloco? Não: vem do EVENTO, como `speakers` e `tracks`. O bloco `TEAM`
+   * escolhe o título, o texto de apoio e, se quiser, UMA equipe — o corpo é dado real,
+   * lido na renderização (a mesma régua do bloco de agenda, ADR-168).
+   */
+  teams: {
+    id: string;
+    name: string;
+    memberCount: number;
+  }[];
+  /**
+   * A vitrine: um cartão por pessoa, já sem quem não autorizou foto nem contato.
+   *
+   * Montado no domínio (`buildPublicTeam`), não aqui — o repositório entrega os dados
+   * e a matriz; quem decide o que sai é a regra pura, com teste próprio.
+   */
+  organizers: PublicTeamCard[];
 }
 
 /**
@@ -592,6 +614,55 @@ async function loadEventDetail(
             _count: { select: { submissions: true } },
           },
         },
+        /**
+         * EQUIPES do evento (FASE 45) — a MESMA lista que organiza as demandas
+         * internas, lida aqui para a vitrine.
+         *
+         *  • só equipe ATIVA (equipe desativada é trabalho encerrado, não vitrine);
+         *  • do vínculo vem o que é do EVENTO (a etiqueta é o nome da equipe, e o líder
+         *    aparece primeiro); da pessoa vem o que é DELA — nome, foto e contatos —, e
+         *    quem decide o que sai é a matriz de visibilidade do perfil (FASE 44).
+         */
+        eventTeams: {
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            members: {
+              orderBy: [{ isLead: 'desc' }, { createdAt: 'asc' }],
+              select: {
+                userId: true,
+                isLead: true,
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    image: true,
+                    email: true,
+                    profileAudiences: true,
+                    publicSocialLinks: true,
+                    deletedAt: true,
+                    /**
+                     * O vínculo ativo com ESTA instituição.
+                     *
+                     *  É a guarda que a vitrine precisa e o quadro de demandas não: quem
+                     *  foi removido da instituição (FASE 21) pode continuar na linha da
+                     *  equipe — o vínculo de equipe do evento não é revogado junto —, e
+                     *  sem esta checagem a página PÚBLICA continuaria exibindo o nome e a
+                     *  foto de alguém que não trabalha mais aqui. RLS não ajuda: `user` é
+                     *  global.
+                     */
+                    memberships: {
+                      where: { tenantId, status: 'ACTIVE', deletedAt: null },
+                      select: { id: true },
+                    },                  },
+                },
+              },
+            },
+          },
+        },
       },
     }),
   );
@@ -757,6 +828,60 @@ async function loadEventDetail(
 
   const speakers = orderSpeakersForDisplay([...speakerMap.values()]);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A EQUIPE (FASE 45)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Aqui o repositório só ENTREGA: nome, foto, e-mail e a matriz de visibilidade de
+   *  cada pessoa. Quem decide o que vira cartão é `buildPublicTeam`, no domínio —
+   *  regra pura, com teste, em vez de `if` espalhado no mapper (que é onde a régua de
+   *  privacidade costuma divergir da tela).
+   *
+   *  Vínculo de pessoa excluída (`deletedAt`) é descartado: a conta não existe mais, e
+   *  o nome dela não é informação do evento. O mesmo vale para quem perdeu o vínculo
+   *  ATIVO com a instituição: a linha da equipe fica (o histórico do quadro depende
+   *  dela), mas a vitrine pública não mostra quem saiu.
+   */
+  const isShowable = (member: (typeof event.eventTeams)[number]['members'][number]) =>
+    member.user !== null &&
+    member.user.deletedAt === null &&
+    member.user.memberships.length > 0;
+
+  const teams = event.eventTeams.map((team) => ({
+    id: team.id,
+    name: team.name,
+    isActive: team.isActive,
+    members: team.members
+      .filter(isShowable)
+      .map((member) => ({
+        userId: member.userId,
+        name: member.user!.name,
+        isLead: member.isLead,
+        avatarUrl: member.user!.image,
+        contacts: {
+          email: null as string | null,
+          links: readPublicContacts(member.user!.publicSocialLinks),
+        },
+      })),
+  }));
+
+  const audiencesByUser = new Map<string, Record<string, string>>();
+  const emailByUser = new Map<string, string>();
+
+  for (const team of event.eventTeams) {
+    for (const member of team.members) {
+      if (!isShowable(member)) continue;
+      audiencesByUser.set(member.userId, member.user!.profileAudiences as Record<string, string>);
+      emailByUser.set(member.userId, member.user!.email);
+    }
+  }
+
+  const organizers = buildPublicTeam({
+    teams,
+    audiencesOf: (userId) => parseProfileAudiences(audiencesByUser.get(userId) ?? {}),
+    emailOf: (userId) => emailByUser.get(userId) ?? null,
+  });
+
   return {
     id: event.id,
     slug: event.slug,
@@ -803,6 +928,8 @@ async function loadEventDetail(
     speakers,
     sponsors,
     tracks,
+    teams: teams.map((team) => ({ id: team.id, name: team.name, memberCount: team.members.length })),
+    organizers,
   };
 }
 

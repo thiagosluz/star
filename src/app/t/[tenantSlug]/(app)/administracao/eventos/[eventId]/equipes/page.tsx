@@ -83,6 +83,21 @@ export default async function EventTeamsPage({
           {event.title} · quem executa as demandas. O líder distribui trabalho dentro da própria
           equipe.
         </p>
+        {/**
+         * O aviso não é decoração: a MESMA equipe pode virar vitrine na página pública
+         * (bloco "Equipe do evento", FASE 45). Quem cadastra precisa saber que o nome
+         * da equipe é a etiqueta que aparece embaixo da foto — e que a foto e o contato
+         * só saem se a pessoa autorizar no perfil público dela.
+         */}
+        <p className="text-xs text-muted-foreground" data-testid="teams-public-note">
+          Esta lista também pode aparecer na página pública do evento, no bloco{' '}
+          <strong>Equipe do evento</strong>: o nome da equipe vira a etiqueta de cada pessoa, e a
+          ordem mostra o líder primeiro. Foto e contato só aparecem se a própria pessoa autorizar no{' '}
+          <Link href={tenantPath(tenantSlug, '/meu-perfil-publico')} className="underline">
+            perfil público
+          </Link>
+          .
+        </p>
       </header>
 
       {board.teams.length === 0 ? (

@@ -23,6 +23,8 @@ export interface BlockContentValues {
   description: string;
   ctaLabel: string;
   tierId: string;
+  /** Bloco de equipe (FASE 45): mostrar apenas uma equipe do evento. */
+  teamId: string;
   html: string;
   /** Bloco de chamadas (FASE 33): incluir também as chamadas encerradas. */
   includeClosed: boolean;
@@ -64,6 +66,7 @@ export function blockContentToValues(
     description: text('description'),
     ctaLabel: text('ctaLabel'),
     tierId: text('tierId'),
+    teamId: text('teamId'),
     html: text('html'),
     includeClosed: content.includeClosed === true,
     faq: type === 'FAQ' ? (faq.length > 0 ? faq : [{ question: '', answer: '' }]) : [],

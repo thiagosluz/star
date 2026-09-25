@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 44 (F15, F21–F25, F29–F44 entregues; a F45+ é a próxima)
-Testes ................. 2272 (Vitest: unit + integração) + 150 (Playwright E2E)
-ADRs ................... 243 (numeração GLOBAL e sequencial — a próxima é ADR-244)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 45 (F15, F21–F25, F29–F45 entregues; a F46+ é a próxima)
+Testes ................. 2300 (Vitest: unit + integração) + 152 (Playwright E2E)
+ADRs ................... 247 (numeração GLOBAL e sequencial — a próxima é ADR-248)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2272+ testes passando
+npm test              # esperado: 2300+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 148+ testes passando
+npm run test:e2e      # esperado: 152+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -357,19 +357,15 @@ Balcão (modo monitor) ... /t/<slug>/credenciamento?evento=<eventId>
 Crachá do participante .. /t/<slug>/meu-cracha?evento=<eventId>
 ```
 
-Cinco regras que quebram fácil: **o crachá é da PESSOA no evento**, um código por par
-(evento, pessoa) em `event_credentials`, e é o **CONTEXTO da leitura** que decide onde o fato
-é gravado (ADR-148) — a inscrição é por pessoa × evento E por pessoa × atividade, e com o
-código na inscrição quem tivesse evento + 2 minicursos teria três crachás; **chegada é
-diferente de frequência** (ADR-149): a portaria grava presença com `activityId` nulo (e marca a
-inscrição, onde vivem o XP e a fila), a atividade grava **uma sessão por visita**, com entrada,
-saída e minutos — e a chave de idempotência da frequência é a SESSÃO, nunca a inscrição (usar
-`checkIn` na segunda visita respondia "já credenciado" e a tarde da pessoa desaparecia);
-**os minutos têm teto no fim da ATIVIDADE** (ADR-150), porque a conta antiga premiava o
-esquecimento e é ela que pesa no sorteio e compõe o certificado; **leitura fora da inscrição
-registra e AVISA** (ADR-151) — a presença de quem apareceu sem inscrição é um fato real, e o
-que não acontece sem inscrição é XP, porque não há chave para creditar; e **o QR carrega só o
-código** (ADR-152), sem dado pessoal — a etiqueta leva nome e código porque é lida por GENTE.
+Cinco regras que quebram fácil: **o crachá é da PESSOA no evento** (um código por par evento ×
+pessoa em `event_credentials`), e é o **CONTEXTO da leitura** que decide onde o fato é gravado
+(ADR-148) — com o código na inscrição, quem tivesse evento + 2 minicursos teria três crachás;
+**chegada ≠ frequência** (ADR-149): a portaria grava com `activityId` nulo, a atividade grava
+**uma sessão por visita** (entrada, saída, minutos) e a chave de idempotência é a SESSÃO, nunca a
+inscrição — usar `checkIn` na 2ª visita respondia "já credenciado" e a tarde da pessoa
+desaparecia; **os minutos têm teto no fim da ATIVIDADE** (ADR-150); **leitura fora da inscrição
+registra e AVISA** (ADR-151) — a presença existe, o XP não; e **o QR carrega só o código**
+(ADR-152), sem dado pessoal.
 
 Duas decisões de operação: a câmera tenta a **API nativa** do navegador e cai para o `jsqr`
 local (Firefox e Safari não têm `BarcodeDetector`), com o leitor USB e a digitação como
@@ -394,13 +390,11 @@ Cinco regras que quebram fácil: **quem é participante é uma UNIÃO** (víncul
 qualquer inscrição) — olhar só um lado esconde gente real —, e a ficha confere o pertencimento
 antes de ler qualquer seção (o `user` é global: a RLS não o protege); **a leitura da ficha entra
 na trilha** (`AuditAction.READ`, criada aqui) e o e-mail sai **mascarado na lista**, completo só
-na ficha, que é a decisão de olhar uma pessoa; **o recado é o FATO e o e-mail é consequência** —
-a mensagem nasce em `participant_messages` e o e-mail sai pelo outbox com `dedupeKey` derivado do
-ID DA MENSAGEM, então falha de provedor não apaga a comunicação e dois recados com o mesmo
-assunto continuam sendo dois fatos; **a caixa de entrada é aberta por POSSE** (o `userId` vem da
-sessão, nunca do formulário) enquanto ENVIAR exige `participant:message` no escopo da
-instituição; e **`null` não é `0`** — taxa de comparecimento e média de minutos vêm `null` sem
-denominador, e a tela mostra "—" em vez de inventar 0% para quem não teve oportunidade.
+na ficha; **o recado é o FATO e o e-mail é consequência** — a mensagem nasce em
+`participant_messages` e o e-mail sai pelo outbox com `dedupeKey` do ID DA MENSAGEM, então falha
+de provedor não apaga a comunicação; **a caixa de entrada é aberta por POSSE** (o `userId` vem da
+sessão) enquanto ENVIAR exige `participant:message`; e **`null` não é `0`** — taxa de
+comparecimento e média de minutos vêm `null` sem denominador, e a tela mostra "—".
 
 A guarda das Server Actions trata permissão `:own` (armadilha 72); a visão geral usa
 `tenant:analytics:read`, permissão que existia desde a FASE 2 sem consumidor.
@@ -751,9 +745,8 @@ borda; nomes e papéis em `docs/contas-de-teste.md`), com a senha de `SEED_TEST_
 `NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por
 `reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
 
-Sobre a senha: ela vive em `account.password` (`providerId = 'credential'`, hash scrypt
-do Better Auth, via `better-auth/crypto`). O campo `user.passwordHash` é **legado e não
-é usado pela biblioteca** — não perca tempo com ele ao depurar login.
+Sobre a senha: ela vive em `account.password` (`providerId = 'credential'`, scrypt do Better
+Auth); o campo `user.passwordHash` é **legado e NÃO é usado pela biblioteca**.
 
 ### Dados de demonstração
 
@@ -863,7 +856,7 @@ tests/{unit,integration,e2e}
 | 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe **autorizar** ou não, com o MESMO crédito (LGPD art. 8º §3º); lead de **nome e e-mail** com prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
 | 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP nas três portas, chave no ALVO contra farm), **certificado emitido** (50 XP na geração), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada** (enviar e aceitar); tirou "Indicação" e "Bônus" do formulário (sem emissor) e achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
 | 44 | **Perfil público do participante** (`/u/<handle>` com **quinze campos** de visibilidade em três níveis — internet · quem participa desta instituição · só eu —, pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa**: o `user` é global e a RLS não o protege; `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; a trilha guarda a decisão, não a bio; quitou a **E35** e achou 4 defeitos reais, entre eles a **posição relativa invertida**; declarou **E60/E61/E62**) | ✅ |
-| 45+ | *a definir pelo humano* | ⏳ |
+| 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e a pessoa em duas equipes aparece uma vez com as duas; **líder primeiro** e ordem estável; **nome e equipe são do evento, foto e contato são da pessoa** — e-mail e LinkedIn/Instagram/GitHub/YouTube saem só com o campo **"E-mail e redes sociais"**, que nasce FECHADO, e o mesmo interruptor acende o contato no perfil e no cartão; equipe desativada não aparece e **quem perdeu o vínculo com a instituição sai da vitrine**; achou o **leitor de contatos que não era tolerante** e o **campo novo obrigatório que quebrou chamadas existentes** — `tests/**` não passa pelo `typecheck`; declarou **E63/E64**) | ✅ |
 
 > **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
 > identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
@@ -871,12 +864,12 @@ tests/{unit,integration,e2e}
 > entregue **depois** de todas elas. O humano escolheu o tema pelo nome
 > dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
 
-**Dívidas técnicas:** o levantamento consolidado (**58 itens abertos**; A=3, B=4, C=2, D=3,
-E=36, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**,
-com o histórico do que cada fase quitou e declarou. Quitados: **A3, B7, E47** (F36), **E41,
-E48** (F37) e **E35** (F44). Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39),
-**E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43) e **E60/E61/E62** (F44). Leia antes de
-propor a próxima fase: ele diz o que falta e a ordem sugerida.
+**Dívidas técnicas:** o levantamento consolidado (**60 itens abertos**; A=3, B=4, C=2, D=3,
+E=38, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+Quitados: **A3, B7, E47** (F36), **E41, E48** (F37) e **E35** (F44). Declarados: **E50** (F37),
+**E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43),
+**E60–E62** (F44) e **E63/E64** (F45). Leia antes de propor a próxima fase: ele diz o que falta
+e a ordem sugerida.
 
 ---
 
@@ -884,7 +877,7 @@ propor a próxima fase: ele diz o que falta e a ordem sugerida.
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-44-perfil-publico-do-participante.md`; a comunicação é
+   fase entregue** (`docs/fase-45-equipe-na-pagina-publica.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
