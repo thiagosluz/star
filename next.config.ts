@@ -25,7 +25,9 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
 
   // Drivers de banco e clientes nativos não devem ser empacotados.
-  serverExternalPackages: ['pg', '@prisma/adapter-pg'],
+  // `sharp` entra pela mesma razão (FASE 46): ele carrega o binário do libvips da
+  // plataforma (`@img/sharp-<plataforma>`), que o bundler não sabe copiar.
+  serverExternalPackages: ['pg', '@prisma/adapter-pg', 'sharp'],
 
   experimental: {
     // Server Actions recebem PDFs de submissão (FASE 4) — o limite padrão de

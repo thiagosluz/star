@@ -7,7 +7,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listMediaLibrary } from '@/lib/admin/media-asset-service';
-import { formatBytes } from '@/domain/events/image-rules';
+import { formatBytes, imageFormatLabel } from '@/domain/events/image-rules';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { AssetUploader } from '@/components/admin/asset-uploader';
 import {
@@ -139,8 +139,8 @@ export default async function EventMediaLibraryPage({
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="truncate text-sm font-medium">{asset.fileName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {asset.targetLabel} · {formatBytes(asset.sizeBytes)} ·{' '}
-                    {asset.createdAt.toLocaleDateString('pt-BR')}
+                    {asset.targetLabel} · {imageFormatLabel(asset.mimeType)} ·{' '}
+                    {formatBytes(asset.sizeBytes)} · {asset.createdAt.toLocaleDateString('pt-BR')}
                     {asset.uploadedByName ? ` · ${asset.uploadedByName}` : ''}
                     {asset.eventTitle ? ` · ${asset.eventTitle}` : ''}
                   </p>

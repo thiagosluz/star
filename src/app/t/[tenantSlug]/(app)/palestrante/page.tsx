@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Award, CalendarDays, Clock, Download, Mic, ShieldCheck, UserRound } from 'lucide-react';
 
 import { requirePersonalPage } from '@/lib/auth/guard-page';
+import { withTenant } from '@/lib/db/tenant-client';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { formatDuration } from '@/domain/events/event-rules';
@@ -91,6 +92,13 @@ export default async function SpeakerPortalPage({
   });
 
   const portal = await loadSpeakerPortal({ tenantId, userId, userEmail });
+  const fallbackEvent = await withTenant(tenantId, (tx) =>
+    tx.event.findFirst({
+      where: { tenantId, deletedAt: null },
+      orderBy: { startsAt: 'desc' },
+      select: { id: true },
+    }),
+  );
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -144,7 +152,7 @@ export default async function SpeakerPortalPage({
       ) : null}
 
       {portal.profiles.map((profile) => {
-        const firstEventId = profile.activities[0]?.eventId ?? '';
+        const firstEventId = profile.activities[0]?.eventId ?? fallbackEvent?.id ?? '';
 
         return (
           <section
@@ -182,6 +190,7 @@ export default async function SpeakerPortalPage({
                 roleTitle: profile.roleTitle,
                 bio: profile.bio,
                 avatarUrl: profile.avatarUrl,
+                avatarSource: profile.avatarSource,
                 socialLinks: profile.socialLinks,
               }}
               updateAction={updateMySpeakerProfileAction}

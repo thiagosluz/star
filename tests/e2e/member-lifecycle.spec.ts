@@ -31,9 +31,20 @@ import {
 const PASSWORD = 'senha-forte-e2e-2026';
 const ORIGIN = { origin: 'http://localhost:3000' };
 
-/** PNG 1×1 válido — a assinatura do arquivo é o que a validação confere. */
+/**
+ * PNG 8×8 de verdade — a assinatura do arquivo é o que a validação confere, e a
+ * imagem precisa DECODIFICAR para virar WebP (FASE 46).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE FIXTURE MUDOU DE 1×1 PARA 8×8
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O PNG 1×1 usado desde a FASE 17 tinha o CRC do `IDAT` ERRADO. O navegador perdoa
+ *  e desenha; o libpng recusa o arquivo. Enquanto o conteúdo não era decodificado,
+ *  ninguém notou — e a suíte inteira media uploads com um arquivo que não é imagem
+ *  decodificável. Com a conversão para WebP, a recusa apareceu.
+ */
 const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQYlWM4oWHzHx9mGBkKAHkRisGTbO91AAAAAElFTkSuQmCC',
   'base64',
 );
 

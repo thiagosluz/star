@@ -103,13 +103,18 @@ function invalidInput(
   message: string,
   error: { issues: readonly { path: readonly PropertyKey[]; message: string }[] },
 ): SpeakerActionState {
+  const fields = error.issues
+    .map((issue) => `${String(issue.path.join('.') || 'campo')}: ${issue.message}`)
+    .join('; ');
+  const fullMessage = fields ? `${message} (${fields})` : message;
+
   /**
    * O log existe porque a tela mostra o resumo e o processo guarda o detalhe: quem
    * investiga um envio recusado precisa saber QUAL campo chegou inválido, sem
    * reproduzir a sessão do usuário.
    */
   console.error(
-    `[speakers] entrada recusada: ${message} — ${JSON.stringify(
+    `[speakers] entrada recusada: ${fullMessage} — ${JSON.stringify(
       error.issues.map((issue) => ({ campo: issue.path.join('.'), erro: issue.message })),
     )}`,
   );
@@ -117,7 +122,7 @@ function invalidInput(
   return {
     ok: false,
     code: 'INVALID_INPUT',
-    message,
+    message: fullMessage,
     details: error.issues.map((issue) => `Campo "${issue.path.join('.')}": ${issue.message}`),
   };
 }
@@ -304,6 +309,14 @@ const profileSchema = z.object({
   company: z.string().trim().max(200).optional(),
   roleTitle: z.string().trim().max(120).optional(),
   bio: z.string().trim().max(4000).optional(),
+  /**
+   * A foto vem da esteira de upload como URL já confirmada (FASE 46). Ausente
+   * PRESERVA a que existe: o serviço decide isso — e o campo vazio APAGA, que é como
+   * a organização tira uma foto publicada.
+   */
+  avatarUrl: z.string().trim().max(1024).optional(),
+  /** Caixa de seleção: `'on'` quando marcada. A exigência é do serviço. */
+  photoAuthorization: z.string().optional(),
   displayOrder: z.coerce.number().int().min(0).max(9999).optional(),
   isPublic: z.string().optional(),
 });
@@ -332,6 +345,8 @@ export async function saveSpeakerProfileAction(
     company: (formData.get('company') as string) || undefined,
     roleTitle: (formData.get('roleTitle') as string) || undefined,
     bio: (formData.get('bio') as string) || undefined,
+    avatarUrl: (formData.get('avatarUrl') as string) ?? undefined,
+    photoAuthorization: (formData.get('photoAuthorization') as string) || undefined,
     displayOrder: (formData.get('displayOrder') as string) || undefined,
     isPublic: (formData.get('isPublic') as string) || undefined,
   });
@@ -357,6 +372,8 @@ export async function saveSpeakerProfileAction(
     company: parsed.data.company ?? null,
     roleTitle: parsed.data.roleTitle ?? null,
     bio: parsed.data.bio ?? null,
+    avatarUrl: parsed.data.avatarUrl,
+    photoAuthorization: parsed.data.photoAuthorization === 'on',
     socialLinks: socialPayload(formData),
     displayOrder: parsed.data.displayOrder,
     isPublic: parsed.data.isPublic === undefined ? undefined : parsed.data.isPublic === 'on',
@@ -514,6 +531,8 @@ export async function updateMySpeakerProfileAction(
   _prev: SpeakerActionState | null,
   formData: FormData,
 ): Promise<SpeakerActionState> {
+  const avatarRaw = formData.get('avatarUrl');
+
   const parsed = z
     .object({
       tenantSlug: z.string().trim().min(1).max(63),
@@ -535,7 +554,14 @@ export async function updateMySpeakerProfileAction(
       company: (formData.get('company') as string) || undefined,
       roleTitle: (formData.get('roleTitle') as string) || undefined,
       bio: (formData.get('bio') as string) || undefined,
-      avatarUrl: (formData.get('avatarUrl') as string) || undefined,
+      /**
+       * A foto vai como veio — inclusive VAZIA (FASE 46).
+       *
+       * `|| undefined` transformaria "remover foto" em "não mexer": o botão Remover
+       * limpa o campo de propósito, e é o serviço que decide que vazio APAGA e ausente
+       * PRESERVA. Sem isso, o aviso ao palestrante ("você pode removê-la") mentiria.
+       */
+      avatarUrl: typeof avatarRaw === 'string' ? avatarRaw : undefined,
     });
 
   if (!parsed.success) {
@@ -790,7 +816,7 @@ export async function requestSpeakerAvatarUploadAction(
   const parsed = z
     .object({
       tenantSlug: z.string().trim().min(1).max(63),
-      eventId: z.string().uuid(),
+      eventId: z.string().trim().uuid().optional().or(z.literal('')),
       speakerProfileId: z.string().uuid(),
       fileName: z.string().trim().min(1).max(300),
       mimeType: z.string().trim().min(3).max(160),
@@ -799,7 +825,7 @@ export async function requestSpeakerAvatarUploadAction(
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
-      eventId: formData.get('eventId'),
+      eventId: formData.get('eventId') || undefined,
       speakerProfileId: formData.get('speakerProfileId'),
       fileName: formData.get('fileName'),
       mimeType: formData.get('mimeType'),
@@ -828,9 +854,28 @@ export async function requestSpeakerAvatarUploadAction(
     return { ok: false, code: 'FORBIDDEN', message: 'Este perfil de palestrante pertence a outra conta.' };
   }
 
+  let eventId = parsed.data.eventId;
+  if (!eventId) {
+    const fallback = await withTenant(auth.tenantId, (tx) =>
+      tx.event.findFirst({
+        where: { tenantId: auth.tenantId, deletedAt: null },
+        orderBy: { startsAt: 'desc' },
+        select: { id: true },
+      }),
+    );
+    if (!fallback) {
+      return {
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'A instituição ainda não possui nenhum evento cadastrado para associar o arquivo.',
+      };
+    }
+    eventId = fallback.id;
+  }
+
   const result = await requestAssetUpload({
     tenantId: auth.tenantId,
-    eventId: parsed.data.eventId,
+    eventId,
     target: 'SPEAKER_AVATAR',
     fileName: parsed.data.fileName,
     mimeType: parsed.data.mimeType,
@@ -850,6 +895,7 @@ export async function requestSpeakerAvatarUploadAction(
       requiredHeaders: result.requiredHeaders,
       mimeType: result.mimeType,
       maxBytes: result.maxBytes,
+      eventId,
     },
   };
 }
@@ -861,7 +907,7 @@ export async function confirmSpeakerAvatarUploadAction(
   const parsed = z
     .object({
       tenantSlug: z.string().trim().min(1).max(63),
-      eventId: z.string().uuid(),
+      eventId: z.string().trim().uuid().optional().or(z.literal('')),
       speakerProfileId: z.string().uuid(),
       objectKey: z.string().trim().min(1).max(1024),
       bucket: z.string().trim().min(1).max(120),
@@ -872,7 +918,7 @@ export async function confirmSpeakerAvatarUploadAction(
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
-      eventId: formData.get('eventId'),
+      eventId: formData.get('eventId') || undefined,
       speakerProfileId: formData.get('speakerProfileId'),
       objectKey: formData.get('objectKey'),
       bucket: formData.get('bucket'),
@@ -903,9 +949,31 @@ export async function confirmSpeakerAvatarUploadAction(
     return { ok: false, code: 'FORBIDDEN', message: 'Este perfil de palestrante pertence a outra conta.' };
   }
 
+  let eventId = parsed.data.eventId;
+  if (!eventId) {
+    const match = /^tenants\/[^/]+\/eventos\/([^/]+)\/assets\//.exec(parsed.data.objectKey);
+    if (match?.[1]) {
+      eventId = match[1];
+    }
+  }
+
+  if (!eventId) {
+    const fallback = await withTenant(auth.tenantId, (tx) =>
+      tx.event.findFirst({
+        where: { tenantId: auth.tenantId, deletedAt: null },
+        orderBy: { startsAt: 'desc' },
+        select: { id: true },
+      }),
+    );
+    if (!fallback) {
+      return { ok: false, code: 'NOT_FOUND', message: 'Evento não encontrado.' };
+    }
+    eventId = fallback.id;
+  }
+
   const result = await confirmAssetUpload({
     tenantId: auth.tenantId,
-    eventId: parsed.data.eventId,
+    eventId,
     actorId: auth.userId,
     target: 'SPEAKER_AVATAR',
     objectKey: parsed.data.objectKey,

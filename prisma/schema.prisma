@@ -1584,6 +1584,17 @@ model ActivitySpeaker {
   @@map("activity_speakers")
 }
 
+/// Quem enviou a foto publicada do palestrante (FASE 46).
+///
+/// `ORGANIZATION` — a equipe do evento enviou a foto de quem não tem conta (o
+///   palestrante confirmou o uso fora da plataforma; o portal mostra a origem e
+///   permite trocar ou remover);
+/// `SPEAKER` — a própria pessoa enviou pelo portal.
+enum SpeakerAvatarSource {
+  ORGANIZATION
+  SPEAKER
+}
+
 /// Palestrante da instituição — a PESSOA, não o vínculo com uma atividade (FASE 25).
 ///
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -1617,6 +1628,16 @@ model SpeakerProfile {
   roleTitle   String? @db.VarChar(120)
   bio         String? @db.Text
   avatarUrl   String? @db.VarChar(1024)
+  /// Quem enviou a foto que está publicada (FASE 46).
+  ///
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  POR QUE ISTO É COLUNA, E NÃO DEDUÇÃO
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  Desde a FASE 46 a ORGANIZAÇÃO pode enviar a foto de quem nunca vai assumir o
+  ///  perfil. É dado pessoal enviado por terceiro: o palestrante precisa saber disso
+  ///  ao entrar no portal para poder substituir ou remover — e sem a coluna a tela
+  ///  não teria como distinguir a foto dele da foto que puseram no lugar.
+  avatarSource SpeakerAvatarSource?
   /// Redes e páginas: `{ linkedin?, github?, lattes?, website?, instagram?, youtube? }`.
   /// Validado no domínio (`sanitizeSocialLinks`) — só http(s) de host conhecido.
   socialLinks Json    @default("{}")

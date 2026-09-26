@@ -5,7 +5,13 @@ import { ImageUp, Loader2, Plus, Trash2 } from 'lucide-react';
 
 import { Button, Checkbox, Input, Label, Textarea } from '@/components/ui';
 import { BLOCK_DESCRIPTIONS, type PageBlockType } from '@/domain/events/landing-page';
-import { IMAGE_ACCEPT_ATTRIBUTE, MAX_IMAGE_BYTES, formatBytes } from '@/domain/events/image-rules';
+import {
+  IMAGE_ACCEPT_ATTRIBUTE,
+  IMAGE_INPUT_LABEL,
+  MAX_IMAGE_BYTES,
+  WEBP_STORAGE_NOTICE,
+  formatBytes,
+} from '@/domain/events/image-rules';
 import { uploadAssetFile, type AssetUploadAction } from '@/components/admin/asset-upload';
 import type { BlockContentValues } from '@/components/admin/block-content-values';
 
@@ -241,9 +247,9 @@ export function BlockContentFields({
                 data-testid="gallery-file-input"
               />
               <p className="text-xs text-muted-foreground">
-                Envie do computador (PNG, JPEG, WebP ou AVIF · até{' '}
+                Envie do computador ({IMAGE_INPUT_LABEL} · até{' '}
                 {formatBytes(MAX_IMAGE_BYTES.GALLERY)}) ou informe o endereço de uma imagem já
-                publicada.
+                publicada. {WEBP_STORAGE_NOTICE}
               </p>
             </>
           ) : null}

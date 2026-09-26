@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 45 (F15, F21–F25, F29–F45 entregues; a F46+ é a próxima)
-Testes ................. 2300 (Vitest: unit + integração) + 152 (Playwright E2E)
-ADRs ................... 247 (numeração GLOBAL e sequencial — a próxima é ADR-248)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 46 (F15, F21–F25, F29–F46 entregues; a F47+ é a próxima)
+Testes ................. 2328 (Vitest: unit + integração) + 155 (Playwright E2E)
+ADRs ................... 253 (numeração GLOBAL e sequencial — a próxima é ADR-254)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2300+ testes passando
+npm test              # esperado: 2328+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 152+ testes passando
+npm run test:e2e      # esperado: 155+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -554,14 +554,12 @@ interruptor do perfil público.
 
 ### Sorteios (FASE 16)
 
-O motor da FASE 8 ganhou operação completa: **suplentes** sorteados na mesma apuração
-(`raffle_winners.kind` = `WINNER`/`ALTERNATE`), **entrega do prêmio** registrada por
-POSIÇÃO (`positionId`, não `userId`), **chance proporcional aos minutos** quando
-`weightByMinutes` está ligado, **commit-reveal** (compromisso `sha256` da semente na
-criação, semente selada em AES-256-GCM com chave derivada de `BETTER_AUTH_SECRET`, e
-revelação na apuração), **resultado público** opt-in com nome mascarado por padrão,
-**histórico paginado** e **prévia ao vivo** do credenciamento em
-`GET /api/events/[eventId]/raffle-live`.
+O motor da FASE 8 ganhou operação completa: **suplentes** na mesma apuração
+(`raffle_winners.kind` = `WINNER`/`ALTERNATE`), **entrega do prêmio por POSIÇÃO**
+(`positionId`, não `userId`), **peso por minutos** quando ligado, **commit-reveal**
+(compromisso `sha256` na criação, semente selada em AES-256-GCM com chave de
+`BETTER_AUTH_SECRET`, revelada na apuração), **resultado público** opt-in com nome
+mascarado, **histórico paginado** e **prévia ao vivo** do credenciamento.
 
 ```
 Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
@@ -693,10 +691,9 @@ evento encerrado + credenciamento registrado (ADR-117/118).
 O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), porque o papel é
 concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO (armadilha 42).
 
-**Duas portas para o portal.** Além de quem já é palestrante, entra quem tem **convite
-pendente para o e-mail da conta** — o papel nasce com o aceite, então exigi-lo para chegar ao
-convite era um impasse. A mesma condição (`pendingInviteWhere`) decide a guarda, o item do
-menu (que segue a porta) e a lista (ADR-119/120, `docs/fase-25-portal-do-palestrante.md` §10).
+**Duas portas:** além de quem já é palestrante, entra quem tem **convite pendente para o e-mail
+da conta** — o papel nasce com o aceite, então exigi-lo antes era um impasse. A mesma condição
+(`pendingInviteWhere`) decide a guarda, o item do menu e a lista (ADR-119/120).
 
 
 ### Comunicação (FASE 15)
@@ -857,19 +854,17 @@ tests/{unit,integration,e2e}
 | 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP nas três portas, chave no ALVO contra farm), **certificado emitido** (50 XP na geração), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada** (enviar e aceitar); tirou "Indicação" e "Bônus" do formulário (sem emissor) e achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
 | 44 | **Perfil público do participante** (`/u/<handle>` com **quinze campos** de visibilidade em três níveis — internet · quem participa desta instituição · só eu —, pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa**: o `user` é global e a RLS não o protege; `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; a trilha guarda a decisão, não a bio; quitou a **E35** e achou 4 defeitos reais, entre eles a **posição relativa invertida**; declarou **E60/E61/E62**) | ✅ |
 | 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e a pessoa em duas equipes aparece uma vez com as duas; **líder primeiro** e ordem estável; **nome e equipe são do evento, foto e contato são da pessoa** — e-mail e LinkedIn/Instagram/GitHub/YouTube saem só com o campo **"E-mail e redes sociais"**, que nasce FECHADO, e o mesmo interruptor acende o contato no perfil e no cartão; equipe desativada não aparece e **quem perdeu o vínculo com a instituição sai da vitrine**; achou o **leitor de contatos que não era tolerante** e o **campo novo obrigatório que quebrou chamadas existentes** — `tests/**` não passa pelo `typecheck`; declarou **E63/E64**) | ✅ |
+| 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem enviada é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada e teto de pixels, **logotipo sem perda**, metadados da câmera descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é recusada, não achatada, e a bomba de pixels cai pelo cabeçalho. A **arte do certificado fica de fora** — PDF não embute WebP. E a **organização publica a foto de quem não tem conta**, com declaração de autorização exigida pelo serviço e na trilha, origem em coluna, trocar/remover nos dois lados e a ficha do palestrante finalmente editável; achou o **fixture 1×1 com CRC inválido** que a suíte usava desde a F17 e a **asserção que passava com a conversão falhando**; declarou **E65/E66**) | ✅ |
 
-> **Numeração de tema, não de ordem.** Cada tema tem um número **FIXO**: o número
-> identifica o tema, não a ordem de entrega. Por isso a FASE 16, a FASE 17, a FASE 23, a
-> FASE 24 e a FASE 25 foram entregues antes da F15 — e a FASE 21, numerada no meio, foi
-> entregue **depois** de todas elas. O humano escolheu o tema pelo nome
-> dele. A tabela acima segue a ordem cronológica; a numeração é a do tema.
+> **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
+> pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
+> entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**60 itens abertos**; A=3, B=4, C=2, D=3,
-E=38, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+**Dívidas técnicas:** o levantamento consolidado (**62 itens abertos**; A=3, B=4, C=2, D=3,
+E=40, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
 Quitados: **A3, B7, E47** (F36), **E41, E48** (F37) e **E35** (F44). Declarados: **E50** (F37),
 **E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43),
-**E60–E62** (F44) e **E63/E64** (F45). Leia antes de propor a próxima fase: ele diz o que falta
-e a ordem sugerida.
+**E60–E62** (F44), **E63/E64** (F45) e **E65/E66** (F46). Leia antes de propor a próxima fase.
 
 ---
 
@@ -877,7 +872,7 @@ e a ordem sugerida.
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-45-equipe-na-pagina-publica.md`; a comunicação é
+   fase entregue** (`docs/fase-46-webp-e-foto-do-palestrante.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

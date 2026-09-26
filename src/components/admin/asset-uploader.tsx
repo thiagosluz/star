@@ -10,8 +10,11 @@ import { uploadAssetFile } from '@/components/admin/asset-upload';
 import {
   ASSET_TARGET_LABELS,
   IMAGE_ACCEPT_ATTRIBUTE,
+  IMAGE_INPUT_LABEL,
   MAX_IMAGE_BYTES,
+  WEBP_STORAGE_NOTICE,
   formatBytes,
+  webpSavingsLabel,
   type AssetTarget,
 } from '@/domain/events/image-rules';
 
@@ -100,7 +103,18 @@ export function AssetUploader({
 
     setUrl(result.url);
     setPhase('done');
-    setMessage('Imagem enviada e vinculada.');
+
+    /**
+     * A mensagem diz o que ACONTECEU com o arquivo, e não só que deu certo: o
+     * organizador escolheu um PNG de 3 MB e o que ficou guardado é um WebP menor. Sem
+     * o número, a conversão seria uma decisão do sistema que ele nunca vê.
+     */
+    const savings = webpSavingsLabel(result.sourceBytes, result.sizeBytes);
+    setMessage(
+      `Imagem enviada e guardada em WebP (${formatBytes(result.sizeBytes)}${
+        savings ? ` — ${savings}` : ''
+      }).`,
+    );
 
     /**
      * O refresh do servidor é necessário porque a imagem aparece em OUTRO ponto da
@@ -142,8 +156,12 @@ export function AssetUploader({
           </p>
 
           <p className="text-xs text-muted-foreground">
-            PNG, JPEG, WebP ou AVIF · até {formatBytes(maxBytes)}. SVG não é aceito (pode conter
+            {IMAGE_INPUT_LABEL} · até {formatBytes(maxBytes)}. SVG não é aceito (pode conter
             script).
+          </p>
+
+          <p className="text-xs text-muted-foreground" data-testid={`asset-webp-note-${target}`}>
+            {WEBP_STORAGE_NOTICE}
           </p>
 
           {!disabled ? (

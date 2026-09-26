@@ -58,8 +58,15 @@ export interface LandingActionState {
 // ───────────────────────────────────────────────────────────────────────────────
 async function guard(input: {
   tenantSlug: string;
-  /** A tela usa `page:manage`; o logotipo do patrocinador usa `sponsor:manage`. */
-  permission: typeof PERMISSIONS.PAGE_MANAGE | typeof PERMISSIONS.SPONSOR_MANAGE;
+  /**
+   * A tela usa `page:manage`; o logotipo do patrocinador usa `sponsor:manage`; a foto
+   * do palestrante (FASE 46) usa `speaker:manage` — a esteira é a mesma, a porta é a
+   * da tela que a chamou.
+   */
+  permission:
+    | typeof PERMISSIONS.PAGE_MANAGE
+    | typeof PERMISSIONS.SPONSOR_MANAGE
+    | typeof PERMISSIONS.SPEAKER_MANAGE;
 }): Promise<
   | { ok: true; userId: string; tenantId: string; principal: Principal }
   | { ok: false; state: LandingActionState }
@@ -718,9 +725,17 @@ const requestAssetSchema = z.object({
   magicBytes: z.array(z.coerce.number().int().min(0).max(255)).max(16).optional(),
 });
 
-/** Permissão por destino: a página usa `page:manage`; o patrocínio, `sponsor:manage`. */
+/**
+ * Permissão por destino: a página usa `page:manage`; o patrocínio, `sponsor:manage`.
+ *
+ * A foto do palestrante entrou aqui na FASE 46, quando a ORGANIZAÇÃO passou a poder
+ * enviá-la: quem cadastra palestrante tem `speaker:manage`, e não `page:manage` — a
+ * esteira é a mesma, mas a porta é a da tela que a chamou.
+ */
 function permissionForTarget(target: AssetTarget) {
-  return target === 'SPONSOR_LOGO' ? PERMISSIONS.SPONSOR_MANAGE : PERMISSIONS.PAGE_MANAGE;
+  if (target === 'SPONSOR_LOGO') return PERMISSIONS.SPONSOR_MANAGE;
+  if (target === 'SPEAKER_AVATAR') return PERMISSIONS.SPEAKER_MANAGE;
+  return PERMISSIONS.PAGE_MANAGE;
 }
 
 export async function requestAssetUploadAction(
@@ -840,5 +855,20 @@ export async function confirmAssetUploadAction(
 
   revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
-  return { ok: true, message: 'Imagem enviada e vinculada.', data: { url: result.url } };
+  return {
+    ok: true,
+    message: 'Imagem enviada e vinculada.',
+    /**
+     * A resposta carrega o que FOI GRAVADO (WebP, com o tamanho real) e o que foi
+     * enviado (bytes e tipo originais). A tela usa os dois para mostrar a economia —
+     * e a esteira usa a chave final, porque a conversão grava noutro objeto.
+     */
+    data: {
+      url: result.url,
+      objectKey: result.objectKey,
+      sizeBytes: result.sizeBytes,
+      sourceBytes: result.sourceBytes,
+      sourceMime: result.sourceMime,
+    },
+  };
 }

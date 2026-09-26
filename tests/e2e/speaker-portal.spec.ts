@@ -33,9 +33,20 @@ const ACTIVITY_SLUG = `oficina-f25-${RUN_ID}`;
 const ACTIVITY_TITLE = `Oficina de Saúde Digital ${RUN_ID}`;
 const WORKLOAD_MINUTES = 180;
 
-/** PNG 1×1 válido — a assinatura real do arquivo é o que a validação confere. */
+/**
+ * PNG 8×8 de verdade — a assinatura do arquivo é o que a validação confere, e a
+ * imagem precisa DECODIFICAR para virar WebP (FASE 46).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE FIXTURE MUDOU DE 1×1 PARA 8×8
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O PNG 1×1 usado desde a FASE 17 tinha o CRC do `IDAT` ERRADO. O navegador perdoa
+ *  e desenha; o libpng recusa o arquivo. Enquanto o conteúdo não era decodificado,
+ *  ninguém notou — e a suíte inteira media uploads com um arquivo que não é imagem
+ *  decodificável. Com a conversão para WebP, a recusa apareceu.
+ */
 const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQYlWM4oWHzHx9mGBkKAHkRisGTbO91AAAAAElFTkSuQmCC',
   'base64',
 );
 
@@ -368,13 +379,20 @@ test.describe('portal do palestrante', () => {
     // ── O BANCO confirma o vínculo, a foto e o material ──────────────────────
     const profile = await e2eDb.speakerProfile.findUniqueOrThrow({
       where: { id: profileId },
-      select: { userId: true, bio: true, avatarUrl: true, isConfirmed: true },
+      select: { userId: true, bio: true, avatarUrl: true, avatarSource: true, isConfirmed: true },
     });
 
     expect(profile.userId).not.toBeNull();
     expect(profile.isConfirmed).toBe(true);
     expect(profile.bio).toContain('editada pelo próprio palestrante');
+    /**
+     * A foto que o portal envia é guardada em WebP (FASE 46) — o PNG do arquivo
+     * escolhido não é o objeto que fica no bucket — e a origem é dele: quem subiu
+     * por aqui foi o próprio palestrante.
+     */
     expect(profile.avatarUrl).toContain('http');
+    expect(profile.avatarUrl).toMatch(/\.webp$/);
+    expect(profile.avatarSource).toBe('SPEAKER');
 
     const material = await e2eDb.speakerMaterial.findFirstOrThrow({
       where: { activityId, speakerProfileId: profileId, deletedAt: null },

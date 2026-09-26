@@ -30,9 +30,20 @@ const TENANT_LABEL = 'midia-f24';
 const EVENT_SLUG = `evento-f24-e2e-${RUN_ID}`;
 const SECOND_EVENT_SLUG = `evento-f24-e2e-b-${RUN_ID}`;
 
-/** PNG 1×1 válido — a assinatura do arquivo é o que a validação confere. */
+/**
+ * PNG 8×8 de verdade — a assinatura do arquivo é o que a validação confere, e a
+ * imagem precisa DECODIFICAR para virar WebP (FASE 46).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE FIXTURE MUDOU DE 1×1 PARA 8×8
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O PNG 1×1 usado desde a FASE 17 tinha o CRC do `IDAT` ERRADO. O navegador perdoa
+ *  e desenha; o libpng recusa o arquivo. Enquanto o conteúdo não era decodificado,
+ *  ninguém notou — e a suíte inteira media uploads com um arquivo que não é imagem
+ *  decodificável. Com a conversão para WebP, a recusa apareceu.
+ */
 const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQYlWM4oWHzHx9mGBkKAHkRisGTbO91AAAAAElFTkSuQmCC',
   'base64',
 );
 
@@ -221,7 +232,7 @@ test.describe('mídia e agendamento', () => {
     });
     await uploader.getByRole('button', { name: /Enviar imagem/i }).click();
 
-    await expect(uploader.getByTestId('asset-status-GALLERY')).toContainText(/vinculada/i, {
+    await expect(uploader.getByTestId('asset-status-GALLERY')).toContainText(/guardada em WebP/i, {
       timeout: 30_000,
     });
 
@@ -237,6 +248,18 @@ test.describe('mídia e agendamento', () => {
     const urlField = page.getByTestId(`media-url-${assetId}`);
     const uploadedUrl = await urlField.inputValue();
     expect(uploadedUrl).toContain('eventflow-assets');
+
+    /**
+     * O acervo guarda o WEBP, e não o PNG que foi escolhido (FASE 46): a URL termina
+     * em `.webp`, o tipo registrado é `image/webp` e o download devolve o mesmo tipo.
+     * É a prova de que o objeto original foi trocado — e não apenas renomeado.
+     */
+    expect(uploadedUrl).toMatch(/\.webp$/);
+    await expect(assetRow).toContainText('WebP');
+
+    const served = await page.request.get(uploadedUrl);
+    expect(served.status()).toBe(200);
+    expect(served.headers()['content-type']).toContain('image/webp');
 
     // ── Reaproveita no bloco de galeria (seletor do acervo) ───────────────────
     await page.goto(pageUrl());

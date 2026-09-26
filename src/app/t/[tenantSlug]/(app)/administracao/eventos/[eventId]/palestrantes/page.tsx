@@ -12,7 +12,12 @@ import {
   unlinkSpeakerAction,
 } from '@/app/actions/speaker-actions';
 import {
+  confirmAssetUploadAction,
+  requestAssetUploadAction,
+} from '@/app/actions/landing-actions';
+import {
   SpeakerCreateForm,
+  SpeakerEditForm,
   SpeakerInviteButton,
   SpeakerLinkForm,
   SpeakerUnlinkButton,
@@ -77,8 +82,11 @@ export default async function EventSpeakersPage({
 
       <SpeakerCreateForm
         tenantSlug={tenantSlug}
+        eventId={eventId}
         activities={activityOptions}
         action={saveSpeakerProfileAction}
+        requestUploadAction={requestAssetUploadAction}
+        confirmUploadAction={confirmAssetUploadAction}
       />
 
       <section className="space-y-4" aria-labelledby="lista-palestrantes">
@@ -105,38 +113,67 @@ export default async function EventSpeakersPage({
                 data-has-account={String(speaker.hasAccount)}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="font-medium" data-testid={`speaker-row-name-${speaker.speakerProfileId}`}>
-                      {speaker.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {speaker.roleTitle ?? 'Palestrante'}
-                      {speaker.institution ? ` · ${speaker.institution}` : ''}
-                      {speaker.email ? ` · ${speaker.email}` : ' · sem e-mail'}
-                    </p>
-                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      {speaker.hasAccount ? (
-                        <>
-                          <UserCheck className="size-3" aria-hidden />
-                          Perfil assumido pelo palestrante
-                        </>
-                      ) : speaker.hasPendingInvite ? (
-                        <>
-                          <ShieldCheck className="size-3" aria-hidden />
-                          Convite pendente
-                          {speaker.inviteExpiresAt
-                            ? ` (até ${speaker.inviteExpiresAt.toLocaleDateString('pt-BR')})`
-                            : ''}
-                        </>
-                      ) : (
-                        <>
-                          <UserX className="size-3" aria-hidden />
-                          Sem convite — cadastre um e-mail para gerar
-                        </>
-                      )}
-                      {speaker.materialCount > 0 ? ` · ${speaker.materialCount} material(is)` : ''}
-                      {speaker.isPublic ? '' : ' · oculto na vitrine'}
-                    </p>
+                  <div className="flex min-w-0 items-start gap-3">
+                    {/*
+                      A miniatura mostra a foto REAL — e marca quando ela não foi a
+                      pessoa que enviou (FASE 46). Sem a etiqueta, o organizador não
+                      teria como saber que a organização publicou aquela imagem.
+                    */}
+                    {speaker.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- host do storage é dinâmico
+                      <img
+                        src={speaker.avatarUrl}
+                        alt=""
+                        width={40}
+                        height={40}
+                        className="size-10 shrink-0 rounded-full object-cover"
+                        data-testid={`speaker-row-photo-${speaker.speakerProfileId}`}
+                      />
+                    ) : null}
+
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="font-medium" data-testid={`speaker-row-name-${speaker.speakerProfileId}`}>
+                        {speaker.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {speaker.roleTitle ?? 'Palestrante'}
+                        {speaker.institution ? ` · ${speaker.institution}` : ''}
+                        {speaker.email ? ` · ${speaker.email}` : ' · sem e-mail'}
+                      </p>
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        {speaker.hasAccount ? (
+                          <>
+                            <UserCheck className="size-3" aria-hidden />
+                            Perfil assumido pelo palestrante
+                          </>
+                        ) : speaker.hasPendingInvite ? (
+                          <>
+                            <ShieldCheck className="size-3" aria-hidden />
+                            Convite pendente
+                            {speaker.inviteExpiresAt
+                              ? ` (até ${speaker.inviteExpiresAt.toLocaleDateString('pt-BR')})`
+                              : ''}
+                          </>
+                        ) : (
+                          <>
+                            <UserX className="size-3" aria-hidden />
+                            Sem convite — cadastre um e-mail para gerar
+                          </>
+                        )}
+                        {speaker.materialCount > 0 ? ` · ${speaker.materialCount} material(is)` : ''}
+                        {speaker.isPublic ? '' : ' · oculto na vitrine'}
+                      </p>
+
+                      {speaker.avatarUrl && speaker.avatarSource === 'ORGANIZATION' ? (
+                        <p
+                          className="text-xs text-muted-foreground"
+                          data-testid={`speaker-row-photo-origin-${speaker.speakerProfileId}`}
+                        >
+                          Foto publicada pela organização (o palestrante pode trocá-la ou removê-la
+                          no portal).
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
 
                   {!speaker.hasAccount ? (
@@ -147,6 +184,15 @@ export default async function EventSpeakersPage({
                     />
                   ) : null}
                 </div>
+
+                <SpeakerEditForm
+                  tenantSlug={tenantSlug}
+                  eventId={eventId}
+                  speaker={speaker}
+                  action={saveSpeakerProfileAction}
+                  requestUploadAction={requestAssetUploadAction}
+                  confirmUploadAction={confirmAssetUploadAction}
+                />
 
                 <div className="space-y-2">
                   <h3 className="flex items-center gap-2 text-sm font-medium">

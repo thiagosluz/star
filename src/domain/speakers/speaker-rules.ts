@@ -423,6 +423,33 @@ export const MATERIAL_KIND_LABELS: Record<MaterialKind, string> = {
 export const MATERIAL_VISIBILITIES = ['PUBLIC', 'ATTENDEES_ONLY', 'PRIVATE'] as const;
 export type MaterialVisibility = (typeof MATERIAL_VISIBILITIES)[number];
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  Origem da foto do palestrante (FASE 46)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Quem enviou a foto que está publicada.
+ *
+ * Espelha o enum `SpeakerAvatarSource` do schema. Existe porque a partir da FASE 46
+ * a ORGANIZAÇÃO pode enviar a foto de quem não tem conta — e a pessoa precisa saber
+ * disso ao entrar no portal, para poder substituí-la ou removê-la.
+ */
+export const SPEAKER_AVATAR_SOURCES = ['ORGANIZATION', 'SPEAKER'] as const;
+export type SpeakerAvatarSource = (typeof SPEAKER_AVATAR_SOURCES)[number];
+
+export const SPEAKER_AVATAR_SOURCE_LABELS: Record<SpeakerAvatarSource, string> = {
+  ORGANIZATION: 'Enviada pela organização',
+  SPEAKER: 'Enviada por você',
+};
+
+/**
+ * A nota que o portal mostra quando a foto não foi a pessoa que enviou.
+ *
+ * Ela diz as duas saídas (trocar ou remover) porque a dúvida de quem entra e encontra
+ * a própria foto já publicada é justamente essa: "posso tirar?".
+ */
+export const SPEAKER_AVATAR_ORGANIZATION_NOTE =
+  'A organização enviou esta foto para a vitrine do evento. Você pode trocá-la ou removê-la quando quiser.';
+
 export const MATERIAL_VISIBILITY_LABELS: Record<MaterialVisibility, string> = {
   PUBLIC: 'Aberto a qualquer visitante',
   ATTENDEES_ONLY: 'Somente inscritos na atividade',

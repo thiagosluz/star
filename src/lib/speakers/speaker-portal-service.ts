@@ -31,6 +31,7 @@ import {
   type ClaimRefusalCode,
   type MaterialVisibility,
   type SocialLinks,
+  type SpeakerAvatarSource,
   type SpeakerWorkloadResult,
 } from '@/domain/speakers/speaker-rules';
 import { attachSpeakerAccount } from '@/lib/speakers/speaker-service';
@@ -78,6 +79,8 @@ export interface PortalProfile {
   roleTitle: string | null;
   bio: string | null;
   avatarUrl: string | null;
+  /** Quem enviou a foto publicada (FASE 46) — o portal avisa quando não foi a pessoa. */
+  avatarSource: SpeakerAvatarSource | null;
   socialLinks: SocialLinks;
   isConfirmed: boolean;
   isPublic: boolean;
@@ -255,6 +258,7 @@ export async function loadSpeakerPortal(input: {
         roleTitle: true,
         bio: true,
         avatarUrl: true,
+        avatarSource: true,
         socialLinks: true,
         isConfirmed: true,
         isPublic: true,
@@ -342,6 +346,7 @@ export async function loadSpeakerPortal(input: {
         roleTitle: profile.roleTitle,
         bio: profile.bio,
         avatarUrl: profile.avatarUrl,
+        avatarSource: profile.avatarSource,
         socialLinks: readSocialLinks(profile.socialLinks),
         isConfirmed: profile.isConfirmed,
         isPublic: profile.isPublic,
@@ -544,6 +549,7 @@ export async function updateMySpeakerProfile(input: {
           roleTitle: true,
           bio: true,
           avatarUrl: true,
+          avatarSource: true,
           isConfirmed: true,
         },
       });
@@ -565,6 +571,9 @@ export async function updateMySpeakerProfile(input: {
         };
       }
 
+      const nextAvatarUrl =
+        input.avatarUrl === undefined ? profile.avatarUrl : input.avatarUrl?.trim() || null;
+
       const data = {
         name: draft.name,
         // O e-mail só é atualizável enquanto é ele que identifica a pessoa no
@@ -578,8 +587,25 @@ export async function updateMySpeakerProfile(input: {
          * A foto é gravada pelo SERVIDOR a partir do upload confirmado: o campo
          * escondido do formulário só carrega a URL que a esteira devolveu, e ela
          * passa pela mesma validação de imagem da capa do evento.
+         *
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  AUSENTE PRESERVA; VAZIO REMOVE (FASE 46)
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  São duas situações diferentes e ambas existem: um formulário que não traz o
+         *  campo (nada a decidir) e a pessoa que clicou em "Remover foto" (que manda o
+         *  campo vazio de propósito). Antes da FASE 46 as duas faziam a mesma coisa, e
+         *  era impossível TIRAR uma foto publicada — só trocá-la por outra.
+         *
+         *  Quem enviou também é gravado: a origem volta a ser `SPEAKER` sempre que a
+         *  URL muda por aqui, porque foi a própria pessoa que subiu.
          */
-        avatarUrl: input.avatarUrl?.trim() || profile.avatarUrl,
+        avatarUrl: nextAvatarUrl,
+        avatarSource:
+          nextAvatarUrl === profile.avatarUrl
+            ? profile.avatarSource
+            : nextAvatarUrl === null
+              ? null
+              : 'SPEAKER',
         socialLinks: draft.socialLinks as unknown as object,
         isConfirmed: true,
       };

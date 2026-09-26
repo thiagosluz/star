@@ -4,8 +4,10 @@ import { useActionState, useRef, useState } from 'react';
 import { Copy, Loader2, Plus, RefreshCw, Unlink, UserPlus } from 'lucide-react';
 
 import { Alert, Button, ConfirmDialog, Field, Input, Select, fieldAria } from '@/components/ui';
-import { SPEAKER_ROLE_TITLES } from '@/domain/speakers/speaker-rules';
+import { SPEAKER_ROLE_TITLES, type SpeakerAvatarSource } from '@/domain/speakers/speaker-rules';
 import type { SpeakerActionState } from '@/app/actions/speaker-actions';
+import type { AssetUploadAction } from '@/components/admin/asset-upload';
+import { SpeakerPhotoField } from '@/components/speakers/speaker-photo-field';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -83,14 +85,176 @@ export function InviteTokenBox({ token, expiresAt }: { token: string; expiresAt:
   );
 }
 
-export function SpeakerCreateForm({
+/**
+ * O palestrante já cadastrado, no formato que o formulário de edição consome.
+ *
+ * A FASE 46 precisou dele porque, até então, a organização só sabia CRIAR — corrigir
+ * um nome, publicar a foto de quem não tem conta ou tirar o perfil da vitrine só era
+ * possível pelo banco. A foto é o caso mais evidente: quem nunca vai assumir o perfil
+ * não tem como enviá-la por conta própria.
+ */
+export interface EditableSpeaker {
+  speakerProfileId: string;
+  name: string;
+  email: string | null;
+  institution: string | null;
+  company: string | null;
+  roleTitle: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  avatarSource: SpeakerAvatarSource | null;
+  isPublic: boolean;
+}
+
+/**
+ * Campos comuns aos dois formulários (criar e editar).
+ *
+ * A lista é UMA de propósito: os dois caminhos gravam pelo mesmo serviço, e um campo
+ * que existisse só num deles seria um campo que a organização não consegue corrigir
+ * depois — exatamente o defeito que esta fase veio consertar.
+ */
+function SpeakerFields({
   tenantSlug,
-  activities,
-  action,
+  eventId,
+  speaker,
+  requestUploadAction,
+  confirmUploadAction,
 }: {
   tenantSlug: string;
+  eventId: string;
+  speaker?: EditableSpeaker;
+  requestUploadAction: AssetUploadAction;
+  confirmUploadAction: AssetUploadAction;
+}) {
+  const suffix = speaker ? ' (edição)' : '';
+
+  return (
+    <>
+      <SpeakerPhotoField
+        tenantSlug={tenantSlug}
+        eventId={eventId}
+        currentUrl={speaker?.avatarUrl ?? null}
+        requestUploadAction={requestUploadAction}
+        confirmUploadAction={confirmUploadAction}
+        inputLabel={`Foto do palestrante${suffix}`}
+        testId={`speaker-photo-${speaker?.speakerProfileId ?? 'novo'}`}
+        successPrefix="Foto enviada"
+        successSuffix="Salve o palestrante para publicá-la."
+        note={
+          speaker?.avatarSource === 'ORGANIZATION' && speaker.avatarUrl
+            ? 'Esta foto foi enviada pela organização.'
+            : null
+        }
+      />
+
+      {/*
+        ─────────────────────────────────────────────────────────────────────────────
+         A DECLARAÇÃO DE AUTORIZAÇÃO É DO ORGANIZADOR, E O SERVIÇO A EXIGE
+        ─────────────────────────────────────────────────────────────────────────────
+         Publicar a foto de alguém é dado pessoal de terceiro. A plataforma não tem
+         como verificar o consentimento (ele acontece por e-mail, por telefone, no
+         contrato do evento) — o que ela pode fazer é guardar QUEM declarou. O serviço
+         só exige a caixa quando a foto é NOVA; manter a mesma foto não pede nada.
+      */}
+      <label className="flex items-start gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          name="photoAuthorization"
+          className="mt-0.5"
+          data-testid={`speaker-photo-auth-${speaker?.speakerProfileId ?? 'novo'}`}
+        />
+        <span>
+          Tenho autorização do palestrante para publicar esta foto na vitrine do evento.
+          A declaração fica registrada na trilha de auditoria.
+        </span>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field name="name" label="Nome">
+          <Input
+            {...fieldAria('name')}
+            required
+            minLength={3}
+            maxLength={160}
+            defaultValue={speaker?.name ?? ''}
+            data-testid="speaker-name"
+          />
+        </Field>
+
+        <Field
+          name="email"
+          label="E-mail"
+          hint="É o que identifica a pessoa no convite e no portal."
+        >
+          <Input
+            {...fieldAria('email')}
+            type="email"
+            maxLength={255}
+            defaultValue={speaker?.email ?? ''}
+            data-testid="speaker-email"
+          />
+        </Field>
+
+        <Field name="institution" label="Instituição">
+          <Input
+            {...fieldAria('institution')}
+            maxLength={200}
+            defaultValue={speaker?.institution ?? ''}
+            data-testid="speaker-institution"
+          />
+        </Field>
+
+        <Field name="speaker-roleTitle" label="Papel padrão">
+          <Input
+            id="speaker-roleTitle"
+            name="roleTitle"
+            list="speaker-role-titles"
+            maxLength={120}
+            placeholder="Keynote, Instrutor(a)…"
+            defaultValue={speaker?.roleTitle ?? ''}
+            data-testid="speaker-role"
+          />
+        </Field>
+      </div>
+
+      <datalist id="speaker-role-titles">
+        {SPEAKER_ROLE_TITLES.map((title) => (
+          <option key={title} value={title} />
+        ))}
+      </datalist>
+
+      <Field name="bio" label="Minibiografia" hint="Aparece na vitrine pública.">
+        <Input
+          {...fieldAria('bio')}
+          maxLength={4000}
+          defaultValue={speaker?.bio ?? ''}
+          data-testid="speaker-bio"
+        />
+      </Field>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="isPublic" defaultChecked={speaker?.isPublic ?? true} />
+        Mostrar na vitrine pública do evento
+      </label>
+    </>
+  );
+}
+
+export function SpeakerCreateForm({
+  tenantSlug,
+  eventId,
+  activities,
+  action,
+  requestUploadAction,
+  confirmUploadAction,
+}: {
+  tenantSlug: string;
+  /** Evento que particiona a foto no storage. */
+  eventId: string;
   activities: readonly { id: string; title: string }[];
   action: Action;
+  requestUploadAction: AssetUploadAction;
+  confirmUploadAction: AssetUploadAction;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   const [open, setOpen] = useState(false);
@@ -109,49 +273,12 @@ export function SpeakerCreateForm({
         <form action={formAction} className="space-y-3 rounded-lg border border-border bg-card p-4" data-testid="speaker-form">
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field name="name" label="Nome">
-              <Input {...fieldAria('name')} required minLength={3} maxLength={160} data-testid="speaker-name" />
-            </Field>
-
-            <Field
-              name="email"
-              label="E-mail"
-              hint="É o que identifica a pessoa no convite e no portal."
-            >
-              <Input {...fieldAria('email')} type="email" maxLength={255} data-testid="speaker-email" />
-            </Field>
-
-            <Field name="institution" label="Instituição">
-              <Input {...fieldAria('institution')} maxLength={200} data-testid="speaker-institution" />
-            </Field>
-
-            <Field name="speaker-roleTitle" label="Papel padrão">
-              <Input
-                id="speaker-roleTitle"
-                name="roleTitle"
-                list="speaker-role-titles"
-                maxLength={120}
-                placeholder="Keynote, Instrutor(a)…"
-                data-testid="speaker-role"
-              />
-            </Field>
-          </div>
-
-          <datalist id="speaker-role-titles">
-            {SPEAKER_ROLE_TITLES.map((title) => (
-              <option key={title} value={title} />
-            ))}
-          </datalist>
-
-          <Field name="bio" label="Minibiografia" hint="Aparece na vitrine pública.">
-            <Input {...fieldAria('bio')} maxLength={4000} data-testid="speaker-bio" />
-          </Field>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="isPublic" defaultChecked />
-            Mostrar na vitrine pública do evento
-          </label>
+          <SpeakerFields
+            tenantSlug={tenantSlug}
+            eventId={eventId}
+            requestUploadAction={requestUploadAction}
+            confirmUploadAction={confirmUploadAction}
+          />
 
           <p className="text-xs text-muted-foreground">
             Ao salvar, o sistema gera um código de convite (quando há e-mail) para o palestrante
@@ -174,6 +301,56 @@ export function SpeakerCreateForm({
         {activities.length} atividades disponíveis para vínculo.
       </p>
     </div>
+  );
+}
+
+/**
+ * Edição do cadastro de um palestrante já existente.
+ *
+ * Nasceu na FASE 46 junto com a foto: sem ela, a foto enviada pela organização ficaria
+ * congelada no primeiro salvamento — e um nome errado, também.
+ */
+export function SpeakerEditForm({
+  tenantSlug,
+  eventId,
+  speaker,
+  action,
+  requestUploadAction,
+  confirmUploadAction,
+}: {
+  tenantSlug: string;
+  eventId: string;
+  speaker: EditableSpeaker;
+  action: Action;
+  requestUploadAction: AssetUploadAction;
+  confirmUploadAction: AssetUploadAction;
+}) {
+  const [state, formAction, pending] = useActionState(action, null);
+
+  return (
+    <details className="rounded-lg border border-border bg-card" data-testid={`speaker-edit-${speaker.speakerProfileId}`}>
+      <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Editar cadastro</summary>
+
+      <form action={formAction} className="space-y-3 border-t border-border p-4">
+        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+        <input type="hidden" name="speakerProfileId" value={speaker.speakerProfileId} />
+
+        <SpeakerFields
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          speaker={speaker}
+          requestUploadAction={requestUploadAction}
+          confirmUploadAction={confirmUploadAction}
+        />
+
+        <Feedback state={state} />
+
+        <Button type="submit" disabled={pending} data-testid={`save-speaker-${speaker.speakerProfileId}`}>
+          {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+          Salvar alterações
+        </Button>
+      </form>
+    </details>
   );
 }
 

@@ -12,16 +12,17 @@
  *
  *      1. `requestAssetUpload`  → URL assinada, com tipo e tamanho travados
  *      2. (navegador → storage)
- *      3. `confirmAssetUpload`  → confere o objeto, GRAVA a URL no evento/patrocínio
+ *      3. `confirmAssetUpload`  → lê o objeto, converte para WebP, apaga o original
+ *                                 e GRAVA a URL no evento/patrocínio
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O QUE A URL ASSINADA TRAVA — E O QUE ELA NÃO TRAVA
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Ela trava a chave exata, o tamanho e a validade. O que ela NÃO trava é o
- *  conteúdo: quem tem a URL pode enviar qualquer coisa. É por isso que a confirmação
- *  lê o objeto de volta (`inspectObject`) e só então grava a URL no banco — e é por
- *  isso que a chave do objeto NUNCA é a que o cliente pediu (o nome final é gerado
- *  aqui, no servidor).
+ *  CONTEÚDO: quem tem a URL pode enviar qualquer coisa. É por isso que a confirmação
+ *  lê o objeto de volta (`inspectObject`), DECODIFICA os bytes (FASE 46) e só então
+ *  grava a URL no banco — e é por isso que a chave do objeto NUNCA é a que o cliente
+ *  pediu (o nome final é gerado aqui, no servidor).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from 'node:crypto';
@@ -33,17 +34,22 @@ import {
   BUCKETS,
   createUploadUrl,
   deleteObject,
+  getObjectBuffer,
   inspectObject,
+  putObjectBuffer,
   sanitizeFileName,
   UPLOAD_URL_TTL_SECONDS,
 } from '@/lib/storage/s3-client';
 import { isSha256Hex, verifyStoredObject } from '@/domain/review/submission-rules';
+import { encodeAssetAsWebp } from '@/lib/storage/image-converter';
 import { registerAsset } from '@/lib/admin/media-asset-service';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
 import {
   canonicalExtension,
   formatBytes,
+  STORED_IMAGE_MIME,
   validateImageUpload,
+  webpKeyFor,
   type AssetTarget,
   type ImageMimeType,
 } from '@/domain/events/image-rules';
@@ -233,7 +239,17 @@ export interface ConfirmAssetInput {
  */
 export async function confirmAssetUpload(
   input: ConfirmAssetInput,
-): Promise<AssetResult<{ url: string; objectKey: string; sizeBytes: number }>> {
+): Promise<
+  AssetResult<{
+    url: string;
+    objectKey: string;
+    /** Tamanho do objeto GRAVADO (o WebP), não o do arquivo que o cliente enviou. */
+    sizeBytes: number;
+    /** Tamanho e tipo do arquivo ENVIADO — a tela mostra a economia com eles. */
+    sourceBytes: number;
+    sourceMime: ImageMimeType;
+  }>
+> {
   if (!isSha256Hex(input.checksum)) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Checksum SHA-256 inválido.' };
   }
@@ -279,7 +295,65 @@ export async function confirmAssetUpload(
       };
     }
 
-    const url = publicObjectUrl(input.bucket, input.objectKey);
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A IMAGEM É RECONVERTIDA AQUI, E O ORIGINAL VAI EMBORA (FASE 46)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O que o organizador enviou (PNG, JPEG, WebP ou AVIF) é lido de volta,
+     *  decodificado e gravado no formato de armazenamento. O objeto enviado é
+     *  APAGADO: manter os dois dobraria o espaço para servir sempre o mesmo pixel —
+     *  e é justamente o espaço que a fase veio economizar.
+     *
+     *  A chave nova (e não a mesma com outro conteúdo) existe porque a extensão do
+     *  objeto é lida por CDN, cache e navegador: um `.png` com bytes de WebP é uma
+     *  mentira gravada no bucket.
+     *
+     *  Falhar aqui é RECUSAR, com o objeto apagado junto. É o único ponto do sistema
+     *  que DECODIFICA o arquivo enviado, então é ele que dá a palavra final sobre o
+     *  conteúdo ser ou não uma imagem.
+     */
+    const conversion = await encodeAssetAsWebp({
+      bytes: await getObjectBuffer(input.bucket, input.objectKey),
+      target: input.target,
+      sourceMime: realMime,
+    });
+
+    if (!conversion.ok) {
+      await deleteObject(input.bucket, input.objectKey).catch(() => undefined);
+      return { ok: false, code: 'INVALID_INPUT', message: conversion.message };
+    }
+
+    const finalObjectKey = webpKeyFor(input.objectKey);
+
+    const storedWebp = await putObjectBuffer({
+      bucket: input.bucket,
+      objectKey: finalObjectKey,
+      body: conversion.bytes,
+      contentType: STORED_IMAGE_MIME,
+      /**
+       * O que foi enviado fica no METADADO do objeto: o acervo guarda o WebP, e sem
+       * esta linha ninguém conseguiria dizer depois de onde ele veio — nem auditar a
+       * economia da conversão olhando o bucket.
+       */
+      metadata: {
+        'original-mime': realMime,
+        'original-size': String(stored.sizeBytes),
+      },
+    });
+
+    // Best-effort: o objeto enviado não é mais referenciado por nada. Se a remoção
+    // falhar, sobra lixo pago no bucket — e o log diz isso, em vez de esconder.
+    await deleteObject(input.bucket, input.objectKey).catch((error: unknown) => {
+      console.error(
+        `[asset] objeto original não removido (${input.objectKey}): ${
+          error instanceof Error ? error.message : 'falha desconhecida'
+        }`,
+      );
+    });
+
+    const finalUrl = publicObjectUrl(input.bucket, finalObjectKey);
+    const storedBytes = storedWebp.sizeBytes;
+    const storedChecksum = storedWebp.checksum;
 
     /**
      * ─────────────────────────────────────────────────────────────────────────────
@@ -307,16 +381,23 @@ export async function confirmAssetUpload(
           actorId: input.actorId,
           target: input.target,
           bucket: input.bucket,
-          objectKey: input.objectKey,
-          url,
+          objectKey: finalObjectKey,
+          url: finalUrl,
           fileName: input.fileName,
-          mimeType: realMime,
-          sizeBytes: input.sizeBytes,
-          checksum: input.checksum,
+          mimeType: STORED_IMAGE_MIME,
+          sizeBytes: storedBytes,
+          checksum: storedChecksum,
         }),
       );
 
-      return { ok: true, url: registered.url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
+      return {
+        ok: true,
+        url: registered.url,
+        objectKey: finalObjectKey,
+        sizeBytes: storedBytes,
+        sourceBytes: stored.sizeBytes,
+        sourceMime: realMime,
+      };
     }
 
     const written = await withTenant(input.tenantId, async (tx) => {
@@ -332,18 +413,18 @@ export async function confirmAssetUpload(
         actorId: input.actorId,
         target: input.target,
         bucket: input.bucket,
-        objectKey: input.objectKey,
-        url,
+        objectKey: finalObjectKey,
+        url: finalUrl,
         fileName: input.fileName,
-        mimeType: realMime,
-        sizeBytes: input.sizeBytes,
-        checksum: input.checksum,
+        mimeType: STORED_IMAGE_MIME,
+        sizeBytes: storedBytes,
+        checksum: storedChecksum,
       });
 
-      const finalUrl = registered.url;
+      const boundUrl = registered.url;
 
       if (input.target === 'SPONSOR_LOGO') {
-        return writeSponsorLogo(tx, input, finalUrl);
+        return writeSponsorLogo(tx, input, boundUrl);
       }
 
       const column = input.target === 'COVER' ? 'coverImageUrl' : 'logoUrl';
@@ -357,7 +438,7 @@ export async function confirmAssetUpload(
 
       await tx.event.update({
         where: { id: before.id },
-        data: input.target === 'COVER' ? { coverImageUrl: finalUrl } : { logoUrl: finalUrl },
+        data: input.target === 'COVER' ? { coverImageUrl: boundUrl } : { logoUrl: boundUrl },
       });
 
       await recordAudit(
@@ -370,21 +451,28 @@ export async function confirmAssetUpload(
           changes: {
             [column]: {
               from: input.target === 'COVER' ? before.coverImageUrl : before.logoUrl,
-              to: finalUrl,
+              to: boundUrl,
             },
           },
         },
         tx,
       );
 
-      return { ok: true as const, url: finalUrl };
+      return { ok: true as const, url: boundUrl };
     });
 
     if (!written.ok) {
       return { ok: false, code: 'NOT_FOUND', message: 'Evento ou patrocinador não encontrado.' };
     }
 
-    return { ok: true, url: written.url, objectKey: input.objectKey, sizeBytes: stored.sizeBytes };
+    return {
+      ok: true,
+      url: written.url,
+      objectKey: finalObjectKey,
+      sizeBytes: storedBytes,
+      sourceBytes: stored.sizeBytes,
+      sourceMime: realMime,
+    };
   } catch (error) {
     console.error(`[asset] falha ao confirmar upload: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível confirmar a imagem enviada.' };

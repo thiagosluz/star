@@ -15,12 +15,14 @@ import {
   MAX_MATERIAL_BYTES,
   SOCIAL_NETWORKS,
   SOCIAL_NETWORK_LABELS,
+  SPEAKER_AVATAR_ORGANIZATION_NOTE,
   type SocialLinks,
+  type SpeakerAvatarSource,
 } from '@/domain/speakers/speaker-rules';
-import { MAX_IMAGE_BYTES, formatBytes } from '@/domain/events/image-rules';
+import { formatBytes } from '@/domain/events/image-rules';
 import type { SpeakerActionState } from '@/app/actions/speaker-actions';
 import { uploadSpeakerMaterial, type SpeakerUploadAction } from '@/components/speakers/material-upload';
-import { uploadAssetFile } from '@/components/admin/asset-upload';
+import { SpeakerPhotoField } from '@/components/speakers/speaker-photo-field';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -76,6 +78,7 @@ export function SpeakerProfileForm({
     roleTitle: string | null;
     bio: string | null;
     avatarUrl: string | null;
+    avatarSource: SpeakerAvatarSource | null;
     socialLinks: SocialLinks;
   };
   updateAction: SpeakerUploadAction;
@@ -83,100 +86,31 @@ export function SpeakerProfileForm({
   confirmAvatarAction: SpeakerUploadAction;
 }) {
   const [state, formAction, pending] = useActionState(updateAction, null);
-  const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl ?? '');
-  const [uploading, setUploading] = useState(false);
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  /**
-   * A foto usa a MESMA esteira da capa do evento (`uploadAssetFile`, alvo
-   * `SPEAKER_AVATAR`): URL assinada, envio direto e confirmação com a assinatura real
-   * do arquivo conferida no servidor. O que muda é só para onde o endereço vai.
-   */
-  async function handleAvatar(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setUploading(true);
-    setUploadMessage(null);
-
-    const result = await uploadAssetFile({
-      file,
-      tenantSlug,
-      eventId,
-      target: 'SPEAKER_AVATAR',
-      // O destino exige o perfil: sem este campo o servidor recusa o envio (o
-      // formulário diz de quem é a foto, e o serviço confere no banco).
-      extraFormFields: { speakerProfileId },
-      requestUploadAction: requestAvatarAction,
-      confirmUploadAction: confirmAvatarAction,
-    });
-
-    setUploading(false);
-
-    if (!result.ok) {
-      setUploadMessage(result.message);
-      return;
-    }
-
-    setAvatarUrl(result.url);
-    setUploadMessage('Foto validada. Clique em "Salvar perfil" para publicá-la.');
-  }
 
   return (
     <form action={formAction} className="space-y-4" data-testid={`speaker-profile-form-${speakerProfileId}`}>
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="speakerProfileId" value={speakerProfileId} />
-      <input type="hidden" name="avatarUrl" value={avatarUrl} />
 
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="space-y-2">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- host do storage é dinâmico
-            <img
-              src={avatarUrl}
-              alt="Sua foto atual"
-              width={72}
-              height={72}
-              className="size-18 rounded-full object-cover"
-            />
-          ) : (
-            <span className="flex size-18 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground">
-              sem foto
-            </span>
-          )}
+      <SpeakerPhotoField
+        tenantSlug={tenantSlug}
+        eventId={eventId}
+        speakerProfileId={speakerProfileId}
+        currentUrl={initial.avatarUrl}
+        requestUploadAction={requestAvatarAction}
+        confirmUploadAction={confirmAvatarAction}
+        testId="speaker-avatar-field"
+        successPrefix="Foto validada"
+        successSuffix='Clique em "Salvar perfil" para publicá-la.'
+        note={
+          initial.avatarSource === 'ORGANIZATION' ? SPEAKER_AVATAR_ORGANIZATION_NOTE : null
+        }
+      />
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={uploading}
-            onClick={() => fileRef.current?.click()}
-            data-testid="upload-speaker-avatar"
-          >
-            {uploading ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Upload className="size-3.5" aria-hidden />}
-            Trocar foto
-          </Button>
-
-          <input
-            ref={fileRef}
-            type="file"
-            aria-label="Foto do palestrante"
-            accept="image/png,image/jpeg,image/webp,image/avif"
-            className="sr-only"
-            onChange={handleAvatar}
-          />
-
-          <p className="max-w-40 text-xs text-muted-foreground">
-            PNG, JPEG, WebP ou AVIF · até {formatBytes(MAX_IMAGE_BYTES.SPEAKER_AVATAR)}
-          </p>
-        </div>
-
-        <div className="grid flex-1 gap-3 sm:grid-cols-2">
-          <Field name="name" label="Nome público" hint="É o nome que aparece na vitrine e no certificado.">
-            <Input {...fieldAria('name')} defaultValue={initial.name} required minLength={3} maxLength={160} />
-          </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field name="name" label="Nome público" hint="É o nome que aparece na vitrine e no certificado.">
+          <Input {...fieldAria('name')} defaultValue={initial.name} required minLength={3} maxLength={160} />
+        </Field>
 
           <Field name="email" label="E-mail de contato" hint="Usado pela organização; não aparece na página.">
             <Input {...fieldAria('email')} type="email" defaultValue={initial.email ?? ''} maxLength={255} />
@@ -193,7 +127,6 @@ export function SpeakerProfileForm({
           <Field name="roleTitle" label="Como você quer ser apresentado" hint="Ex.: Keynote, Instrutor(a), Painelista.">
             <Input {...fieldAria('roleTitle')} defaultValue={initial.roleTitle ?? ''} maxLength={120} />
           </Field>
-        </div>
       </div>
 
       <Field name="bio" label="Biografia" hint="Aparece na vitrine do evento e na sua ficha. Até 4000 caracteres.">
@@ -218,7 +151,6 @@ export function SpeakerProfileForm({
         </div>
       </fieldset>
 
-      {uploadMessage ? <Alert tone="info">{uploadMessage}</Alert> : null}
       <Feedback state={state} />
 
       <Button type="submit" disabled={pending} data-testid="save-speaker-profile">

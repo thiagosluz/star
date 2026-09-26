@@ -22,6 +22,21 @@
  *  SVG fica FORA da allowlist de propósito: SVG é um documento XML que aceita
  *  `<script>` e `onload`. Servir SVG enviado por usuário é XSS armazenado com
  *  outro nome.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE ENTRA É O QUE O USUÁRIO TEM; O QUE FICA É WEBP (FASE 46)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Aceitar PNG, JPEG, WebP e AVIF é aceitar o que sai de câmera, de editor e de
+ *  celular. GUARDAR é outra decisão: o acervo da instituição é servido público e
+ *  indefinidamente, então o formato de armazenamento é UM (`WEBP_POLICY`) e a
+ *  conversão acontece na confirmação do upload, no servidor — converter no
+ *  navegador deixaria a garantia na mão de quem envia.
+ *
+ *  A política é DADO, com duas variáveis por finalidade:
+ *    • **modo** — `FOTOGRAFIA` (foto, com perda calibrada) × `GRAFICO` (logo:
+ *      perda em borda de letra aparece, então vai sem perda);
+ *    • **maior lado** — o teto em pixels, porque uma foto de 12 MP num avatar de
+ *      56 px é peso que ninguém vê.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -63,6 +78,127 @@ export const MAX_IMAGE_BYTES: Record<AssetTarget, number> = {
    */
   SPEAKER_AVATAR: 2 * 1024 * 1024,
 };
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Formato de armazenamento — WebP (FASE 46)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Como a imagem é codificada ao ser guardada.
+ *
+ * `FOTOGRAFIA` usa perda calibrada (é o que a foto suporta); `GRAFICO` vai sem
+ * perda, porque logotipo tem borda de letra e a perda aparece justamente ali —
+ * num logo, o artefato do JPEG/WebP com perda é visível a olho nu.
+ */
+export type WebpEncodingMode = 'FOTOGRAFIA' | 'GRAFICO';
+
+export interface WebpPolicy {
+  mode: WebpEncodingMode;
+  /** Maior lado permitido, em pixels. `null` = não redimensiona. */
+  maxLongestSide: number | null;
+}
+
+/**
+ * Política de armazenamento por finalidade.
+ *
+ * Os tetos saem de ONDE a imagem é exibida, não de um número redondo:
+ *   • foto do palestrante — avatar de 56 px na vitrine e a ficha; 512 px sobra;
+ *   • capa — o hero da página pública; 1920 px cobre a largura de tela comum;
+ *   • galeria — a imagem abre ampliada; 2560 px é o limite do que se percebe;
+ *   • logotipo e patrocinador — **sem redimensionar**: logo é pequeno e é visto
+ *     no tamanho que o arquivo tem; reduzir aqui não economiza nada relevante e
+ *     borraria a marca.
+ *
+ * Nenhum teto AUMENTA a imagem: o redimensionamento só reduz.
+ */
+export const WEBP_POLICY: Record<AssetTarget, WebpPolicy> = {
+  COVER: { mode: 'FOTOGRAFIA', maxLongestSide: 1920 },
+  GALLERY: { mode: 'FOTOGRAFIA', maxLongestSide: 2560 },
+  SPEAKER_AVATAR: { mode: 'FOTOGRAFIA', maxLongestSide: 512 },
+  LOGO: { mode: 'GRAFICO', maxLongestSide: null },
+  SPONSOR_LOGO: { mode: 'GRAFICO', maxLongestSide: null },
+};
+
+/** Qualidade da codificação com perda. 82 é o joelho da curva para foto. */
+export const WEBP_QUALITY = 82;
+
+/** O tipo GRAVADO no banco e no objeto — o único, para toda imagem de upload. */
+export const STORED_IMAGE_MIME = 'image/webp' as const;
+
+/**
+ * Teto de pixels da imagem de ORIGEM.
+ *
+ * O limite de bytes não protege contra bomba de descompressão: um PNG de 2 MB
+ * pode declarar 30.000 × 30.000 e pedir gigabytes ao ser aberto. 40 MP é acima de
+ * qualquer câmera de celular comum (12–50 MP) e cabe na memória do processo.
+ */
+export const MAX_SOURCE_PIXELS = 40_000_000;
+
+/** Formatos aceitos NA ENTRADA, para o texto da tela (o que fica é WebP). */
+export const IMAGE_INPUT_LABEL = 'PNG, JPEG, WebP ou AVIF';
+
+/**
+ * O aviso que acompanha todo campo de imagem.
+ *
+ * Ele diz as DUAS coisas que a conversão faz — inclusive a que a pessoa não pediu
+ * e interessa a ela: os dados da câmera (data, modelo e, em foto de celular, as
+ * coordenadas) não vão junto para a página pública.
+ */
+export const WEBP_STORAGE_NOTICE =
+  'Guardamos toda imagem em WebP: o arquivo fica menor e os dados da câmera (data e local) não são publicados.';
+
+/**
+ * Chave do objeto no formato de armazenamento.
+ *
+ * O upload assina a chave com a extensão do arquivo ENVIADO (`capa.png`); a
+ * conversão grava noutra chave, e não por cima: um objeto `.png` com bytes de WebP
+ * seria uma mentira gravada no bucket — e é a extensão que o CDN e o navegador
+ * usam para decidir o que fazer com o arquivo.
+ */
+export function webpKeyFor(objectKey: string): string {
+  const key = objectKey.trim();
+  if (/\.webp$/i.test(key)) return key;
+
+  const extension = /\.[a-z0-9]{2,5}$/i;
+  return extension.test(key) ? key.replace(extension, '.webp') : `${key}.webp`;
+}
+
+/**
+ * Rótulo curto do formato guardado, para a tela do acervo.
+ *
+ * O acervo mostra o TIPO GRAVADO, e não uma suposição: o que entrou antes da FASE 46
+ * continua PNG ou JPEG no bucket, e a tela precisa dizer a verdade sobre o que está
+ * lá — é assim que o organizador confere que a conversão aconteceu.
+ */
+export function imageFormatLabel(mimeType: string): string {
+  switch (mimeType.split(';')[0]?.trim().toLowerCase()) {
+    case 'image/webp':
+      return 'WebP';
+    case 'image/png':
+      return 'PNG';
+    case 'image/jpeg':
+      return 'JPEG';
+    case 'image/avif':
+      return 'AVIF';
+    default:
+      return mimeType;
+  }
+}
+
+/**
+ * Quanto a conversão economizou, em texto — `null` quando não houve economia.
+ *
+ * Existe para a tela poder MOSTRAR o efeito da regra em vez de afirmá-lo: em
+ * imagem muito pequena o WebP pode sair maior que o original, e aí a frase certa
+ * é nenhuma.
+ */
+export function webpSavingsLabel(sourceBytes: number, storedBytes: number): string | null {
+  if (!Number.isFinite(sourceBytes) || !Number.isFinite(storedBytes)) return null;
+  if (sourceBytes <= 0 || storedBytes <= 0) return null;
+  if (storedBytes >= sourceBytes) return null;
+
+  const saved = Math.round((1 - storedBytes / sourceBytes) * 100);
+  return saved <= 0 ? null : `${saved}% menor`;
+}
 
 export const IMAGE_MIME_TYPES = [
   'image/png',

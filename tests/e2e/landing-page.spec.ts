@@ -27,9 +27,20 @@ const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'landing-f17';
 const EVENT_SLUG = `evento-f17-e2e-${RUN_ID}`;
 
-/** PNG 1×1 válido — a assinatura do arquivo é o que a validação de imagem confere. */
+/**
+ * PNG 8×8 de verdade — a assinatura do arquivo é o que a validação confere, e a
+ * imagem precisa DECODIFICAR para virar WebP (FASE 46).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE FIXTURE MUDOU DE 1×1 PARA 8×8
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O PNG 1×1 usado desde a FASE 17 tinha o CRC do `IDAT` ERRADO. O navegador perdoa
+ *  e desenha; o libpng recusa o arquivo. Enquanto o conteúdo não era decodificado,
+ *  ninguém notou — e a suíte inteira media uploads com um arquivo que não é imagem
+ *  decodificável. Com a conversão para WebP, a recusa apareceu.
+ */
 const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQYlWM4oWHzHx9mGBkKAHkRisGTbO91AAAAAElFTkSuQmCC',
   'base64',
 );
 
@@ -413,7 +424,7 @@ test.describe('página pública, patrocínio e autoria', () => {
         buffer: PNG_1X1,
       });
       await uploader.getByRole('button', { name: /Enviar imagem/i }).click();
-      await expect(uploader.getByTestId('asset-status-SPONSOR_LOGO')).toContainText(/vinculada/i, {
+      await expect(uploader.getByTestId('asset-status-SPONSOR_LOGO')).toContainText(/guardada em WebP/i, {
         timeout: 30_000,
       });
     }

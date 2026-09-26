@@ -1,4 +1,3 @@
-import type { LandingActionState } from '@/app/actions/landing-actions';
 import {
   MAX_IMAGE_BYTES,
   formatBytes,
@@ -26,10 +25,26 @@ import {
 /** Quantos bytes iniciais cobrem todas as assinaturas aceitas (AVIF precisa de 12). */
 const MAGIC_BYTES_TO_READ = 16;
 
+/**
+ * O ESTADO QUE A ESTEIRA PRECISA CONHECER — e só ele (FASE 46).
+ *
+ * A esteira nasceu com o estado da página (`LandingActionState`) e a FASE 46 a
+ * chamou de um formulário de palestrante, que devolve `SpeakerActionState`. Os dois
+ * têm exatamente estes campos; amarrar o módulo a um deles obrigaria a duplicar a
+ * esteira inteira — ou a mentir sobre o tipo — só para satisfazer o compilador.
+ */
+export interface UploadActionState {
+  ok: boolean;
+  code?: string;
+  message?: string;
+  details?: readonly string[];
+  data?: Record<string, unknown>;
+}
+
 export type AssetUploadAction = (
-  prev: LandingActionState | null,
+  prev: UploadActionState | null,
   formData: FormData,
-) => Promise<LandingActionState>;
+) => Promise<UploadActionState>;
 
 export interface UploadAssetInput {
   file: File;
@@ -59,7 +74,15 @@ export interface UploadAssetInput {
 }
 
 export type UploadAssetResult =
-  | { ok: true; url: string; objectKey: string; sizeBytes: number }
+  | {
+      ok: true;
+      url: string;
+      objectKey: string;
+      /** Tamanho do objeto GRAVADO (o WebP), não o do arquivo escolhido. */
+      sizeBytes: number;
+      /** Tamanho do arquivo escolhido — a diferença é a economia da conversão. */
+      sourceBytes: number;
+    }
   | { ok: false; message: string };
 
 /** SHA-256 em hexadecimal, no navegador (Web Crypto). */
@@ -123,6 +146,7 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
       bucket: string;
       requiredHeaders: Record<string, string>;
       mimeType: string;
+      eventId?: string;
     };
 
     const put = await fetch(ticket.uploadUrl, {
@@ -137,7 +161,7 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
 
     const confirmForm = new FormData();
     confirmForm.set('tenantSlug', input.tenantSlug);
-    confirmForm.set('eventId', input.eventId);
+    confirmForm.set('eventId', ticket.eventId || input.eventId);
     confirmForm.set('target', input.target);
     if (input.sponsorId) confirmForm.set('sponsorId', input.sponsorId);
     confirmForm.set('objectKey', ticket.objectKey);
@@ -160,7 +184,26 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
       return { ok: false, message: 'O servidor não devolveu o endereço da imagem.' };
     }
 
-    return { ok: true, url, objectKey: ticket.objectKey, sizeBytes: file.size };
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A CHAVE E O TAMANHO VÊM DA CONFIRMAÇÃO, NÃO DO PEDIDO (FASE 46)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A conversão para WebP grava noutro objeto, com outro tamanho. Devolver a
+     *  chave do pedido (`ticket.objectKey`) e o tamanho do arquivo escolhido
+     *  (`file.size`) descreveria um objeto que não existe mais — e é justamente esse
+     *  par que a tela mostra para dizer quanto a imagem economizou.
+     */
+    const storedKey = confirmResult.data?.objectKey;
+    const storedSize = confirmResult.data?.sizeBytes;
+    const sourceSize = confirmResult.data?.sourceBytes;
+
+    return {
+      ok: true,
+      url,
+      objectKey: typeof storedKey === 'string' ? storedKey : ticket.objectKey,
+      sizeBytes: typeof storedSize === 'number' ? storedSize : file.size,
+      sourceBytes: typeof sourceSize === 'number' ? sourceSize : file.size,
+    };
   } catch (error) {
     return {
       ok: false,

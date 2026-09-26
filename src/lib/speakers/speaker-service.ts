@@ -39,6 +39,7 @@ import {
   normalizeSpeakerProfile,
   readSocialLinks,
   type SocialLinks,
+  type SpeakerAvatarSource,
 } from '@/domain/speakers/speaker-rules';
 
 export type SpeakerErrorCode =
@@ -67,6 +68,15 @@ export interface SaveSpeakerProfileInput {
   roleTitle?: string | null;
   bio?: string | null;
   avatarUrl?: string | null;
+  /**
+   * Declaração da organização de que TEM autorização do palestrante para publicar a
+   * foto enviada (FASE 46).
+   *
+   * É a única prova que a plataforma pode guardar de um consentimento que acontece
+   * fora dela — por e-mail, por telefone, no contrato do evento. Publicar a foto de
+   * alguém sem esta confirmação é dado pessoal de terceiro sem base declarada.
+   */
+  photoAuthorization?: boolean;
   socialLinks?: Record<string, unknown>;
   displayOrder?: number;
   isPublic?: boolean;
@@ -123,6 +133,7 @@ export async function saveSpeakerProfile(
               roleTitle: true,
               bio: true,
               avatarUrl: true,
+              avatarSource: true,
               socialLinks: true,
               displayOrder: true,
               isPublic: true,
@@ -135,6 +146,53 @@ export async function saveSpeakerProfile(
         return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Palestrante não encontrado.' };
       }
 
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A FOTO AUSENTE PRESERVA; A FOTO VAZIA APAGA (FASE 46)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  Se `avatarUrl` ausente virasse `null`, editar o NOME de um palestrante
+       *  apagaria a foto que ele subiu no portal — sem aviso e sem como desfazer. É a
+       *  mesma armadilha do `taxId` do patrocinador (FASE 17) e do campo de contatos
+       *  do perfil público (FASE 45): campo que a tela não manda não pode ser
+       *  decidido por omissão.
+       *
+       *  Quem enviou a foto é decidido aqui também: URL igual é a MESMA foto (a
+       *  origem não muda); URL nova, enviada pela organização, é `ORGANIZATION`.
+       */
+      const currentAvatarUrl = existing?.avatarUrl ?? null;
+      const nextAvatarUrl =
+        input.avatarUrl === undefined ? currentAvatarUrl : input.avatarUrl?.trim() || null;
+
+      const nextAvatar: { url: string | null; source: SpeakerAvatarSource | null } = {
+        url: nextAvatarUrl,
+        source:
+          nextAvatarUrl === null
+            ? null
+            : nextAvatarUrl === currentAvatarUrl
+              ? (existing?.avatarSource ?? null)
+              : 'ORGANIZATION',
+      };
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  FOTO NOVA SEM DECLARAÇÃO É RECUSA (FASE 46)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A checagem é no SERVIÇO, e não na tela, porque é aqui que se sabe se a foto
+       *  MUDOU: exigir a declaração a cada gravação transformaria a caixa em ruído
+       *  (o organizador marcaria sem ler para salvar uma correção de nome), e a
+       *  declaração precisa significar alguma coisa no dia em que for questionada.
+       */
+      const publishingNewPhoto = nextAvatar.url !== null && nextAvatar.url !== currentAvatarUrl;
+
+      if (publishingNewPhoto && input.photoAuthorization !== true) {
+        return {
+          ok: false as const,
+          code: 'INVALID_INPUT' as const,
+          message:
+            'Confirme que você tem autorização do palestrante para publicar esta foto.',
+        };
+      }
+
       const data = {
         name: draft.name,
         email: draft.email,
@@ -143,7 +201,8 @@ export async function saveSpeakerProfile(
         roleTitle: draft.roleTitle,
         bio: draft.bio,
         socialLinks: draft.socialLinks as unknown as object,
-        avatarUrl: input.avatarUrl?.trim() || null,
+        avatarUrl: nextAvatar.url,
+        avatarSource: nextAvatar.source,
         displayOrder: input.displayOrder ?? existing?.displayOrder ?? 0,
         isPublic: input.isPublic ?? existing?.isPublic ?? true,
       };
@@ -175,6 +234,14 @@ export async function saveSpeakerProfile(
               name: { from: null, to: draft.name },
               email: { from: null, to: draft.email },
               convite: { from: null, to: invite ? 'gerado' : 'sem e-mail' },
+              // A declaração de autorização da foto vale no NASCIMENTO do perfil
+              // também — é aqui que ela costuma acontecer, com a foto já em mãos.
+              ...(publishingNewPhoto
+                ? {
+                    foto: { from: null, to: 'enviada pela organização' },
+                    autorizacaoDaFoto: { from: null, to: 'declarada pela organização' },
+                  }
+                : {}),
             },
           },
           tx,
@@ -212,21 +279,46 @@ export async function saveSpeakerProfile(
           action: 'UPDATE',
           entityType: 'speakerProfile',
           entityId: existing.id,
-          changes: diffFields(
-            {
-              name: existing.name,
-              email: existing.email,
-              institution: existing.institution,
-              company: existing.company,
-              roleTitle: existing.roleTitle,
-              bio: existing.bio,
-              avatarUrl: existing.avatarUrl,
-              displayOrder: existing.displayOrder,
-              isPublic: existing.isPublic,
-            },
-            data,
-            ['name', 'email', 'institution', 'company', 'roleTitle', 'bio', 'avatarUrl', 'displayOrder', 'isPublic'],
-          ),
+          changes: {
+            ...diffFields(
+              {
+                name: existing.name,
+                email: existing.email,
+                institution: existing.institution,
+                company: existing.company,
+                roleTitle: existing.roleTitle,
+                bio: existing.bio,
+                avatarUrl: existing.avatarUrl,
+                // A trilha guarda a TROCA DE ORIGEM da foto: quem lê a auditoria
+                // entende que a imagem publicada passou a ser da organização.
+                avatarSource: existing.avatarSource,
+                displayOrder: existing.displayOrder,
+                isPublic: existing.isPublic,
+              },
+              data,
+              [
+                'name',
+                'email',
+                'institution',
+                'company',
+                'roleTitle',
+                'bio',
+                'avatarUrl',
+                'avatarSource',
+                'displayOrder',
+                'isPublic',
+              ],
+            ),
+            /**
+             * A DECLARAÇÃO entra na trilha como fato próprio, e não misturada à foto:
+             * se um dia o uso da imagem for questionado, o que se procura é QUEM
+             * declarou ter autorização e QUANDO — e a trilha responde isso sem
+             * depender de interpretar a mudança da coluna.
+             */
+            ...(publishingNewPhoto
+              ? { autorizacaoDaFoto: { from: null, to: 'declarada pela organização' } }
+              : {}),
+          },
         },
         tx,
       );
@@ -531,8 +623,12 @@ export interface AdminSpeakerRow {
   name: string;
   email: string | null;
   institution: string | null;
+  company: string | null;
   roleTitle: string | null;
+  bio: string | null;
   avatarUrl: string | null;
+  /** Quem enviou a foto (FASE 46) — a tela marca a que veio da organização. */
+  avatarSource: SpeakerAvatarSource | null;
   isPublic: boolean;
   isConfirmed: boolean;
   hasAccount: boolean;
@@ -579,8 +675,11 @@ export async function listSpeakers(input: {
         name: true,
         email: true,
         institution: true,
+        company: true,
         roleTitle: true,
+        bio: true,
         avatarUrl: true,
+        avatarSource: true,
         socialLinks: true,
         isPublic: true,
         isConfirmed: true,
@@ -607,8 +706,11 @@ export async function listSpeakers(input: {
       name: profile.name,
       email: profile.email,
       institution: profile.institution,
+      company: profile.company,
       roleTitle: profile.roleTitle,
+      bio: profile.bio,
       avatarUrl: profile.avatarUrl,
+      avatarSource: profile.avatarSource,
       isPublic: profile.isPublic,
       isConfirmed: profile.isConfirmed,
       hasAccount: profile.userId !== null,

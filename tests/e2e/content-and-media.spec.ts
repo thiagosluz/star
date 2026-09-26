@@ -29,9 +29,20 @@ const TENANT_LABEL = 'conteudo-f23';
 const EVENT_SLUG = `evento-f23-e2e-${RUN_ID}`;
 const SECOND_EVENT_SLUG = `evento-f23-e2e-b-${RUN_ID}`;
 
-/** PNG 1×1 válido — a assinatura do arquivo é o que a validação confere. */
+/**
+ * PNG 8×8 de verdade — a assinatura do arquivo é o que a validação confere, e a
+ * imagem precisa DECODIFICAR para virar WebP (FASE 46).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE FIXTURE MUDOU DE 1×1 PARA 8×8
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O PNG 1×1 usado desde a FASE 17 tinha o CRC do `IDAT` ERRADO. O navegador perdoa
+ *  e desenha; o libpng recusa o arquivo. Enquanto o conteúdo não era decodificado,
+ *  ninguém notou — e a suíte inteira media uploads com um arquivo que não é imagem
+ *  decodificável. Com a conversão para WebP, a recusa apareceu.
+ */
 const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQYlWM4oWHzHx9mGBkKAHkRisGTbO91AAAAAElFTkSuQmCC',
   'base64',
 );
 
@@ -441,7 +452,13 @@ test.describe('conteúdo e mídia', () => {
     // O objeto existe mesmo no storage e o bucket o serve (galeria é conteúdo público).
     const fetched = await page.request.get(uploadedUrl);
     expect(fetched.status()).toBe(200);
-    expect(fetched.headers()['content-type']).toContain('image/png');
+    /**
+     * O que o bucket serve é o WEBP gravado na confirmação (FASE 46): o PNG que o
+     * navegador enviou é decodificado e reconvertido, e o objeto original é apagado.
+     * A extensão da URL prova a troca de objeto — não basta o tipo.
+     */
+    expect(uploadedUrl).toMatch(/\.webp$/);
+    expect(fetched.headers()['content-type']).toContain('image/webp');
   });
 
   test('copiar um patrocinador de outro evento cria o cadastro oculto com a cota certa (E11)', async ({ page }) => {

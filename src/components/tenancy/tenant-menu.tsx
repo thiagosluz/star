@@ -70,7 +70,7 @@ function MenuItem({
  * componentes de cliente permanecem montados.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- *  O PAINEL ABRE PARA CIMA (defeito corrigido na FASE 15)
+ *  O PAINEL ABRE PARA CIMA (FASE 15) E ANCORADO À ESQUERDA
  * ─────────────────────────────────────────────────────────────────────────────
  *  O gatilho é o ÚLTIMO elemento de uma barra lateral de altura total: abrir o painel
  *  para baixo (`mt-2`) o coloca fora da tela em qualquer monitor de 720 px de altura, e
@@ -78,6 +78,11 @@ function MenuItem({
  *  outside of the viewport", e na prática a troca de instituição parecia travada. Como
  *  o bloco de conta vive no rodapé do shell (desktop e gaveta), a direção certa é
  *  sempre para CIMA.
+ *
+ *  Além disso, o menu fica ancorado à ESQUERDA (`left-0`): como o bloco de conta fica
+ *  na barra lateral esquerda (a 16 px da borda da tela), usar `right-0` projetava o
+ *  painel de largura `w-72` ~60 px para fora da tela à esquerda, cortando o início
+ *  dos textos.
  */
 export function TenantMenu({
   memberships,
@@ -98,7 +103,7 @@ export function TenantMenu({
         />
       </summary>
 
-      <div className="absolute right-0 bottom-full z-50 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+      <div className="absolute left-0 bottom-full z-50 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
         <p className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
           Trocar de instituição
         </p>

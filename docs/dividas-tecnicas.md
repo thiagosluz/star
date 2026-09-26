@@ -22,9 +22,10 @@
 > **E58**, a exclusão lógica sem lista de arquivados, e **E59**, o XP de inscrição sem
 > estorno no cancelamento), a **FASE 44** (que **quitou o E35** — a tela do nome público no
 > resultado do sorteio — e declarou **E60**, mensagem entre participantes, **E61**, visão da
-> pessoa entre instituições, e **E62**, moderação e denúncia do que é público) e a **FASE 45**
+> pessoa entre instituições, e **E62**, moderação e denúncia do que é público), a **FASE 45**
 > (que declarou **E63**, ordem manual do bloco de equipe, e **E64**, opt-out do nome de quem
-> está na equipe), com as
+> está na equipe) e a **FASE 46** (que declarou **E65**, o acervo anterior à conversão WebP
+> que não é reprocessado, e **E66**, a autorização da foto que é declarada e não guardada), com as
 > **revisões
 > pós-entrega** da FASE 25
 > (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
@@ -108,12 +109,12 @@
 | B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
 | C. Quotas e billing | 2 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 38 | 10 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual** e **quem está na equipe aparece sem opt-out próprio do nome** |
+| E. Jornada do participante | 40 | 11 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP** e **a autorização da foto é declarada, não guardada** |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 4 | 1 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **60** | **15** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **62** | **16** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -141,9 +142,12 @@
 > moderação nem denúncia do que é público): **58**. A **FASE 45** (equipe do evento na página
 > pública) não quitou item deste levantamento e declarou **E63** (o bloco de equipe não tem
 > ordem manual dos cartões) e **E64** (quem está na equipe aparece com o nome, sem opt-out
-> próprio): **60**.
+> próprio): **60**. A **FASE 46** (imagens em WebP e a foto do palestrante sem conta) também
+> não quitou item deste levantamento e declarou **E65** (o acervo anterior à fase não é
+> reconvertido — não há CLI de reprocessamento) e **E66** (a declaração de autorização da foto
+> é uma caixa de seleção, não uma prova guardada): **62**.
 >
-> O total é a **soma das tabelas de tema** (3+4+2+3+38+5+0+4+1 = 60 — o tema G ficou
+> O total é a **soma das tabelas de tema** (3+4+2+3+40+5+0+4+1 = 62 — o tema G ficou
 > vazio depois da FASE 22), e não a subtração do
 > número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
 > B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
@@ -330,6 +334,8 @@
 | E61 | **Não há visão da pessoa entre instituições** | FASE 44 (novo, ADR-243) | O `@handle` é **global**, mas a página é sempre de UMA instituição: não existe um "hub" que mostre a participação somada (XP, cartas, eventos) das várias casas. Quem participa de três instituições tem três páginas, cada uma com a sua parte | Quem mais participa é quem mais perde: a trajetória fica partida em pedaços, e o próprio perfil não conta a história toda. O caminho esbarra numa decisão de produto: o XP e as cartas são **por instituição** desde a FASE 5 (a instituição é a dona do jogo), então o hub teria de mostrar a lista de participações e deixar claro que os números não se somam — ou somar com uma regra explícita, que muda o significado do ranking | M | Sim |
 | E62 | **Não há moderação nem denúncia do que é público** | FASE 44 (novo, ADR-239) | Bio, título profissional e interesses são **texto livre publicado na internet**, sem filtro, sem canal de denúncia e sem caminho para a instituição revisar o que aparece no domínio dela. A instituição também **não consegue desligar** o perfil público dentro da casa | Perfil público é a primeira superfície da plataforma em que o conteúdo é da PESSOA e o endereço é da INSTITUIÇÃO — a moderação fica sem dono. O caminho tem três partes: (a) denúncia de perfil (qualquer pessoa autenticada, com a trilha registrando o motivo), (b) fila de revisão para a instituição, com o poder de ocultar o perfil naquela casa, e (c) bloqueio entre pessoas (depende da E60) | M | Sim |
 | E57 | **Não há limite de QR por patrocinador nem aviso de QR repetido no mesmo evento** | FASE 42 (novo, ADR-232) | Um patrocinador pode ter dez QRs no mesmo estande e nada impede nem avisa. O crédito continua correto (um XP por pessoa **por QR**, garantido pelo índice único de `sponsor_scans`), mas cada código novo é uma chance nova de creditar a mesma gente | O número de "visitas" da área do patrocinador deixa de ser comparável entre patrocinadores, e a organização perde o controle do que está impresso. O caminho é um teto por patrocinador por evento (campo na cota ou constante do serviço) e um aviso na tela quando o mesmo patrocinador já tem QR naquele evento | P | Sim |
+| E65 | **O acervo anterior à FASE 46 continua em PNG/JPEG no bucket** | FASE 46 (novo, ADR-248) | A conversão para WebP vale do próximo envio em diante. Não há CLI de reprocessamento: as imagens que já estavam publicadas seguem no formato original, e o acervo **mostra o formato de cada uma** (é assim que a tela não mente sobre o que guarda) | O ganho da fase não alcança o que já foi enviado, e a economia total só aparece com o tempo. Reprocessar exigiria, além de converter, **reapontar as referências**: capa e logotipo do evento, logo de patrocinador, URLs dentro do conteúdo dos blocos (galeria) e a foto de cada palestrante — com a chave nova, porque o objeto `.png` com bytes de WebP é uma mentira no bucket | M | Sim |
+| E66 | **A autorização da foto é DECLARADA, não guardada** | FASE 46 (novo, ADR-252) | A organização marca "tenho autorização do palestrante" e a declaração entra na trilha com autor e hora — mas a plataforma não guarda o documento nem registra por qual canal o consentimento veio (e-mail, telefone, contrato do evento). O que existe é a prova de quem afirmou, não a prova do consentimento | Se o uso da imagem for questionado, a instituição mostra a declaração dela mesma: serve para responsabilizar quem publicou, não para demonstrar a base legal. O caminho é um campo de observação obrigatório ao lado da caixa (canal e data) e, adiante, o anexo do termo — que é escopo de LGPD, não de upload | P | Sim |
 
 ### F. Gamificação
 
