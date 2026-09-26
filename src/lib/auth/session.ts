@@ -314,6 +314,38 @@ export async function getPlatformContext(): Promise<{
 //  Contexto da requisição
 // ───────────────────────────────────────────────────────────────────────────────
 /**
+ * A sessão ATUAL, com o token — para a tela que precisa identificar a própria sessão.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO EXISTE SEPARADO (FASE 47)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A área de conta lista as sessões abertas e marca "este dispositivo": o token é o
+ *  que liga a linha da lista à sessão de quem está olhando. `getAuthenticatedUser`
+ *  devolve só o usuário (é a variante leve, usada em rota pública), e
+ *  `getRequestContext` carrega vínculos e principal — trabalho que a área de conta,
+ *  que é GLOBAL (fora de instituição), não tem por que pagar.
+ */
+export async function getCurrentSession(): Promise<{
+  user: AuthenticatedUser;
+  token: string;
+} | null> {
+  const session = await auth.api.getSession({ headers: await authHeaders() });
+  if (!session?.user) return null;
+
+  return {
+    user: {
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      image: session.user.image ?? null,
+      publicHandle: (session.user as { publicHandle?: string | null }).publicHandle ?? null,
+      emailVerified: session.user.emailVerified ?? false,
+    },
+    token: session.session.token,
+  };
+}
+
+/**
  * Resolve o contexto completo da requisição.
  *
  * Devolve `null` quando não há sessão autenticada. Quando há sessão mas o cookie

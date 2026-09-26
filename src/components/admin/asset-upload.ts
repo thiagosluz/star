@@ -1,7 +1,7 @@
 import {
   MAX_IMAGE_BYTES,
   formatBytes,
-  type AssetTarget,
+  type ImageTarget,
 } from '@/domain/events/image-rules';
 
 /**
@@ -48,9 +48,18 @@ export type AssetUploadAction = (
 
 export interface UploadAssetInput {
   file: File;
-  tenantSlug: string;
-  eventId: string;
-  target: AssetTarget;
+  /**
+   * Instituição e evento que particionam o objeto no bucket.
+   *
+   * Opcionais desde a FASE 47: a foto da PESSOA é global (`users/<id>/avatar/...`) e
+   * não tem instituição por onde particionar. A esteira continua sendo a MESMA de
+   * propósito — foi ela que concentrou a leitura dos magic bytes, o checksum e as três
+   * etapas; uma segunda esteira para a conta divergiria justamente na parte que impede
+   * servir um arquivo disfarçado de imagem.
+   */
+  tenantSlug?: string;
+  eventId?: string;
+  target: ImageTarget;
   /** Só para `SPONSOR_LOGO`. */
   sponsorId?: string;
   /**
@@ -122,8 +131,8 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
     const magicBytes = await readMagicBytes(file);
 
     const requestForm = new FormData();
-    requestForm.set('tenantSlug', input.tenantSlug);
-    requestForm.set('eventId', input.eventId);
+    if (input.tenantSlug) requestForm.set('tenantSlug', input.tenantSlug);
+    if (input.eventId) requestForm.set('eventId', input.eventId);
     requestForm.set('target', input.target);
     if (input.sponsorId) requestForm.set('sponsorId', input.sponsorId);
     requestForm.set('fileName', file.name);
@@ -160,8 +169,10 @@ export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAs
     }
 
     const confirmForm = new FormData();
-    confirmForm.set('tenantSlug', input.tenantSlug);
-    confirmForm.set('eventId', ticket.eventId || input.eventId);
+    if (input.tenantSlug) confirmForm.set('tenantSlug', input.tenantSlug);
+    if (ticket.eventId || input.eventId) {
+      confirmForm.set('eventId', ticket.eventId || input.eventId || '');
+    }
     confirmForm.set('target', input.target);
     if (input.sponsorId) confirmForm.set('sponsorId', input.sponsorId);
     confirmForm.set('objectKey', ticket.objectKey);

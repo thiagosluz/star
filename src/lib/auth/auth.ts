@@ -29,9 +29,44 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { nextCookies } from 'better-auth/next-js';
+import { twoFactor } from 'better-auth/plugins';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { createRedisRateLimitStorage } from '@/lib/auth/rate-limit-storage';
-import { RESET_TOKEN_MINUTES, VERIFICATION_TOKEN_HOURS, sendAccountEmail } from '@/lib/communication/account-mail';
+import {
+  RESET_TOKEN_MINUTES,
+  VERIFICATION_TOKEN_HOURS,
+  sendAccountEmail,
+} from '@/lib/communication/account-mail';
+
+/**
+ * O endereço que a biblioteca está confirmando é um NOVO e-mail? (FASE 47)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A RESPOSTA VEM DO BANCO, E NÃO DO CAMINHO DA REQUISIÇÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O gancho `sendVerificationEmail` atende três situações com o MESMO token: o
+ *  cadastro, o reenvio do próprio painel e a CONFIRMAÇÃO DE TROCA DE E-MAIL. O
+ *  caminho da requisição não distingue todas — a confirmação de uma troca para quem
+ *  já tinha o endereço verificado chega por `/verify-email`, igual ao reenvio.
+ *
+ *  O dado distingue: no cadastro, o `user.email` que o gancho recebe é o que está
+ *  gravado; numa troca, ele é o endereço NOVO, que ainda não vale. É uma leitura por
+ *  e-mail de verificação, e vale a mensagem certa.
+ */
+async function isEmailChange(userId: string, addressedEmail: string): Promise<boolean> {
+  try {
+    const stored = await adminPrisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+
+    if (!stored) return false;
+    return stored.email.toLowerCase() !== addressedEmail.toLowerCase();
+  } catch {
+    // Falha de leitura não pode impedir a confirmação: cai no texto de sempre.
+    return false;
+  }
+}
 
 const rootDomain = process.env.ROOT_DOMAIN ?? 'lvh.me';
 const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
@@ -89,6 +124,16 @@ export const auth = betterAuth({
     requireEmailVerification: false,
     resetPasswordTokenExpiresIn: RESET_TOKEN_MINUTES * 60,
     /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A REDEFINIÇÃO ENCERRA AS SESSÕES ABERTAS (FASE 47)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Quem redefine a senha muitas vezes o faz justamente porque desconfia dela —
+     *  ou porque perdeu o acesso. Deixar as sessões antigas vivas manteria dentro
+     *  exatamente quem se queria tirar, e a pessoa não teria como saber. Encerrar é
+     *  a resposta segura, e a tela diz que aconteceu.
+     */
+    revokeSessionsOnPasswordReset: true,
+    /**
      * Redefinição de senha (D1). O fluxo já existia na biblioteca e não tinha como
      * avisar ninguém: o pedido era aceito, o token criado e a pessoa nunca sabia.
      * Agora sai pelo mesmo outbox das demais mensagens.
@@ -117,9 +162,24 @@ export const auth = betterAuth({
   emailVerification: {
     sendOnSignUp: true,
     expiresIn: VERIFICATION_TOKEN_HOURS * 60 * 60,
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O MESMO GANCHO SERVE A DOIS FATOS DIFERENTES (FASE 47)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Quando a pessoa troca de e-mail, a biblioteca usa ESTE gancho para confirmar
+     *  o endereço NOVO (o token carrega a troca e ela só se aplica no clique). São
+     *  dois fatos com o mesmo token e o mesmo endereço de destino, e a mensagem certa
+     *  é diferente: "complete a conta" não é o que aconteceu.
+     *
+     *  `isEmailChange` decide pelo BANCO (o `user.email` gravado difere do endereço
+     *  que o gancho recebe), e não pelo caminho da requisição: a confirmação pode
+     *  chegar por três rotas diferentes, e o dado é o mesmo nas três.
+     */
     sendVerificationEmail: async ({ user, url }) => {
+      const trocaDeEmail = await isEmailChange(user.id, user.email);
+
       await sendAccountEmail({
-        template: 'EMAIL_VERIFICATION',
+        template: trocaDeEmail ? 'EMAIL_CHANGE' : 'EMAIL_VERIFICATION',
         user: { id: user.id, email: user.email, name: user.name },
         url,
       });
@@ -175,10 +235,42 @@ export const auth = betterAuth({
       '/sign-in/email': { window: 60, max: 10 },
       '/sign-up/email': { window: 60, max: 5 },
       '/request-password-reset': { window: 300, max: 3 },
+      /**
+       * A FASE 47 abriu as rotas do segundo fator e as de troca de credencial. As
+       * do código merecem limite PRÓPRIO e mais apertado: um TOTP tem seis dígitos
+       * (um milhão de combinações) e, sem limite por IP, tentar em sequência é
+       * viável. O plugin também conta falhas e bloqueia a linha (`lockedUntil`), mas
+       * isso protege a CONTA, não a instância.
+       */
+      '/two-factor/verify-totp': { window: 300, max: 10 },
+      '/two-factor/verify-backup-code': { window: 300, max: 10 },
+      '/reset-password': { window: 300, max: 5 },
+      '/change-password': { window: 300, max: 5 },
+      '/change-email': { window: 300, max: 3 },
     },
   },
 
   user: {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  TROCA DE E-MAIL: CONFIRMAÇÃO NO ENDEREÇO NOVO (FASE 47)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O e-mail é a chave que identifica a pessoa em convites, no perfil de
+     *  palestrante e no diretório de participantes — então trocá-lo é ato que exige
+     *  provar posse do endereço NOVO. O fluxo padrão da biblioteca faz exatamente
+     *  isso: o token vai para o endereço novo e a troca só se aplica no clique (o
+     *  gancho `sendVerificationEmail` acima reconhece o caso).
+     *
+     *  `updateEmailWithoutVerification` fica DESLIGADO de propósito, e é a decisão
+     *  mais importante daqui: ligado, quem tivesse uma sessão roubada (ou um XSS)
+     *  trocaria o e-mail da conta na hora, sem provar nada — e passaria a receber a
+     *  redefinição de senha. O padrão da biblioteca já é este; a linha existe para
+     *  que ninguém "simplifique" a troca depois.
+     */
+    changeEmail: {
+      enabled: true,
+      updateEmailWithoutVerification: false,
+    },
     additionalFields: {
       /**
        * ─── CAMPOS DO PERFIL PÚBLICO SÃO SÓ DE SAÍDA (FASE 44) ─────────────────
@@ -229,9 +321,32 @@ export const auth = betterAuth({
 
   trustedOrigins: buildTrustedOrigins(),
 
-  // `nextCookies` DEVE ser o último plugin: ele intercepta a resposta para
-  // escrever os cookies de sessão em Server Actions.
-  plugins: [nextCookies()],
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  SEGUNDO FATOR (FASE 47)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  TOTP por aplicativo autenticador + **códigos de recuperação**. Os códigos não
+   *  são um extra: o segundo fator é a única credencial que pode trancar a pessoa
+   *  fora de casa (celular perdido, trocado, sem bateria), e sem eles a saída seria
+   *  o suporte. Eles são gravados cifrados, como o segredo.
+   *
+   *  `skipVerificationOnEnable` fica DESLIGADO: ligar o segundo fator sem provar que
+   *  o aplicativo foi configurado é a forma clássica de a pessoa se trancar fora no
+   *  minuto seguinte — o enrollment só termina com um código válido.
+   *
+   *  `issuer` é o nome que aparece no aplicativo autenticador (`EventFlow: e-mail`).
+   */
+  plugins: [
+    twoFactor({
+      issuer: 'EventFlow',
+      totpOptions: { digits: 6, period: 30 },
+      backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: 'encrypted' },
+    }),
+
+    // `nextCookies` DEVE ser o último plugin: ele intercepta a resposta para
+    // escrever os cookies de sessão em Server Actions.
+    nextCookies(),
+  ],
 });
 
 export type Auth = typeof auth;

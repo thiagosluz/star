@@ -1051,8 +1051,7 @@ model User {
   mediaAssetsUploaded     MediaAsset[]         @relation("MediaAssetUploadedBy")
 
   /// Perfis de palestrante reivindicados por esta pessoa — FASE 25.
-  speakerProfiles          SpeakerProfile[]  @relation("SpeakerProfileUser")
-  /// Perfis de palestrante que esta pessoa cadastrou como organizadora — FASE 25.
+  speakerProfiles          SpeakerProfile[]  @relation("SpeakerProfileUser")  /// Perfis de palestrante que esta pessoa cadastrou como organizadora — FASE 25.
   speakerProfilesCreated   SpeakerProfile[]  @relation("SpeakerProfileCreatedBy")
   /// Materiais de palestrante que esta pessoa enviou — FASE 25.
   speakerMaterialsUploaded SpeakerMaterial[] @relation("SpeakerMaterialUploadedBy")
@@ -1078,6 +1077,9 @@ model User {
   demandEvents         DemandEvent[]     @relation("DemandEventActor")
   /// Equipes do evento de que esta pessoa faz parte — FASE 38.
   eventTeamMemberships EventTeamMember[]
+
+  /// Segundo fator da conta (FASE 47). Um por conta; a biblioteca mantém a linha.
+  twoFactor TwoFactor[] @relation("UserTwoFactor")
 
   @@index([email])
   @@index([deletedAt])
@@ -1153,6 +1155,52 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+/// Segredo do SEGUNDO FATOR da conta (FASE 47) — tabela do plugin `two-factor`.
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE ESTA TABELA NÃO TEM RLS — E POR QUE O RUNTIME NÃO A ALCANÇA
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Ela não tem `tenantId`: a identidade é global (ADR-002), e o segundo fator
+///  protege a CONTA, não uma instituição. Como `account`, ela pertence ao fluxo de
+///  autenticação, que acontece antes de existir tenant ativo.
+///
+///  A diferença para `account` é o que está guardado: `account.password` é um hash
+///  scrypt (só serve para conferir senha), e `secret` é a SEMENTE do TOTP — quem a lê
+///  gera códigos válidos e o segundo fator deixa de existir. Por isso, em vez de
+///  confiar numa policy, o **privilégio foi REVOGADO** da role de runtime
+///  (`IDENTITY_ONLY_TABLES`, mesma esteira de `job_runs`): quem lê é a biblioteca de
+///  autenticação, pela conexão de plataforma. Um erro de consulta no futuro não
+///  encontra o segredo — ele nem tem permissão para isso.
+///
+///  O segredo e os códigos de recuperação são gravados CIFRADOS pela biblioteca
+///  (AES-GCM com o segredo da aplicação), então um dump do banco também não basta.
+model TwoFactor {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+
+  /// Semente TOTP (cifrada pela biblioteca) — `returned: false` no schema do plugin.
+  secret String @db.Text
+  /// Códigos de recuperação, em JSON e cifrados: é a saída de quem perde o celular.
+  backupCodes String @db.Text
+
+  /// `false` enquanto o enrollment não foi confirmado com um código válido.
+  verified Boolean @default(true)
+
+  /// Tentativas erradas seguidas e o bloqueio temporário — a trava do plugin contra
+  /// força bruta no código de seis dígitos (que tem só um milhão de combinações).
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation("UserTwoFactor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([secret])
+  @@map("two_factor")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

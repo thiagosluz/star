@@ -10,7 +10,7 @@ export const metadata = { title: 'Entrar' };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirectTo?: string }>;
+  searchParams: Promise<{ redirectTo?: string; senha?: string }>;
 }) {
   // Já autenticado não tem o que fazer aqui.
   if (await getAuthenticatedUser()) {
@@ -32,14 +32,36 @@ export default async function LoginPage({
         </p>
       </header>
 
+      {params.senha === 'redefinida' ? (
+        <p
+          className="rounded-md border border-success/40 bg-success-soft px-4 py-3 text-sm text-success-strong"
+          role="status"
+          data-testid="login-password-reset"
+        >
+          Senha redefinida. Entre com a senha nova — as sessões antigas foram encerradas.
+        </p>
+      ) : null}
+
       <AuthForm mode="signin" action={signInAction} redirectTo={redirectTo} />
 
-      <p className="text-center text-sm text-muted-foreground">
-        Não tem conta?{' '}
-        <Link href="/signup" className="font-medium text-foreground underline underline-offset-4">
-          Cadastre-se
-        </Link>
-      </p>
+      <div className="space-y-3 text-center text-sm text-muted-foreground">
+        <p>
+          <Link
+            href="/esqueci-senha"
+            className="font-medium text-foreground underline underline-offset-4"
+            data-testid="login-forgot-password"
+          >
+            Esqueci minha senha
+          </Link>
+        </p>
+
+        <p>
+          Não tem conta?{' '}
+          <Link href="/signup" className="font-medium text-foreground underline underline-offset-4">
+            Cadastre-se
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }

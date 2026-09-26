@@ -180,7 +180,29 @@ export const GLOBAL_TABLES_WITH_RLS = ['user', 'session', 'tenants'];
  */
 export const PLATFORM_ONLY_TABLES = ['job_runs'];
 
-export const TABLES_WITHOUT_RLS = ['account', 'verification', ...PLATFORM_ONLY_TABLES];
+/**
+ * Tabelas de IDENTIDADE que o runtime não pode alcançar (FASE 47).
+ *
+ * `two_factor` guarda a semente TOTP e os códigos de recuperação. Diferente de
+ * `account` — que tem um hash scrypt e por isso convive com o privilégio padrão —,
+ * o que está aqui é a chave que GERA códigos válidos: quem lê, entra.
+ *
+ * A resposta não é inventar uma policy para uma tabela sem `tenantId`, e sim tirar o
+ * privilégio: quem acessa é a biblioteca de autenticação, pela conexão de plataforma
+ * (`adminPrisma`, invariante nº 1). A verificação de contrato exige a revogação
+ * (`prisma/migrations/20260927180000_two_factor`).
+ *
+ * `twoFactorEnabled` fica em `user`, que o runtime lê: a tela da conta precisa saber
+ * se o segundo fator está ligado, e isso não é segredo.
+ */
+export const IDENTITY_ONLY_TABLES = ['two_factor'];
+
+export const TABLES_WITHOUT_RLS = [
+  'account',
+  'verification',
+  ...IDENTITY_ONLY_TABLES,
+  ...PLATFORM_ONLY_TABLES,
+];
 
 /** Todas as tabelas que devem ter `relrowsecurity = true`. */
 export const EXPECTED_RLS_TABLES = [...TENANT_SCOPED_TABLES, ...GLOBAL_TABLES_WITH_RLS];

@@ -46,6 +46,20 @@ export interface EmailPayloads {
     expiresInMinutes: number;
   };
 
+  /**
+   * FASE 47 — confirmação do NOVO endereço, na troca de e-mail.
+   *
+   * O texto é diferente do `EMAIL_VERIFICATION` de propósito: quem está aqui já tem
+   * conta e escolheu trocar o endereço. "Complete a sua conta" seria falso, e é
+   * justamente na troca de e-mail que a pessoa precisa entender que o endereço ANTIGO
+   * continua valendo até o clique — é o que a protege de uma sessão roubada.
+   */
+  EMAIL_CHANGE: {
+    recipientName: string;
+    confirmUrl: string;
+    expiresInHours: number;
+  };
+
   /** D2 — convite para entrar na equipe da instituição. */
   MEMBER_INVITATION: {
     recipientName: string | null;
@@ -320,6 +334,10 @@ export type EmailTemplateKey = keyof EmailPayloads;
 export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'EMAIL_VERIFICATION',
   'PASSWORD_RESET',
+  // FASE 47 — a troca de e-mail usa o MESMO gancho da verificação, e a mensagem é
+  // outra: quem já tem conta e escolheu trocar o endereço não está "completando a
+  // conta".
+  'EMAIL_CHANGE',
   'MEMBER_INVITATION',
   'REVIEW_ASSIGNED',
   'REVIEW_DUE_SOON',
@@ -527,6 +545,38 @@ export function renderEmail<K extends EmailTemplateKey>(
           data.verifyUrl,
           '',
           `O link vale por ${data.expiresInHours} horas. Se você não criou a conta, ignore esta mensagem.`,
+          '',
+          `— ${brand}`,
+        ].join('\n'),
+      };
+    }
+
+    case 'EMAIL_CHANGE': {
+      const data = payload as EmailPayloads['EMAIL_CHANGE'];
+      return {
+        subject: `Confirme seu novo e-mail no ${brand}`,
+        html: renderLayout({
+          brandName: brand,
+          preheader: 'O endereço novo só passa a valer depois deste clique.',
+          title: 'Confirme o seu novo e-mail',
+          paragraphs: [
+            paragraph(greeting(data.recipientName)),
+            paragraph(
+              'Pedimos a troca do e-mail da sua conta para este endereço. Se foi você, confirme abaixo: o endereço antigo continua valendo até o clique, e é isso que impede alguém com acesso à sua sessão de assumir a conta.',
+            ),
+          ],
+          callToAction: { label: 'Confirmar novo e-mail', url: data.confirmUrl },
+          notice: `O link vale por ${data.expiresInHours} horas. Se não pediu a troca, ignore esta mensagem — o e-mail da conta NÃO muda sem este clique.`,
+          footerNote: 'Se o botão não funcionar, copie e cole este endereço no navegador: ' +
+            `<span style="word-break:break-all;">${escapeHtml(data.confirmUrl)}</span>`,
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          'Confirme o novo e-mail da sua conta:',
+          data.confirmUrl,
+          '',
+          `O link vale por ${data.expiresInHours} horas. Sem este clique, o e-mail da conta não muda.`,
           '',
           `— ${brand}`,
         ].join('\n'),
@@ -1393,6 +1443,7 @@ export function renderEmail<K extends EmailTemplateKey>(
 export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   EMAIL_VERIFICATION: 'Confirmação de e-mail',
   PASSWORD_RESET: 'Redefinição de senha',
+  EMAIL_CHANGE: 'Confirmação de novo e-mail',
   MEMBER_INVITATION: 'Convite de equipe',
   REVIEW_ASSIGNED: 'Avaliação atribuída',
   REVIEW_DUE_SOON: 'Prazo de parecer próximo',

@@ -37,8 +37,8 @@ import {
   MAX_SOURCE_PIXELS,
   WEBP_POLICY,
   WEBP_QUALITY,
-  type AssetTarget,
   type ImageMimeType,
+  type ImageTarget,
   type WebpEncodingMode,
 } from '@/domain/events/image-rules';
 
@@ -90,7 +90,7 @@ const ANIMATED_REFUSAL =
  */
 export async function encodeAssetAsWebp(input: {
   bytes: Buffer;
-  target: AssetTarget;
+  target: ImageTarget;
   sourceMime: ImageMimeType;
 }): Promise<WebpEncoding> {
   const policy = WEBP_POLICY[input.target];

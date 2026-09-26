@@ -81,7 +81,9 @@ describe('quota de armazenamento — o tamanho do arquivo decide', () => {
 
     expect(decision.allowed).toBe(false);
     // `remaining` negativo na mensagem seria confuso; o que sai é "restam 0".
-    expect(decision.message).toContain('restam 0 KB');
+    // Desde a F47 a formatação desce até bytes ("0 B"): dizer "0 KB" para um
+    // arquivo de 1 KB soaria como se ainda coubesse algo.
+    expect(decision.message).toContain('restam 0 B');
   });
 
   it('plano com zero byte recusa qualquer envio (e a mensagem não mente)', () => {
@@ -102,6 +104,9 @@ describe('quota de armazenamento — o tamanho do arquivo decide', () => {
     expect(formatBytes(1.5 * GB)).toBe('1.5 GB');
     expect(formatBytes(2 * MB)).toBe('2 MB');
     expect(formatBytes(900 * 1024)).toBe('900 KB');
+    // Abaixo de 1 KB a mensagem desce até bytes (F47): "0 KB" mentiria sobre o que resta.
+    expect(formatBytes(512)).toBe('512 B');
+    expect(formatBytes(0)).toBe('0 B');
   });
 });
 

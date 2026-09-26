@@ -125,6 +125,20 @@ export function TenantMenu({
         )}
 
         <div className="border-t border-border p-2">
+          {/*
+            "Minha conta" entra aqui, e não no menu lateral, porque é o único lugar que
+            existe em TODAS as telas (dentro ou fora de instituição) e sempre ao lado do
+            nome de quem está logado — que é o dado que a tela edita (FASE 47). A área é
+            global: nome, e-mail, senha, segundo fator e dispositivos valem em qualquer
+            casa.
+          */}
+          <a
+            href="/conta"
+            className="block rounded-md px-3 py-2 text-xs font-medium transition hover:bg-accent"
+            data-testid="menu-my-account"
+          >
+            Minha conta
+          </a>
           <a
             href="/selecionar-instituicao"
             className="block rounded-md px-3 py-2 text-xs font-medium transition hover:bg-accent"

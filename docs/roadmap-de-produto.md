@@ -230,7 +230,7 @@ escopo estreito substitui o CSV solto (E44).
 
 ### P6 — Comunicação de verdade: campanhas, segmentação e opt-out 🟡
 
-Hoje temos **transacional** (16 templates, outbox, dedupe) e mensagem direta. Falta o **mala
+Hoje temos **transacional** (22 templates, outbox, dedupe) e mensagem direta. Falta o **mala
 direta**: segmento (não compareceu, tem certificado pendente, por trilha, por categoria),
 **agendamento de campanha**, relatório de abertura/clique, **central de preferências** e
 **webhook de entrega** do provedor. Quita **D7/D8/D9** e dá ao organizador a ferramenta que hoje

@@ -46,7 +46,31 @@
 export const ASSET_TARGETS = ['COVER', 'LOGO', 'SPONSOR_LOGO', 'GALLERY', 'SPEAKER_AVATAR'] as const;
 export type AssetTarget = (typeof ASSET_TARGETS)[number];
 
-export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
+/**
+ * Foto da PESSOA (FASE 47) — alvo que NÃO pertence ao acervo da instituição.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ELE FICA FORA DE `ASSET_TARGETS`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Aquele catálogo é o do acervo da INSTITUIÇÃO: as chaves são particionadas por
+ *  instituição e evento (`tenants/<id>/eventos/<id>/assets/...`) e todo envio entra em
+ *  `media_assets`, tabela com RLS por instituição. A foto de perfil é da IDENTIDADE,
+ *  que é global (ADR-002): não há instituição por onde particionar nem acervo onde
+ *  entrar.
+ *
+ *  Ela compartilha todo o resto — limites, allowlist, assinatura real e a conversão
+ *  para WebP da FASE 46 —, e é por isso que entra nas tabelas abaixo em vez de ganhar
+ *  um caminho paralelo. O que a FASE 47 lhe deu foi o ESCRITOR: até aqui `user.image`
+ *  era lido pelo perfil público e pelos cartões de equipe e não tinha quem o
+ *  escrevesse.
+ */
+export const USER_AVATAR_TARGET = 'USER_AVATAR' as const;
+
+/** Todo alvo de imagem aceito pelo sistema: o do acervo e o da pessoa. */
+export const IMAGE_TARGETS = [...ASSET_TARGETS, USER_AVATAR_TARGET] as const;
+export type ImageTarget = (typeof IMAGE_TARGETS)[number];
+
+export const ASSET_TARGET_LABELS: Record<ImageTarget, string> = {
   COVER: 'Imagem de capa',
   LOGO: 'Logotipo do evento',
   SPONSOR_LOGO: 'Logotipo do patrocinador',
@@ -55,6 +79,7 @@ export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
   // tipo, assinatura real, biblioteca de mídia). Um upload paralelo para o avatar
   // divergiria justamente na verificação de assinatura, que é a parte de segurança.
   SPEAKER_AVATAR: 'Foto do palestrante',
+  USER_AVATAR: 'Sua foto',
 };
 
 /**
@@ -65,7 +90,7 @@ export const ASSET_TARGET_LABELS: Record<AssetTarget, string> = {
  * página lenta. A galeria fica no meio: são fotos, mas várias na MESMA página, e o
  * peso delas soma.
  */
-export const MAX_IMAGE_BYTES: Record<AssetTarget, number> = {
+export const MAX_IMAGE_BYTES: Record<ImageTarget, number> = {
   COVER: 5 * 1024 * 1024,
   LOGO: 1 * 1024 * 1024,
   SPONSOR_LOGO: 1 * 1024 * 1024,
@@ -77,6 +102,8 @@ export const MAX_IMAGE_BYTES: Record<AssetTarget, number> = {
    * em tamanho grande.
    */
   SPEAKER_AVATAR: 2 * 1024 * 1024,
+  /** Foto da pessoa: mesmo raciocínio do palestrante — é retrato, e é visto pequeno. */
+  USER_AVATAR: 2 * 1024 * 1024,
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -110,10 +137,13 @@ export interface WebpPolicy {
  *
  * Nenhum teto AUMENTA a imagem: o redimensionamento só reduz.
  */
-export const WEBP_POLICY: Record<AssetTarget, WebpPolicy> = {
+export const WEBP_POLICY: Record<ImageTarget, WebpPolicy> = {
   COVER: { mode: 'FOTOGRAFIA', maxLongestSide: 1920 },
   GALLERY: { mode: 'FOTOGRAFIA', maxLongestSide: 2560 },
   SPEAKER_AVATAR: { mode: 'FOTOGRAFIA', maxLongestSide: 512 },
+  // A foto da pessoa aparece no mesmo tamanho da do palestrante (avatar da vitrine,
+  // cartão de equipe e perfil público) — o mesmo teto, pela mesma razão.
+  USER_AVATAR: { mode: 'FOTOGRAFIA', maxLongestSide: 512 },
   LOGO: { mode: 'GRAFICO', maxLongestSide: null },
   SPONSOR_LOGO: { mode: 'GRAFICO', maxLongestSide: null },
 };
@@ -293,7 +323,7 @@ export type ImageValidation =
   | { ok: false; errors: readonly ImageValidationError[] };
 
 export interface ImageDescriptor {
-  target: AssetTarget;
+  target: ImageTarget;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -439,6 +469,17 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) {
     const mb = bytes / 1024 / 1024;
     return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+  }
+
+  /**
+   * Abaixo de 1 KB, bytes — e não "0 KB".
+   *
+   * A FASE 47 mostrou a diferença ao exibir a economia da foto: uma imagem de 96 bytes
+   * virava "0 KB", que diz ao leitor que o arquivo não tem tamanho. Só aparece em
+   * imagem minúscula (ícone, marca), e é exatamente onde o número redondo mente.
+   */
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`;
   }
 
   return `${Math.round(bytes / 1024)} KB`;

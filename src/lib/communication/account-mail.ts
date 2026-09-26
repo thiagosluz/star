@@ -32,7 +32,7 @@ export const RESET_TOKEN_MINUTES = 60;
 const PLATFORM_BRAND = 'EventFlow';
 
 export async function sendAccountEmail(input: {
-  template: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET';
+  template: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'EMAIL_CHANGE';
   user: { id: string; email: string; name: string };
   url: string;
 }): Promise<void> {
@@ -54,18 +54,31 @@ export async function sendAccountEmail(input: {
               expiresInHours: VERIFICATION_TOKEN_HOURS,
             },
           })
-        : await queueEmail({
-            tenantId: null,
-            to: input.user.email,
-            toUserId: input.user.id,
-            template: 'PASSWORD_RESET',
-            brandName: PLATFORM_BRAND,
-            payload: {
-              recipientName: input.user.name,
-              resetUrl: input.url,
-              expiresInMinutes: RESET_TOKEN_MINUTES,
-            },
-          });
+        : input.template === 'EMAIL_CHANGE'
+          ? await queueEmail({
+              tenantId: null,
+              to: input.user.email,
+              toUserId: input.user.id,
+              template: 'EMAIL_CHANGE',
+              brandName: PLATFORM_BRAND,
+              payload: {
+                recipientName: input.user.name,
+                confirmUrl: input.url,
+                expiresInHours: VERIFICATION_TOKEN_HOURS,
+              },
+            })
+          : await queueEmail({
+              tenantId: null,
+              to: input.user.email,
+              toUserId: input.user.id,
+              template: 'PASSWORD_RESET',
+              brandName: PLATFORM_BRAND,
+              payload: {
+                recipientName: input.user.name,
+                resetUrl: input.url,
+                expiresInMinutes: RESET_TOKEN_MINUTES,
+              },
+            });
 
     if (!result.ok) {
       logger.warn('e-mail de conta não registrado', {

@@ -22,6 +22,7 @@
 import { Client } from 'pg';
 import {
   APP_ROLE,
+  IDENTITY_ONLY_TABLES,
   PLATFORM_ONLY_TABLES,
   TABLES_WITHOUT_RLS,
   TENANT_SCOPED_TABLES,
@@ -237,7 +238,11 @@ try {
   //  Esta verificação nasceu da FASE 36, que criou a primeira tabela dessa classe
   //  (`job_runs`) e descobriu a abertura ao rodar o contrato. Sem ela, a próxima
   //  tabela de plataforma repetiria o erro em silêncio.
-  for (const table of PLATFORM_ONLY_TABLES) {
+  //
+  //  A FASE 47 estendeu a MESMA checagem às tabelas de IDENTIDADE (`two_factor`): o
+  //  segredo do segundo fator não é dado de instituição, mas é a chave que gera
+  //  códigos válidos — e o runtime não precisa dele para nada.
+  for (const table of [...PLATFORM_ONLY_TABLES, ...IDENTITY_ONLY_TABLES]) {
     const { rows } = await client.query(
       `SELECT privilege_type
          FROM information_schema.role_table_grants
@@ -247,7 +252,7 @@ try {
 
     check(
       rows.length === 0,
-      `Tabela de plataforma "${table}" tem privilégio para a role "${APP_ROLE}" ` +
+      `Tabela "${table}" (plataforma ou identidade) tem privilégio para a role "${APP_ROLE}" ` +
         `(${rows.map((r) => r.privilege_type).join(', ')}). Revogue na migração.`,
     );
   }

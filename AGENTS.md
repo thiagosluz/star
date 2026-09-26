@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 46 (F15, F21–F25, F29–F46 entregues; a F47+ é a próxima)
-Testes ................. 2328 (Vitest: unit + integração) + 155 (Playwright E2E)
-ADRs ................... 253 (numeração GLOBAL e sequencial — a próxima é ADR-254)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 47 (F15, F21–F25, F29–F47 entregues; a F48+ é a próxima)
+Testes ................. 2351 (Vitest: unit + integração) + 159 (Playwright E2E)
+ADRs ................... 259 (numeração GLOBAL e sequencial — a próxima é ADR-260)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2328+ testes passando
+npm test              # esperado: 2351+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 155+ testes passando
+npm run test:e2e      # esperado: 159+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -162,9 +162,9 @@ Portas: **3000** app · **5432** postgres · **6379** redis · **9000/9001** Min
 `/api/metrics` expõe métricas no formato Prometheus. **Sem `METRICS_TOKEN` definido, em produção,
 o endpoint responde 404** — de propósito (em desenvolvimento responde 200, para inspeção local).
 As métricas são **por processo** (o coletor soma): o Proxy conta requisição por rota/método/status
-(com o slug do tenant virando curinga) e o scrape lê `getJobCounts()`/`getWorkersCount()` do
-BullMQ — é assim que se sabe se o worker está vivo. O log estruturado
-(`src/lib/observability/logger.ts`) redige senha/token e mascara e-mail.
+(o slug do tenant vira curinga) e o scrape lê `getJobCounts()`/`getWorkersCount()` do BullMQ —
+é assim que se sabe se o worker está vivo. O log estruturado redige senha/token e mascara
+e-mail.
 
 ### PgBouncer (FASE 13)
 
@@ -178,8 +178,8 @@ Prova: `npm run db:verify:pooling`.
 auditoria nunca falhe. **Quem mantém é a rotina `audit-partitions` do WORKER** (diária às 3h,
 registrada em `job_runs`): cria o mês atual e os seguintes e resgata o que caiu na `DEFAULT`,
 aplicando RLS + FORCE e concessões em cada partição nova. A CLI `npm run db:partitions` chama o
-MESMO serviço para quem opera sem worker. Retenção é `DROP TABLE audit_logs_<AAAA_MM>` — decisão
-de negócio em aberto (dívida B8): a manutenção **cria** e nunca **apaga**.
+MESMO serviço. Retenção é `DROP TABLE audit_logs_<AAAA_MM>` — decisão em aberto (dívida B8): a
+manutenção **cria** e nunca **apaga**.
 
 ### Inspeção antivírus dos arquivos (FASE 36)
 
@@ -193,10 +193,10 @@ docker compose --profile av up -d clamav   # perfil próprio; ~1 GB de assinatur
 ```
 
 Três regras que quebram fácil: **`INFECTED` nunca é servido** (nem com a inspeção desligada
-depois); **`PENDING` só é bloqueado ENQUANTO a inspeção está ligada** (o estado honesto do arquivo
-sem inspeção é `SKIPPED`); e **inspeção indisponível NÃO é veredito** — o arquivo continua
-`PENDING` para a próxima passada. O portão vale onde a aplicação media os bytes (submissão e
-material de palestrante) e **não** em `media_assets`, bucket público (ADR-187).
+depois); **`PENDING` só é bloqueado ENQUANTO a inspeção está ligada** (sem inspeção, o estado
+honesto é `SKIPPED`); e **inspeção indisponível NÃO é veredito** — o arquivo segue `PENDING` para
+a próxima passada. O portão vale onde a aplicação media os bytes (submissão e material de
+palestrante) e **não** em `media_assets`, bucket público (ADR-187).
 
 ### Tarefas automáticas e painel de rotinas (FASE 36)
 
@@ -209,11 +209,10 @@ psql "$DATABASE_URL" -c 'SELECT job, status, trigger, items, error FROM job_runs
 ```
 
 Quatro regras que quebram fácil: **a linha em `job_runs` é o registro E a reserva** (índice único
-parcial `WHERE status = 'RUNNING'`, e **não** advisory lock — o PgBouncer em modo transação não
-preserva lock de sessão, ADR-183); **execução órfã tem prazo de validade** (meia hora; sem isso o
-worker que morre no meio trava a rotina para sempre); **a tela lê o CATÁLOGO, não as execuções** —
-rotina que nunca rodou aparece como "nunca rodou" (ADR-184); e **o atraso é medido contra a
-cadência da própria rotina** (ADR-185). O botão do painel **enfileira** e responde na hora: quem
+parcial `WHERE status = 'RUNNING'`, e **não** advisory lock — o PgBouncer em transação não preserva
+lock de sessão, ADR-183); **execução órfã tem prazo de validade** (meia hora; sem isso o worker que
+morre trava a rotina para sempre); **a tela lê o CATÁLOGO, não as execuções** (ADR-184); e **o atraso
+é medido contra a cadência da rotina** (ADR-185). O botão do painel **enfileira** e responde na hora: quem
 roda é o worker (ADR-186). `job_runs` é **tabela de plataforma**: sem RLS e **sem privilégio para
 a role de runtime**, com a revogação em `docker/postgres/init/00-roles.sql` e a verificação de
 contrato reprovando se ela voltar (ADR-191, armadilhas 82–83).
@@ -367,10 +366,9 @@ desaparecia; **os minutos têm teto no fim da ATIVIDADE** (ADR-150); **leitura f
 registra e AVISA** (ADR-151) — a presença existe, o XP não; e **o QR carrega só o código**
 (ADR-152), sem dado pessoal.
 
-Duas decisões de operação: a câmera tenta a **API nativa** do navegador e cai para o `jsqr`
-local (Firefox e Safari não têm `BarcodeDetector`), com o leitor USB e a digitação como
-caminhos de volta; e quem esquece de registrar a saída é fechado no **fim da atividade** pela
-varredura do worker (ou pelo botão do painel), com o MESMO número sempre.
+Duas decisões de operação: a câmera tenta a **API nativa** e cai para o `jsqr` local (Firefox e
+Safari não têm `BarcodeDetector`), com leitor USB e digitação como caminhos de volta; e quem
+esquece a saída é fechado no **fim da atividade** pela varredura do worker, com o MESMO número.
 
 ### Central do participante (FASE 32)
 
@@ -429,8 +427,7 @@ não desfaz a decisão (vira aviso) — ADR-165/166. O convite por e-mail quita 
 **E25** (ADR-167).
 
 A página pública lê a chamada na RENDERIZAÇÃO (o bloco guarda só decoração e o filtro
-"incluir encerradas"), pela mesma razão dos blocos de agenda e de trilhas: uma chamada
-copiada para dentro do bloco mentiria sobre o prazo no dia seguinte (ADR-168).
+"incluir encerradas") — copiá-la para o bloco mentiria sobre o prazo no dia seguinte (ADR-168).
 
 ### Confirmação de vaga com prazo (FASE 34)
 
@@ -569,9 +566,9 @@ Reconhecimento do comitê  /t/<slug>/administracao/eventos/<eventId>  → seçã
 Duas regras que quebram fácil: **o payload de auditoria é versionado**
 (`raffle.resultVersion`; a versão 1 continua verificável e a 2 inclui suplentes, peso e
 papel) e **suplente não conta como ganhador anterior** (só `kind = WINNER` sai do
-páreo). Os gatilhos de carta de marco (`EVENT_ATTENDANCE_FULL` e `REVIEWER_TOP`) são
-concedidos por `src/lib/gamification/achievement-service.ts`, com checagem explícita de
-idempotência — `grantCardForTrigger` sozinho AUMENTARIA as cópias da carta.
+páreo). Os gatilhos de marco (`EVENT_ATTENDANCE_FULL`, `REVIEWER_TOP`) são concedidos por
+`achievement-service.ts` com checagem explícita de idempotência: `grantCardForTrigger` sozinho
+AUMENTARIA as cópias da carta.
 
 ### Página pública e patrocínio (FASE 17)
 
@@ -638,18 +635,15 @@ Janela de exibição ..... editor da página → "Agendar para entrar no ar" + "
 Sincronizar cópia ...... patrocinadores → "Sincronizar" (só em cadastro copiado)
 ```
 
-Quatro regras que quebram fácil: **a referência é a URL, não uma chave estrangeira**
-(o conteúdo do bloco aceita imagem externa), então a exclusão **procura o uso** em vez de
-confiar no banco e recusa dizendo onde a imagem aparece (ADR-108 / armadilha 39);
-**mesmo checksum + tamanho + tipo reaproveita o registro** e apaga o objeto recém-enviado
-(ADR-107) — reencodar a mesma foto gera outro objeto, e isso é esperado; **a janela de
-exibição é decidida na LEITURA** com `isPublished OR publishAt <= now` **E**
-`publishAt` futuro **E** `unpublishAt` futuro, sem agendador, com término antes do início
-ou já vencido **recusado** e o estado `WINDOW_CLOSED` explicando a página fora do ar
-(ADR-109); e **a data do agendamento é interpretada no fuso do EVENTO**, não no do
-processo (UTC no container) nem no do navegador — o fuso viaja em campo oculto, a
-conversão é em duas passagens (horário de verão) e a mensagem de sucesso diz qual fuso foi
-usado (ADR-110 / armadilha 38).
+Quatro regras que quebram fácil: **a referência é a URL, não uma chave estrangeira**, então a
+exclusão **procura o uso** em vez de confiar no banco e recusa dizendo onde a imagem aparece
+(ADR-108 / armadilha 39); **mesmo checksum + tamanho + tipo reaproveita o registro** e apaga o
+objeto recém-enviado (ADR-107); **a janela de exibição é decidida na LEITURA**
+(`isPublished OR publishAt <= now`, com `unpublishAt` futuro), sem agendador, com término antes do
+início **recusado** e o estado `WINDOW_CLOSED` explicando a página fora do ar (ADR-109); e **a data
+do agendamento é interpretada no fuso do EVENTO**, não no do processo nem no do navegador — o fuso
+viaja em campo oculto, a conversão é em duas passagens (horário de verão) e a mensagem diz qual
+fuso foi usado (ADR-110 / armadilha 38).
 
 Sincronizar cópia é **explícito e limitado** (`SPONSOR_SYNC_FIELDS`): nome, descrição,
 site, logotipo, contato e documento — nunca cota, valor de contrato, vigência, ordem ou
@@ -692,8 +686,7 @@ O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), por
 concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO (armadilha 42).
 
 **Duas portas:** além de quem já é palestrante, entra quem tem **convite pendente para o e-mail
-da conta** — o papel nasce com o aceite, então exigi-lo antes era um impasse. A mesma condição
-(`pendingInviteWhere`) decide a guarda, o item do menu e a lista (ADR-119/120).
+da conta** — o papel nasce com o aceite, então exigi-lo antes era um impasse (ADR-119/120).
 
 
 ### Comunicação (FASE 15)
@@ -704,7 +697,7 @@ o HTML e o texto de cada mensagem **antes** da entrega.
 
 ```
 Fila e entrega .......... src/lib/communication/{mailer,email-queue,email-service}.ts
-Templates (16) .......... src/domain/communication/email-templates.ts   (funções puras)
+Templates (22) .......... src/domain/communication/email-templates.ts   (funções puras)
 Convite de equipe ....... /t/<slug>/administracao/equipe   → /t/<slug>/convite?codigo=<TOKEN>
 Caixa de saída .......... /t/<slug>/administracao/comunicacao   (communication:read)
 Confirmação de e-mail ... /verificacao  (destino do link; sem login)
@@ -721,18 +714,17 @@ endereço por índice parcial, `MEMBER` + papel criados **no aceite**, onde a qu
 que já conhece o fato, **fora** da transação — ADR-129).
 
 A conta do Resend **ainda não tem domínio verificado**: o remetente tem de ser
-`onboarding@resend.dev` e a entrega só alcança o endereço dono da conta (qualquer outro
-volta 403, classificado como falha DEFINITIVA e visível em "Falhas"). Enquanto isso, o
-driver `log` é o modo de operação de desenvolvimento e de teste — a suíte **força**
-`log`, para que uma chave real no `.env` nunca dispare e-mail de teste.
+`onboarding@resend.dev` e a entrega só alcança o endereço dono da conta (qualquer outro volta
+403, falha DEFINITIVA visível em "Falhas"). O driver `log` é o modo de desenvolvimento e de
+teste — a suíte **força** `log`, para uma chave real no `.env` nunca disparar e-mail de teste.
 
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e tenancy;
 elas **não têm linha em `account`**, então login por senha falha — é intencional. Para
-usá-las na interface: crie uma conta em `/signup`, vincule-a (`user_tenant_profiles`,
-`status = ACTIVE`, com `tenantId`) e conceda um papel (`role_assignments`, ex. `ADMIN`,
-escopo `TENANT`) — o caminho mais rápido é `tests/e2e/helpers.ts`.
+usá-las na interface: crie uma conta em `/signup`, vincule-a (`user_tenant_profiles`, `status =
+ACTIVE`, com `tenantId`) e conceda um papel (`role_assignments`) — o caminho rápido é
+`tests/e2e/helpers.ts`.
 
 ### Contas de teste com senha — o caminho rápido para testar a interface
 
@@ -742,8 +734,8 @@ borda; nomes e papéis em `docs/contas-de-teste.md`), com a senha de `SEED_TEST_
 `NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por
 `reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
 
-Sobre a senha: ela vive em `account.password` (`providerId = 'credential'`, scrypt do Better
-Auth); o campo `user.passwordHash` é **legado e NÃO é usado pela biblioteca**.
+Sobre a senha: ela vive em `account.password` (scrypt do Better Auth); `user.passwordHash` é
+**legado e não é usado**.
 
 ### Dados de demonstração
 
@@ -761,7 +753,7 @@ RETIDA** (carla) e **1 QR de estande** (FASE 42). Percursos no `README.md` §6.
 
 ```
 docs/                  documentação por fase (ADRs, lições, evidências)
-README.md              instalação, seed, contas, variáveis, scripts, índice dos docs
+README.md              instalação, seed, contas, variáveis e índice dos docs
 src/domain/**          regras puras por área (tenancy, rbac, events, review,
                        gamification, certificates, raffles, platform, communication)
 src/lib/**             aplicação e infraestrutura (db, auth, events, review,
@@ -855,16 +847,17 @@ tests/{unit,integration,e2e}
 | 44 | **Perfil público do participante** (`/u/<handle>` com **quinze campos** de visibilidade em três níveis — internet · quem participa desta instituição · só eu —, pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa**: o `user` é global e a RLS não o protege; `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; a trilha guarda a decisão, não a bio; quitou a **E35** e achou 4 defeitos reais, entre eles a **posição relativa invertida**; declarou **E60/E61/E62**) | ✅ |
 | 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e a pessoa em duas equipes aparece uma vez com as duas; **líder primeiro** e ordem estável; **nome e equipe são do evento, foto e contato são da pessoa** — e-mail e LinkedIn/Instagram/GitHub/YouTube saem só com o campo **"E-mail e redes sociais"**, que nasce FECHADO, e o mesmo interruptor acende o contato no perfil e no cartão; equipe desativada não aparece e **quem perdeu o vínculo com a instituição sai da vitrine**; achou o **leitor de contatos que não era tolerante** e o **campo novo obrigatório que quebrou chamadas existentes** — `tests/**` não passa pelo `typecheck`; declarou **E63/E64**) | ✅ |
 | 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem enviada é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada e teto de pixels, **logotipo sem perda**, metadados da câmera descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é recusada, não achatada, e a bomba de pixels cai pelo cabeçalho. A **arte do certificado fica de fora** — PDF não embute WebP. E a **organização publica a foto de quem não tem conta**, com declaração de autorização exigida pelo serviço e na trilha, origem em coluna, trocar/remover nos dois lados e a ficha do palestrante finalmente editável; achou o **fixture 1×1 com CRC inválido** que a suíte usava desde a F17 e a **asserção que passava com a conversão falhando**; declarou **E65/E66**) | ✅ |
+| 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), **segundo fator** TOTP com QR gerado no servidor, **10 códigos de recuperação** de uso único e desligamento exigindo a senha, e **dispositivos conectados**), **esqueci minha senha** com página de pedido e de nova senha (o envio existia desde a F15 e o link do e-mail caía em **404**), **desafio de dois fatores no login** (o contexto da instituição só é gravado depois do código) e o segredo do TOTP numa tabela que a role de runtime **não alcança**; achou o **código de recuperação correto recusado** pela normalização, o **template novo fora da lista de testes** (`tests/**` não passa pelo `typecheck`) e o **formulário que o React limpa** depois de uma action; declarou **E67/E68**) | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**62 itens abertos**; A=3, B=4, C=2, D=3,
-E=40, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+**Dívidas técnicas:** o levantamento consolidado (**64 itens abertos**; A=3, B=4, C=2, D=3,
+E=42, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
 Quitados: **A3, B7, E47** (F36), **E41, E48** (F37) e **E35** (F44). Declarados: **E50** (F37),
 **E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43),
-**E60–E62** (F44), **E63/E64** (F45) e **E65/E66** (F46). Leia antes de propor a próxima fase.
+**E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46) e **E67/E68** (F47). Leia antes de propor a próxima fase.
 
 ---
 
@@ -872,7 +865,7 @@ Quitados: **A3, B7, E47** (F36), **E41, E48** (F37) e **E35** (F44). Declarados:
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-46-webp-e-foto-do-palestrante.md`; a comunicação é
+   fase entregue** (`docs/fase-47-area-de-conta.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

@@ -68,6 +68,11 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     resetUrl: 'http://localhost:3000/redefinir?token=abc',
     expiresInMinutes: 60,
   },
+  EMAIL_CHANGE: {
+    recipientName: 'Ana Souza',
+    confirmUrl: 'http://localhost:3000/api/auth/verify-email?token=abc&callbackURL=%2Fconta',
+    expiresInHours: 24,
+  },
   MEMBER_INVITATION: {
     recipientName: 'Bruno Lima',
     tenantName: 'Universidade Federal da Bahia',
@@ -249,9 +254,19 @@ describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', ()
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
     /**
      * 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34) + 1 da decisão da proposta
-     * (FASE 36) + 4 das demandas internas (FASE 38).
+     * (FASE 36) + 4 das demandas internas (FASE 38) + 1 da troca de e-mail (FASE 47).
+     *
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A LISTA É EXPLÍCITA, E O `tests/**` NÃO PASSA PELO `typecheck`
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `PAYLOADS` é um tipo mapeado sobre `EmailTemplateKey`, então um template novo
+     *  SEM carga de teste deveria quebrar a compilação — mas `tests/**` fica fora do
+     *  `tsc` (armadilha registrada na FASE 45), e o `vitest` não confere tipos. Foi
+     *  exatamente o que aconteceu com o `EMAIL_CHANGE`: ele nasceu fora desta lista e
+     *  passou despercebido até alguém contar os templates. Por isso a contagem é
+     *  afirmada aqui, explicitamente.
      */
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(21);
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(22);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();
