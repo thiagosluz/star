@@ -497,4 +497,160 @@
   .ef-stage-roll {
     animation: none;
   }
+
+  /* A carta premium perde o movimento — e mantém o virar (que é conteúdo). */
+  .ef-holo-body {
+    transition: none;
+  }
+
+  .ef-holo-particles {
+    animation: none;
+  }
+}
+
+/* ── 8. A CARTA PREMIUM — palco 3D e brilho holográfico (FASE 48) ──────────────
+   O que é DADO (paleta, intensidade, partícula, arte do verso) chega por variável
+   inline; o que é GEOMETRIA (perspectiva, faces, brilho) mora aqui. Cor nenhuma
+   nova: a holografia é a paleta DA PRÓPRIA CARTA realçada com luz branca — um
+   arco-íris fixo brigaria com o tema da instituição, que é escolhido por ela.
+
+   O palco só desliga o gesto de rolagem do toque (`touch-action`) quando o dedo
+   está ARRASTANDO: parado, a carta não pode prender a rolagem da página.        */
+.ef-holo-stage {
+  position: relative;
+  display: inline-block;
+  perspective: 1100px;
+}
+
+.ef-holo-stage:focus-visible {
+  outline: 2px solid var(--ef-primary);
+  outline-offset: 4px;
+  border-radius: 0.75rem;
+}
+
+.ef-holo-stage[data-dragging='on'] {
+  touch-action: none;
+}
+
+.ef-holo-body {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--ef-holo-tilt-x, 0deg)) rotateY(var(--ef-holo-tilt-y, 0deg));
+  transition: transform 140ms ease-out;
+}
+
+/* Virar SOMA ao giro: a carta virada continua inclinando com o ponteiro. */
+[data-flipped='on'] .ef-holo-body {
+  transform: rotateX(var(--ef-holo-tilt-x, 0deg))
+    rotateY(calc(var(--ef-holo-tilt-y, 0deg) + 180deg));
+}
+
+.ef-holo-face {
+  backface-visibility: hidden;
+}
+
+.ef-holo-face-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+}
+
+/* O brilho: um foco de luz que segue o ponteiro + uma faixa que atravessa a carta.
+   `screen` faz a luz SOMAR à arte (é brilho, não tinta).                        */
+.ef-holo-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: calc(0.35 + 0.5 * var(--ef-holo-strength, 0.6));
+  background-image:
+    radial-gradient(
+      circle at var(--ef-holo-x, 50%) var(--ef-holo-y, 50%),
+      rgb(255 255 255 / calc(0.5 * var(--ef-holo-strength, 0.6))) 0%,
+      rgb(255 255 255 / 0) 45%
+    ),
+    linear-gradient(
+      115deg,
+      rgb(255 255 255 / 0) 32%,
+      color-mix(in oklab, var(--card-glow) 60%, transparent) 44%,
+      rgb(255 255 255 / 0.55) 50%,
+      color-mix(in oklab, var(--card-glow) 60%, transparent) 56%,
+      rgb(255 255 255 / 0) 68%
+    );
+  transition: opacity 200ms ease-out;
+}
+
+/* "Luz e brilho": a luz do palco acende o brilho da carta. */
+.ef-holo-stage-lit .ef-holo-sheen {
+  opacity: 1;
+}
+
+.ef-holo-stage-lit {
+  filter: drop-shadow(0 18px 38px color-mix(in oklab, var(--card-glow) 55%, transparent));
+}
+
+/* Partículas: enfeite declarado pela instituição, desenhado só com luz. */
+.ef-holo-particles {
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  background-repeat: no-repeat;
+}
+
+.ef-holo-particles-sparkle {
+  background-image:
+    radial-gradient(2px 2px at 18% 22%, rgb(255 255 255 / 0.9), transparent 60%),
+    radial-gradient(2px 2px at 78% 34%, rgb(255 255 255 / 0.75), transparent 60%),
+    radial-gradient(1.5px 1.5px at 42% 74%, rgb(255 255 255 / 0.8), transparent 60%),
+    radial-gradient(1.5px 1.5px at 88% 82%, rgb(255 255 255 / 0.7), transparent 60%);
+  animation: ef-holo-twinkle 3.4s ease-in-out infinite;
+}
+
+.ef-holo-particles-dust {
+  background-image:
+    radial-gradient(1.5px 1.5px at 24% 38%, rgb(255 255 255 / 0.6), transparent 70%),
+    radial-gradient(1.5px 1.5px at 62% 18%, rgb(255 255 255 / 0.5), transparent 70%),
+    radial-gradient(1.5px 1.5px at 70% 66%, rgb(255 255 255 / 0.55), transparent 70%);
+  animation: ef-holo-drift 9s ease-in-out infinite;
+}
+
+.ef-holo-particles-orbit {
+  background-image:
+    radial-gradient(2px 2px at 50% 8%, rgb(255 255 255 / 0.85), transparent 60%),
+    radial-gradient(1.5px 1.5px at 92% 50%, rgb(255 255 255 / 0.7), transparent 60%),
+    radial-gradient(1.5px 1.5px at 50% 92%, rgb(255 255 255 / 0.7), transparent 60%),
+    radial-gradient(1.5px 1.5px at 8% 50%, rgb(255 255 255 / 0.7), transparent 60%);
+  animation: ef-holo-orbit 14s linear infinite;
+}
+
+@keyframes ef-holo-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes ef-holo-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate3d(0, -6px, 0);
+    opacity: 0.9;
+  }
+}
+
+@keyframes ef-holo-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

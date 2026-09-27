@@ -908,6 +908,9 @@ model Tenant {
   eventTeams       EventTeam[]
   eventTeamMembers EventTeamMember[]
 
+  /// FASE 48 — links públicos de carta criados pelas pessoas desta instituição.
+  cardShareLinks   CardShareLink[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -1009,6 +1012,8 @@ model User {
   reviewAssignments         ReviewAssignment[]
   activitySpeakers          ActivitySpeaker[]
   cards                     UserCard[]
+  /// Links públicos de carta que esta pessoa criou — FASE 48.
+  cardShareLinks            CardShareLink[]
   /// Experiência do patrocinador — FASE 42 (vínculo e visitas desta pessoa).
   sponsorLinks              SponsorUser[]
   sponsorScans              SponsorScan[]
@@ -2996,11 +3001,56 @@ model UserCard {
   cardTemplate CardTemplate @relation(fields: [cardTemplateId], references: [id], onDelete: Cascade)
   event        Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
+  /// FASE 48 — links públicos desta carta no álbum da pessoa.
+  shareLinks   CardShareLink[]
+
   @@unique([tenantId, userId, cardTemplateId, isFoil])
   @@index([tenantId, userId, grantedAt])
   @@index([cardTemplateId])
   @@index([userId, isPinned])
   @@map("user_cards")
+}
+
+/// Link público de UMA carta, criado pela própria pessoa — FASE 48.
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE ESTA TABELA EXISTE (E O PERFIL PÚBLICO NÃO BASTAVA)
+/// ─────────────────────────────────────────────────────────────────────────────
+///  O perfil público (`/u/<handle>`) mostra as cartas em destaque, mas ele nasce
+///  FECHADO (ADR-139) e o campo "cartas em destaque" é uma decisão de exposição
+///  permanente; compartilhar UMA carta num grupo de WhatsApp não pode obrigar a
+///  pessoa a publicar o álbum inteiro. Aqui a exposição é POR CARTA, revogável, e
+///  a página que ela abre mostra APENAS aquela carta.
+///
+///  O token aparece duas vezes porque os dois usos são diferentes:
+///   • `tokenHash` (SHA-256) é o ÍNDICE da leitura pública — acha a linha sem
+///     guardar o segredo em claro no caminho;
+///   • `tokenSealed` (AES-256-GCM com o segredo da aplicação) é o que permite ao
+///     DONO copiar o link de novo. Só o hash faria o link sumir da tela depois de
+///     criado — e regerar a cada visita invalidaria o que já foi enviado.
+model CardShareLink {
+  id         String @id @default(uuid(7)) @db.Uuid
+  tenantId   String @db.Uuid
+  userId     String @db.Uuid
+  userCardId String @db.Uuid
+
+  /// SHA-256 do token, em hexadecimal — é por aqui que a página pública acha a linha.
+  tokenHash   String @unique @db.VarChar(64)
+  /// Token selado (`iv.tag.cifra`, base64url) — aberto apenas para o dono.
+  tokenSealed String @db.Text
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  /// Revogação: o link deixa de abrir e a linha permanece como histórico.
+  revokedAt DateTime? @db.Timestamptz(6)
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userCard   UserCard @relation(fields: [userCardId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, userCardId])
+  @@index([tenantId, userCardId, revokedAt])
+  @@map("card_share_links")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

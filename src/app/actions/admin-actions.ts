@@ -30,6 +30,7 @@ import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
 import { DEFAULT_RUBRIC } from '@/domain/review/review-rules';
 import { buildRubricFromRows } from '@/domain/review/review-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, TASK_KINDS, XP_SOURCE_KINDS } from '@/domain/gamification/types';
+import { DEFAULT_SHEEN, DEFAULT_TILT } from '@/domain/gamification/card-rules';
 import {
   deleteActivity,
   deleteRoom,
@@ -864,6 +865,16 @@ export async function saveCardTemplateAction(
       imageUrl: nullable(formData.get('artImageUrl')),
       animation: nullable(formData.get('artAnimation')) ?? 'none',
       particle: nullable(formData.get('artParticle')) ?? 'none',
+      /**
+       * Apresentação premium (FASE 48). O checkbox desmarcado não vem no
+       * `FormData` — e é isso que significa "sem holografia"; os percentuais caem
+       * no padrão do domínio quando o campo vem vazio, porque o serviço normaliza
+       * com `resolveArt` (valor fora de 0–100 é descartado, não recortado).
+       */
+      holo: formData.get('artHolo') === 'on',
+      sheen: toInt(formData.get('artSheen'), DEFAULT_SHEEN),
+      tilt: toInt(formData.get('artTilt'), DEFAULT_TILT),
+      backUrl: nullable(formData.get('artBackUrl')),
     },
   });
 

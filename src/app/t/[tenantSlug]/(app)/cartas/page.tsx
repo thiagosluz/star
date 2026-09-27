@@ -6,7 +6,10 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { RARITY_LABELS, RARITY_ORDER } from '@/domain/gamification/card-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAlbum } from '@/lib/gamification/card-service';
+import { cardBackContent, resolveCardStage } from '@/domain/gamification/card-presentation';
+import { withTenant } from '@/lib/db/tenant-client';
 import { CardVisual, EmptyCardSlot } from '@/components/gamification/card-visual';
+import { HoloCard } from '@/components/gamification/holo-card';
 import { PinCardButton } from '@/components/gamification/pin-card-button';
 import { pinCardAction } from '@/app/actions/gamification-actions';
 
@@ -46,6 +49,15 @@ export default async function AlbumPage({
 
   const { cards, summary, hiddenSecrets } = albumResult;
   const owned = cards.filter((card) => card.owned);
+
+  /**
+   * O fuso da instituição data a conquista no verso de cada carta (F48). Lido uma
+   * vez para a página inteira — e pelo runtime, não pela conexão de plataforma.
+   */
+  const timezone = await withTenant(tenantId, async (tx) => {
+    const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
+    return tenant?.timezone ?? 'UTC';
+  });
 
   const byRarity = RARITY_ORDER.map((rarity) => ({
     rarity,
@@ -113,19 +125,44 @@ export default async function AlbumPage({
           <h2 id="minhas" className="text-lg font-semibold tracking-tight">
             Minhas cartas
           </h2>
-          <ul className="flex flex-wrap gap-4" data-testid="owned-cards">
+          <ul className="flex flex-wrap gap-6" data-testid="owned-cards">
             {owned.map((card) => (
               <li key={card.templateId} className="space-y-2">
-                <CardVisual
-                  name={card.name}
-                  rarity={card.rarity}
-                  palette={card.palette}
-                  imageUrl={card.art.imageUrl}
-                  isFoil={card.isFoil}
-                  quantity={card.quantity}
-                  animation={card.animation}
-                  size="md"
-                />
+                {/*
+                  No álbum o efeito é DISCRETO: a carta inclina sob o ponteiro e o
+                  brilho acompanha. O palco completo (arrastar, virar, luz) fica na
+                  página da carta — numa grade de trinta cartas, trinta palcos
+                  interativos seriam trinta animações disputando a GPU.
+                */}
+                <Link
+                  href={tenantPath(tenantSlug, `/cartas/${card.slug}`)}
+                  className="block rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+                  data-testid={`album-card-link-${card.slug}`}
+                >
+                  <HoloCard
+                    name={card.name}
+                    rarity={card.rarity}
+                    palette={card.palette}
+                    imageUrl={card.art.imageUrl}
+                    isFoil={card.isFoil}
+                    backArtUrl={card.art.backUrl}
+                    stage={resolveCardStage({ art: card.art, isFoil: card.isFoil, rarity: card.rarity })}
+                    back={cardBackContent({
+                      rarity: card.rarity,
+                      trigger: card.trigger,
+                      description: card.description,
+                      lore: card.lore,
+                      quantity: card.quantity,
+                      isFoil: card.isFoil,
+                      level: 1,
+                      grantedAt: card.grantedAt,
+                      timezone,
+                    })}
+                    quantity={card.quantity}
+                    variant="hover"
+                    size="md"
+                  />
+                </Link>
                 {card.userCardId ? (
                   <PinCardButton
                     tenantSlug={tenantSlug}

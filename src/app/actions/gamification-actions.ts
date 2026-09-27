@@ -21,6 +21,10 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { claimMission } from '@/lib/gamification/task-service';
 import { setCardPinned } from '@/lib/gamification/card-service';
+import {
+  ensureCardShareLink,
+  revokeCardShareLink,
+} from '@/lib/gamification/card-share-service';
 import { adjustXp } from '@/lib/gamification/xp-service';
 import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { awardTopReviewers } from '@/lib/gamification/achievement-service';
@@ -37,6 +41,13 @@ interface GuardResult {
   ok: boolean;
   userId: string;
   tenantId: string;
+  /**
+   * Nome da instituição — o texto de compartilhamento o cita (FASE 48).
+   *
+   * Vem da MESMA consulta que já resolve o slug: buscar o nome numa segunda ida ao
+   * banco só para montar uma frase seria uma consulta a mais por clique.
+   */
+  tenantName: string;
   principal: Principal | null;
   state?: GamificationActionState;
 }
@@ -66,6 +77,7 @@ async function guard(input: {
       ok: false,
       userId: '',
       tenantId: '',
+      tenantName: '',
       principal: null,
       state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
     };
@@ -73,7 +85,7 @@ async function guard(input: {
 
   const tenant = await adminPrisma.tenant.findUnique({
     where: { slug: input.tenantSlug },
-    select: { id: true },
+    select: { id: true, name: true },
   });
 
   if (!tenant) {
@@ -81,6 +93,7 @@ async function guard(input: {
       ok: false,
       userId: user.id,
       tenantId: '',
+      tenantName: '',
       principal: null,
       state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
     };
@@ -96,6 +109,7 @@ async function guard(input: {
       ok: false,
       userId: user.id,
       tenantId: tenant.id,
+      tenantName: tenant.name,
       principal: null,
       state: {
         ok: false,
@@ -119,6 +133,7 @@ async function guard(input: {
       ok: false,
       userId: user.id,
       tenantId: tenant.id,
+      tenantName: tenant.name,
       principal,
       state: {
         ok: false,
@@ -128,7 +143,7 @@ async function guard(input: {
     };
   }
 
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
+  return { ok: true, userId: user.id, tenantId: tenant.id, tenantName: tenant.name, principal };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -239,6 +254,111 @@ export async function pinCardAction(
     message: parsed.data.isPinned ? 'Carta destacada no seu perfil.' : 'Carta removida do destaque.',
     data: { pinnedCount: result.pinnedCount },
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Compartilhar a carta (FASE 48)
+// ───────────────────────────────────────────────────────────────────────────────
+const shareCardSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  userCardId: z.string().uuid(),
+});
+
+/**
+ * Cria (ou reaproveita) o link público de UMA carta.
+ *
+ * A posse é conferida no BANCO pelo serviço, com o `userId` da sessão — o
+ * `userCardId` que chega do formulário é palpite até ser conferido. O que volta é
+ * o endereço pronto e o TEXTO que vai acompanhá-lo: a tela não monta frase, para
+ * que o mesmo texto valha no botão, na cópia e na prévia do link.
+ */
+export async function shareCardAction(
+  _prev: GamificationActionState | null,
+  formData: FormData,
+): Promise<GamificationActionState> {
+  const parsed = shareCardSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    userCardId: formData.get('userCardId'),
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para compartilhar a carta.' };
+  }
+
+  const auth = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.CARD_READ_OWN,
+    requiresOwnership: true,
+  });
+
+  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+
+  const result = await ensureCardShareLink({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    tenantSlug: parsed.data.tenantSlug,
+    tenantName: auth.tenantName,
+    userCardId: parsed.data.userCardId,
+  });
+
+  if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/cartas'));
+
+  return {
+    ok: true,
+    message: result.state.url
+      ? 'Link pronto. Quem abrir vê apenas esta carta.'
+      : 'Este link não pode ser exibido de novo — revogue e crie outro.',
+    data: {
+      url: result.state.url,
+      linkId: result.state.linkId,
+      shareText: result.state.shareText,
+      shareDisplayName: result.state.shareDisplayName,
+      showsRealName: result.state.showsRealName,
+      createdAt: result.state.createdAt?.toISOString() ?? null,
+    },
+  };
+}
+
+const revokeShareSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  linkId: z.string().uuid(),
+});
+
+/** Revoga o link: o endereço deixa de abrir imediatamente. */
+export async function revokeCardShareAction(
+  _prev: GamificationActionState | null,
+  formData: FormData,
+): Promise<GamificationActionState> {
+  const parsed = revokeShareSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    linkId: formData.get('linkId'),
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para revogar o link.' };
+  }
+
+  const auth = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.CARD_READ_OWN,
+    requiresOwnership: true,
+  });
+
+  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+
+  const result = await revokeCardShareLink({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    linkId: parsed.data.linkId,
+  });
+
+  if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/cartas'));
+
+  return { ok: true, message: 'Link revogado. Ele não abre mais.', data: { url: null } };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

@@ -83,14 +83,47 @@ export type CardAnimation = (typeof ANIMATIONS)[number];
 export const PARTICLES = ['none', 'sparkle', 'dust', 'orbit'] as const;
 export type CardParticle = (typeof PARTICLES)[number];
 
-/** Arte e efeitos. URLs passam por allowlist de protocolo (http/https). */
+/**
+ * Arte e efeitos. URLs passam por allowlist de protocolo (http/https).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A APRESENTAÇÃO PREMIUM É DADO, COMO O RESTO DA ARTE (FASE 48)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `holo`, `sheen`, `tilt` e `backUrl` entraram nos MESMOS campos JSON em vez de
+ *  virar colunas: a carta é um item de coleção, e o que a instituição escolhe é
+ *  como ela aparece. Carta gravada antes desta fase não tem as chaves — e continua
+ *  exatamente como era (o padrão é o efeito DESLIGADO e os valores medianos), sem
+ *  migração de dado e sem `UPDATE` em massa.
+ *
+ *  `backUrl` é o VERSO: a instituição pode desenhar o próprio (a URL entra pela
+ *  mesma allowlist da frente). Sem ele, o verso é a ficha da conquista — que é
+ *  informação real da carta, não um espaço vazio.
+ */
 export interface CardArt {
   imageUrl: string | null;
   frameUrl: string | null;
   animation: CardAnimation;
   particle: CardParticle;
   foil: boolean;
+  /** Liga o brilho holográfico mesmo sem a variante foil. */
+  holo: boolean;
+  /** Intensidade do brilho, 0–100. */
+  sheen: number;
+  /** Intensidade da inclinação no palco 3D, 0–100. */
+  tilt: number;
+  /** Arte do verso (opcional). */
+  backUrl: string | null;
 }
+
+/**
+ * Valores medianos da apresentação premium.
+ *
+ * 60 e 50 não são "o meio por preguiça": o brilho precisa ser perceptível sem
+ * apagar a arte, e a inclinação precisa ser sentida sem que a carta pareça torta.
+ * Quem quiser o extremo declara o extremo.
+ */
+export const DEFAULT_SHEEN = 60;
+export const DEFAULT_TILT = 50;
 
 /**
  * Formatos completos de paleta e arte.
@@ -124,6 +157,14 @@ function readField<T>(schema: { safeParse: (value: unknown) => { success: boolea
 const animationSchema = z.enum(ANIMATIONS);
 const particleSchema = z.enum(PARTICLES);
 const booleanSchema = z.boolean();
+/**
+ * Percentual da apresentação (brilho, inclinação).
+ *
+ * Fora de 0–100 o valor é DESCARTADO (cai no padrão) em vez de recortado: um
+ * `sheen: 900` digitado por engano é dado inválido, e "consertá-lo" em 100
+ * esconderia o erro de quem cadastrou atrás de um efeito que ninguém pediu.
+ */
+const percentSchema = z.number().int().min(0).max(100);
 
 /** Normaliza a paleta vinda do banco (JSON livre) para algo renderizável. */
 export function resolvePalette(raw: unknown, rarity: CardRarity): CardPalette {
@@ -149,6 +190,10 @@ export function resolveArt(raw: unknown): CardArt {
     animation: readField(animationSchema, record.animation) ?? 'none',
     particle: readField(particleSchema, record.particle) ?? 'none',
     foil: readField(booleanSchema, record.foil) ?? false,
+    holo: readField(booleanSchema, record.holo) ?? false,
+    sheen: readField(percentSchema, record.sheen) ?? DEFAULT_SHEEN,
+    tilt: readField(percentSchema, record.tilt) ?? DEFAULT_TILT,
+    backUrl: readField(safeUrlSchema, record.backUrl),
   };
 }
 

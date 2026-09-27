@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 47 (F15, F21–F25, F29–F47 entregues; a F48+ é a próxima)
-Testes ................. 2351 (Vitest: unit + integração) + 159 (Playwright E2E)
-ADRs ................... 259 (numeração GLOBAL e sequencial — a próxima é ADR-260)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 48 (F15, F21–F25, F29–F48 entregues; a F49+ é a próxima)
+Testes ................. 2399 (Vitest: unit + integração) + 162 (Playwright E2E)
+ADRs ................... 266 (numeração GLOBAL e sequencial — a próxima é ADR-267)
 Permissões ............. 66 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 55 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 56 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2351+ testes passando
+npm test              # esperado: 2399+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 159+ testes passando
+npm run test:e2e      # esperado: 162+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,18 +127,18 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 97 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 100 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md)**, e a seção 10 manda lê-la antes de mexer em
 > qualquer coisa. Os números são estáveis e citados no código e nos documentos de fase — não
 > renumere. As duas mais recentes, como amostra do que a regra protege:
 
-* **96 — Ordem por chave que empata**: quando a ordem decide QUAL registro é o escolhido por
-  padrão, a chave precisa ser única (início → criação → id); `ORDER BY startsAt` sozinho devolve
-  ordem arbitrária entre iguais, e a tela abre num registro diferente a cada consulta.
-* **97 — Erro engolido DENTRO da transação**: um `catch` que só registra o erro não ressuscita a
-  transação — e o `COMMIT` de uma transação abortada é `ROLLBACK` **sem erro** no PostgreSQL. O
-  serviço responde `ok` e nada foi gravado. Concessão de papel, auditoria e efeito colateral vão
-  **DEPOIS do commit**, e quem confere antes de inserir não precisa de `catch`.
+* **99 — O `select` aninhado do Prisma com objeto ESPALHADO não é conferido pelo `tsc`**: um campo
+  inexistente (`username` em vez de `publicHandle`) passou no `typecheck` e no `lint` e só apareceu
+  no teste de integração. Espalhar um objeto comum larga os literais, e o tipo do Prisma aceita a
+  forma larga — a rede que pega isso é o teste que roda a consulta de verdade.
+* **100 — Satori exige `display: flex` em `<div>` com mais de um filho**: `Conquistada por {nome}`
+  são DOIS nós, a rota de imagem responde 500 e a prévia do link nasce vazia. O erro não aparece no
+  `build` nem no `tsc`; o E2E **baixa o `og:image`** anunciado na página, e é isso que prende.
 
 ---
 
@@ -217,11 +217,6 @@ roda é o worker (ADR-186). `job_runs` é **tabela de plataforma**: sem RLS e **
 a role de runtime**, com a revogação em `docker/postgres/init/00-roles.sql` e a verificação de
 contrato reprovando se ela voltar (ADR-191, armadilhas 82–83).
 
-### Lote de certificados em ZIP (FASE 36)
-
-GET `/api/t/<slug>/certificados/zip?evento=<eventId>` (`certificate:issue`) monta o lote em
-**fluxo** (um PDF por vez, nada de lote em memória), contando o que ficou de fora no cabeçalho
-`x-certificados-fora-do-lote` e registrando `EXPORT` na trilha (ADR-188).
 
 ### Quotas e planos (FASE 14)
 
@@ -549,27 +544,6 @@ ganhadores saía COMPLETO no resultado público, contra a regra documentada. O p
 chegou na FASE 44 (dívida **E35** quitada): o nome completo no resultado público é um
 interruptor do perfil público.
 
-### Sorteios (FASE 16)
-
-O motor da FASE 8 ganhou operação completa: **suplentes** na mesma apuração
-(`raffle_winners.kind` = `WINNER`/`ALTERNATE`), **entrega do prêmio por POSIÇÃO**
-(`positionId`, não `userId`), **peso por minutos** quando ligado, **commit-reveal**
-(compromisso `sha256` na criação, semente selada em AES-256-GCM com chave de
-`BETTER_AUTH_SECRET`, revelada na apuração), **resultado público** opt-in com nome
-mascarado, **histórico paginado** e **prévia ao vivo** do credenciamento.
-
-```
-Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
-Reconhecimento do comitê  /t/<slug>/administracao/eventos/<eventId>  → seção "comitê científico"
-```
-
-Duas regras que quebram fácil: **o payload de auditoria é versionado**
-(`raffle.resultVersion`; a versão 1 continua verificável e a 2 inclui suplentes, peso e
-papel) e **suplente não conta como ganhador anterior** (só `kind = WINNER` sai do
-páreo). Os gatilhos de marco (`EVENT_ATTENDANCE_FULL`, `REVIEWER_TOP`) são concedidos por
-`achievement-service.ts` com checagem explícita de idempotência: `grantCardForTrigger` sozinho
-AUMENTARIA as cópias da carta.
-
 ### Página pública e patrocínio (FASE 17)
 
 A instituição monta a própria vitrine. A página (`EventPage`) **nasce como rascunho** e só
@@ -645,11 +619,10 @@ do agendamento é interpretada no fuso do EVENTO**, não no do processo nem no d
 viaja em campo oculto, a conversão é em duas passagens (horário de verão) e a mensagem diz qual
 fuso foi usado (ADR-110 / armadilha 38).
 
-Sincronizar cópia é **explícito e limitado** (`SPONSOR_SYNC_FIELDS`): nome, descrição,
-site, logotipo, contato e documento — nunca cota, valor de contrato, vigência, ordem ou
-exibição (ADR-111). O acervo **mede** o armazenamento (`sumMediaBytes`), e desde a FASE 21 a
-quota do plano é **aplicada** em todo envio (ADR-131): medir e bloquear passaram a ser a
-mesma esteira.
+Sincronizar cópia é **explícito e limitado** (`SPONSOR_SYNC_FIELDS`): nome, descrição, site,
+logotipo, contato e documento — nunca cota, contrato, vigência, ordem ou exibição (ADR-111). O
+acervo **mede** o armazenamento (`sumMediaBytes`) e, desde a FASE 21, a quota é **aplicada** em
+todo envio (ADR-131).
 
 ### Portal do palestrante (FASE 25)
 
@@ -678,9 +651,8 @@ visibilidade própria** (`PUBLIC` / `ATTENDEES_ONLY` / `PRIVATE`) decidida por V
 servidor, com 401 para o anônimo no material de inscritos, 403 para quem não é inscrito e
 403 até para o inscrito no rascunho (404 nunca, porque o rascunho não é informação de quem
 não organiza) — o bucket é privado e todo download passa por rota que assina URL temporária
-(ADR-116); e **a carga do palestrante soma só o que foi ministrado**: atividade cancelada ou
-ainda não concluída fica FORA, com o motivo no `workloadBreakdown`, e o certificado exige
-evento encerrado + credenciamento registrado (ADR-117/118).
+(ADR-116); e **a carga soma só o que foi ministrado**: atividade cancelada ou não concluída fica
+FORA, com o motivo no `workloadBreakdown`, e o certificado exige evento encerrado (ADR-117/118).
 
 O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), porque o papel é
 concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO (armadilha 42).
@@ -717,6 +689,23 @@ A conta do Resend **ainda não tem domínio verificado**: o remetente tem de ser
 `onboarding@resend.dev` e a entrega só alcança o endereço dono da conta (qualquer outro volta
 403, falha DEFINITIVA visível em "Falhas"). O driver `log` é o modo de desenvolvimento e de
 teste — a suíte **força** `log`, para uma chave real no `.env` nunca disparar e-mail de teste.
+
+### Carta premium e compartilhamento (FASE 48)
+
+```
+Álbum ................. /t/<slug>/cartas            → inclina sob o ponteiro
+A carta ............... /t/<slug>/cartas/<slug>     → palco 3D, ficha, destaque, link
+Link público .......... /t/<slug>/carta/<TOKEN>     → só a carta, sem sessão (+ og:image)
+Opt-in ................ /t/<slug>/administracao/cartas → brilho, inclinação, arte do verso
+```
+
+Quatro regras: **a apresentação é DADO no `art`** (`holo`, `sheen`, `tilt`, `backUrl`), então carta
+gravada antes da fase não muda e não há migração de dado; **o efeito é enfeite** — sem JavaScript e
+com movimento reduzido a carta e a ficha continuam na página, e a ficha sai do MESMO
+`cardBackContent` que o verso; **foil acende o brilho sozinho** e a raridade não mexe na
+intensidade; e **o link é POR CARTA**, com token SELADO (AES-GCM: o dono reexibe, o banco sozinho
+não abre), índice por SHA-256, revogação imediata e o nome pela régua da FASE 44. A prévia do link
+é imagem vetorial gerada no servidor (`next/og`).
 
 ### Contas do seed — **não têm senha**
 
@@ -843,37 +832,34 @@ tests/{unit,integration,e2e}
 | 40 | **Editor visual do certificado** (arte de fundo da instituição, texto por **variáveis**, posicionamento **arrastando ou digitando milímetros** — funciona sem JavaScript —, cinco modelos prontos, prévia pelo mesmo renderizador do PDF e bloco probatório obrigatório; o desenho **congela no certificado** e sem modelo vale o desenho antigo); declarou **E54** e **E55**) — escopo definido pelo humano | ✅ |
 | 41 | **Vitrine do patrocínio** (a cota define **cor** e **tamanho da logo** na página pública — Pequena · Média · Grande · Destaque —, com **prévia do cartão** no cadastro e amostras de cor como atalho; a página desenha uma faixa por cota com **cartões tingidos**; a coluna de cor existia desde a FASE 17 e **não tinha leitor**); não declarou dívida) — escopo definido pelo humano | ✅ |
 | 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe **autorizar** ou não, com o MESMO crédito (LGPD art. 8º §3º); lead de **nome e e-mail** com prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
-| 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP nas três portas, chave no ALVO contra farm), **certificado emitido** (50 XP na geração), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada** (enviar e aceitar); tirou "Indicação" e "Bônus" do formulário (sem emissor) e achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
+| 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP, chave no ALVO contra farm), **certificado emitido** (50 XP), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada**; achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
 | 44 | **Perfil público do participante** (`/u/<handle>` com **quinze campos** de visibilidade em três níveis — internet · quem participa desta instituição · só eu —, pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa**: o `user` é global e a RLS não o protege; `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; a trilha guarda a decisão, não a bio; quitou a **E35** e achou 4 defeitos reais, entre eles a **posição relativa invertida**; declarou **E60/E61/E62**) | ✅ |
-| 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e a pessoa em duas equipes aparece uma vez com as duas; **líder primeiro** e ordem estável; **nome e equipe são do evento, foto e contato são da pessoa** — e-mail e LinkedIn/Instagram/GitHub/YouTube saem só com o campo **"E-mail e redes sociais"**, que nasce FECHADO, e o mesmo interruptor acende o contato no perfil e no cartão; equipe desativada não aparece e **quem perdeu o vínculo com a instituição sai da vitrine**; achou o **leitor de contatos que não era tolerante** e o **campo novo obrigatório que quebrou chamadas existentes** — `tests/**` não passa pelo `typecheck`; declarou **E63/E64**) | ✅ |
-| 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem enviada é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada e teto de pixels, **logotipo sem perda**, metadados da câmera descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é recusada, não achatada, e a bomba de pixels cai pelo cabeçalho. A **arte do certificado fica de fora** — PDF não embute WebP. E a **organização publica a foto de quem não tem conta**, com declaração de autorização exigida pelo serviço e na trilha, origem em coluna, trocar/remover nos dois lados e a ficha do palestrante finalmente editável; achou o **fixture 1×1 com CRC inválido** que a suíte usava desde a F17 e a **asserção que passava com a conversão falhando**; declarou **E65/E66**) | ✅ |
-| 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), **segundo fator** TOTP com QR gerado no servidor, **10 códigos de recuperação** de uso único e desligamento exigindo a senha, e **dispositivos conectados**), **esqueci minha senha** com página de pedido e de nova senha (o envio existia desde a F15 e o link do e-mail caía em **404**), **desafio de dois fatores no login** (o contexto da instituição só é gravado depois do código) e o segredo do TOTP numa tabela que a role de runtime **não alcança**; achou o **código de recuperação correto recusado** pela normalização, o **template novo fora da lista de testes** (`tests/**` não passa pelo `typecheck`) e o **formulário que o React limpa** depois de uma action; declarou **E67/E68**) | ✅ |
+| 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e quem está em duas equipes aparece uma vez com as duas; **líder primeiro**; **nome e equipe são do evento, foto e contato são da pessoa** — e-mail e redes saem só com o campo **"E-mail e redes sociais"**, que nasce FECHADO, e o mesmo interruptor acende o contato no perfil e no cartão; equipe desativada não aparece e **quem perdeu o vínculo sai da vitrine**; achou o **leitor de contatos intolerante** e o **campo novo obrigatório que quebrou chamadas existentes** — `tests/**` não passa pelo `typecheck`; declarou **E63/E64**) | ✅ |
+| 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada, **logotipo sem perda**, metadados descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é recusada e a bomba de pixels cai pelo cabeçalho. A **arte do certificado fica de fora** — PDF não embute WebP. E a **organização publica a foto de quem não tem conta**, com autorização declarada na trilha e trocar/remover nos dois lados; achou o **fixture 1×1 com CRC inválido** desde a F17 e a **asserção que passava com a conversão falhando**; declarou **E65/E66**) | ✅ |
+| 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), **segundo fator** TOTP com QR no servidor, **10 códigos de recuperação** de uso único e desligamento com senha, e **dispositivos conectados**), **esqueci minha senha** (o envio existia desde a F15 e o link caía em **404**), **desafio de dois fatores no login** e o segredo do TOTP numa tabela que a role de runtime **não alcança**; achou o **código de recuperação recusado** pela normalização e o **template novo fora da lista de testes**; declarou **E67/E68**) | ✅ |
+| 48 | **Carta colecionável premium e compartilhamento** (palco **3D** — arrastar gira, brilho holográfico seguindo o ponteiro, **Virar** com o verso e **Luz e brilho** — com a geometria no DOMÍNIO e tilt leve no álbum; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e a **variante foil acende o brilho sozinha**; o verso é a **ficha da conquista**, e a mesma ficha aparece em texto (sem JavaScript nada se perde); **link público POR CARTA** com token SELADO, revogável e idempotente, mostrando **só aquela carta**; **imagem de prévia** vetorial no servidor; **+ defeito real corrigido**: a corrida do balcão criava DUAS sessões na segunda visita; declarou **E69–E71**) | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**64 itens abertos**; A=3, B=4, C=2, D=3,
-E=42, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+**Dívidas técnicas:** o levantamento consolidado (**67 itens abertos**; A=3, B=4, C=2, D=3,
+E=45, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
 Quitados: **A3, B7, E47** (F36), **E41, E48** (F37) e **E35** (F44). Declarados: **E50** (F37),
 **E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43),
-**E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46) e **E67/E68** (F47). Leia antes de propor a próxima fase.
+**E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46), **E67/E68** (F47) e **E69–E71** (F48).
+Leia antes de propor a próxima fase.
 
 ---
 
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 97 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-47-area-de-conta.md`; a comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 100 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-48-cartas-premium-e-compartilhamento.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
 3. Apresentar ao humano o **plano da fase pedida** (domínio → aplicação → interface →
    testes → documentação) e **aguardar** a definição/requisitos dela.
 4. Implementar, verificar, documentar e **parar** em `Aguardando APROVADO: AVANÇAR`.
-
-
-
-
-

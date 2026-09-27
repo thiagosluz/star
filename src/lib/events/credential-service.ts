@@ -44,7 +44,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
-import { errorMessage } from '@/lib/db/prisma-errors';
+import { errorMessage, isUniqueViolation } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { checkIn, checkOut } from '@/lib/events/attendance-service';
 import {
@@ -1201,28 +1201,79 @@ export async function recordCredentialPresence(input: {
      *  fecha no fim da atividade). Quando existe inscrição, ela vai LIGADA na linha —
      *  é por ela que a saída encontra a sessão (`checkOut` busca por `registrationId`)
      *  e por ela que a gamificação credita a frequência.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  A CORRIDA AQUI É DECIDIDA PELO BANCO (defeito achado na bateria da FASE 48)
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  O caminho da PRIMEIRA visita é seguro porque passa pelo `updateMany`
+     *  condicional do credenciamento. Este caminho — segunda visita, ou pessoa sem
+     *  inscrição — LIA antes de inserir, e dois leitores do mesmo crachá no mesmo
+     *  instante criavam DUAS sessões abertas (frequência contada em dobro).
+     *
+     *  Quem perde a corrida agora recebe violação dos índices únicos parciais
+     *  (`attendances_open_session_activity_key` / `..._event_key`) e a resposta é a
+     *  MESMA do caminho "já está dentro", com a sessão que o vencedor abriu — o
+     *  monitor precisa ver os minutos dela, não uma sessão fantasma.
+     *
+     *  O `catch` fica FORA da transação de propósito (armadilha 97): um erro dentro
+     *  dela aborta o `COMMIT`, e a releitura seguinte falharia em silêncio.
      */
-    const created = await withTenant(input.tenantId, (tx) =>
-      tx.attendance.create({
-        data: {
-          id: randomUUID(),
-          tenantId: input.tenantId,
-          eventId: input.eventId,
-          activityId,
-          registrationId: registration?.id ?? null,
-          userId: resolved.userId,
-          status: 'PRESENT',
-          source: input.source ?? 'QR_CODE_CHECKIN',
-          checkedInAt: now,
-          validatedById: input.actorId,
-          ipAddress: input.ipAddress ?? null,
-          userAgent: input.userAgent?.slice(0, 500) ?? null,
-          qrNonce: input.idempotencyKey ?? null,
-          minutesAttended: 0,
-        },
-        select: { id: true },
-      }),
-    );
+    let attendanceId: string | null = null;
+    let alreadyInside = false;
+
+    try {
+      attendanceId = await withTenant(input.tenantId, async (tx) => {
+        const row = await tx.attendance.create({
+          data: {
+            id: randomUUID(),
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            activityId,
+            registrationId: registration?.id ?? null,
+            userId: resolved.userId,
+            status: 'PRESENT',
+            source: input.source ?? 'QR_CODE_CHECKIN',
+            checkedInAt: now,
+            validatedById: input.actorId,
+            ipAddress: input.ipAddress ?? null,
+            userAgent: input.userAgent?.slice(0, 500) ?? null,
+            qrNonce: input.idempotencyKey ?? null,
+            minutesAttended: 0,
+          },
+          select: { id: true },
+        });
+
+        return row.id;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+
+      alreadyInside = true;
+
+      const open = await withTenant(input.tenantId, (tx) =>
+        tx.attendance.findFirst({
+          where: {
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            activityId: activityId ?? null,
+            userId: resolved.userId,
+            checkedOutAt: null,
+          },
+          orderBy: { checkedInAt: 'desc' },
+          select: { id: true, checkedInAt: true },
+        }),
+      );
+
+      attendanceId = open?.id ?? null;
+
+      warnings.push(
+        `Entrada já registrada${
+          open
+            ? ` às ${open.checkedInAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+            : ''
+        }.`,
+      );
+    }
 
     const target = await withTenant(input.tenantId, (tx) =>
       buildScanTarget(tx, { tenantId: input.tenantId, eventId: input.eventId, context: input.context, resolved, now }),
@@ -1230,8 +1281,8 @@ export async function recordCredentialPresence(input: {
 
     return {
       ok: true as const,
-      action: 'CHECKED_IN' as const,
-      attendanceId: created.id,
+      action: alreadyInside ? ('ALREADY_INSIDE' as const) : ('CHECKED_IN' as const),
+      attendanceId: attendanceId ?? '',
       minutes: null,
       target,
       warnings,

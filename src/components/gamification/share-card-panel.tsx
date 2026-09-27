@@ -1,0 +1,208 @@
+'use client';
+
+import { useActionState, useEffect, useState } from 'react';
+import { Check, Link2, Share2, Trash2 } from 'lucide-react';
+
+import {
+  SHARE_CHANNELS,
+  SHARE_CHANNEL_LABELS,
+  shareIntent,
+  type ShareChannel,
+} from '@/domain/gamification/card-share-rules';
+import type { GamificationActionState } from '@/app/actions/gamification-actions';
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  COMPARTILHAR A CARTA (FASE 48)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  QUEM COMPARTILHA É O DONO, E A TELA DIZ O QUE VAI SAIR
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Antes de o link existir, a tela AVISA o que ele mostra: o nome público (ou o
+ *  `@handle`, quando o nome é privado; ou um rótulo neutro, quando não há handle).
+ *  Compartilhar sem saber o que aparece é o tipo de surpresa que faz a pessoa
+ *  descobrir a exposição pelo grupo de WhatsApp de outra pessoa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O LINK PODE SER COPIADO MAIS DE UMA VEZ
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Por isso o token é SELADO no banco (não só hasheado): fechar a tela e voltar
+ *  depois devolve o MESMO endereço, sem invalidar o que já foi enviado.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export interface ShareCardPanelProps {
+  tenantSlug: string;
+  userCardId: string;
+  /** Estado atual do link (vindo do servidor). */
+  initialUrl: string | null;
+  initialLinkId: string | null;
+  initialText: string;
+  initialDisplayName: string;
+  showsRealName: boolean;
+  createAction: (prev: GamificationActionState | null, formData: FormData) => Promise<GamificationActionState>;
+  revokeAction: (prev: GamificationActionState | null, formData: FormData) => Promise<GamificationActionState>;
+}
+
+export function ShareCardPanel({
+  tenantSlug,
+  userCardId,
+  initialUrl,
+  initialLinkId,
+  initialText,
+  initialDisplayName,
+  showsRealName,
+  createAction,
+  revokeAction,
+}: ShareCardPanelProps) {
+  const [created, createFormAction, creating] = useActionState(createAction, null);
+  const [revoked, revokeFormAction, revoking] = useActionState(revokeAction, null);
+
+  const [copied, setCopied] = useState(false);
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A REVOGAÇÃO MANDA, MESMO COM UM `created` ANTIGO NA MÃO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Os dois `useActionState` são independentes: `created` guarda o resultado da
+   *  criação e CONTINUA preenchido depois de revogar. Ler `created.data.url`
+   *  primeiro mostrava o endereço morto como se estivesse vivo — a pessoa copiava
+   *  um link que não abre. O E2E pegou exatamente isto.
+   */
+  const justRevoked = revoked?.ok === true;
+
+  const url = justRevoked
+    ? null
+    : typeof created?.data?.url === 'string'
+      ? created.data.url
+      : initialUrl;
+  const linkId = justRevoked
+    ? null
+    : typeof created?.data?.linkId === 'string'
+      ? created.data.linkId
+      : initialLinkId;
+  const text = typeof created?.data?.shareText === 'string' ? created.data.shareText : initialText;
+  const displayName =
+    typeof created?.data?.shareDisplayName === 'string' ? created.data.shareDisplayName : initialDisplayName;
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2_500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const channelUrl = url ?? '';
+
+  return (
+    <section className="space-y-4 rounded-xl border border-border bg-card p-5" data-testid="share-panel">
+      <header className="space-y-1">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Share2 className="size-4" aria-hidden />
+          Compartilhar esta carta
+        </h2>
+        <p className="text-sm text-muted-foreground" data-testid="share-preview-of-name">
+          {showsRealName
+            ? `O link mostra o seu nome (${displayName}), a carta e a instituição — nada mais.`
+            : `Como o seu nome não está público, o link mostra “${displayName}”, a carta e a instituição.`}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Quem abrir vê apenas esta carta: o seu álbum, o seu XP e o seu perfil continuam privados.
+        </p>
+      </header>
+
+      {url ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              readOnly
+              value={url}
+              className="min-w-0 flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs"
+              data-testid="share-url"
+              aria-label="Endereço público da carta"
+            />
+
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium"
+              data-testid="share-copy"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(url);
+                  setCopied(true);
+                } catch {
+                  /** Sem permissão de área de transferência, o campo continua selecionável. */
+                  setCopied(false);
+                }
+              }}
+            >
+              {copied ? <Check className="size-3.5" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}
+              {copied ? 'Copiado' : 'Copiar link'}
+            </button>
+          </div>
+
+          <ul className="flex flex-wrap gap-2">
+            {SHARE_CHANNELS.map((channel: ShareChannel) => (
+              <li key={channel}>
+                <a
+                  href={shareIntent(channel, { url: channelUrl, text })}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-block rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium"
+                  data-testid={`share-${channel}`}
+                >
+                  {SHARE_CHANNEL_LABELS[channel]}
+                </a>
+              </li>
+            ))}
+          </ul>
+
+          <form action={revokeFormAction} className="flex items-center gap-2">
+            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+            <input type="hidden" name="linkId" value={linkId ?? ''} />
+            <button
+              type="submit"
+              disabled={revoking || !linkId}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/40 px-3 py-1.5 text-xs font-medium text-destructive disabled:opacity-50"
+              data-testid="share-revoke"
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+              {revoking ? 'Revogando…' : 'Revogar link'}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              {revoked?.ok
+                ? revoked.message
+                : 'Revogar corta o acesso imediatamente — quem já recebeu deixa de abrir.'}
+            </span>
+          </form>
+        </div>
+      ) : (
+        <form action={createFormAction} className="space-y-2">
+          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+          <input type="hidden" name="userCardId" value={userCardId} />
+          <button
+            type="submit"
+            disabled={creating}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+            data-testid="share-create"
+          >
+            {creating ? 'Preparando o link…' : 'Criar link público'}
+          </button>
+          <p className="text-xs text-muted-foreground">
+            O link é seu e pode ser revogado quando quiser.
+          </p>
+        </form>
+      )}
+
+      {created && !created.ok ? (
+        <p className="text-sm text-destructive" data-testid="share-error">
+          {created.message}
+        </p>
+      ) : null}
+
+      {revoked && !revoked.ok ? (
+        <p className="text-sm text-destructive" data-testid="share-revoke-error">
+          {revoked.message}
+        </p>
+      ) : null}
+    </section>
+  );
+}

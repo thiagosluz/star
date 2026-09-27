@@ -46,6 +46,21 @@ const RARITY_GLOW: Record<CardRarity, string> = {
   MYTHIC: 'shadow-tier-mythic/40',
 };
 
+/**
+ * Medidas da carta por tamanho.
+ *
+ * Exportadas desde a FASE 48 porque o VERSO precisa ter exatamente a mesma caixa
+ * da frente: uma carta que muda de tamanho ao virar denuncia que as duas faces são
+ * elementos diferentes, e é justamente isso que o efeito 3D não pode deixar ver.
+ */
+export const CARD_DIMENSIONS: Record<'sm' | 'md' | 'lg', string> = {
+  sm: 'w-32 h-44 text-xs',
+  md: 'w-48 h-64 text-xs',
+  lg: 'w-64 h-88 text-sm',
+};
+
+export { RARITY_RING, RARITY_GLOW };
+
 const ANIMATION_CLASS: Record<string, string> = {
   none: '',
   shimmer: 'animate-pulse',
@@ -83,12 +98,7 @@ export function CardVisual({
   animation = 'none',
   silhouette = false,
 }: CardVisualProps) {
-  const dimensions =
-    size === 'sm'
-      ? 'w-32 h-44 text-xs'
-      : size === 'lg'
-        ? 'w-64 h-88 text-sm'
-        : 'w-48 h-64 text-xs';
+  const dimensions = CARD_DIMENSIONS[size];
 
   const style = {
     '--card-primary': palette.primary,

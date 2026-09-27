@@ -155,6 +155,12 @@ export const TENANT_SCOPED_TABLES = [
   'sponsor_users',
   'sponsor_qr_codes',
   'sponsor_scans',
+  /**
+   * FASE 48 — link público de UMA carta, criado por quem a conquistou. A
+   * instituição vem do slug da URL, então a RLS isola de verdade: token de outra
+   * instituição não é encontrado, sem consulta privilegiada.
+   */
+  'card_share_links',
 ];
 
 /**

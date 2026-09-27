@@ -5,11 +5,12 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RARITY_LABELS, resolveArt, resolvePalette } from '@/domain/gamification/card-rules';
+import { cardBackContent, resolveCardStage } from '@/domain/gamification/card-presentation';
 import { CARD_RARITIES, CARD_TRIGGERS, type CardTrigger } from '@/domain/gamification/types';
 import { listCardTemplates, type AdminCardRow } from '@/lib/admin/gamification-admin-service';
 import { listAdminEvents } from '@/lib/admin/catalog-service';
 import { withTenant } from '@/lib/db/tenant-client';
-import { CardVisual } from '@/components/gamification/card-visual';
+import { HoloCard } from '@/components/gamification/holo-card';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { deleteCardTemplateAction, saveCardTemplateAction } from '@/app/actions/admin-actions';
@@ -169,7 +170,45 @@ function CardFields({
           ]}
           defaultValue={art?.particle ?? 'none'}
         />
+        {/*
+          ── APRESENTAÇÃO PREMIUM (FASE 48) ─────────────────────────────────────
+          O efeito é OP-OPT da instituição e mora no mesmo JSON da arte, então não há
+          migração a rodar nem carta antiga a reconfigurar: sem marcar o brilho, a
+          carta é exatamente a de antes.
+        */}
+        <Field
+          label="Brilho holográfico (0–100)"
+          name="artSheen"
+          type="number"
+          min={0}
+          max={100}
+          defaultValue={art?.sheen}
+          hint="Fora de 0–100 é descartado e vale o padrão"
+        />
+        <Field
+          label="Inclinação 3D (0–100)"
+          name="artTilt"
+          type="number"
+          min={0}
+          max={100}
+          defaultValue={art?.tilt}
+          hint="0 deixa a carta parada no palco"
+        />
+        <Field
+          label="URL da arte do verso"
+          name="artBackUrl"
+          placeholder="https://..."
+          defaultValue={art?.backUrl ?? undefined}
+          hint="Sem ela, o verso mostra a ficha da conquista"
+        />
       </div>
+
+      <CheckboxField
+        label="Brilho holográfico ligado"
+        name="artHolo"
+        hint="Realce premium que segue o ponteiro no álbum e no palco. A variante foil acende sozinha."
+        defaultChecked={art?.holo ?? false}
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Field
@@ -210,7 +249,6 @@ function CardFields({
     </>
   );
 }
-
 /**
  * Catálogo de cartas.
  *
@@ -247,6 +285,16 @@ export default async function AdminCardsPage({
     { value: '', label: 'Carta do tenant (qualquer evento)' },
     ...events.map((event) => ({ value: event.id, label: event.title })),
   ];
+
+  /**
+   * A prévia do catálogo mostra o efeito REAL (FASE 48) — o organizador precisa ver
+   * o brilho que acabou de ligar, e não uma caixa de números. O fuso é lido uma vez
+   * para datar a conquista no verso (que aqui aparece vazio: ninguém a conquistou).
+   */
+  const timezone = await withTenant(tenantId, async (tx) => {
+    const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
+    return tenant?.timezone ?? 'UTC';
+  });
 
   const triggerOptions = CARD_TRIGGERS.map((trigger) => ({
     value: trigger,
@@ -292,11 +340,30 @@ export default async function AdminCardsPage({
                 data-testid={`admin-card-${card.id}`}
               >
                 <div className="flex gap-4">
-                  <CardVisual
+                  <HoloCard
                     name={card.name}
                     rarity={card.rarity}
                     palette={resolvePalette(card.palette, card.rarity)}
                     imageUrl={resolveArt(card.art).imageUrl}
+                    backArtUrl={resolveArt(card.art).backUrl}
+                    isFoil={resolveArt(card.art).foil}
+                    stage={resolveCardStage({
+                      art: resolveArt(card.art),
+                      isFoil: resolveArt(card.art).foil,
+                      rarity: card.rarity,
+                    })}
+                    back={cardBackContent({
+                      rarity: card.rarity,
+                      trigger: card.trigger,
+                      description: card.description ?? null,
+                      lore: card.lore ?? null,
+                      quantity: 1,
+                      isFoil: false,
+                      level: 1,
+                      grantedAt: null,
+                      timezone,
+                    })}
+                    variant="hover"
                     size="sm"
                   />
 

@@ -55,6 +55,8 @@ export interface CardView {
   quantity: number;
   isFoil: boolean;
   isPinned: boolean;
+  /** Quando esta pessoa a conquistou — o verso da carta mostra esta data (FASE 48). */
+  grantedAt: Date | null;
   animation: CardAnimation;
   particle: CardParticle;
 }
@@ -173,6 +175,7 @@ export async function getAlbum(tenantId: string, userId: string): Promise<CardRe
         quantity: (plain?.quantity ?? 0) + (foil?.quantity ?? 0),
         isFoil: Boolean(foil),
         isPinned: mine.some((card) => card.isPinned),
+        grantedAt: main?.grantedAt ?? null,
         animation: art.animation,
         particle: art.particle,
       });
@@ -283,4 +286,36 @@ export async function getPinnedCards(
   const album = await getAlbum(tenantId, userId);
   if (!album.ok) return album;
   return { ok: true as const, cards: album.pinned };
+}
+
+/**
+ * UMA carta do álbum, pela slug — a página da carta (FASE 48).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO LÊ O ÁLBUM INTEIRO EM VEZ DE CONSULTAR A CARTA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A tentação é uma consulta direta por `slug`. Ela traria uma segunda régua para
+ *  decidir o que a pessoa vê: carta SECRETA que ela não conquistou (que some do
+ *  álbum por decisão do produto) e carta EXCLUÍDA pela organização mas já
+ *  conquistada (que continua no álbum, FASE 43). Duas réguas divergem — e a que
+ *  divergiria aqui é justamente a que protege o segredo.
+ *
+ *  O custo é uma consulta a mais numa tela que mostra uma carta por vez; o preço
+ *  de manter UMA régua é este.
+ */
+export async function getCardForAlbum(input: {
+  tenantId: string;
+  userId: string;
+  slug: string;
+}): Promise<CardResult<{ card: CardView }>> {
+  const album = await getAlbum(input.tenantId, input.userId);
+  if (!album.ok) return album;
+
+  const card = album.cards.find((entry) => entry.slug === input.slug) ?? null;
+
+  if (!card) {
+    return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Carta não encontrada no seu álbum.' };
+  }
+
+  return { ok: true as const, card };
 }

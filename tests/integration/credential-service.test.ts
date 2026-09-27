@@ -692,8 +692,7 @@ describe('credenciamento (portaria) é diferente de frequência (atividade)', ()
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('concorrência e fechamento automático', () => {
-  it('DOIS leitores do MESMO crachá produzem UMA sessão', async () => {
-    const roster = await listCredentialRoster({ tenantId, eventId, query: 'Bruno' });
+  it('DOIS leitores do MESMO crachá produzem UMA sessão', async () => {    const roster = await listCredentialRoster({ tenantId, eventId, query: 'Bruno' });
     if (!roster.ok) throw new Error('lista indisponível');
     const code = roster.entries[0]!.credential!.code;
 
@@ -731,6 +730,80 @@ describe('concorrência e fechamento automático', () => {
     );
 
     expect(count).toBe(1);
+  });
+
+  it('DOIS leitores simultâneos na SEGUNDA visita também produzem UMA sessão', async () => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════
+     *  A CORRIDA DA SEGUNDA VISITA (defeito achado na bateria da FASE 48)
+     * ═══════════════════════════════════════════════════════════════════════════
+     *  O teste acima cobre a PRIMEIRA visita, que é protegida pelo `updateMany`
+     *  condicional do credenciamento. A SEGUNDA visita (a pessoa saiu para o almoço
+     *  e voltou) criava a sessão LENDO antes de inserir — e dois leitores do mesmo
+     *  crachá, no mesmo instante, criavam duas sessões abertas: frequência contada
+     *  em dobro. Reproduzido em 1 de 5 execuções antes do índice único parcial.
+     *
+     *  A fixture é montada AQUI, e não herdada dos testes anteriores: o caminho
+     *  depende de a inscrição JÁ estar credenciada, e depender da ordem dos testes
+     *  é como o defeito passou despercebido.
+     */
+    const person = await createPerson('Iara Segunda Visita');
+    await register(person, pastActivityId, 'ATTENDED');
+
+    const issued = await issueCredentials({ tenantId, eventId, actorId, userIds: [person] });
+    expect(issued.ok, issued.ok ? 'ok' : issued.message).toBe(true);
+    if (!issued.ok) return;
+
+    const credential = issued.issued.find((row) => row.userId === person);
+    expect(credential).toBeTruthy();
+    if (!credential) return;
+
+    /** Pré-condição da SEGUNDA visita: credenciada, sem sessão aberta. */
+    await withTenant(tenantId, (tx) =>
+      tx.registration.updateMany({
+        where: { tenantId, userId: person, activityId: pastActivityId },
+        data: { checkedInAt: new Date(Date.now() - 3_600_000), checkedInById: actorId },
+      }),
+    );
+
+    const [first, second] = await Promise.all([
+      recordCredentialPresence({
+        tenantId,
+        eventId,
+        code: credential.code,
+        context: { kind: 'ACTIVITY', activityId: pastActivityId },
+        actorId,
+        mode: 'IN',
+      }),
+      recordCredentialPresence({
+        tenantId,
+        eventId,
+        code: credential.code,
+        context: { kind: 'ACTIVITY', activityId: pastActivityId },
+        actorId,
+        mode: 'IN',
+      }),
+    ]);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+
+    const actions = [first.ok ? first.action : null, second.ok ? second.action : null].sort();
+
+    /**
+     * A ordem é DETERMINÍSTICA desde o índice único parcial: quem perde a corrida
+     * recebe violação de unicidade e responde "já está dentro" com a sessão do
+     * vencedor. Antes dele, os dois respondiam `CHECKED_IN` — e ficavam duas linhas.
+     */
+    expect(actions).toEqual(['ALREADY_INSIDE', 'CHECKED_IN']);
+
+    const openSessions = await withTenant(tenantId, (tx) =>
+      tx.attendance.count({
+        where: { tenantId, userId: person, activityId: pastActivityId, checkedOutAt: null },
+      }),
+    );
+
+    expect(openSessions).toBe(1);
   });
 
   it('o fechamento automático grava a saída no FIM da atividade — e o número não depende de quando roda', async () => {
