@@ -58,6 +58,8 @@ import {
   normalizeInviteToken,
 } from '@/domain/tenancy/invite-token-rules';
 import { awardForEvent, grantCardForTrigger } from '@/lib/gamification/reward-engine';
+import { instantToZonedWallTime } from '@/domain/events/scheduling-rules';
+import type { CsvValue } from '@/domain/participants/participant-rules';
 
 export type SponsorPortalErrorCode =
   | 'NOT_FOUND'
@@ -1617,8 +1619,71 @@ export async function listSponsorLeads(
   });
 }
 
-export interface PublicSponsorQr {
-  code: string;
+/**
+ * As linhas da exportação de contatos (FASE 49).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  UMA IMPLEMENTAÇÃO DE ESCAPE, E NÃO DUAS
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 48 esta exportação montava o CSV na própria rota, com a PRÓPRIA
+ *  versão de escape (`"${campo.replace(/"/g, '""')}"`). Duas cópias da mesma regra
+ *  divergem — e a que divergiria primeiro é a de FÓRMULA, que é a que impede o nome
+ *  de uma pessoa virar execução na planilha de quem abre. Agora as linhas saem
+ *  daqui e o arquivo é montado por `buildWatermarkedCsv`, que aplica `csvCell` (do
+ *  domínio) a tudo, inclusive à marca d'água.
+ *
+ *  As datas saem no fuso da INSTITUIÇÃO: a autorização de um contato às 22h em
+ *  Salvador é do dia 28, e não do dia 29 como o UTC diria.
+ */
+export async function collectSponsorContactRows(input: {
+  tenantId: string;
+  sponsorId: string;
+}): Promise<
+  | { ok: true; header: readonly string[]; rows: CsvValue[][] }
+  | { ok: false; message: string }
+> {
+  if (!input.sponsorId) {
+    return { ok: false, message: 'Informe o patrocinador da exportação.' };
+  }
+
+  const leads = await listSponsorLeads(input.tenantId, input.sponsorId);
+
+  const timezone = await withTenant(input.tenantId, async (tx) => {
+    const tenant = await tx.tenant.findUnique({
+      where: { id: input.tenantId },
+      select: { timezone: true },
+    });
+
+    return tenant?.timezone ?? 'UTC';
+  });
+
+  const day = (date: Date | null): string =>
+    date ? instantToZonedWallTime(date, timezone).slice(0, 10) : '';
+
+  const rows: CsvValue[][] = leads.map((lead) => [
+    lead.sharedName,
+    lead.sharedEmail,
+    lead.eventTitle,
+    lead.qrLabel,
+    day(lead.consentedAt),
+    day(lead.expiresAt),
+  ]);
+
+  return {
+    ok: true,
+    header: Object.freeze([
+      'Nome',
+      'E-mail',
+      'Evento',
+      'QR',
+      'Autorizado em',
+      'Vale até',
+    ]),
+    rows,
+  };
+}
+
+export interface PublicSponsorQr {  code: string;
   formattedCode: string;
   label: string;
   sponsorName: string;

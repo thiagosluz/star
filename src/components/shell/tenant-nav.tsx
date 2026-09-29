@@ -9,6 +9,7 @@ import {
   IdCard,
   Compass,
   FileText,
+  Fingerprint,
   Gauge,
   Globe,
   GraduationCap,
@@ -398,6 +399,17 @@ export function buildPlatformNav(): ShellNavGroup[] {
           href: '/superadmin/rotinas',
           label: 'Rotinas',
           icon: <Timer className="size-4" aria-hidden />,
+        },
+        {
+          /**
+           * Auditoria (FASE 49): duas trilhas em uma tela — as ações de governança e os
+           * fatos de segurança das contas (senha, segundo fator, códigos, e-mail e
+           * sessões). É item de plataforma porque a identidade é GLOBAL: a conta existe
+           * sem instituição, e o fato não pertence a nenhuma casa.
+           */
+          href: '/superadmin/auditoria',
+          label: 'Auditoria',
+          icon: <Fingerprint className="size-4" aria-hidden />,
         },
       ],
     },

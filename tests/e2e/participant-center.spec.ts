@@ -36,6 +36,8 @@ const EVENT_SLUG = `evento-f32-${RUN_ID}`;
 let tenantId: string;
 let eventId: string;
 let adminEmail: string;
+/** O nome de quem exporta vai na MARCA D'ÁGUA do arquivo (FASE 49). */
+const adminName = 'Administradora da Central';
 let participantEmail: string;
 let participantName: string;
 let participantId: string;
@@ -105,7 +107,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
     eventId = event.id;
 
-    const admin = await signUpVia(api, 'Administradora da Central');
+    const admin = await signUpVia(api, adminName);
     adminEmail = admin.email;
     await linkUser({ userId: admin.id, tenantId, kind: 'MEMBER' });
     await grantRole({ userId: admin.id, tenantId, role: 'ADMIN', scope: 'TENANT' });
@@ -321,15 +323,38 @@ test.describe('central do participante', () => {
     await expect(page.getByTestId(`panorama-event-${eventId}`)).toContainText('2 confirmada(s)');
   });
 
-  test('a exportação baixa o CSV e registra a exportação na trilha', async ({ page }) => {
+  test('a exportação vira um PEDIDO com prazo, marca d\'água e trilha (FASE 49)', async ({ page }) => {
     await signInAs(page, adminEmail);
 
     const slug = (await tenantSlug()).slug;
-    const response = await page.request.get(`/api/t/${slug}/participantes/exportar`);
+    await page.goto(`/t/${slug}/participantes`);
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  PEDIR E BAIXAR SÃO DOIS ATOS (FASE 49)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O botão não baixa mais o arquivo: ele cria o pedido (autor, filtros e prazo de
+     *  24 h) e a tela volta com o link para baixar. O teste percorre os dois passos —
+     *  é justamente a separação que a dívida E44 pedia.
+     */
+    await expect(page.getByTestId('export-participants-notice')).toContainText('24 horas');
+    await page.getByTestId('export-participants-create').click();
+
+    const ready = page.getByTestId('export-participants-ready');
+    await expect(ready).toBeVisible({ timeout: 20_000 });
+    await expect(ready).toContainText('linha(s)');
+
+    const download = page.getByTestId('export-participants-download');
+    const href = await download.getAttribute('href');
+    expect(href).toContain('/exportacoes/');
+    expect(href).toContain('/arquivo');
+
+    const response = await page.request.get(href!);
 
     expect(response.status()).toBe(200);
     expect(response.headers()['content-type']).toContain('text/csv');
     expect(response.headers()['content-disposition']).toContain('attachment');
+    expect(response.headers()['x-exportacao-horas']).toBe('24');
 
     const body = await response.text();
     expect(body).toContain('Nome;E-mail;Origem');
@@ -337,16 +362,42 @@ test.describe('central do participante', () => {
     // O arquivo carrega o e-mail COMPLETO (a lista da tela é que mascara).
     expect(body).toContain(participantEmail);
 
+    /** A MARCA D'ÁGUA: procedência no topo e autor em cada linha de dado. */
+    expect(body).toContain('# Exportado por:');
+    expect(body).toContain('Exportado por');
+    expect(body).toContain('válido até');
+
+    const dataLine = body
+      .split('\r\n')
+      .find((line) => line.includes(participantEmail) && !line.startsWith('#'));
+
+    expect(dataLine, 'linha de dado no arquivo').toBeDefined();
+    expect(dataLine).toContain(adminName);
+
+    /** O pedido e o download ficam na trilha DA INSTITUIÇÃO. */
     const trail = await e2eDb.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
 
       return tx.auditLog.findMany({
-        where: { tenantId, action: 'EXPORT', entityType: 'participant' },
-        select: { id: true },
+        where: { tenantId, entityType: 'data_export' },
+        select: { action: true },
       });
     });
 
-    expect(trail.length).toBeGreaterThanOrEqual(1);
+    expect(trail.filter((entry) => entry.action === 'CREATE').length).toBeGreaterThanOrEqual(1);
+    expect(trail.filter((entry) => entry.action === 'EXPORT').length).toBeGreaterThanOrEqual(1);
+
+    /**
+     * A exportação recente aparece na tela com o prazo, o caminho de baixar de novo e
+     * a revogação. A contagem de downloads NÃO é afirmada aqui: a tela foi renderizada
+     * antes de o arquivo ser baixado, e medir o contador exigiria recarregar a página
+     * — o que mediria o recarregamento, não a exportação.
+     */
+    const list = page.getByTestId('export-participants-recent');
+    await expect(list).toBeVisible();
+    await expect(list).toContainText('válida por 24 h');
+    await expect(list).toContainText('Baixar de novo');
+    await expect(list).toContainText('Revogar');
   });
 
   test('quem não tem a permissão não alcança o diretório nem o panorama', async ({ page }) => {

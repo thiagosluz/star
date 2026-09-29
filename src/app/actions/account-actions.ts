@@ -34,6 +34,8 @@ import { z } from 'zod';
 import QRCode from 'qrcode';
 
 import { auth } from '@/lib/auth/auth';
+import { recordIdentityEvent } from '@/lib/auth/identity-audit';
+import { maskEmail } from '@/domain/participants/participant-rules';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 import {
   getAccountOverview,
@@ -262,6 +264,16 @@ export async function requestEmailChangeAction(
     return { ok: false, code: code ?? 'INTERNAL', message };
   }
 
+  /**
+   * O endereço NOVO entra MASCARADO: a trilha precisa reconhecer o destino, e não
+   * ser uma segunda cópia do dado pessoal (o endereço completo vive em `user`).
+   */
+  await recordIdentityEvent({
+    userId: user.id,
+    event: 'EMAIL_CHANGE_REQUESTED',
+    details: { novoEmailMascarado: maskEmail(parsed.data.email) },
+  });
+
   return {
     ok: true,
     message: `Enviamos um link de confirmação para ${parsed.data.email}. O e-mail da conta só muda depois do clique.`,
@@ -328,6 +340,13 @@ export async function changeAccountPasswordAction(
     return { ok: false, code: code ?? 'INTERNAL', message };
   }
 
+  await recordIdentityEvent({
+    userId: user.id,
+    event: 'PASSWORD_CHANGED',
+    /** A troca encerra as outras sessões — o fato vai JUNTO, e não como evento solto. */
+    details: { outrasSessoesEncerradas: true },
+  });
+
   revalidatePath('/conta');
   return {
     ok: true,
@@ -384,6 +403,8 @@ export async function setAccountPasswordAction(
     const { message, code } = authMessage(error);
     return { ok: false, code: code ?? 'INTERNAL', message };
   }
+
+  await recordIdentityEvent({ userId: user.id, event: 'PASSWORD_SET' });
 
   revalidatePath('/conta');
   return { ok: true, message: 'Senha criada. Agora você pode entrar com e-mail e senha.' };
@@ -490,6 +511,8 @@ export async function confirmTwoFactorAction(
     return { ok: false, code: errorCode ?? 'INTERNAL', message };
   }
 
+  await recordIdentityEvent({ userId: user.id, event: 'TWO_FACTOR_ENABLED' });
+
   revalidatePath('/conta');
   return {
     ok: true,
@@ -524,6 +547,8 @@ export async function disableTwoFactorAction(
     return { ok: false, code: code ?? 'INTERNAL', message };
   }
 
+  await recordIdentityEvent({ userId: user.id, event: 'TWO_FACTOR_DISABLED' });
+
   revalidatePath('/conta');
   return { ok: true, message: 'Segundo fator desligado. Sua conta volta a entrar só com a senha.' };
 }
@@ -557,6 +582,12 @@ export async function regenerateBackupCodesAction(
     if (!payload.backupCodes) {
       return { ok: false, code: 'INTERNAL', message: 'Não foi possível gerar os códigos.' };
     }
+
+    await recordIdentityEvent({
+      userId: user.id,
+      event: 'BACKUP_CODES_REGENERATED',
+      details: { quantidade: payload.backupCodes.length },
+    });
 
     return {
       ok: true,
@@ -602,6 +633,8 @@ export async function revokeSessionAction(
     return { ok: false, code: 'INTERNAL', message };
   }
 
+  await recordIdentityEvent({ userId: user.id, event: 'SESSION_REVOKED' });
+
   revalidatePath('/conta');
   return { ok: true, message: 'Sessão encerrada.' };
 }
@@ -616,6 +649,8 @@ export async function revokeOtherSessionsAction(): Promise<AccountActionState> {
     const { message } = authMessage(error);
     return { ok: false, code: 'INTERNAL', message };
   }
+
+  await recordIdentityEvent({ userId: user.id, event: 'OTHER_SESSIONS_REVOKED' });
 
   revalidatePath('/conta');
   return { ok: true, message: 'As outras sessões foram encerradas. Esta continua ativa.' };
@@ -711,6 +746,8 @@ export async function confirmAccountAvatarUploadAction(
 
   if (!result.ok) return result;
 
+  await recordIdentityEvent({ userId: user.id, event: 'PROFILE_PHOTO_CHANGED' });
+
   revalidatePath('/conta');
   return {
     ok: true,
@@ -726,6 +763,8 @@ export async function removeAccountAvatarAction(): Promise<AccountActionState> {
   const result = await removeUserAvatar(user.id);
 
   if (!result.ok) return result;
+
+  await recordIdentityEvent({ userId: user.id, event: 'PROFILE_PHOTO_REMOVED' });
 
   revalidatePath('/conta');
   return { ok: true, message: 'Foto removida da sua conta.' };

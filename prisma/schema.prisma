@@ -911,6 +911,9 @@ model Tenant {
   /// FASE 48 — links públicos de carta criados pelas pessoas desta instituição.
   cardShareLinks   CardShareLink[]
 
+  /// FASE 49 — exportações de dados pessoais pedidas nesta instituição.
+  dataExports      DataExport[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -1036,6 +1039,8 @@ model User {
 
   /// Sorteios que esta pessoa criou — FASE 8.
   rafflesCreated          Raffle[]             @relation("RaffleCreatedBy")
+  /// Exportações de dados que esta pessoa pediu — FASE 49.
+  dataExportsRequested    DataExport[]         @relation("DataExportRequestedBy")
   /// Rodadas de sorteio que esta pessoa preparou/apurou — FASE 30.
   raffleRoundsCreated     RaffleRound[]        @relation("RaffleRoundCreatedBy")
   /// Sorteios em que esta pessoa foi sorteada — FASE 8.
@@ -3051,6 +3056,120 @@ model CardShareLink {
   @@index([tenantId, userId, userCardId])
   @@index([tenantId, userCardId, revokedAt])
   @@map("card_share_links")
+}
+
+/// Exportação de dados pessoais com prazo de validade — FASE 49.
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  O QUE ESTA LINHA GUARDA — E O QUE ELA DELIBERADAMENTE NÃO GUARDA
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Guarda o ATO: quem pediu, qual exportação, com que filtros, quantas linhas,
+///  até quando vale, quantas vezes foi baixada e se foi revogada. É o "controle de
+///  destino" que a dívida E44 pedia.
+///
+///  NÃO guarda o ARQUIVO. O CSV é regerado na hora do download, a partir dos
+///  filtros — então não existe cópia do dado pessoal parada no banco nem no bucket
+///  esperando alguém apagar. O que expira é o DIREITO de baixar de novo, e expirar
+///  só faz sentido porque gerar de novo é possível.
+model DataExport {
+  id            String @id @default(uuid(7)) @db.Uuid
+  tenantId      String @db.Uuid
+  /// Quem pediu: é o nome que vai na marca d'água do arquivo.
+  requestedById String @db.Uuid
+
+  kind DataExportKind
+
+  /// Filtros aplicados (`{ query, eventId, onlyWithCertificate, ... }`).
+  filters Json @default("{}")
+  /// Linhas entregues (ou o total, quando o teto de linhas cortou).
+  rowCount  Int     @default(0)
+  truncated Boolean @default(false)
+
+  /// Fim da validade: depois deste instante, baixar exige exportar de novo.
+  expiresAt DateTime @db.Timestamptz(6)
+  /// Quantas vezes o arquivo foi baixado (e quando, na última).
+  downloadCount    Int       @default(0)
+  lastDownloadedAt DateTime? @db.Timestamptz(6)
+  /// Revogação explícita: corta o acesso antes do prazo.
+  revokedAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedBy User   @relation("DataExportRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, requestedById, createdAt])
+  @@index([tenantId, expiresAt])
+  @@map("data_exports")
+}
+
+/// Trilha de IDENTIDADE — mutações globais de segurança (FASE 49).
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE NÃO TEM `tenantId` (E POR QUE ISSO É O PONTO)
+/// ─────────────────────────────────────────────────────────────────────────────
+///  Trocar senha, ligar o segundo fator, trocar e-mail e encerrar sessões são fatos
+///  da CONTA, que existe sem instituição (ADR-002). A `audit_logs` é por instituição
+///  e não tinha onde guardá-los — era a dívida E67. Aqui não há RLS por instituição
+///  porque não há por onde isolar; o que protege é o PRIVILÉGIO: a role de runtime
+///  não alcança esta tabela (`IDENTITY_ONLY_TABLES`), e quem escreve e lê é a
+///  conexão de plataforma.
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  SEM CHAVE ESTRANGEIRA, DE PROPÓSITO
+/// ─────────────────────────────────────────────────────────────────────────────
+///  `userId` e `actorId` são UUIDs sem FK: a trilha de segurança precisa SOBREVIVER
+///  à exclusão da conta. Uma trilha que desaparece junto com o investigado (cascade)
+///  ou que perde o alvo (set null) não serve para investigar — o identificador fica,
+///  e é ele que liga o fato à pessoa enquanto ela existir.
+model IdentityAuditLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Alvo do fato (a conta afetada).
+  userId String? @db.Uuid
+  /// Quem executou. Nulo quando foi a própria pessoa ou o próprio sistema.
+  actorId String? @db.Uuid
+
+  event IdentityAuditEvent
+  /// Estado alterado, já sanitizado — NUNCA senha, token, código ou segredo.
+  details   Json    @default("{}")
+  ipAddress String? @db.VarChar(64)
+  userAgent String? @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([userId, createdAt])
+  @@index([event, createdAt])
+  @@index([createdAt])
+  @@map("identity_audit_logs")
+}
+
+/// Tipo de dado pessoal exportado — espelhado no domínio (`EXPORT_KINDS`).
+enum DataExportKind {
+  PARTICIPANTS_CSV
+  SPONSOR_CONTACTS_CSV
+}
+
+/// Evento de segurança da identidade — espelhado no domínio
+/// (`IDENTITY_AUDIT_EVENTS`). Enum no banco porque valor inventado aqui é dado
+/// inválido para sempre; o domínio recusa o que o banco não aceita.
+enum IdentityAuditEvent {
+  PASSWORD_CHANGED
+  PASSWORD_SET
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  TWO_FACTOR_ENABLED
+  TWO_FACTOR_DISABLED
+  BACKUP_CODES_REGENERATED
+  BACKUP_CODE_USED
+  TWO_FACTOR_CHALLENGE_FAILED
+  EMAIL_CHANGE_REQUESTED
+  EMAIL_VERIFIED
+  SESSION_REVOKED
+  OTHER_SESSIONS_REVOKED
+  PROFILE_PHOTO_CHANGED
+  PROFILE_PHOTO_REMOVED
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

@@ -36,6 +36,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { withTenant } from '@/lib/db/tenant-client';
+import type { CsvValue } from '@/domain/participants/participant-rules';
+import { EXPORT_FILTER_LABELS, exportFiltersLine } from '@/domain/exports/export-rules';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { instantToZonedWallTime } from '@/domain/events/scheduling-rules';
@@ -47,7 +49,6 @@ import {
   PARTICIPANT_ORIGIN_LABELS,
   attendanceRate,
   averageMinutesPerVisit,
-  buildCsv,
   certificateCoverage,
   engagementOf,
   maskEmail,
@@ -370,37 +371,27 @@ export const PARTICIPANT_CSV_HEADER = Object.freeze([
 ]);
 
 /**
- * Exporta o diretório em CSV.
+ * Monta as LINHAS do diretório para exportação (FASE 49).
  *
  * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE A EXPORTAÇÃO É AUDITADA E TEM TETO
+ *  POR QUE ISTO VIROU COLETA, E NÃO "EXPORTAÇÃO"
  * ─────────────────────────────────────────────────────────────────────────────
- *  O CSV tira o dado pessoal da plataforma e o deposita num arquivo que circula por
- *  e-mail e pasta compartilhada. É o pedido mais legítimo da secretaria e, ao mesmo
- *  tempo, o caminho mais fácil para uma base inteira sair sem rastro — por isso a
- *  exportação entra na trilha (`AuditAction.EXPORT`, que existe desde a FASE 1) com
- *  autor, filtros e número de linhas, e tem teto (`CSV_MAX_ROWS`).
+ *  Até a FASE 48 esta função gerava o arquivo inteiro e o devolvia para a rota
+ *  baixar. A FASE 49 precisa de duas coisas que só existem com o PEDIDO no banco: a
+ *  marca d'água (autor, instituição, filtros e prazo) e a conferência de validade
+ *  no download. Então o serviço de exportação passou a ORQUESTRAR, e aqui ficou o
+ *  que é deste módulo: quais linhas, em que ordem, com que recorte.
  *
- *  A data da última presença sai no fuso da INSTITUIÇÃO: o arquivo é lido por gente,
- *  e "ontem às 22h" em UTC apareceria como "hoje" para quem lê no Brasil.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O CSV LEVA O E-MAIL COMPLETO — DECISÃO EXPLÍCITA
- *  ─────────────────────────────────────────────────────────────────────────────
- *  A tela mascara o endereço; o arquivo não. É a diferença entre MOSTRAR e ENTREGAR:
- *  a lista é uma tela de trabalho que se copia e se projeta, e o CSV é o insumo de
- *  uma ação (conferir quem não foi, importar num sistema de mala direta). Um arquivo
- *  com `m***@ufba.br` não serve para nada — e o risco não some por mascarar, só muda
- *  de lugar. O que protege é o registro: `AuditAction.EXPORT` grava autor, instante,
- *  filtros e número de linhas, e o teto impede a extração da base inteira num clique.
+ *  A ORDEM DAS COLUNAS É CONTRATO: quem importa a planilha o faz por posição. A
+ *  coluna da marca d'água entra depois de todas (em `buildWatermarkedCsv`), nunca
+ *  no meio.
  */
-export async function exportParticipantsCsv(input: {
+export async function collectParticipantExportRows(input: {
   tenantId: string;
-  actorId: string;
   filters?: ParticipantListFilters;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-}): Promise<ParticipantResult<{ csv: string; rows: number; truncated: boolean }>> {
+}): Promise<
+  ParticipantResult<{ header: readonly string[]; rows: CsvValue[][]; timezone: string }>
+> {
   const listing = await listParticipants({
     tenantId: input.tenantId,
     page: 1,
@@ -419,13 +410,9 @@ export async function exportParticipantsCsv(input: {
 
       const collected: ParticipantListEntry[] = [...listing.entries];
       let page = 2;
-      let truncated = false;
 
       while (listing.page.total > collected.length) {
-        if (collected.length >= CSV_MAX_ROWS) {
-          truncated = true;
-          break;
-        }
+        if (collected.length >= CSV_MAX_ROWS) break;
 
         const next = await listParticipants({
           tenantId: input.tenantId,
@@ -442,58 +429,75 @@ export async function exportParticipantsCsv(input: {
 
       if (collected.length > CSV_MAX_ROWS) {
         collected.length = CSV_MAX_ROWS;
-        truncated = true;
       }
 
-      const csv = buildCsv(
-        PARTICIPANT_CSV_HEADER,
-        collected.map((entry) => [
-          entry.name,
-          entry.email,
-          PARTICIPANT_ORIGIN_LABELS[entry.origin],
-          entry.events,
-          entry.confirmed,
-          entry.attended,
-          entry.attendedEvents,
-          entry.visits,
-          entry.minutes,
-          entry.rate.percent,
-          entry.certificates,
-          entry.cards,
-          entry.xp,
-          entry.engagement.map((tag) => ENGAGEMENT_LABELS[tag]).join(' · '),
-          entry.lastActivityAt ? instantToZonedWallTime(entry.lastActivityAt, tenant.timezone).replace('T', ' ') : null,
-        ]),
-      );
+      const rows: CsvValue[][] = collected.map((entry) => [
+        entry.name,
+        entry.email,
+        PARTICIPANT_ORIGIN_LABELS[entry.origin],
+        entry.events,
+        entry.confirmed,
+        entry.attended,
+        entry.attendedEvents,
+        entry.visits,
+        entry.minutes,
+        entry.rate.percent,
+        entry.certificates,
+        entry.cards,
+        entry.xp,
+        entry.engagement.map((tag) => ENGAGEMENT_LABELS[tag]).join(' · '),
+        entry.lastActivityAt
+          ? instantToZonedWallTime(entry.lastActivityAt, tenant.timezone).replace('T', ' ')
+          : null,
+      ]);
 
-      await recordAudit(
-        {
-          tenantId: input.tenantId,
-          userId: input.actorId,
-          action: 'EXPORT',
-          entityType: 'participant',
-          entityId: null,
-          changes: {
-            linhas: { from: null, to: collected.length },
-            ...(input.filters?.eventId ? { evento: { from: null, to: input.filters.eventId } } : {}),
-            ...(input.filters?.query ? { busca: { from: null, to: input.filters.query } } : {}),
-          },
-          ipAddress: input.ipAddress ?? null,
-          userAgent: input.userAgent ?? null,
-        },
-        tx,
-      );
-
-      return { ok: true as const, csv, rows: collected.length, truncated };
+      return { ok: true as const, header: PARTICIPANT_CSV_HEADER, rows, timezone: tenant.timezone };
     });
   } catch (error) {
-    console.error(`[participants] falha ao exportar participantes: ${errorMessage(error)}`);
-
+    console.error(`[participants] falha ao montar a exportação: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível exportar a lista.' };
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Filtros do diretório em texto, para a linha de procedência do arquivo.
+ *
+ * O título do evento (e não o id) porque quem lê o arquivo daqui a um ano precisa
+ * reconhecer o recorte — e o id não diz nada a ninguém.
+ */
+export async function participantFiltersLabel(
+  tenantId: string,
+  filters: Record<string, string | boolean | undefined>,
+): Promise<string | null> {
+  const entries: { label: string; value: string }[] = [];
+
+  if (typeof filters.query === 'string' && filters.query.length > 0) {
+    entries.push({ label: EXPORT_FILTER_LABELS.query ?? 'Busca', value: filters.query });
+  }
+
+  if (typeof filters.eventId === 'string' && filters.eventId.length > 0) {
+    const title = await withTenant(tenantId, async (tx) => {
+      const event = await tx.event.findFirst({
+        where: { id: filters.eventId as string, tenantId },
+        select: { title: true },
+      });
+
+      return event?.title ?? null;
+    });
+
+    entries.push({ label: EXPORT_FILTER_LABELS.eventId ?? 'Evento', value: title ?? String(filters.eventId) });
+  }
+
+  if (filters.onlyWithCertificate === true) {
+    entries.push({ label: EXPORT_FILTER_LABELS.onlyWithCertificate ?? 'Só com certificado', value: 'sim' });
+  }
+
+  if (filters.onlyAttended === true) {
+    entries.push({ label: EXPORT_FILTER_LABELS.onlyAttended ?? 'Só quem compareceu', value: 'sim' });
+  }
+
+  return exportFiltersLine(entries);
+}
 //  A ficha (visão 360)
 // ───────────────────────────────────────────────────────────────────────────────
 export interface ParticipantProfile {

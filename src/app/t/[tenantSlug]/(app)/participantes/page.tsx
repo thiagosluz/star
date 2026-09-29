@@ -8,6 +8,8 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { getRequestContext } from '@/lib/auth/session';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listParticipants } from '@/lib/participants/participant-service';
+import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
+import { ExportPanel } from '@/components/exports/export-panel';
 import { ENGAGEMENT_LABELS, PARTICIPANT_ORIGIN_LABELS } from '@/domain/participants/participant-rules';
 import { ParticipantDirectory, type DirectoryEntry } from '@/components/participants/participant-directory';
 import { sendParticipantMessageAction } from '@/app/actions/participant-actions';
@@ -54,10 +56,14 @@ export default async function ParticipantsPage({
     certificado?: string;
     presente?: string;
     pagina?: string;
+    /** Exportação recém-criada: a tela volta com o identificador do pedido (FASE 49). */
+    exportacao?: string;
+    /** Motivo da recusa, quando o pedido de exportação não deu certo. */
+    erro?: string;
   }>;
 }) {
   const { tenantSlug } = await params;
-  const { busca, evento, certificado, presente, pagina } = await searchParams;
+  const { busca, evento, certificado, presente, pagina, exportacao, erro } = await searchParams;
 
   const { tenantId, tenantName } = await requirePagePermission({
     tenantSlug,
@@ -120,7 +126,17 @@ export default async function ParticipantsPage({
   if (certificado === '1') query.set('certificado', '1');
   if (presente === '1') query.set('presente', '1');
 
-  const exportPath = `/api/t/${tenantSlug}/participantes/exportar${query.size > 0 ? `?${query}` : ''}`;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A EXPORTAÇÃO PASSOU A SER UM PEDIDO (FASE 49)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O link direto de download virou formulário: exportar cria uma linha em
+   *  `data_exports` (autor, filtros, prazo de 24 h) e o arquivo é gerado no download,
+   *  com marca d'água. A dívida E44 pedia exatamente isto — prazo e controle de
+   *  destino —, e o "destino" é a lista de exportações recentes abaixo do botão.
+   */
+  const recentExports = await listRecentDataExports({ tenantId, kind: 'PARTICIPANTS_CSV' });
+  const createdExport = exportacao ? await getDataExport({ tenantId, exportId: exportacao }) : null;
   const pageHref = (target: number): string => {
     const next = new URLSearchParams(query);
     next.set('pagina', String(target));
@@ -239,11 +255,26 @@ export default async function ParticipantsPage({
             ) : null}
           </div>
 
+          <ExportPanel
+            tenantSlug={tenantSlug}
+            kind="PARTICIPANTS_CSV"
+            returnTo={tenantPath(tenantSlug, '/participantes') + (query.size > 0 ? `?${query}` : '')}
+            filters={{
+              busca: busca ?? undefined,
+              evento: selectedEventId ?? undefined,
+              certificado: certificado === '1',
+              presente: presente === '1',
+            }}
+            error={erro ?? null}
+            created={createdExport?.kind === 'PARTICIPANTS_CSV' ? createdExport : null}
+            recent={recentExports}
+            testId="export-participants"
+          />
+
           <ParticipantDirectory
             entries={entries}
             tenantSlug={tenantSlug}
             action={sendParticipantMessageAction}
-            exportPath={exportPath}
             canMessage={canMessage}
             selectedEventId={selectedEventId}
           />

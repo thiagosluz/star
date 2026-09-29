@@ -1,9 +1,10 @@
-import Link from 'next/link';
-import { Download, QrCode, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { QrCode, ShieldCheck, UserPlus, Users } from 'lucide-react';
 
 import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { SponsorQrShare } from '@/components/sponsors/sponsor-qr-share';
+import { ExportPanel } from '@/components/exports/export-panel';
+import type { ExportRecordView } from '@/lib/exports/export-service';
 import type { SponsorQrSheet } from '@/lib/sponsors/sponsor-qr-sheet';
 import type { SponsorQrPanelRow, SponsorPortalLead, SponsorTeamRow } from '@/lib/sponsors/sponsor-portal-service';
 import {
@@ -48,6 +49,10 @@ export function SponsorExperiencePanel({
   leads,
   eventOptions,
   cardOptions,
+  recentExports,
+  createdExport,
+  returnTo,
+  exportError,
 }: {
   tenantSlug: string;
   eventId: string;
@@ -59,6 +64,14 @@ export function SponsorExperiencePanel({
   leads: (SponsorPortalLead & { sponsorId: string })[];
   eventOptions: { value: string; label: string }[];
   cardOptions: { value: string; label: string }[];
+  /** Exportações de contatos recentes (FASE 49) — a lista é filtrada por patrocinador. */
+  recentExports: ExportRecordView[];
+  /** Exportação recém-criada, quando a tela volta com `?exportacao=<id>`. */
+  createdExport: ExportRecordView | null;
+  /** Caminho interno desta tela, para onde a ação volta depois de criar o pedido. */
+  returnTo: string;
+  /** Motivo da recusa do pedido de exportação, quando volta com ?erro=. */
+  exportError: string | null;
 }) {
   if (sponsors.length === 0) return null;
 
@@ -350,14 +363,26 @@ export function SponsorExperiencePanel({
                 </div>
               )}
 
-              <Link
-                href={`/api/t/${tenantSlug}/patrocinadores/contatos?sponsorId=${sponsor.id}`}
-                data-testid={`sponsor-leads-csv-${sponsor.id}`}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-              >
-                <Download className="size-3.5" aria-hidden />
-                Exportar contatos (CSV)
-              </Link>
+              {/**
+                * ─────────────────────────────────────────────────────────────────────
+                *  A EXPORTAÇÃO DE CONTATOS PASSOU A TER PRAZO E MARCA D'ÁGUA (FASE 49)
+                * ─────────────────────────────────────────────────────────────────────
+                *  O link direto virou pedido: o arquivo é gerado no download, com autor,
+                *  instituição, data e validade em cada linha, e o link vale 24 horas.
+                *  O painel é POR PATROCINADOR porque a autorização também é: quem entra
+                *  pelo vínculo só exporta os contatos da PRÓPRIA empresa.
+                */}
+              <ExportPanel
+                tenantSlug={tenantSlug}
+                kind="SPONSOR_CONTACTS_CSV"
+                returnTo={returnTo}
+                sponsorId={sponsor.id}
+                created={createdExport}
+                recent={recentExports.filter((record) => record.sponsorId === sponsor.id)}
+                title="Exportar contatos (CSV)"
+                testId={`sponsor-leads-csv-${sponsor.id}`}
+                error={exportError}
+              />
             </div>
           </div>
         );

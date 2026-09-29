@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Download, Inbox, UserRound } from 'lucide-react';
+import { Inbox, UserRound } from 'lucide-react';
 
 import { MessageComposer } from '@/components/participants/message-composer';
 import type { ParticipantActionState } from '@/app/actions/participant-actions';
@@ -48,14 +48,12 @@ export function ParticipantDirectory({
   entries,
   tenantSlug,
   action,
-  exportPath,
   canMessage,
   selectedEventId,
 }: {
   entries: readonly DirectoryEntry[];
   tenantSlug: string;
   action: (prev: ParticipantActionState | null, formData: FormData) => Promise<ParticipantActionState>;
-  exportPath: string;
   canMessage: boolean;
   selectedEventId: string | null;
 }) {
@@ -123,14 +121,7 @@ export function ParticipantDirectory({
             </label>
           ) : null}
 
-          <a
-            href={exportPath}
-            data-testid="directory-export"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-muted"
-          >
-            <Download className="size-3.5" aria-hidden />
-            Exportar CSV
-          </a>
+
         </div>
       </div>
 

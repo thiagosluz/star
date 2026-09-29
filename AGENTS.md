@@ -16,12 +16,12 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 48 (F15, F21–F25, F29–F48 entregues; a F49+ é a próxima)
-Testes ................. 2399 (Vitest: unit + integração) + 162 (Playwright E2E)
-ADRs ................... 266 (numeração GLOBAL e sequencial — a próxima é ADR-267)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 49 (F15, F21–F25, F29–F49 entregues; a F50+ é a próxima)
+Testes ................. 2436 (Vitest: unit + integração) + 166 (Playwright E2E)
+ADRs ................... 273 (numeração GLOBAL e sequencial — a próxima é ADR-274)
 Permissões ............. 66 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 56 sob RLS + FORCE (+ as partições mensais de audit_logs)
-Tabelas de plataforma .. job_runs — sem RLS e SEM acesso para a role de runtime (verificado no contrato)
+Tabelas de tenant ...... 57 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
 
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2399+ testes passando
+npm test              # esperado: 2436+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 162+ testes passando
+npm run test:e2e      # esperado: 166+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,18 +127,19 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 100 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 101 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md)**, e a seção 10 manda lê-la antes de mexer em
 > qualquer coisa. Os números são estáveis e citados no código e nos documentos de fase — não
 > renumere. As duas mais recentes, como amostra do que a regra protege:
 
-* **99 — O `select` aninhado do Prisma com objeto ESPALHADO não é conferido pelo `tsc`**: um campo
-  inexistente (`username` em vez de `publicHandle`) passou no `typecheck` e no `lint` e só apareceu
-  no teste de integração. Espalhar um objeto comum larga os literais, e o tipo do Prisma aceita a
-  forma larga — a rede que pega isso é o teste que roda a consulta de verdade.
 * **100 — Satori exige `display: flex` em `<div>` com mais de um filho**: `Conquistada por {nome}`
   são DOIS nós, a rota de imagem responde 500 e a prévia do link nasce vazia. O erro não aparece no
   `build` nem no `tsc`; o E2E **baixa o `og:image`** anunciado na página, e é isso que prende.
+* **101 — O provisionamento RELIGA o privilégio que a migração revogou**: o `db:rls` (parte de
+  `db:setup`) concede CRUD em TODAS as tabelas e depois revoga as restritas — e a lista tinha só
+  `job_runs`, então a tabela da semente TOTP voltava a ser alcançável pela role de runtime a cada
+  subida. Corrigir caso a caso garante que o próximo caso volte: a lista sai da FONTE ÚNICA
+  (`PLATFORM_ONLY_TABLES` + `IDENTITY_ONLY_TABLES`) e um teste catraca a prende.
 
 ---
 
@@ -277,10 +278,7 @@ lugares"); **o limite EFETIVO é o menor entre a lotação declarada e a sala**
 ATÔMICO da reserva** (`RESERVE_ACTIVITY_SEAT_SQL` + `ROOM_SEAT_AVAILABLE_PREDICATE`, ADR-135) —
 checar em JavaScript antes do `UPDATE` reabriria a superlotação; e **a sala em uso recusa a
 exclusão**, com a contagem e o caminho (ADR-136) — a FK é `ON DELETE SET NULL` e sem a guarda a
-sala sumiria da programação em silêncio. **Atividade ABERTA é a exceção deliberada:** ela recebe
-quem se inscreveu no evento e não tem fila, então o painel **avisa** quando o público excede a
-sala (dívida E34) em vez de bloquear.
-
+sala sumiria da programação em silêncio. 
 ### Palco e auditoria (FASE 29)
 
 O sorteio deixou de ser uma promessa auditável: a **lista publicada** passou a ser
@@ -331,10 +329,6 @@ sorteio**: ela passa os nomes REAIS da lista publicada depois de o servidor assi
 roleta (a rodada antiga sem lista revela direto, em vez de inventar nomes — armadilha 78); e
 **uma rodada preparada por vez**, senão o telão não sabe o que anunciar.
 
-A rodada 1 do histórico foi **copiada** pela migração para `raffle_rounds`, e as colunas de
-semente/lista do sorteio são **legado congelado** desde então. O fluxo ao vivo assina por
-RODADA, porque o status do sorteio fica `DRAWN` para sempre depois da primeira apuração.
-
 ### Credenciamento por crachá (FASE 31)
 
 O crachá passou a existir de verdade — a coluna `registrations.badgeToken` era **lida por todos
@@ -361,10 +355,6 @@ desaparecia; **os minutos têm teto no fim da ATIVIDADE** (ADR-150); **leitura f
 registra e AVISA** (ADR-151) — a presença existe, o XP não; e **o QR carrega só o código**
 (ADR-152), sem dado pessoal.
 
-Duas decisões de operação: a câmera tenta a **API nativa** e cai para o `jsqr` local (Firefox e
-Safari não têm `BarcodeDetector`), com leitor USB e digitação como caminhos de volta; e quem
-esquece a saída é fechado no **fim da atividade** pela varredura do worker, com o MESMO número.
-
 ### Central do participante (FASE 32)
 
 A instituição só via pessoas **por evento**; esta fase deu a visão da PESSOA — e um canal de
@@ -389,8 +379,6 @@ de provedor não apaga a comunicação; **a caixa de entrada é aberta por POSSE
 sessão) enquanto ENVIAR exige `participant:message`; e **`null` não é `0`** — taxa de
 comparecimento e média de minutos vêm `null` sem denominador, e a tela mostra "—".
 
-A guarda das Server Actions trata permissão `:own` (armadilha 72); a visão geral usa
-`tenant:analytics:read`, permissão que existia desde a FASE 2 sem consumidor.
 
 ### Chamadas de propostas (FASE 33)
 
@@ -538,11 +526,6 @@ sorteio — sem isso, girar a chave apagava a prova de todo o histórico (ADR-13
 vivo negocia o transporte** na mesma rota (SSE com o polling como caminho de volta em
 `data-transport`).
 
-**Privacidade:** `User.isPublicProfile` nasceu `true` e ninguém podia escolher — o nome dos
-ganhadores saía COMPLETO no resultado público, contra a regra documentada. O padrão passou a
-`false` e as linhas existentes foram normalizadas (ADR-139, armadilha 58). A tela da escolha
-chegou na FASE 44 (dívida **E35** quitada): o nome completo no resultado público é um
-interruptor do perfil público.
 
 ### Página pública e patrocínio (FASE 17)
 
@@ -657,10 +640,6 @@ FORA, com o motivo no `workloadBreakdown`, e o certificado exige evento encerrad
 O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), porque o papel é
 concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO (armadilha 42).
 
-**Duas portas:** além de quem já é palestrante, entra quem tem **convite pendente para o e-mail
-da conta** — o papel nasce com o aceite, então exigi-lo antes era um impasse (ADR-119/120).
-
-
 ### Comunicação (FASE 15)
 
 O e-mail transacional saiu do papel: **Resend** atrás de um driver com o padrão em **não
@@ -706,6 +685,22 @@ com movimento reduzido a carta e a ficha continuam na página, e a ficha sai do 
 intensidade; e **o link é POR CARTA**, com token SELADO (AES-GCM: o dono reexibe, o banco sozinho
 não abre), índice por SHA-256, revogação imediata e o nome pela régua da FASE 44. A prévia do link
 é imagem vetorial gerada no servidor (`next/og`).
+
+### Exportação com prazo e trilha de identidade (FASE 49)
+
+```
+Diretório ....... /t/<slug>/participantes → "Gerar exportação" (+ "Exportações recentes")
+Contatos ........ patrocínio → "Exportar contatos (CSV)"    (mesmo prazo e mesma marca)
+Download ........ GET /api/t/<slug>/exportacoes/<exportId>/arquivo   (sessão; 410 se vencida)
+Auditoria ....... /superadmin/auditoria  → governança + segurança das contas
+Histórico ....... /conta → "Segurança e acessos"
+```
+
+Quatro regras: **o arquivo não é guardado** — o que expira é o direito de baixar de novo;
+**a marca d'água vai no topo E em cada linha** (a cópia de uma linha sobrevive) e sempre na
+ÚLTIMA coluna, porque a ordem das colunas do dado é contrato; **o download é por SESSÃO, não
+por link assinado** (a fase existe para saber quem baixou); e **a trilha de identidade não tem
+`tenantId`** — a proteção é o PRIVILÉGIO (armadilha 101) e ela **nunca grava segredo**.
 
 ### Contas do seed — **não têm senha**
 
@@ -838,6 +833,7 @@ tests/{unit,integration,e2e}
 | 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada, **logotipo sem perda**, metadados descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é recusada e a bomba de pixels cai pelo cabeçalho. A **arte do certificado fica de fora** — PDF não embute WebP. E a **organização publica a foto de quem não tem conta**, com autorização declarada na trilha e trocar/remover nos dois lados; achou o **fixture 1×1 com CRC inválido** desde a F17 e a **asserção que passava com a conversão falhando**; declarou **E65/E66**) | ✅ |
 | 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), **segundo fator** TOTP com QR no servidor, **10 códigos de recuperação** de uso único e desligamento com senha, e **dispositivos conectados**), **esqueci minha senha** (o envio existia desde a F15 e o link caía em **404**), **desafio de dois fatores no login** e o segredo do TOTP numa tabela que a role de runtime **não alcança**; achou o **código de recuperação recusado** pela normalização e o **template novo fora da lista de testes**; declarou **E67/E68**) | ✅ |
 | 48 | **Carta colecionável premium e compartilhamento** (palco **3D** — arrastar gira, brilho holográfico seguindo o ponteiro, **Virar** com o verso e **Luz e brilho** — com a geometria no DOMÍNIO e tilt leve no álbum; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e a **variante foil acende o brilho sozinha**; o verso é a **ficha da conquista**, e a mesma ficha aparece em texto (sem JavaScript nada se perde); **link público POR CARTA** com token SELADO, revogável e idempotente, mostrando **só aquela carta**; **imagem de prévia** vetorial no servidor; **+ defeito real corrigido**: a corrida do balcão criava DUAS sessões na segunda visita; declarou **E69–E71**) | ✅ |
+| 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de **24 h**: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no download**, com **autor e validade em CADA linha**; o download exige **sessão** e reconfere a permissão do tipo; o CSV do patrocinador passou a usar o **mesmo escape**; e `identity_audit_logs` — **sem `tenantId`, sem FK e sem privilégio para a role de runtime** — registra os **15 fatos de segurança da conta** (senha, 2FA, códigos, e-mail, sessões, redefinição) nos pontos que conhecem o ato, lidos pelo SuperAdmin em `/superadmin/auditoria` e pela pessoa em `/conta`; **+ defeito real corrigido**: o `db:rls` religava o privilégio de `two_factor` (a semente TOTP); quitou **E44/E67**, declarou **E72/E73**) | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
@@ -845,18 +841,18 @@ tests/{unit,integration,e2e}
 
 **Dívidas técnicas:** o levantamento consolidado (**67 itens abertos**; A=3, B=4, C=2, D=3,
 E=45, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
-Quitados: **A3, B7, E47** (F36), **E41, E48** (F37) e **E35** (F44). Declarados: **E50** (F37),
-**E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42), **E58/E59** (F43),
-**E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46), **E67/E68** (F47) e **E69–E71** (F48).
-Leia antes de propor a próxima fase.
+Quitados: **A3, B7, E47** (F36), **E41, E48** (F37), **E35** (F44) e **E44/E67** (F49).
+Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42),
+**E58/E59** (F43), **E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46), **E67/E68** (F47),
+**E69–E71** (F48) e **E72/E73** (F49). Leia antes de propor a próxima fase.
 
 ---
 
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 100 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-48-cartas-premium-e-compartilhamento.md`; a comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 101 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-49-exportacao-e-trilha-de-identidade.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

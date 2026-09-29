@@ -1,9 +1,15 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, KeyRound, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
+import { ArrowLeft, Fingerprint, KeyRound, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
 
 import { getCurrentSession } from '@/lib/auth/session';
 import { getAccountOverview, readAccountSessions } from '@/lib/auth/account-service';
+import { listMyIdentityAudit } from '@/lib/platform/identity-audit-service';
+import {
+  IDENTITY_AUDIT_TONE_LABELS,
+  identityAuditLabel,
+  identityAuditTone,
+} from '@/domain/identity/identity-audit-rules';
 import { signOutAction } from '@/app/actions/auth-actions';
 import {
   changeAccountPasswordAction,
@@ -70,10 +76,19 @@ export default async function AccountPage({
     redirect('/login?redirectTo=%2Fconta');
   }
 
-  const [account, sessions, params] = await Promise.all([
+  const [account, sessions, params, security] = await Promise.all([
     getAccountOverview(session.user.id),
     readAccountSessions({ userId: session.user.id, currentToken: session.token }),
     searchParams,
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O HISTÓRICO DE SEGURANÇA É DA PRÓPRIA PESSOA (FASE 49)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A trilha de identidade é global e o SuperAdmin vê tudo; aqui a leitura é por
+     *  POSSE — o `userId` vem da sessão, não da URL. Ver o próprio histórico é o que
+     *  permite responder "eu não fiz isso" na hora, em vez de abrir um chamado.
+     */
+    listMyIdentityAudit({ userId: session.user.id, limit: 12 }),
   ]);
 
   if (!account) {
@@ -199,6 +214,56 @@ export default async function AccountPage({
             revokeAction={revokeSessionAction}
             revokeOthersAction={revokeOtherSessionsAction}
           />
+        </CardContent>
+      </Card>
+
+      {/* ── Histórico de segurança (FASE 49) ──────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Fingerprint className="size-4 text-primary" aria-hidden />
+            Segurança e acessos
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            O que mudou na sua conta e quando — troca de senha, segundo fator, códigos de
+            recuperação, troca de e-mail e sessões encerradas. A plataforma guarda o FATO (autor,
+            hora e origem); senha, código e semente do aplicativo nunca entram aqui.
+          </p>
+
+          {security.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="account-security-empty">
+              Nenhuma mudança de segurança registrada ainda.
+            </p>
+          ) : (
+            <ul className="space-y-2" data-testid="account-security-list">
+              {security.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-border px-3 py-2 text-sm"
+                  data-testid={`account-security-${entry.id}`}
+                  data-event={entry.event}
+                >
+                  <span className="font-medium">{identityAuditLabel(entry.event)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {IDENTITY_AUDIT_TONE_LABELS[identityAuditTone(entry.event)]}
+                  </span>
+                  {entry.ipAddress ? (
+                    <span className="text-xs text-muted-foreground">IP {entry.ipAddress}</span>
+                  ) : null}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {entry.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Enxergou algo que não reconhece? Troque a senha agora — a troca encerra as outras
+            sessões — e desligue o segundo fator só depois de conferir os dispositivos acima.
+          </p>
         </CardContent>
       </Card>
 

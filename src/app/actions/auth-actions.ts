@@ -13,6 +13,9 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { auth } from '@/lib/auth/auth';
+import { adminPrisma } from '@/lib/db/admin-client';
+import { recordIdentityEvent } from '@/lib/auth/identity-audit';
+import { maskEmail } from '@/domain/participants/participant-rules';
 import { ACTIVE_TENANT_COOKIE, serializeActiveTenant } from '@/lib/auth/session';
 import { cookies } from 'next/headers';
 import {
@@ -278,10 +281,38 @@ export async function verifyTwoFactorLoginAction(
     if (totp) {
       await auth.api.verifyTOTP({ body: { code: totp }, headers: await headers() });
     } else {
-      await auth.api.verifyBackupCode({ body: { code: backup! }, headers: await headers() });
+      const verified = await auth.api.verifyBackupCode({
+        body: { code: backup! },
+        headers: await headers(),
+      });
+
+      /**
+       * Código de recuperação usado = o aplicativo não estava à mão (ou foi perdido).
+       * É o fato que explica, meses depois, por que a conta entrou sem o segundo fator
+       * — e o único jeito de saber disso é gravar aqui, porque a biblioteca consome o
+       * código e não deixa rastro.
+       */
+      await recordIdentityEvent({
+        userId: (verified as unknown as { user?: { id?: string } }).user?.id ?? null,
+        event: 'BACKUP_CODE_USED',
+      });
     }
   } catch (error) {
     const normalized = (authErrorMessage(error) ?? '').toLowerCase();
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A FALHA NO DESAFIO É FATO DE SEGURANÇA (FASE 49)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Tentativa recusada é o sinal que precede invasão de conta. Aqui não há sessão
+     *  — o desafio acontece ANTES dela —, então o alvo fica nulo e o que liga as
+     *  tentativas entre si é o IP: a trilha mostra a rajada mesmo sem saber de quem.
+     *  O bloqueio por conta continua sendo da biblioteca (`failedVerificationCount`).
+     */
+    await recordIdentityEvent({
+      event: 'TWO_FACTOR_CHALLENGE_FAILED',
+      details: { motivo: normalized.includes('lock') ? 'conta bloqueada' : 'código recusado' },
+    });
 
     if (normalized.includes('too many attempts')) {
       return {
@@ -371,6 +402,23 @@ export async function requestPasswordResetAction(
      */
   }
 
+  /**
+   * O pedido entra na trilha ANTES da resposta neutra — e com o e-mail MASCARADO: o
+   * fato "alguém pediu redefinição para a***@ufba.br" é o que a investigação precisa,
+   * e a trilha não é lugar de segunda cópia de dado pessoal. A resposta ao usuário
+   * continua idêntica exista ou não a conta (não é oráculo).
+   */
+  const target = await adminPrisma.user.findUnique({
+    where: { email: parsed.data.email },
+    select: { id: true },
+  });
+
+  await recordIdentityEvent({
+    userId: target?.id ?? null,
+    event: 'PASSWORD_RESET_REQUESTED',
+    details: { emailMascarado: maskEmail(parsed.data.email), contaEncontrada: Boolean(target) },
+  });
+
   return {
     ok: true,
     message:
@@ -406,6 +454,21 @@ export async function resetPasswordAction(
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Dados inválidos.' };
   }
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  QUEM É O ALVO, SE AINDA NÃO HÁ SESSÃO (FASE 49)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A redefinição acontece sem login, e a biblioteca não devolve o usuário. Mas o
+   *  token de redefinição é uma linha de `verification` cujo `identifier` é
+   *  `reset-password:<token>` e cujo `value` É o `userId` (verificado na
+   *  implementação da biblioteca). Lemos ANTES de consumir o token: depois do
+   *  `resetPassword`, a linha já não existe.
+   */
+  const target = await adminPrisma.verification.findFirst({
+    where: { identifier: `reset-password:${parsed.data.token}` },
+    select: { value: true },
+  });
+
   try {
     await auth.api.resetPassword({
       body: { newPassword: parsed.data.newPassword, token: parsed.data.token },
@@ -430,6 +493,11 @@ export async function resetPasswordAction(
 
     return { ok: false, message: 'Não foi possível definir a nova senha. Tente novamente.' };
   }
+
+  await recordIdentityEvent({
+    userId: target?.value ?? null,
+    event: 'PASSWORD_RESET_COMPLETED',
+  });
 
   redirect('/login?senha=redefinida');
 }

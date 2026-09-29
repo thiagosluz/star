@@ -18,6 +18,7 @@ import {
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { SponsorTierStyleFields } from '@/components/admin/sponsor-tier-style';
 import { SponsorExperiencePanel } from '@/components/admin/sponsor-experience-panel';
+import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
 import {
   listSponsorLeads,
   listSponsorQrCodes,
@@ -107,10 +108,14 @@ function toDateInput(value: Date | null): string {
  */
 export default async function EventSponsorsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
+  /** `exportacao` traz o pedido recém-criado de contatos (FASE 49). */
+  searchParams: Promise<{ exportacao?: string; erro?: string }>;
 }) {
   const { tenantSlug, eventId } = await params;
+  const { exportacao, erro } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
@@ -140,6 +145,20 @@ export default async function EventSponsorsPage({
    *  As CARTAS vêm do catálogo da instituição: o QR só pode conceder carta que
    *  existe, e o serviço recusa id de outra instituição.
    */
+  const returnTo = tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`);
+
+  /**
+   * ─── EXPORTAÇÃO DE CONTATOS COM PRAZO (FASE 49) ─────────────────────────────
+   *
+   *  Uma consulta só traz as exportações recentes de TODOS os patrocinadores do
+   *  evento (o painel filtra por `sponsorId`): N consultas — uma por patrocinador —
+   *  seriam N idas ao banco para montar uma lista de cinco linhas.
+   */
+  const [recentExports, createdExport] = await Promise.all([
+    listRecentDataExports({ tenantId, kind: 'SPONSOR_CONTACTS_CSV', limit: 30 }),
+    exportacao ? getDataExport({ tenantId, exportId: exportacao }) : Promise.resolve(null),
+  ]);
+
   const [qrPorPatrocinador, equipePorPatrocinador, contatosPorPatrocinador, cartas] = await Promise.all([
     Promise.all(board.sponsors.map((sponsor) => listSponsorQrCodes(tenantId, sponsor.id))),
     Promise.all(board.sponsors.map((sponsor) => listSponsorTeam(tenantId, sponsor.id))),
@@ -611,6 +630,10 @@ export default async function EventSponsorsPage({
         )}
         eventOptions={[{ value: eventId, label: event.title }]}
         cardOptions={cartas}
+        recentExports={recentExports}
+        createdExport={createdExport}
+        returnTo={returnTo}
+        exportError={erro ?? null}
       />
     </main>
   );

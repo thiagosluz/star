@@ -161,6 +161,13 @@ export const TENANT_SCOPED_TABLES = [
    * instituição não é encontrado, sem consulta privilegiada.
    */
   'card_share_links',
+  /**
+   * FASE 49 — exportação de dados pessoais com prazo. A linha guarda o ATO (quem
+   * pediu, o que, com que filtros e até quando vale), e não o arquivo: o CSV é
+   * regerado no download, então não há cópia de dado pessoal parada esperando
+   * alguém apagar.
+   */
+  'data_exports',
 ];
 
 /**
@@ -187,21 +194,26 @@ export const GLOBAL_TABLES_WITH_RLS = ['user', 'session', 'tenants'];
 export const PLATFORM_ONLY_TABLES = ['job_runs'];
 
 /**
- * Tabelas de IDENTIDADE que o runtime não pode alcançar (FASE 47).
+ * Tabelas de IDENTIDADE que o runtime não pode alcançar (FASE 47 · ampliada na 49).
  *
  * `two_factor` guarda a semente TOTP e os códigos de recuperação. Diferente de
  * `account` — que tem um hash scrypt e por isso convive com o privilégio padrão —,
  * o que está aqui é a chave que GERA códigos válidos: quem lê, entra.
  *
+ * `identity_audit_logs` (FASE 49) entra pela mesma razão de fundo: é a trilha de
+ * segurança da CONTA — não tem `tenantId` por onde isolar, e quem pode apagá-la
+ * pode apagar o rastro de uma invasão. Quem escreve e lê é a conexão de plataforma.
+ *
  * A resposta não é inventar uma policy para uma tabela sem `tenantId`, e sim tirar o
- * privilégio: quem acessa é a biblioteca de autenticação, pela conexão de plataforma
- * (`adminPrisma`, invariante nº 1). A verificação de contrato exige a revogação
- * (`prisma/migrations/20260927180000_two_factor`).
+ * privilégio: quem acessa é a biblioteca de autenticação (ou o serviço de trilha),
+ * pela conexão de plataforma (`adminPrisma`, invariante nº 1). A verificação de
+ * contrato exige a revogação (`prisma/migrations/20260927180000_two_factor` e
+ * `20260929110000_identity_audit_logs`).
  *
  * `twoFactorEnabled` fica em `user`, que o runtime lê: a tela da conta precisa saber
  * se o segundo fator está ligado, e isso não é segredo.
  */
-export const IDENTITY_ONLY_TABLES = ['two_factor'];
+export const IDENTITY_ONLY_TABLES = ['two_factor', 'identity_audit_logs'];
 
 export const TABLES_WITHOUT_RLS = [
   'account',

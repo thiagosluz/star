@@ -6,10 +6,10 @@ import { adminPrisma } from '../../src/lib/db/admin-client';
 import { withTenant } from '../../src/lib/db/tenant-client';
 import { listAuditLog } from '../../src/lib/admin/audit';
 import {
-  exportParticipantsCsv,
   getParticipantProfile,
   listParticipants,
 } from '../../src/lib/participants/participant-service';
+import { buildDataExportFile, createDataExport } from '../../src/lib/exports/export-service';
 import { getInstitutionIntelligence } from '../../src/lib/participants/insight-service';
 import {
   listOwnMessages,
@@ -669,11 +669,41 @@ describe('inteligência da instituição', () => {
 });
 
 describe('exportação do diretório', () => {
-  it('gera CSV com cabeçalho, sem o estranho de outra instituição, e deixa rastro', async () => {
-    const result = await exportParticipantsCsv({ tenantId, actorId: people.carla });
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A EXPORTAÇÃO VIROU PEDIDO COM PRAZO (FASE 49)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até a FASE 48 este teste chamava `exportParticipantsCsv`, que devolvia o
+   *  arquivo pronto. Agora o arquivo nasce no DOWNLOAD, a partir de um pedido
+   *  gravado (`data_exports`) com autor, filtros e prazo de 24 h — então o teste
+   *  percorre o caminho inteiro: pedir, conferir a validade e gerar o arquivo.
+   */
+  async function exportar(filters: Record<string, string | boolean | undefined> = {}) {
+    const created = await createDataExport({
+      tenantId,
+      actorId: people.carla,
+      kind: 'PARTICIPANTS_CSV',
+      filters,
+    });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    expect(created.ok, created.ok ? 'ok' : created.message).toBe(true);
+    if (!created.ok) throw new Error(created.message);
+
+    const file = await buildDataExportFile({
+      tenantId,
+      exportId: created.exportId,
+      tenantSlug,
+      actorId: people.carla,
+    });
+
+    expect(file.ok, file.ok ? 'ok' : file.message).toBe(true);
+    if (!file.ok) throw new Error(file.message);
+
+    return file;
+  }
+
+  it('gera CSV com cabeçalho, sem o estranho de outra instituição, e deixa rastro', async () => {
+    const result = await exportar();
 
     expect(result.csv.startsWith('\uFEFF')).toBe(true);
     expect(result.csv).toContain('Nome;E-mail;Origem');
@@ -681,10 +711,14 @@ describe('exportação do diretório', () => {
     expect(result.csv).toContain('Bruno Participante');
     expect(result.csv).toContain('Só inscrição');
     expect(result.csv).not.toContain('Diego Participante');
-    expect(result.rows).toBeGreaterThanOrEqual(3);
+    expect(result.rowCount).toBeGreaterThanOrEqual(3);
+
+    /** A marca d'água nomeia quem exportou — no topo e em CADA linha (FASE 49). */
+    expect(result.csv).toContain('# Exportado por: Carla Participante <');
+    expect(result.csv).toContain('Exportado por');
 
     const trail = await listAuditLog(tenantId, { limit: 50 });
-    const entry = trail.find((row) => row.action === 'EXPORT' && row.entityType === 'participant');
+    const entry = trail.find((row) => row.action === 'EXPORT' && row.entityType === 'data_export');
 
     expect(entry).toBeDefined();
     // A trilha guarda o AUTOR da consulta (nome resolvido), não só o id.
@@ -692,10 +726,7 @@ describe('exportação do diretório', () => {
   });
 
   it('o CSV carrega o e-mail COMPLETO (é o insumo da ação, não a vitrine)', async () => {
-    const result = await exportParticipantsCsv({ tenantId, actorId: people.carla, filters: { query: 'Ana' } });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    const result = await exportar({ query: 'Ana' });
 
     expect(result.csv).toContain('@exemplo.test');
     // A máscara da tela NÃO aparece no arquivo: quem exporta quer o endereço.
