@@ -1312,6 +1312,116 @@ export interface PublicCertificate {
  * página pública mostra se a assinatura confere, em vez de apenas afirmar que o
  * documento é autêntico.
  */
+/**
+ * A INTEGRIDADE DO CERTIFICADO CONFERE? (FASE 51)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  UMA VERIFICAÇÃO, DOIS CAMINHOS
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A exibição pública (com o veredito) e o DOWNLOAD precisam da mesma resposta —
+ *  recomputar o conteúdo canônico a partir do banco e conferir a assinatura. Duas
+ *  implementações divergiriam no primeiro caso de borda (versão 2 com layout, payload
+ *  v1 antigo) e a tela passaria a aprovar o que o download recusa, ou o contrário.
+ *
+ *  Devolve `ok` e o `signatureValid` para o chamador montar o veredito sem repetir a
+ *  leitura das colunas cobertas.
+ */
+export async function verifyCertificateIntegrity(
+  certificateId: string,
+  tenantId: string,
+): Promise<{
+  ok: boolean;
+  signatureValid: boolean;
+  /**
+   * A linha TEM assinatura gravada? (FASE 51)
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ESTA PERGUNTA PRECISA SER RESPONDIDA À PARTE
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Certificado emitido antes de a assinatura existir (F6) não tem o que conferir. Tratar
+   *  "sem assinatura" como "adulterado" acusaria de fraude um documento legítimo e
+   *  antigo — e recusaria o download dele. São dois estados distintos: NÃO HÁ PROVA
+   *  (limitação declarada) e A PROVA NÃO CONFERE (adulteração). Este campo é o que
+   *  permite dizer qual dos dois é o caso.
+   */
+  hasSignature: boolean;
+  contentHash: string | null;
+}> {
+  const row = await withTenant(tenantId, (tx) =>
+    tx.certificate.findFirst({
+      where: { id: certificateId },
+      select: {
+        validationCode: true,
+        tenantId: true,
+        eventId: true,
+        userId: true,
+        activityId: true,
+        kind: true,
+        recipientName: true,
+        title: true,
+        bodyText: true,
+        workloadMinutes: true,
+        issuedAt: true,
+        createdAt: true,
+        contentHash: true,
+        signature: true,
+        layoutSnapshot: true,
+        variableSnapshot: true,
+      },
+    }),
+  );
+
+  if (!row) return { ok: false, signatureValid: false, hasSignature: false, contentHash: null };
+
+  const issuedAt = row.issuedAt ?? row.createdAt;
+  const storedLayout = readStoredLayout(row.layoutSnapshot);
+
+  const canonical = storedLayout
+    ? buildCanonicalPayloadV2({
+        version: 2,
+        validationCode: row.validationCode,
+        tenantId: row.tenantId,
+        eventId: row.eventId,
+        userId: row.userId,
+        activityId: row.activityId,
+        kind: row.kind,
+        recipientName: row.recipientName,
+        title: row.title,
+        bodyText: row.bodyText,
+        workloadMinutes: row.workloadMinutes,
+        issuedAt: issuedAt.toISOString(),
+        layout: serializeLayout(storedLayout),
+        content: serializeContentValues(
+          contentValuesFrom((row.variableSnapshot as Record<string, string> | null) ?? {}),
+        ),
+      })
+    : buildCanonicalPayload({
+        version: 1,
+        validationCode: row.validationCode,
+        tenantId: row.tenantId,
+        eventId: row.eventId,
+        userId: row.userId,
+        activityId: row.activityId,
+        kind: row.kind,
+        recipientName: row.recipientName,
+        title: row.title,
+        bodyText: row.bodyText,
+        workloadMinutes: row.workloadMinutes,
+        issuedAt: issuedAt.toISOString(),
+      });
+
+  const recomputedHash = hashCanonicalPayload(canonical);
+  const hashMatches = recomputedHash === row.contentHash;
+  const signatureValid =
+    hashMatches &&
+    Boolean(row.signature) &&
+    verifySignature({ contentHash: recomputedHash, signature: row.signature ?? '' });
+
+  const hasSignature = Boolean(row.signature);
+
+  return { ok: signatureValid, signatureValid, hasSignature, contentHash: row.contentHash };
+}
+
 export async function getPublicCertificate(rawCode: string): Promise<
   CertificateResult<{ verdict: ValidationVerdict; certificate: PublicCertificate | null }>
 > {
@@ -1400,49 +1510,13 @@ export async function getPublicCertificate(rawCode: string): Promise<
      *  reprovar. Ter uma coluna de versão criaria o estado incoerente "versão 2 sem
      *  layout"; o snapshot é o que existe de fato.
      */
-    const issuedAt = row.issuedAt ?? row.createdAt;
-    const storedLayout = readStoredLayout(row.layoutSnapshot);
-
-    const canonical = storedLayout
-      ? buildCanonicalPayloadV2({
-          version: 2,
-          validationCode: row.validationCode,
-          tenantId: row.tenantId,
-          eventId: row.eventId,
-          userId: row.userId,
-          activityId: row.activityId,
-          kind: row.kind,
-          recipientName: row.recipientName,
-          title: row.title,
-          bodyText: row.bodyText,
-          workloadMinutes: row.workloadMinutes,
-          issuedAt: issuedAt.toISOString(),
-          layout: serializeLayout(storedLayout),
-          content: serializeContentValues(
-            contentValuesFrom((row.variableSnapshot as Record<string, string> | null) ?? {}),
-          ),
-        })
-      : buildCanonicalPayload({
-          version: 1,
-          validationCode: row.validationCode,
-          tenantId: row.tenantId,
-          eventId: row.eventId,
-          userId: row.userId,
-          activityId: row.activityId,
-          kind: row.kind,
-          recipientName: row.recipientName,
-          title: row.title,
-          bodyText: row.bodyText,
-          workloadMinutes: row.workloadMinutes,
-          issuedAt: issuedAt.toISOString(),
-        });
-
-    const recomputedHash = hashCanonicalPayload(canonical);
-    const hashMatches = recomputedHash === row.contentHash;
-    const signatureValid =
-      hashMatches &&
-      Boolean(row.signature) &&
-      verifySignature({ contentHash: recomputedHash, signature: row.signature ?? '' });
+    /**
+     * A conferência é a MESMA função que o download usa (`verifyCertificateIntegrity`):
+     * uma implementação, dois caminhos. A leitura extra é o preço de não existirem duas
+     * respostas para a mesma pergunta — e validação pública não é caminho quente.
+     */
+    const integrity = await verifyCertificateIntegrity(row.id, row.tenantId);
+    const signatureValid = integrity.signatureValid;
 
     // Leitura de exibição + contador de acesso, dentro do contexto de tenant já
     // resolvido. A policy de validação pública é SOMENTE de SELECT: quem valida
@@ -1462,6 +1536,16 @@ export async function getPublicCertificate(rawCode: string): Promise<
       return { tenantName: tenant?.name ?? '', eventTitle: event?.title ?? '' };
     }).catch(() => ({ tenantName: '', eventTitle: '' }));
 
+    /**
+     * A INTEGRIDADE ENTRA NO VEREDITO (FASE 51 — defeito real encontrado ao construir
+     * a conferência em lote da dívida E7).
+     *
+     * Antes, `signatureValid` era só um aviso ao lado: a página anunciava "Certificado
+     * autêntico" e oferecia o PDF de um documento cujo hash não batia mais com a
+     * assinatura. A conferência em lote reprovava esse mesmo documento — duas telas
+     * públicas dizendo coisas opostas sobre a mesma prova, e a mais permissiva era
+     * justamente a de um código só.
+     */
     const verdict = evaluateValidation({
       found: true,
       status: row.status,
@@ -1469,6 +1553,12 @@ export async function getPublicCertificate(rawCode: string): Promise<
       revokedReason: row.revokedReason,
       expiresAt: row.expiresAt,
       now: new Date(),
+      /**
+       * Sem assinatura gravada, a integridade é "não verificável" — e `undefined` é
+       * exatamente isso para o domínio: ele mantém o veredito anterior em vez de acusar
+       * adulteração de um documento legítimo e antigo.
+       */
+      signatureValid: integrity.hasSignature ? signatureValid : undefined,
     });
 
     return {
@@ -1577,6 +1667,28 @@ export async function getPublicCertificateDownloadUrl(
       ok: false as const,
       code: 'NOT_STORED',
       message: 'O arquivo ainda está sendo gerado. Tente novamente em instantes.',
+    };
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CONTEÚDO ADULTERADO NÃO É BAIXÁVEL (FASE 51)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A rota é pública e o código é a credencial: esconder o botão na tela não impede
+   *  ninguém de chamar o endereço. A integridade é conferida AQUI — recomputando o
+   *  hash canônico e verificando a assinatura —, e não só no veredito de exibição,
+   *  porque é este caminho que entrega o arquivo.
+   *
+   *  A ordem segue a da tela: revogação e status falam primeiro (são o ATO da
+   *  instituição); a adulteração é a última pergunta e vale por si.
+   */
+  const integrity = await verifyCertificateIntegrity(located.id, located.tenantId);
+
+  if (integrity.hasSignature && !integrity.ok) {
+    return {
+      ok: false as const,
+      code: 'NOT_FOUND',
+      message: 'Este certificado não passa na conferência de integridade e não pode ser baixado.',
     };
   }
 

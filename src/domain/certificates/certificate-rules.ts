@@ -677,7 +677,31 @@ export function hashCanonicalPayload(payload: string): string {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Validação pública
 // ───────────────────────────────────────────────────────────────────────────────
-export type ValidationStatus = 'VALID' | 'REVOKED' | 'EXPIRED' | 'NOT_ISSUED' | 'NOT_FOUND';
+export type ValidationStatus =
+  | 'VALID'
+  | 'REVOKED'
+  | 'EXPIRED'
+  | 'NOT_ISSUED'
+  | 'NOT_FOUND'
+  /**
+   * A assinatura NÃO confere (FASE 51).
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ESTE ESTADO EXISTE, E POR QUE FALTAVA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A validação olhava só o REGISTRO (emitido? revogado? vencido?) e tratava a
+   *  assinatura como um aviso à parte — a página dizia "Certificado autêntico" e
+   *  OFERECIA O DOWNLOAD de um documento cujo conteúdo não correspondia mais à
+   *  assinatura gravada. O sintoma foi encontrado na FASE 51, ao construir a
+   *  conferência em lote: ela reprovava o mesmo documento que a tela de um código
+   *  aprovava — e a tela de um código é justamente o instrumento em que um terceiro
+   *  se apoia para aceitar o documento.
+   *
+   *  Autenticidade não é "o registro existe": é o registro existir E o conteúdo ser o
+   *  que foi assinado. Este estado é o que a página, o download e o lote leem para
+   *  dizer NÃO.
+   */
+  | 'TAMPERED';
 
 export interface ValidationVerdict {
   status: ValidationStatus;
@@ -701,6 +725,14 @@ export function evaluateValidation(input: {
   revokedReason: string | null;
   expiresAt: Date | null;
   now: Date;
+  /**
+   * A assinatura do conteúdo confere?
+   *
+   * `undefined` significa "não foi verificada" (chamadas antigas): nelas o veredito
+   * mantém o comportamento anterior em vez de reprovar todo mundo — reprovar por
+   * omissão de quem chamou seria pior que o defeito que isto corrige.
+   */
+  signatureValid?: boolean;
 }): ValidationVerdict {
   if (!input.found) {
     return {
@@ -735,6 +767,16 @@ export function evaluateValidation(input: {
         input.status === 'QUEUED' || input.status === 'GENERATING'
           ? 'Certificado em processamento. Tente novamente em alguns instantes.'
           : 'Certificado não foi emitido.',
+      isUsable: false,
+    };
+  }
+
+  if (input.signatureValid === false) {
+    return {
+      status: 'TAMPERED',
+      message:
+        'A assinatura deste certificado NÃO confere: o conteúdo foi alterado depois da emissão. ' +
+        'Este documento não deve ser aceito — peça um novo à instituição emissora.',
       isUsable: false,
     };
   }

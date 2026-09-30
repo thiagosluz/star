@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 49 (F15, F21–F25, F29–F49 entregues; a F50+ é a próxima)
-Testes ................. 2436 (Vitest: unit + integração) + 166 (Playwright E2E)
-ADRs ................... 273 (numeração GLOBAL e sequencial — a próxima é ADR-274)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 51 (F15, F21–F25, F29–F51 entregues; a F52+ é a próxima)
+Testes ................. 2697 (Vitest: unit + integração) + 201 (Playwright E2E)
+ADRs ................... 288 (numeração GLOBAL e sequencial — a próxima é ADR-289)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 57 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2436+ testes passando
+npm test              # esperado: 2697+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 166+ testes passando
+npm run test:e2e      # esperado: 201+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,7 +127,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 101 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 105 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md)**, e a seção 10 manda lê-la antes de mexer em
 > qualquer coisa. Os números são estáveis e citados no código e nos documentos de fase — não
 > renumere. As duas mais recentes, como amostra do que a regra protege:
@@ -265,20 +265,6 @@ arquivo substituído no rascunho — código `QUOTA_EXCEEDED`.
 `ADMIN` só tem `tenant:member:remove`. Trocar papéis é ato de dono; a tela esconde o que a
 action recusaria.
 
-### Salas e vagas (revisão da FASE 3)
-
-A sala ganhou ciclo de vida próprio e passou a ser o **teto das vagas** da atividade que acontece
-nela: `/t/<slug>/administracao/eventos/<eventId>` → "Salas" (editar e excluir) e "Programação" →
-"Vagas".
-
-Quatro regras que quebram fácil: **capacidade vazia é "sem limite"** (`null`; `0` e negativo são
-normalizados na escrita — a coluna nasceu com `DEFAULT 0`, que fazia a sala afirmar "zero
-lugares"); **o limite EFETIVO é o menor entre a lotação declarada e a sala**
-(`effectiveActivityCapacity`), e é ele que a página pública anuncia; **a sala entra no predicado
-ATÔMICO da reserva** (`RESERVE_ACTIVITY_SEAT_SQL` + `ROOM_SEAT_AVAILABLE_PREDICATE`, ADR-135) —
-checar em JavaScript antes do `UPDATE` reabriria a superlotação; e **a sala em uso recusa a
-exclusão**, com a contagem e o caminho (ADR-136) — a FK é `ON DELETE SET NULL` e sem a guarda a
-sala sumiria da programação em silêncio. 
 ### Palco e auditoria (FASE 29)
 
 O sorteio deixou de ser uma promessa auditável: a **lista publicada** passou a ser
@@ -505,28 +491,6 @@ RECUSADOS (a régua da armadilha 87); e **sem modelo configurado vale o desenho 
 6** — o editor é opt-in. A precedência é EVENTO+TIPO → EVENTO → INSTITUIÇÃO+TIPO → INSTITUIÇÃO
 → padrão, com UM modelo por combinação garantido por índices únicos parciais.
 
-### Operação de palco (FASE 22)
-
-O sorteio ganhou o que a OPERAÇÃO pede — e o tema de sorteios fechou: as seis dívidas
-(G8–G13) foram quitadas.
-
-```
-Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
-                           → filtro do histórico, "Desfazer" entrega, situação do chaveiro
-Resultado público ....... /t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>
-Prévia ao vivo .......... GET /api/events/<eventId>/raffle-live (JSON **ou** SSE)
-Reconhecimento .......... mesmo painel do evento → quantos revisores premiar
-```
-
-Quatro regras que quebram fácil: **desfazer entrega limpa o RECIBO, não o sorteio** — a posição
-continua sendo a ganhadora, e a trilha guarda as duas pontas com o **motivo obrigatório**
-(ADR-137); **o filtro do histórico é o dia da INSTITUIÇÃO** (armadilhas 38 e 57); **a chave do
-cofre tem VERSÃO** (`RAFFLE_SEED_KEYS`, a maior é a atual) e a abertura usa a versão GRAVADA no
-sorteio — sem isso, girar a chave apagava a prova de todo o histórico (ADR-138); e **a prévia ao
-vivo negocia o transporte** na mesma rota (SSE com o polling como caminho de volta em
-`data-transport`).
-
-
 ### Página pública e patrocínio (FASE 17)
 
 A instituição monta a própria vitrine. A página (`EventPage`) **nasce como rascunho** e só
@@ -552,60 +516,6 @@ duas posições linha a linha — com o vínculo de conta preservado por e-mail.
 
 O tema é do **evento**, em um único lugar (`Event.theme`); `EventPage.theme` segue
 reservado e sem uso, para não existirem duas fontes de verdade para a mesma cor.
-
-### Conteúdo e mídia (FASE 23)
-
-A operação do editor: **pré-visualização** do rascunho, **upload na galeria**, **cópia de
-patrocinador**, **histórico de versões** e **publicação agendada**.
-
-```
-Prévia ................. /t/<slug>/administracao/eventos/<eventId>/pagina/previa (page:manage)
-Histórico .............. mesma tela do editor → seção "Histórico de versões"
-Agendamento ............ mesma tela → "Agendar para entrar no ar"
-Cópia de patrocinador .. /t/<slug>/administracao/eventos/<eventId>/patrocinadores
-```
-
-Quatro regras que quebram fácil: **a página pública é um COMPONENTE** (`EventLanding`)
-consumido pela rota pública e pela prévia — a única diferença entre elas é qual página
-chega (`docs/fase-23-conteudo-e-midia.md`, ADR-100); **a visibilidade agendada é decidida
-na LEITURA** (`isPublished OR publishAt <= now`, sem agendador) e **despublicar LIMPA a
-data**, senão a página volta ao ar sozinha (ADR-101 / armadilha 36); **o histórico é
-snapshot da PÁGINA INTEIRA**, deduplicado pelo SHA-256 da versão canonicalizada (mudar a
-ordem das chaves invalidaria a marcação de "estado atual") e restaurar **não mexe em
-publicação** (ADRs 102–103); e **a cópia de patrocinador é uma CÓPIA** — cota casada pela
-CHAVE, sem valor de contrato e nascendo oculta (ADR-105).
-
-O alvo `GALLERY` do upload **não grava URL no banco**: ele devolve o endereço ao
-formulário, e o vínculo acontece na validação do conteúdo do bloco (ADR-104).
-
-### Biblioteca de mídia e agendamento (FASE 24)
-
-A imagem deixou de existir só como URL no bucket: **todo envio** (capa, logotipo de
-patrocinador e galeria) registra uma linha em `media_assets`, com autor, tamanho, tipo,
-checksum, finalidade e o evento de origem (`eventId` é só procedência — o acervo é da
-**instituição**). A tela do acervo mostra onde cada imagem é usada, copia a URL e recusa
-excluir o que está em uso.
-
-```
-Acervo ................. /t/<slug>/administracao/eventos/<eventId>/pagina/midia (page:manage)
-Janela de exibição ..... editor da página → "Agendar para entrar no ar" + "Sair do ar em"
-Sincronizar cópia ...... patrocinadores → "Sincronizar" (só em cadastro copiado)
-```
-
-Quatro regras que quebram fácil: **a referência é a URL, não uma chave estrangeira**, então a
-exclusão **procura o uso** em vez de confiar no banco e recusa dizendo onde a imagem aparece
-(ADR-108 / armadilha 39); **mesmo checksum + tamanho + tipo reaproveita o registro** e apaga o
-objeto recém-enviado (ADR-107); **a janela de exibição é decidida na LEITURA**
-(`isPublished OR publishAt <= now`, com `unpublishAt` futuro), sem agendador, com término antes do
-início **recusado** e o estado `WINDOW_CLOSED` explicando a página fora do ar (ADR-109); e **a data
-do agendamento é interpretada no fuso do EVENTO**, não no do processo nem no do navegador — o fuso
-viaja em campo oculto, a conversão é em duas passagens (horário de verão) e a mensagem diz qual
-fuso foi usado (ADR-110 / armadilha 38).
-
-Sincronizar cópia é **explícito e limitado** (`SPONSOR_SYNC_FIELDS`): nome, descrição, site,
-logotipo, contato e documento — nunca cota, contrato, vigência, ordem ou exibição (ADR-111). O
-acervo **mede** o armazenamento (`sumMediaBytes`) e, desde a FASE 21, a quota é **aplicada** em
-todo envio (ADR-131).
 
 ### Portal do palestrante (FASE 25)
 
@@ -701,6 +611,43 @@ Quatro regras: **o arquivo não é guardado** — o que expira é o direito de b
 ÚLTIMA coluna, porque a ordem das colunas do dado é contrato; **o download é por SESSÃO, não
 por link assinado** (a fase existe para saber quem baixou); e **a trilha de identidade não tem
 `tenantId`** — a proteção é o PRIVILÉGIO (armadilha 101) e ela **nunca grava segredo**.
+
+### Mutirão de dívidas II (FASE 50)
+
+```
+Equipe .......... /t/<slug>/administracao/equipe → "Converter em participante"
+Quadro .......... Alt + ↑/↓ reordena na coluna · ?cartoes=N ajusta a janela
+Certificado ..... setas movem a caixa (1 mm; Shift = 10 mm) no palco
+Acessibilidade ... npx playwright test tests/e2e/accessibility.spec.ts  (WCAG AA)
+```
+
+Quatro regras: **sair da equipe não é perder o acesso de participante** (o vínculo vira
+`PARTICIPANT` e as inscrições, certificados e cartas continuam); **cancelar devolve o XP** por
+lançamento no livro-razão (append-only) e **quem cancelou pode voltar** — a regra de "inscrição
+viva" é a MESMA do índice parcial do banco (armadilha 103); **o checksum da conferência é o do
+STORAGE** (armadilha 102) — metadado declarado pelo cliente seria tautologia; e **o que a tela
+esconde, ela anuncia** (coluna truncada mostra "N de M" e o caminho para ver o resto).
+
+### Mutirão de dívidas III (FASE 51)
+
+```
+Carta .......... /t/<slug>/cartas/<cardSlug> → "Compartilhar" (prazo, aberturas, histórico)
+Rascunho ....... /t/<slug>/submissoes/<id>  → campo "Trilha" (só sem parecer/atribuição)
+Sorteios ....... /t/<slug>/administracao/eventos/<eventId>/sorteios → interruptor do telão
+Equipes ........ /t/<slug>/administracao/eventos/<eventId>/equipes → ordem ↑/↓
+Acervo ......... .../pagina/midia?busca=&tipo=&evento=&emUso=1
+Arquivados ..... /t/<slug>/administracao/cartas?arquivados=1  (e /missoes)
+Certificados ... /validar/lote   (até 50 códigos por consulta)
+```
+
+Quatro regras: **a integridade faz parte da autenticidade** — a assinatura entrou no veredito
+público e no download (conteúdo alterado responde `TAMPERED` e não é baixável; certificado sem
+assinatura gravada é "não verificável", não adulterado); **cada dívida de alcance usou a régua
+que já existia** (a restauração usa as permissões e a trilha da exclusão; os filtros usam o
+`collectUsages` da própria tela; a ordem das equipes usa a reescrita da FASE 38; o lote chama a
+mesma validação de um código); **o que a tela esconde, ela anuncia** (arquivados com data e autor,
+"N de M" no acervo, "ninguém baixou ainda" na exportação); e **a trilha do rascunho só troca
+enquanto nada depende dela** — depois, a resposta diz que é do comitê.
 
 ### Contas do seed — **não têm senha**
 
@@ -809,12 +756,12 @@ tests/{unit,integration,e2e}
 | 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
 | 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
 | 23 | Conteúdo e mídia (E9–E13: pré-visualização do rascunho pelo mesmo componente da página pública, upload de imagem na galeria, cópia de patrocinador entre eventos, histórico de versões com restauração, publicação agendada decidida na leitura) | ✅ |
-| 24 | Mídia e agendamento (E14–E17: biblioteca de mídia com reaproveitamento por checksum e exclusão que confere o uso, sincronia do patrocinador copiado, janela de exibição com `unpublishAt`, data agendada no fuso do evento) | ✅ |
+| 24 | Mídia e agendamento (E14–E17: acervo com reaproveitamento por checksum, sincronia da cópia, janela de exibição e agendamento no fuso do evento) | ✅ |
 | 25 | Portal do palestrante (E21–E24: perfil do palestrante como pessoa da instituição, convite por token hasheado e vínculo de conta em dois caminhos, portal com posse verificada no banco, materiais com visibilidade por visitante, vitrine com foto e bio, certificado `SPEAKER` com carga apurada) — **+ revisão pós-entrega**: o item de menu voltou a aparecer para as permissões pessoais e o convite pendente virou porta de entrada (ADR-119/120) | ✅ |
 | 21 | Ciclo de vida do membro e storage (C4, C5: troca de papéis e remoção lógica do membro pela tela de equipe com posse do OWNER protegida, quota de **armazenamento aplicada de verdade** em todo envio — submissão, mídia e material de palestrante — medida sobre tudo o que a instituição guarda) | ✅ |
 | 22 | Operação de palco (G8–G13: **desfazer** a entrega com motivo na trilha, filtro do histórico por situação e período, premiar N revisores, **endereço próprio** do resultado publicado, chave do cofre **versionada** e prévia ao vivo por SSE com polling de volta) — **+ correção de privacidade**: o consentimento de perfil público passou a nascer DESLIGADO (ADR-139) | ✅ |
 | 29 | Palco público e auditoria do sorteio (**telão** com compromisso antes da apuração, contagem ao vivo e revelação automática; **link + QR** na tela de sorteios; **lista publicada** gravada na apuração e assinada no resultado; **auditoria** que refaz as contas no navegador e receita para conferir fora do site) — escopo definido pelo humano | ✅ |
-| 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) — escopo definido pelo humano; **+ revisão da FASE 29**: o telão só era alcançável já apurado | ✅ |
+| 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) | ✅ |
 | 31 | Credenciamento e frequência por crachá (**um código por pessoa** no evento, com o **contexto da leitura** decidindo o fato; **chegada ≠ frequência**, com sessão por visita e minutos com teto no fim da atividade; área de crachás com emissão em massa, **folha A4** em PDF, **crachá online** e **modo monitor** com câmera, leitor USB e digitação) — escopo definido pelo humano | ✅ |
 | 32 | Central do participante e inteligência da instituição (**diretório** de todos os participantes — união de vínculo e inscrição —, **ficha 360** com eventos, frequência, certificados, cartas, XP e comunicação, **recado** por e-mail e caixa de entrada, **panorama** com taxa de comparecimento no fuso da instituição, **exportação em CSV** com trilha e abertura de ficha auditada) — escopo definido pelo humano | ✅ |
 | 33 | Chamadas de propostas (**chamada como entidade** com tipo, janela, cegueira, **rubrica própria** — CHAMADA → TRILHA → PADRÃO — e limite por autor POR CHAMADA; a proposta **é uma submissão** com campos por tipo e **formulário público**; bloco posicionado pelo organizador; **protocolo de aceite** com a decisão do comitê e criar a atividade/convidar o palestrante como escolhas — o convite quita **E25**) — escopo definido pelo humano | ✅ |
@@ -834,25 +781,28 @@ tests/{unit,integration,e2e}
 | 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), **segundo fator** TOTP com QR no servidor, **10 códigos de recuperação** de uso único e desligamento com senha, e **dispositivos conectados**), **esqueci minha senha** (o envio existia desde a F15 e o link caía em **404**), **desafio de dois fatores no login** e o segredo do TOTP numa tabela que a role de runtime **não alcança**; achou o **código de recuperação recusado** pela normalização e o **template novo fora da lista de testes**; declarou **E67/E68**) | ✅ |
 | 48 | **Carta colecionável premium e compartilhamento** (palco **3D** — arrastar gira, brilho holográfico seguindo o ponteiro, **Virar** com o verso e **Luz e brilho** — com a geometria no DOMÍNIO e tilt leve no álbum; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e a **variante foil acende o brilho sozinha**; o verso é a **ficha da conquista**, e a mesma ficha aparece em texto (sem JavaScript nada se perde); **link público POR CARTA** com token SELADO, revogável e idempotente, mostrando **só aquela carta**; **imagem de prévia** vetorial no servidor; **+ defeito real corrigido**: a corrida do balcão criava DUAS sessões na segunda visita; declarou **E69–E71**) | ✅ |
 | 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de **24 h**: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no download**, com **autor e validade em CADA linha**; o download exige **sessão** e reconfere a permissão do tipo; o CSV do patrocinador passou a usar o **mesmo escape**; e `identity_audit_logs` — **sem `tenantId`, sem FK e sem privilégio para a role de runtime** — registra os **15 fatos de segurança da conta** (senha, 2FA, códigos, e-mail, sessões, redefinição) nos pontos que conhecem o ato, lidos pelo SuperAdmin em `/superadmin/auditoria` e pela pessoa em `/conta`; **+ defeito real corrigido**: o `db:rls` religava o privilégio de `two_factor` (a semente TOTP); quitou **E44/E67**, declarou **E72/E73**) | ✅ |
+| 50 | **Mutirão de dívidas II — correção, acessibilidade e alcance** (**onze dívidas** em dois blocos: **correção e confiabilidade** — `C7` sair da equipe **sem perder** a área de participante, `E59` **estorno do XP** no cancelamento (livro-razão append-only, idempotente, com reinscrição pagando de novo), `E49` prazo de confirmação com **teto no início da atividade**, `E26` **checksum do STORAGE** assinado no PUT (corpo divergente recusado pelo MinIO), `E53` congelamento da rubrica da trilha pela rubrica **efetiva** e `E71` suíte de credenciamento **sem dependência de ordem** — e **acessibilidade e operação sem JavaScript**: `H5` **portão WCAG AA** com `@axe-core/playwright` em 6 telas (isenção por nó), `E51`/`E55` **teclado** no quadro (Alt+setas) e no palco do certificado (setas de 1 mm), `E52` **janela de cartões por coluna** com aviso "N de M", e `E50` **medida** — sem JavaScript a ação em linha vira POST, com catraca no E2E; **+ cinco defeitos reais**, entre eles quem cancelava **nunca mais conseguia se inscrever**; declarou **E74/E75/E76**) | ✅ |
+| 51 | **Mutirão de dívidas III — alcance rápido e fechamento da F49** (**onze dívidas**): a **trilha do rascunho** volta a ser trocável pela tela **enquanto nada depende dela** (`canChangeSubmissionTrack`: rascunho, sem parecer, sem atribuição) e a recusa diz que é do comitê; **filtros no acervo de mídia** aplicados no banco (texto, tipo, evento, em uso × sem uso) com contagem; **arquivados do catálogo** com restauração, data e autor da exclusão; **conferência de certificados em lote** em `/validar/lote` (50 códigos, recusa total acima do teto); **ordem manual das equipes** na vitrine (por EQUIPE, líder primeiro, `0` = sem opinião); **link da carta** com prazo opcional e contador de acessos; a lista de exportações mostrando **QUEM baixou** (uma consulta para a lista, com poda de partição); **interruptor do telão** (desligado responde 200 sem prêmio nem elegíveis); **avisa e confirma** o QR repetido do patrocinador; **categoria do crachá** com cor do TEMA e faixa por categoria no PDF, no ZPL e no crachá online (mais a escolha da lente no balcão); e a **declaração de autorização da foto** guardada com texto, versão, canal e data; **+ defeito real de INTEGRIDADE**: a assinatura entrou no veredito público (`TAMPERED`) e no download — a tela de um código aprovava o que o lote reprovava; quitou **E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**, declarou **E77/I1**) | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**67 itens abertos**; A=3, B=4, C=2, D=3,
-E=45, F=5, G=0, H=4, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
-Quitados: **A3, B7, E47** (F36), **E41, E48** (F37), **E35** (F44) e **E44/E67** (F49).
-Declarados: **E50** (F37), **E51/E52** (F38), **E53** (F39), **E54/E55** (F40), **E56/E57** (F42),
-**E58/E59** (F43), **E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46), **E67/E68** (F47),
-**E69–E71** (F48) e **E72/E73** (F49). Leia antes de propor a próxima fase.
+**Dívidas técnicas:** o levantamento consolidado (**49 itens abertos**, contados linha por
+linha; A=3, B=4, C=1, D=3, E=29, F=5, G=0, H=3, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+Quitados: **A3, B7, E47** (F36), **E41, E48** (F37), **E35** (F44), **E44/E67** (F49) e, na
+**F50**, **C7, E26, E49, E50, E51, E52, E53, E55, E59, E71 e H5**; na **F51**, **E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**. Declarados: **E54/E55** (F40),
+**E56/E57** (F42), **E58/E59** (F43), **E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46),
+**E67/E68** (F47), **E69–E71** (F48), **E72/E73** (F49), **E74/E75/E76** (F50) e **E77/I1** (F51).
+Leia antes de propor a próxima fase.
 
 ---
 
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 101 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-49-exportacao-e-trilha-de-identidade.md`; a comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 105 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-51-mutirao-de-dividas-iii.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

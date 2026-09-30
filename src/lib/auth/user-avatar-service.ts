@@ -105,6 +105,8 @@ export async function requestUserAvatarUpload(input: {
   mimeType: string;
   sizeBytes: number;
   magicBytes?: readonly number[] | null;
+  /** SHA-256 declarado pelo navegador — vai ASSINADO no PUT (dívida E26). */
+  checksumSha256?: string | null;
 }): Promise<AvatarResult<UserAvatarTicket>> {
   const validation = validateImageUpload({
     target: USER_AVATAR_TARGET,
@@ -136,6 +138,7 @@ export async function requestUserAvatarUpload(input: {
       objectKey,
       contentType: validation.mimeType,
       contentLength: input.sizeBytes,
+      checksumSha256: input.checksumSha256,
     });
 
     return {

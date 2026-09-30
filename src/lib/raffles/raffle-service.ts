@@ -70,6 +70,7 @@ import {
 } from '@/domain/raffles/pool-rules';
 import {
   evaluateDeliveryReversal,
+  isBigscreenVisible,
   rafflePublicationState,
   type RaffleHistoryFilter,
   type RaffleStatus,
@@ -157,6 +158,8 @@ interface RaffleConfigRow {
   seedKeyVersion: number;
   resultVersion: number;
   allowPriorEventWinners: boolean;
+  /** Interruptor do telão (E37). Nasce LIGADO; só `false` desliga. */
+  bigscreenVisible: boolean;
   status: string;
   eligibleCount: number;
   inspectedAttendances: number;
@@ -209,6 +212,7 @@ async function loadRaffle(tx: TxClient, tenantId: string, raffleId: string): Pro
       seedKeyVersion: true,
       resultVersion: true,
       allowPriorEventWinners: true,
+      bigscreenVisible: true,
       status: true,
       eligibleCount: true,
       inspectedAttendances: true,
@@ -2171,6 +2175,74 @@ export async function setRaffleVisibility(input: {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Interruptor do telão (E37 · FASE 51)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Liga ou desliga o telão do sorteio.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO NÃO É A MESMA COISA QUE `isPublic`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  São dois públicos e dois momentos. `isPublic` decide se o RESULTADO aparece na
+ *  página do evento para quem procura depois; este interruptor decide se o PALCO — o
+ *  endereço que fica projetado na parede — responde AGORA, e ele mostra o título do
+ *  prêmio desde a criação do sorteio. Negar o acesso até a instituição decidir ligar
+ *  o telão é o que a dívida E37 pede, e não passa por `isPublic`: o organizador tem
+ *  de poder testar o endereço antes do evento com a parede fora do ar.
+ *
+ *  O estado nasce LIGADO (default da coluna) e a virada entra na trilha: quem
+ *  desligou a parede no meio da abertura precisa estar registrado.
+ */
+export async function setBigscreenVisibility(input: {
+  tenantId: string;
+  raffleId: string;
+  actorId: string;
+  visible: boolean;
+}): Promise<RaffleResult<{ raffleId: string; bigscreenVisible: boolean }>> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const raffle = await loadRaffle(tx, input.tenantId, input.raffleId);
+
+      if (!raffle) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Sorteio não encontrado.',
+        };
+      }
+
+      await tx.raffle.update({
+        where: { id: raffle.id },
+        data: { bigscreenVisible: input.visible },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'raffle',
+          entityId: raffle.id,
+          changes: {
+            bigscreenVisible: { from: raffle.bigscreenVisible, to: input.visible },
+          },
+        },
+        tx,
+      );
+
+      return { ok: true as const, raffleId: raffle.id, bigscreenVisible: input.visible };
+    });
+  } catch (error) {
+    console.error(`[raffles] falha ao alterar o telão do sorteio: ${errorMessage(error)}`);
+    return {
+      ok: false as const,
+      code: 'INTERNAL',
+      message: 'Não foi possível alterar o telão do sorteio.',
+    };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Leitura pública (item G5)
 // ───────────────────────────────────────────────────────────────────────────────
 export interface PublicRaffleResult {
@@ -2533,6 +2605,15 @@ export async function getLiveEligibility(input: {
 // ───────────────────────────────────────────────────────────────────────────────
 export interface RaffleLiveState {
   raffleId: string;
+  /**
+   * O telão está no ar? (E37 · FASE 51)
+   *
+   * Quando `false`, TUDO o que se refere ao conteúdo vem vazio: nem prêmio da rodada
+   * anunciada, nem resultado. A rota pública do ao vivo é outra porta para o mesmo
+   * palco, e deixá-la respondendo o que a parede passou a esconder seria desfazer o
+   * interruptor por baixo.
+   */
+  bigscreenVisible: boolean;
   /** O recorte do SORTEIO (não o da tela): o telão conta o que a apuração contaria. */
   config: RaffleConfig;
   status: RaffleStatus;
@@ -2587,6 +2668,7 @@ export async function getRaffleLiveState(input: {
         },
         select: {
           id: true,
+          bigscreenVisible: true,
           scope: true,
           referenceDate: true,
           activityId: true,
@@ -2616,8 +2698,18 @@ export async function getRaffleLiveState(input: {
       const pending = pendingRound(row.rounds);
       const last = lastDrawnRound(row.rounds);
 
+      /**
+       * O INTERRUPTOR ZERA O CONTEÚDO DO AO VIVO (E37 · FASE 51): com o telão
+       * desligado, a rota entrega o aviso e mais nada — nem o prêmio da rodada
+       * anunciada, nem o hash do resultado. O `status` fica porque é ele que diz à
+       * página que o sorteio existe; a contagem de elegíveis quem decide é a rota,
+       * que só a consulta quando há rodada pendente.
+       */
+      const visible = isBigscreenVisible(row.bigscreenVisible);
+
       return {
         raffleId: row.id,
+        bigscreenVisible: visible,
         config: {
           scope: row.scope as RaffleScope,
           referenceDate: row.referenceDate,
@@ -2629,24 +2721,26 @@ export async function getRaffleLiveState(input: {
           allowPriorEventWinners: row.allowPriorEventWinners,
         },
         status: row.status as RaffleStatus,
-        drawnAt: row.drawnAt,
-        resultHash: last?.resultHash ?? null,
+        drawnAt: visible ? row.drawnAt : null,
+        resultHash: visible ? (last?.resultHash ?? null) : null,
         poolHash: null,
-        pendingRound: pending
-          ? {
-              roundId: pending.id,
-              roundNumber: pending.roundNumber,
-              prizeTitle: pending.prizeTitle,
-              seedCommitment: pending.seedCommitment,
-            }
-          : null,
-        lastDrawnRound: last
-          ? {
-              roundId: last.id,
-              roundNumber: last.roundNumber,
-              resultHash: last.resultHash,
-            }
-          : null,
+        pendingRound:
+          visible && pending
+            ? {
+                roundId: pending.id,
+                roundNumber: pending.roundNumber,
+                prizeTitle: pending.prizeTitle,
+                seedCommitment: pending.seedCommitment,
+              }
+            : null,
+        lastDrawnRound:
+          visible && last
+            ? {
+                roundId: last.id,
+                roundNumber: last.roundNumber,
+                resultHash: last.resultHash,
+              }
+            : null,
       };
     });
   } catch (error) {
@@ -2753,7 +2847,29 @@ export interface RaffleStageRound {
   alternates: RaffleStageWinner[];
 }
 
-export interface RaffleStageView {
+/**
+ * O palco DESLIGADO pela organização (E37 · FASE 51).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE TIPO NÃO CARREGA NADA DO SORTEIO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A promessa do interruptor é "quem tem o link passa a ver só o aviso". Se o
+ *  desligado devolvesse os mesmos campos com valor nulo, um renderizador distraído
+ *  (ou uma mudança futura) voltaria a exibir o prêmio — e o vazamento seria um bug de
+ *  tela, não uma decisão. Separar os tipos faz o compilador cobrar a decisão: com
+ *  `bigscreenVisible: false` não existe `prizeTitle` para esquecer de esconder.
+ *
+ *  O `raffleId` fica porque a página precisa dele para montar o caminho de volta da
+ *  organização — e quem tem o link já conhece o identificador.
+ */
+export interface RaffleStageHidden {
+  bigscreenVisible: false;
+  raffleId: string;
+}
+
+/** O palco LIGADO: o que a parede mostra (FASE 29/30). */
+export interface RaffleStageContent {
+  bigscreenVisible: true;
   raffleId: string;
   title: string;
   description: string | null;
@@ -2783,6 +2899,13 @@ export interface RaffleStageView {
 }
 
 /**
+ * O que o palco devolve: o conteúdo (ligado) ou apenas o aviso (desligado).
+ *
+ * A união é o contrato que impede o vazamento de virar descuido de tela.
+ */
+export type RaffleStageView = RaffleStageContent | RaffleStageHidden;
+
+/**
  * Quantos nomes a roleta recebe.
  *
  * O telão não precisa da lista inteira para dar a impressão de sorteio, e um evento
@@ -2797,7 +2920,8 @@ const STAGE_ROLL_LIMIT = 120;
  * Lê por `raffleId` + evento, sob RLS — o recorte de instituição é do banco. O
  * endereço é um UUID não enumerável: quem tem o link projeta, quem não tem não
  * adivinha. O título do prêmio aparece antes da apuração porque é isso que o telão
- * existe para anunciar — e é a decisão registrada da fase.
+ * existe para anunciar — e é a decisão registrada da fase. Desde a E37 esse anúncio
+ * é CONDICIONAL: a instituição pode negar o palco até decidir ligá-lo.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  *  A ROLETA USA OS NOMES REAIS, MASCARADOS (FASE 30)
@@ -2807,6 +2931,13 @@ const STAGE_ROLL_LIMIT = 120;
  *  passar, e a roleta para em alguém que realmente concorria. Inventar nomes seria
  *  mais fácil e menos honesto: daria a impressão de sorteio sobre gente que não
  *  estava no páreo.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O INTERRUPTOR DO TELÃO VEM ANTES DE TUDO (E37 · FASE 51)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Com o telão desligado a resposta é `{ bigscreenVisible: false, raffleId }` — sem
+ *  título, sem prêmio, sem um único nome. O `null` continua significando uma coisa
+ *  só: o sorteio não existe (endereço errado), e é isso que a página traduz em 404.
  */
 export async function getRaffleStageView(input: {
   tenantId: string;
@@ -2814,6 +2945,33 @@ export async function getRaffleStageView(input: {
   raffleId: string;
 }): Promise<RaffleStageView | null> {
   try {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O INTERRUPTOR É LIDO ANTES DE QUALQUER CONTEÚDO (E37 · FASE 51)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Esta primeira leitura traz UM campo: o interruptor. Com o telão desligado a
+     *  função volta AQUI — as rodadas, a lista publicada e os nomes dos elegíveis nem
+     *  chegam a ser consultados. Não é só a tela que não mostra: não há o que vazar,
+     *  porque a consulta pesada nunca acontece. É mais barato e é mais honesto.
+     */
+    const gate = await withTenant(input.tenantId, (tx) =>
+      tx.raffle.findFirst({
+        where: {
+          id: input.raffleId,
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          deletedAt: null,
+        },
+        select: { id: true, bigscreenVisible: true },
+      }),
+    );
+
+    if (!gate) return null;
+
+    if (!isBigscreenVisible(gate.bigscreenVisible)) {
+      return { bigscreenVisible: false, raffleId: gate.id };
+    }
+
     const data = await withTenant(input.tenantId, async (tx) => {
       const row = await tx.raffle.findFirst({
         where: {
@@ -2993,6 +3151,7 @@ export async function getRaffleStageView(input: {
     const previous = pending ? drawnRounds : drawnRounds.slice(0, -1);
 
     return {
+      bigscreenVisible: true,
       raffleId: row.id,
       title: row.title,
       description: row.description,

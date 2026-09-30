@@ -361,6 +361,23 @@ export const DEFAULT_RUBRIC: readonly RubricCriterion[] = [  {
 ];
 
 /**
+ * A rubrica gravada é PRÓPRIA (não é o padrão)?
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO É UMA REGRA DO DOMÍNIO, E NÃO UM `if` NO SERVIÇO (FASE 50 · E53)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  "Esta rubrica é própria" é a MESMA pergunta que `resolveEffectiveRubric` faz para
+ *  decidir a precedência CHAMADA → TRILHA → PADRÃO: `usedDefault === false` é o que
+ *  faz a rubrica da chamada vencer. O congelamento da trilha passou a usar esta
+ *  função para contar só quem realmente avalia pela rubrica da trilha — se as duas
+ *  noções divergissem, a contagem congelaria uma trilha por pareceres que nunca a
+ *  leram (que era exatamente o defeito da dívida E53).
+ */
+export function rubricIsCustom(raw: unknown): boolean {
+  return !parseRubric(raw).usedDefault;
+}
+
+/**
  * Rubrica EFETIVA de uma submissão: CHAMADA → TRILHA → PADRÃO.
  *
  * ─────────────────────────────────────────────────────────────────────────────

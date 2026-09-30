@@ -24,6 +24,14 @@
  *  ponto desta fase é justamente saber quem baixou. O download exige sessão e a
  *  MESMA permissão da tela, reconferida na rota — cada download tem nome, e o
  *  contador da linha diz quantas vezes aquele arquivo saiu.
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  QUEM BAIXOU APARECE NA LISTA (dívida E73 · FASE 51)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O autor de cada download sempre esteve gravado (`AuditAction.EXPORT` com
+ *  `entityId` = a exportação), mas só era visível na TRILHA: para descobrir quem
+ *  pegou o arquivo era preciso sair da lista de exportações recentes e abrir a
+ *  auditoria. Agora a lista mostra o nome e o instante dos últimos downloads, e a
+ *  leitura da trilha é UMA consulta para a lista inteira (ver `attachDownloaders`).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { recordAudit } from '@/lib/admin/audit';
@@ -57,6 +65,21 @@ export type ExportResult<T> =
 /** Quantas exportações recentes a tela mostra (as antigas continuam na trilha). */
 export const RECENT_EXPORTS_LIMIT = 5;
 
+/**
+ * Quantos downloads a lista mostra por exportação (os mais recentes).
+ *
+ * Três é o que cabe numa linha da lista sem virar parágrafo — e o total já está
+ * no contador (`downloadCount`), então o que a linha precisa responder é "quem",
+ * não "quantos". O resto sai no texto "+N download(s)".
+ */
+export const EXPORT_DOWNLOADER_LIMIT = 3;
+
+export interface ExportDownloader {
+  /** Nome de quem baixou; "Conta removida" quando a conta já não existe. */
+  name: string;
+  at: Date;
+}
+
 export interface ExportRecordView {
   id: string;
   kind: ExportKind;
@@ -68,6 +91,17 @@ export interface ExportRecordView {
   downloadCount: number;
   lastDownloadedAt: Date | null;
   authorName: string;
+  /**
+   * Quem baixou, do mais recente para o mais antigo (dívida E73 · FASE 51).
+   *
+   * Antes, o autor de cada download só existia na trilha: para saber quem pegou o
+   * arquivo era preciso sair da lista de exportações recentes e abrir a trilha da
+   * instituição. O dado já estava gravado — faltava MOSTRAR.
+   *
+   * Vazio quando ninguém baixou: a tela diz "ninguém baixou ainda" em vez de
+   * deixar a linha sem nada (ausência de texto é lida como tela quebrada).
+   */
+  downloaders: ExportDownloader[];
   /**
    * Patrocinador do pedido, quando é exportação de contatos.
    *
@@ -382,6 +416,79 @@ async function labelFor(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Quem baixou (dívida E73 · FASE 51)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Lê o autor de cada download na trilha — UMA consulta para a lista inteira.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A JANELA DE DATAS É OBRIGATÓRIA (E POR QUE NÃO SE FAZ UMA POR LINHA)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `audit_logs` é PARTICIONADA POR MÊS em `createdAt`. A consulta poda partições
+ *  pelo intervalo de `createdAt` — e SÓ por ele: filtrar apenas por `entityId`
+ *  obrigaria o PostgreSQL a varrer todas as partições já criadas, inclusive as de
+ *  meses em que aquela exportação nem existia.
+ *
+ *  Daí a janela `[exportação mais antiga exibida → agora]`: ela cobre todo download
+ *  possível (ninguém baixa um arquivo antes de pedi-lo) e deixa o planejador
+ *  descartar o resto do histórico antes de ler.
+ *
+ *  Uma consulta por linha seria o caminho óbvio e é o errado por dois motivos: N
+ *  idas ao banco (a lista tem 5 linhas hoje, mas é a mesma tela que vai mostrar 50)
+ *  e N varreduras de partição em vez de uma. A junção acontece em memória, com o
+ *  `entityId` que a própria consulta já trouxe.
+ *
+ *  Falha aqui NÃO derruba a lista: sem a trilha, a tela volta ao que era antes da
+ *  dívida (contagem sem nome), e não a um erro de exportação.
+ */
+async function attachDownloaders(
+  tenantId: string,
+  records: readonly ExportRecordView[],
+  now: Date,
+): Promise<ExportRecordView[]> {
+  if (records.length === 0) return [];
+
+  try {
+    const exportIds = records.map((record) => record.id);
+
+    /** Piso da janela: o pedido mais antigo exibido. Download nunca é anterior a ele. */
+    const since = new Date(Math.min(...records.map((record) => record.createdAt.getTime())));
+
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.auditLog.findMany({
+        where: {
+          tenantId,
+          action: 'EXPORT',
+          entityType: 'data_export',
+          entityId: { in: exportIds },
+          createdAt: { gte: since, lte: now },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { entityId: true, createdAt: true, user: { select: { name: true } } },
+      }),
+    );
+
+    const byExport = new Map<string, ExportDownloader[]>();
+
+    for (const row of rows) {
+      if (!row.entityId) continue;
+
+      const list = byExport.get(row.entityId) ?? [];
+      /** A ordem é decrescente: as primeiras linhas de cada exportação são as últimas. */
+      if (list.length >= EXPORT_DOWNLOADER_LIMIT) continue;
+
+      list.push({ name: row.user?.name ?? 'Conta removida', at: row.createdAt });
+      byExport.set(row.entityId, list);
+    }
+
+    return records.map((record) => ({ ...record, downloaders: byExport.get(record.id) ?? [] }));
+  } catch (error) {
+    console.error(`[exports] falha ao ler quem baixou: ${errorMessage(error)}`);
+    return records.map((record) => ({ ...record, downloaders: [] }));
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Lista, leitura e revogação
 // ───────────────────────────────────────────────────────────────────────────────
 export async function listRecentDataExports(input: {
@@ -414,7 +521,7 @@ export async function listRecentDataExports(input: {
       }),
     );
 
-    return rows.map((row) => ({
+    const records: ExportRecordView[] = rows.map((row) => ({
       id: row.id,
       kind: row.kind as ExportKind,
       rowCount: row.rowCount,
@@ -425,10 +532,13 @@ export async function listRecentDataExports(input: {
       downloadCount: row.downloadCount,
       lastDownloadedAt: row.lastDownloadedAt,
       authorName: row.requestedBy?.name ?? 'Conta removida',
+      downloaders: [],
       sponsorId: sponsorIdOf(row.filters),
       status: statusOf(row, now),
       hoursLeft: hoursLeft(row.expiresAt, now),
     }));
+
+    return attachDownloaders(input.tenantId, records, now);
   } catch (error) {
     console.error(`[exports] falha ao listar exportações: ${errorMessage(error)}`);
     return [];
@@ -463,7 +573,7 @@ export async function getDataExport(input: {
 
   if (!row) return null;
 
-  return {
+  const record: ExportRecordView = {
     id: row.id,
     kind: row.kind as ExportKind,
     rowCount: row.rowCount,
@@ -474,10 +584,16 @@ export async function getDataExport(input: {
     downloadCount: row.downloadCount,
     lastDownloadedAt: row.lastDownloadedAt,
     authorName: row.requestedBy?.name ?? 'Conta removida',
+    downloaders: [],
     sponsorId: sponsorIdOf(row.filters),
     status: statusOf(row, now),
     hoursLeft: hoursLeft(row.expiresAt, now),
   };
+
+  /** Uma exportação só: a mesma leitura da lista, com uma linha de janela. */
+  const [withDownloaders] = await attachDownloaders(input.tenantId, [record], now);
+
+  return withDownloaders ?? record;
 }
 
 /**

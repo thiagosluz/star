@@ -60,6 +60,7 @@ import {
   DEMAND_SITUATION_LABELS,
   type DemandSummary,
 } from '@/domain/events/demand-rules';
+import { orderTeamsForDisplay, planTeamOrder } from '@/domain/events/team-order-rules';
 import {
   notifyDemandAssigned,
   notifyDemandDueSoon,
@@ -127,6 +128,13 @@ export interface DemandColumnView {
   isDone: boolean;
   position: number;
   cards: DemandCard[];
+  /**
+   * Quantos cartões a coluna tem AO TODO (FASE 50 · dívida E52).
+   *
+   * `cards` é a JANELA; este número é a verdade. A tela compara os dois para avisar que
+   * há mais — e é o único jeito de o aviso não mentir.
+   */
+  totalCards: number;
 }
 
 export interface DemandTeamView {
@@ -134,6 +142,12 @@ export interface DemandTeamView {
   name: string;
   description: string | null;
   isActive: boolean;
+  /**
+   * A ordem manual da equipe na vitrine pública (FASE 51 · dívida E63). `0` = sem
+   * opinião. A tela de equipes precisa do número para mostrar em que lugar a equipe
+   * está — sem ele, "mover para cima" seria um clique às cegas.
+   */
+  displayOrder: number;
   leadId: string | null;
   leadName: string | null;
   members: { id: string; name: string; isLead: boolean }[];
@@ -292,10 +306,28 @@ export interface BoardFilters {
   search?: string | null;
 }
 
+/**
+ * Quantos cartões cada coluna traz de uma vez (FASE 50 · dívida E52).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UM TETO POR COLUNA, E NÃO UMA PÁGINA DO QUADRO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O quadro é lido por COLUNA: um evento com anos de histórico traz tudo numa consulta
+ *  só, e o navegador monta centenas de cartões que ninguém vai olhar — a tela demora
+ *  para abrir por causa de trabalho que ninguém pediu.
+ *
+ *  O teto é generoso de propósito (um quadro de operação real cabe) e a tela diz o que
+ *  ficou de fora, com o caminho para ver o resto: coluna truncada mostra "mostrando N
+ *  de M" e um link que reabre o quadro com `?cartoes=<N+50>`. Nada é escondido.
+ */
+export const DEMAND_COLUMN_PAGE_SIZE = 50;
+
 export async function loadDemandBoard(input: {
   tenantId: string;
   eventId: string;
   filters?: BoardFilters;
+  /** Quantos cartões por coluna (o teto pedido pela tela). */
+  cardsPerColumn?: number;
   now?: Date;
 }): Promise<{ ok: true; board: DemandBoardView } | DemandFailure> {
   const { tenantId, eventId } = input;
@@ -375,10 +407,17 @@ export async function loadDemandBoard(input: {
           eventTitle: event.title,
           eventSlug: event.slug,
           timeZone: event.timezone,
-          columns: columns.map((column) => ({
-            ...column,
-            cards: filtered.filter((card) => card.columnId === column.id),
-          })),
+          columns: columns.map((column) => {
+            const daColuna = filtered.filter((card) => card.columnId === column.id);
+            const limite = Math.max(1, input.cardsPerColumn ?? DEMAND_COLUMN_PAGE_SIZE);
+
+            return {
+              ...column,
+              cards: daColuna.slice(0, limite),
+              /** Quantos cartões a coluna TEM — a tela compara com o que veio. */
+              totalCards: daColuna.length,
+            };
+          }),
           teams: await loadTeams(tx, tenantId, eventId),
           people: await activeMembers(tx, tenantId),
           summary,
@@ -420,6 +459,7 @@ async function loadTeams(
       name: true,
       description: true,
       isActive: true,
+      displayOrder: true,
       members: {
         select: { isLead: true, user: { select: { id: true, name: true } } },
         orderBy: [{ isLead: 'desc' }, { createdAt: 'asc' }],
@@ -429,7 +469,7 @@ async function loadTeams(
     orderBy: { name: 'asc' },
   });
 
-  return teams.map((team) => {
+  const view = teams.map((team) => {
     const lead = team.members.find((member) => member.isLead);
 
     return {
@@ -437,6 +477,7 @@ async function loadTeams(
       name: team.name,
       description: team.description,
       isActive: team.isActive,
+      displayOrder: team.displayOrder,
       leadId: lead?.user.id ?? null,
       leadName: lead?.user.name ?? null,
       members: team.members.map((member) => ({
@@ -447,6 +488,13 @@ async function loadTeams(
       openDemands: team.demands.filter((demand) => demand.completedAt === null).length,
     };
   });
+
+  /**
+   * A MESMA ordem da vitrine (FASE 51 · dívida E63): a tela de equipes é de onde a
+   * ordem é definida, e "mover para cima" só faz sentido se a lista que o organizador
+   * vê for a lista que a página pública mostra.
+   */
+  return orderTeamsForDisplay(view);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1778,6 +1826,102 @@ export async function deleteEventTeam(input: {
   } catch (error) {
     console.error(`[demandas] falha ao excluir equipe: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível excluir a equipe.');
+  }
+}
+
+/**
+ * A ordem das equipes do evento, da primeira para a última — a lista que a tela de
+ * equipes mostra e a que a vitrine pública usa.
+ *
+ * Devolve a MESMA régua da leitura pública (`orderTeamsForDisplay`), e não um
+ * `orderBy` do banco: com `displayOrder = 0` valendo "sem opinião", o SQL por si só
+ * colocaria as equipes nunca ordenadas antes das ordenadas.
+ */
+export async function loadEventTeamOrder(input: {
+  tenantId: string;
+  eventId: string;
+}): Promise<{ ok: true; teams: { id: string; name: string; displayOrder: number }[] } | DemandFailure> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const teams = await tx.eventTeam.findMany({
+        where: { tenantId: input.tenantId, eventId: input.eventId },
+        select: { id: true, name: true, displayOrder: true },
+      });
+
+      return { ok: true as const, teams: orderTeamsForDisplay(teams) };
+    });
+  } catch (error) {
+    console.error(`[demandas] falha ao ler a ordem das equipes: ${errorMessage(error)}`);
+    return fail('INTERNAL', 'Não foi possível ler a ordem das equipes.');
+  }
+}
+
+/**
+ * Reescreve a ordem das equipes do evento (10, 20, 30…).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A LISTA INTEIRA, E NÃO A POSIÇÃO DE UMA EQUIPE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O movimento é calculado pela TELA (que conhece a lista que mostrou) e chega aqui
+ *  como a ordem completa. Gravar só a equipe movida com o número da vizinha
+ *  produziria EMPATE — e o empate cai no desempate alfabético, ou seja, o clique não
+ *  mudaria nada enquanto a tela diria "ordem salva".
+ *
+ *  A lista enviada tem de cobrir TODAS as equipes do evento: uma lista parcial seria
+ *  uma reordenação silenciosa das outras (elas receberiam posição nova sem ninguém
+ *  pedir). A guarda é a mesma da reordenação de colunas do quadro.
+ */
+export async function reorderEventTeams(input: {
+  tenantId: string;
+  eventId: string;
+  actorId: string;
+  teamIds: readonly string[];
+}): Promise<{ ok: true } | DemandFailure> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const teams = await tx.eventTeam.findMany({
+        where: { tenantId: input.tenantId, eventId: input.eventId },
+        select: { id: true, name: true },
+      });
+
+      const known = new Set(teams.map((team) => team.id));
+      const ordered = input.teamIds.filter((id) => known.has(id));
+
+      if (ordered.length !== teams.length || new Set(ordered).size !== ordered.length) {
+        return fail('INVALID_INPUT', 'A ordem enviada não corresponde às equipes do evento.');
+      }
+
+      /**
+       * `planTeamOrder` reaproveita a régua do quadro de demandas (FASE 38) e devolve
+       * posições SEM empate — é o que faz um empate nunca virar no-op.
+       */
+      for (const row of planTeamOrder(ordered)) {
+        await tx.eventTeam.update({
+          where: { id: row.id },
+          data: { displayOrder: row.displayOrder },
+        });
+      }
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'EventTeam',
+          entityId: input.eventId,
+          changes: {
+            ordem: { from: null, to: ordered.join(',') },
+            equipes: { from: null, to: teams.length },
+          },
+        },
+        tx,
+      );
+
+      return { ok: true as const };
+    });
+  } catch (error) {
+    console.error(`[demandas] falha ao reordenar as equipes: ${errorMessage(error)}`);
+    return fail('INTERNAL', 'Não foi possível salvar a ordem das equipes.');
   }
 }
 

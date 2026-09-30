@@ -111,6 +111,78 @@ export function canDeleteSubmission(status: SubmissionStatus): boolean {
 }
 
 /**
+ * ───────────────────────────────────────────────────────────────────────────────
+ *  Trocar a TRILHA do rascunho (FASE 51 · dívida E32)
+ * ───────────────────────────────────────────────────────────────────────────────
+ *  A trilha ficou de fora da edição de conteúdo desde a revisão da FASE 4, e por um
+ *  motivo bom: trocá-la muda a RUBRICA de avaliação, o requisito de versão cega e a
+ *  fila de revisores — é decisão do comitê, não ajuste de texto. Quem errou a trilha
+ *  tinha de excluir o rascunho e recomeçar, e recomeçar do zero por causa de um
+ *  seletor é o tipo de atrito que faz a pessoa desistir do trabalho.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE FAZ A TROCA SER SEGURA — E O QUE A PROÍBE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A troca só é permitida enquanto NADA depende da classificação:
+ *    • `DRAFT` — o trabalho nunca saiu da mão do autor;
+ *    • NENHUM parecer (`reviewCount = 0`) — um parecer responde a uma rubrica, e a
+ *      rubrica vem da trilha; trocá-la depois invalidaria a nota que alguém já deu;
+ *    • NENHUMA atribuição a revisor (`assignmentCount = 0`) — a fila foi montada por
+ *      trilha, e mudar a trilha deixaria a atribuição apontando para outra regra.
+ *
+ *  Depois disso, a resposta é NÃO com o caminho: quem precisa reclassificar fala com
+ *  o comitê (a decisão tem registro, e o comitê tem tela para isso). Recusar sem
+ *  dizer o que fazer seria repetir o defeito que esta dívida descreve.
+ *
+ *  As duas contagens entram na assinatura — e não apenas o `status` —, porque a
+ *  regra precisa continuar verdadeira se um dia existir parecer em rascunho: a
+ *  pergunta é sobre DEPENDÊNCIAS, e o estado é só o indício mais comum delas.
+ */
+export function canChangeSubmissionTrack(input: {
+  status: SubmissionStatus;
+  reviewCount: number;
+  assignmentCount: number;
+}): SubmissionTrackChangeVerdict {
+  if (input.reviewCount > 0) {
+    return {
+      allowed: false,
+      code: 'HAS_REVIEWS',
+      message:
+        'Esta submissão já tem parecer, e o parecer responde à rubrica da trilha atual. ' +
+        'Fale com o comitê para reclassificar.',
+    };
+  }
+
+  if (input.assignmentCount > 0) {
+    return {
+      allowed: false,
+      code: 'HAS_ASSIGNMENTS',
+      message:
+        'Esta submissão já foi distribuída a revisores, e a distribuição foi feita por trilha. ' +
+        'Fale com o comitê para reclassificar.',
+    };
+  }
+
+  if (input.status !== 'DRAFT') {
+    return {
+      allowed: false,
+      code: 'NOT_DRAFT',
+      message:
+        'A trilha só pode ser trocada enquanto a submissão é rascunho. ' +
+        'Depois do envio, reclassificar é decisão do comitê.',
+    };
+  }
+
+  return { allowed: true };
+}
+
+export interface SubmissionTrackChangeVerdict {
+  allowed: boolean;
+  code?: 'HAS_REVIEWS' | 'HAS_ASSIGNMENTS' | 'NOT_DRAFT';
+  message?: string;
+}
+
+/**
  * Reenviar durante a revisão cria uma nova versão?
  *
  * Quando a submissão já está em análise, o autor pode ser autorizado a corrigir

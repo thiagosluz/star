@@ -20,6 +20,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { withTenant } from '@/lib/db/tenant-client';
+import { resolveRegistrationCreditKey } from '@/lib/gamification/xp-reversal';
 import { awardForEvent, rewardKeys, type RewardOutcome } from '@/lib/gamification/reward-engine';
 
 /** Resultado do gancho: `null` quando a recompensa não pôde ser aplicada. */
@@ -252,16 +253,27 @@ export async function rewardRegistrationConfirmed(input: {
   try {
     /**
      * O alvo é a ATIVIDADE quando há uma, e o EVENTO quando é a inscrição do evento:
-     * é ele que identifica "esta vaga", e é o que faz cancelar e voltar a se inscrever
-     * não pagar de novo.
+     * é ele que identifica "esta vaga". Quem resolve a CHAVE é `xp-reversal.ts`, junto do
+     * estorno: as duas pontas da mesma regra (creditar e devolver) não podem divergir.
      */
-    const targetId = input.activityId ?? input.eventId ?? input.registrationId;
 
     const result = await awardForEvent({
       tenantId: input.tenantId,
       userId: input.userId,
       source: 'REGISTRATION_CONFIRMED',
-      idempotencyKey: rewardKeys.registrationConfirmed(input.tenantId, input.userId, targetId),
+      /**
+       * A chave vem do ESTADO do alvo (FASE 50 · dívida E59): crédito vigente ⇒ repete a
+       * chave e não paga de novo; crédito já ESTORNADO ⇒ geração nova, porque a vaga
+       * voltou a ser usada. A decisão mora em `xp-reversal.ts`, junto do estorno — as
+       * duas pontas da mesma regra não podem divergir.
+       */
+      idempotencyKey: await resolveRegistrationCreditKey({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        registrationId: input.registrationId,
+        eventId: input.eventId,
+        activityId: input.activityId,
+      }),
       reason: input.activityId ? 'Inscrição confirmada em atividade' : 'Inscrição confirmada no evento',
       eventId: input.eventId,
       activityId: input.activityId,

@@ -29,8 +29,18 @@ export const dynamic = 'force-dynamic';
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE 404 EM TUDO QUE DÁ ERRADO
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Token inválido, revogado ou de outra instituição respondem IGUAL. Distinguir os
- *  casos contaria a quem tenta adivinhar que o token acertou alguma coisa.
+ *  Token inválido, revogado, vencido ou de outra instituição respondem IGUAL.
+ *  Distinguir os casos contaria a quem tenta adivinhar que o token acertou alguma
+ *  coisa — e quem criou o link não perde a explicação: a lista dele diz "expirado"
+ *  ou "revogado", com o número de aberturas (FASE 51 · dívida E70).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  SÓ A RENDERIZAÇÃO DA CARTA CONTA ABERTURA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Esta página lê o link DUAS vezes (metadados e corpo) e a rota da imagem de
+ *  prévia lê uma terceira. Apenas o corpo pede `registerView`: contar as três
+ *  faria de cada raspagem de robô uma "abertura" e o dono leria um número que
+ *  ninguém viu.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -71,7 +81,12 @@ export default async function SharedCardPage({ params }: PageProps) {
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) notFound();
 
-  const shared = await readSharedCard({ tenantId: tenant.tenantId, token, timezone: tenant.timezone });
+  const shared = await readSharedCard({
+    tenantId: tenant.tenantId,
+    token,
+    timezone: tenant.timezone,
+    registerView: true,
+  });
   if (!shared.ok) notFound();
 
   const { card } = shared;

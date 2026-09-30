@@ -723,6 +723,7 @@ const requestAssetSchema = z.object({
   sizeBytes: z.coerce.number().int().positive(),
   checksum: z.string().regex(/^[a-f0-9]{64}$/i, 'Checksum SHA-256 inválido.'),
   magicBytes: z.array(z.coerce.number().int().min(0).max(255)).max(16).optional(),
+
 });
 
 /**
@@ -780,6 +781,7 @@ export async function requestAssetUploadAction(
     mimeType: parsed.data.mimeType,
     sizeBytes: parsed.data.sizeBytes,
     magicBytes: parsed.data.magicBytes ?? null,
+    checksumSha256: parsed.data.checksum ?? null,
   });
 
   if (!result.ok) return result;

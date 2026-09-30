@@ -193,7 +193,13 @@ export async function GET(
   const wantsStream = request.headers.get('accept')?.includes('text/event-stream') ?? false;
 
   if (!wantsStream) {
-    const eligibility = await loadEligibility(state.config);
+    /**
+     * Com o telão DESLIGADO a contagem de elegíveis não é consultada nem devolvida
+     * (E37 · FASE 51): a rota é pública, e responder "quem concorre" pela API
+     * desfaria o interruptor que a parede passou a respeitar. O estado já vem sem
+     * prêmio e sem resultado — o que sobra é o aviso de que o palco está fora do ar.
+     */
+    const eligibility = state.bigscreenVisible ? await loadEligibility(state.config) : null;
 
     return NextResponse.json(payloadOf(statePayload, eligibility), {
       headers: { 'cache-control': 'no-store' },

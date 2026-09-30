@@ -30,6 +30,19 @@ import {
  *
  *  `data-theme-mode` permite ao CSS reagir ao modo claro/escuro sem lógica
  *  condicional nos componentes.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A COR DO EVENTO TAMBÉM VIRA TOKEN DO SISTEMA (FASE 51 · E42)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  As variáveis `--ef-*` são do CSS da PÁGINA PÚBLICA: os componentes do sistema
+ *  não as leem (e não devem — a trava do design system reprova cor escolhida em
+ *  componente). O crachá é o primeiro que precisa da cor do evento FORA da página,
+ *  e o mesmo evento é desenhado em três lugares: a página, o crachá na tela e o
+ *  crachá no papel.
+ *
+ *  Por isso a `ThemeScope` também publica `--theme-primary`, que nasce na marca da
+ *  plataforma (`globals.css`) e aqui recebe a cor do evento. Um token só, e o
+ *  componente que o usa (`Badge` com `tone="event"`) não sabe de onde ele veio.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function ThemeScope({
@@ -42,6 +55,10 @@ export function ThemeScope({
   // As chaves são custom properties (`--ef-*`), que o tipo CSSProperties não
   // declara. O objeto é montado a partir de uma allowlist validada.
   const style = themeToCssVariables(theme) as React.CSSProperties;
+
+  if (theme.primaryColor) {
+    (style as Record<string, string>)['--theme-primary'] = theme.primaryColor;
+  }
 
   return (
     <div style={style} data-theme-mode={theme.colorMode} className="ef-theme min-h-screen">

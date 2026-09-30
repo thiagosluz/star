@@ -33,11 +33,17 @@ import { recordAudit, diffFields } from '@/lib/admin/audit';
 import {
   DEFAULT_ROLE_TITLE,
   MAX_ROLE_TITLE_LENGTH,
+  PHOTO_AUTHORIZATION_CHANNEL_LABELS,
+  PHOTO_AUTHORIZATION_VERSION,
+  evaluatePhotoAuthorization,
   hashInviteToken,
   inviteExpiryFrom,
   newInviteToken,
   normalizeSpeakerProfile,
+  normalizePhotoAuthorizationChannel,
+  photoAuthorizationChannelLabel,
   readSocialLinks,
+  type PhotoAuthorizationChannel,
   type SocialLinks,
   type SpeakerAvatarSource,
 } from '@/domain/speakers/speaker-rules';
@@ -77,6 +83,14 @@ export interface SaveSpeakerProfileInput {
    * alguém sem esta confirmação é dado pessoal de terceiro sem base declarada.
    */
   photoAuthorization?: boolean;
+  /**
+   * POR ONDE o consentimento veio (FASE 51 · dívida E66).
+   *
+   * Obrigatório quando a foto é NOVA e a caixa acima está marcada: sem o canal, o
+   * perfil diria que existe autorização sem registrar COMO ela foi obtida — que é
+   * metade do que se precisa demonstrar.
+   */
+  photoAuthorizationChannel?: string | null;
   socialLinks?: Record<string, unknown>;
   displayOrder?: number;
   isPublic?: boolean;
@@ -138,6 +152,12 @@ export async function saveSpeakerProfile(
               displayOrder: true,
               isPublic: true,
               userId: true,
+              // A declaração vigente entra na leitura porque a trilha registra o que
+              // SAI quando a foto é removida (FASE 51 · dívida E66).
+              photoAuthorizationText: true,
+              photoAuthorizationVersion: true,
+              photoAuthorizationChannel: true,
+              photoAuthorizationAt: true,
             },
           })
         : null;
@@ -175,21 +195,31 @@ export async function saveSpeakerProfile(
 
       /**
        * ─────────────────────────────────────────────────────────────────────────────
-       *  FOTO NOVA SEM DECLARAÇÃO É RECUSA (FASE 46)
+       *  FOTO NOVA SEM DECLARAÇÃO É RECUSA (FASE 46) — E SEM CANAL TAMBÉM (E66)
        * ─────────────────────────────────────────────────────────────────────────────
        *  A checagem é no SERVIÇO, e não na tela, porque é aqui que se sabe se a foto
        *  MUDOU: exigir a declaração a cada gravação transformaria a caixa em ruído
        *  (o organizador marcaria sem ler para salvar uma correção de nome), e a
        *  declaração precisa significar alguma coisa no dia em que for questionada.
+       *
+       *  A partir da E66 a foto nova também exige o CANAL: o texto e a versão dizem
+       *  O QUE foi aceito, o canal diz COMO o consentimento chegou, e a data diz
+       *  QUANDO. Faltando o canal, o perfil voltaria a guardar só a afirmação — que é
+       *  exatamente a dívida que esta fase quita.
        */
-      const publishingNewPhoto = nextAvatar.url !== null && nextAvatar.url !== currentAvatarUrl;
+      const declaration = evaluatePhotoAuthorization({
+        previousPhotoUrl: currentAvatarUrl,
+        nextPhotoUrl: nextAvatar.url,
+        declared: input.photoAuthorization === true,
+        channel: input.photoAuthorizationChannel,
+        at: new Date(),
+      });
 
-      if (publishingNewPhoto && input.photoAuthorization !== true) {
+      if (!declaration.ok) {
         return {
           ok: false as const,
           code: 'INVALID_INPUT' as const,
-          message:
-            'Confirme que você tem autorização do palestrante para publicar esta foto.',
+          message: declaration.message,
         };
       }
 
@@ -205,6 +235,34 @@ export async function saveSpeakerProfile(
         avatarSource: nextAvatar.source,
         displayOrder: input.displayOrder ?? existing?.displayOrder ?? 0,
         isPublic: input.isPublic ?? existing?.isPublic ?? true,
+        /**
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  OS QUATRO CAMPOS DA DECLARAÇÃO ANDAM JUNTOS (FASE 51 · dívida E66)
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  Texto, versão, canal e data entram na MESMA gravação: guardar a data sem o
+         *  canal (ou o canal sem o texto) deixaria a prova pela metade — e a metade que
+         *  falta é justamente a que alguém questionaria depois.
+         *
+         *  Ausente PRESERVA (é o que faz "trocar só o nome" não reescrever a declaração
+         *  vigente) e a REMOÇÃO limpa os quatro: a declaração era sobre aquela foto, e
+         *  o perfil não pode afirmar base legal para uma imagem que saiu do ar. O fato
+         *  não se perde — a trilha guarda o que foi retirado, com autor e hora.
+         */
+        ...(declaration.write
+          ? {
+              photoAuthorizationText: declaration.write.text,
+              photoAuthorizationVersion: declaration.write.version,
+              photoAuthorizationChannel: declaration.write.channel,
+              photoAuthorizationAt: declaration.write.at,
+            }
+          : declaration.clear
+            ? {
+                photoAuthorizationText: null,
+                photoAuthorizationVersion: null,
+                photoAuthorizationChannel: null,
+                photoAuthorizationAt: null,
+              }
+            : {}),
       };
 
       if (!existing) {
@@ -236,10 +294,17 @@ export async function saveSpeakerProfile(
               convite: { from: null, to: invite ? 'gerado' : 'sem e-mail' },
               // A declaração de autorização da foto vale no NASCIMENTO do perfil
               // também — é aqui que ela costuma acontecer, com a foto já em mãos.
-              ...(publishingNewPhoto
+              // Desde a E66 o canal e a versão da redação entram junto: quem lê a
+              // trilha não precisa adivinhar sob qual texto a autorização foi dada.
+              ...(declaration.write
                 ? {
                     foto: { from: null, to: 'enviada pela organização' },
                     autorizacaoDaFoto: { from: null, to: 'declarada pela organização' },
+                    canalDaAutorizacao: {
+                      from: null,
+                      to: PHOTO_AUTHORIZATION_CHANNEL_LABELS[declaration.write.channel],
+                    },
+                    versaoDaAutorizacao: { from: null, to: declaration.write.version },
                   }
                 : {}),
             },
@@ -313,10 +378,34 @@ export async function saveSpeakerProfile(
              * A DECLARAÇÃO entra na trilha como fato próprio, e não misturada à foto:
              * se um dia o uso da imagem for questionado, o que se procura é QUEM
              * declarou ter autorização e QUANDO — e a trilha responde isso sem
-             * depender de interpretar a mudança da coluna.
+             * depender de interpretar a mudança da coluna. Desde a E66 o texto
+             * (versão) e o canal vão junto: é a trilha que reconstrói o que foi
+             * aceito depois que a foto sai do ar e os campos do perfil são limpos.
              */
-            ...(publishingNewPhoto
-              ? { autorizacaoDaFoto: { from: null, to: 'declarada pela organização' } }
+            ...(declaration.write
+              ? {
+                  autorizacaoDaFoto: { from: null, to: 'declarada pela organização' },
+                  canalDaAutorizacao: {
+                    from: null,
+                    to: PHOTO_AUTHORIZATION_CHANNEL_LABELS[declaration.write.channel],
+                  },
+                  versaoDaAutorizacao: { from: null, to: declaration.write.version },
+                }
+              : {}),
+            ...(declaration.clear
+              ? {
+                  autorizacaoDaFoto: {
+                    from:
+                      existing.photoAuthorizationVersion === null
+                        ? 'declarada pela organização'
+                        : `declarada pela organização (${existing.photoAuthorizationVersion})`,
+                    to: 'retirada com a foto',
+                  },
+                  canalDaAutorizacao: {
+                    from: photoAuthorizationChannelLabel(existing.photoAuthorizationChannel),
+                    to: null,
+                  },
+                }
               : {}),
           },
         },
@@ -618,6 +707,25 @@ export async function unlinkSpeakerFromActivity(input: {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura para a tela da organização
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * A declaração de autorização da foto publicada, como a tela precisa dela
+ * (FASE 51 · dívida E66).
+ *
+ * `null` quando não há declaração gravada — o caso das fotos publicadas antes desta
+ * fase e o da foto que o próprio palestrante enviou (ele não declara nada: ele é o
+ * titular). A tela diz QUAL redação está valendo em vez de um rótulo genérico.
+ */
+export interface SpeakerPhotoDeclaration {
+  text: string;
+  version: string | null;
+  channel: PhotoAuthorizationChannel | null;
+  /** Rótulo em português do canal gravado (o valor cru não vai para a tela). */
+  channelLabel: string | null;
+  at: Date | null;
+  /** A redação gravada ainda é a vigente? `false` = aceita sob texto anterior. */
+  versionIsCurrent: boolean;
+}
+
 export interface AdminSpeakerRow {
   speakerProfileId: string;
   name: string;
@@ -629,6 +737,8 @@ export interface AdminSpeakerRow {
   avatarUrl: string | null;
   /** Quem enviou a foto (FASE 46) — a tela marca a que veio da organização. */
   avatarSource: SpeakerAvatarSource | null;
+  /** Declaração vigente da foto publicada (FASE 51 · dívida E66). */
+  photoDeclaration: SpeakerPhotoDeclaration | null;
   isPublic: boolean;
   isConfirmed: boolean;
   hasAccount: boolean;
@@ -680,6 +790,13 @@ export async function listSpeakers(input: {
         bio: true,
         avatarUrl: true,
         avatarSource: true,
+        // A declaração vigente vai para a TELA: quem publica precisa poder conferir
+        // sob qual redação, por qual canal e quando a autorização foi declarada —
+        // e não apenas ver uma caixa marcada (FASE 51 · dívida E66).
+        photoAuthorizationText: true,
+        photoAuthorizationVersion: true,
+        photoAuthorizationChannel: true,
+        photoAuthorizationAt: true,
         socialLinks: true,
         isPublic: true,
         isConfirmed: true,
@@ -711,6 +828,17 @@ export async function listSpeakers(input: {
       bio: profile.bio,
       avatarUrl: profile.avatarUrl,
       avatarSource: profile.avatarSource,
+      photoDeclaration:
+        profile.photoAuthorizationText === null && profile.photoAuthorizationAt === null
+          ? null
+          : {
+              text: profile.photoAuthorizationText ?? '',
+              version: profile.photoAuthorizationVersion,
+              channel: normalizePhotoAuthorizationChannel(profile.photoAuthorizationChannel),
+              channelLabel: photoAuthorizationChannelLabel(profile.photoAuthorizationChannel),
+              at: profile.photoAuthorizationAt,
+              versionIsCurrent: profile.photoAuthorizationVersion === PHOTO_AUTHORIZATION_VERSION,
+            },
       isPublic: profile.isPublic,
       isConfirmed: profile.isConfirmed,
       hasAccount: profile.userId !== null,

@@ -4,11 +4,12 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Loader2, Printer, TriangleAlert } from 'lucide-react';
 
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import type { CredentialActionState } from '@/app/actions/credential-actions';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  O CRACHÁ NA TELA DO PARTICIPANTE (FASE 31)
+ *  O CRACHÁ NA TELA DO PARTICIPANTE (FASE 31 · IDENTIDADE NA FASE 51 · E42)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O QR É DESENHADO AQUI, NO NAVEGADOR, A PARTIR DO CÓDIGO
@@ -21,6 +22,15 @@ import type { CredentialActionState } from '@/app/actions/credential-actions';
  *       duas implementações de QR Code.
  *
  *  `qrcode` já é dependência do projeto (certificado e folha de crachás).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A IDENTIDADE VISUAL É A MESMA DO PAPEL (FASE 51 · E42)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O crachá da tela usa a cor do TEMA DO EVENTO (o componente recebe o tom pronto
+ *  do servidor, porque a página JÁ tem o dado) e a faixa da CATEGORIA — a mesma
+ *  régua do domínio que o PDF, as etiquetas e o ZPL usam. Se a tela mostrasse a
+ *  cor de marca da plataforma, a pessoa veria um crachá diferente do que a
+ *  organização imprimiu para ela.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 function GenerateButton() {
@@ -43,6 +53,7 @@ export function OwnBadge({
   tenantSlug,
   eventId,
   eventTitle,
+  tenantName,
   startsAtLabel,
   code,
   qrSvg,
@@ -51,11 +62,16 @@ export function OwnBadge({
   activities,
   attendedActivities,
   minutesAttended,
+  categoryLabel,
+  categoryTone,
+  eventTone,
   generateAction,
 }: {
   tenantSlug: string;
   eventId: string;
   eventTitle: string;
+  /** A INSTITUIÇÃO dona do crachá (E42) — o papel já a imprime; a tela também. */
+  tenantName: string;
   eventSlug: string;
   startsAtLabel: string;
   code: string;
@@ -66,36 +82,69 @@ export function OwnBadge({
   activities: readonly string[];
   attendedActivities: number;
   minutesAttended: number;
+  /** Rótulo da categoria, já em português, vindo do catálogo do domínio. */
+  categoryLabel: string;
+  /** Tom do primitivo `Badge` da categoria (E42) — o componente não escolhe cor. */
+  categoryTone: BadgeTone;
+  /** Tom da cor do EVENTO, ou `null` quando o evento não escolheu tema (E42). */
+  eventTone: BadgeTone | null;
   generateAction: (prev: CredentialActionState | null, formData: FormData) => Promise<CredentialActionState>;
 }) {
   const [state_, formAction] = useActionState<CredentialActionState | null, FormData>(generateAction, null);
 
   return (
     <section className="space-y-4" data-testid="own-badge" data-credential-state={state}>
-      <div className="space-y-3 rounded-xl border border-border bg-card p-5 text-center">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{eventTitle}</p>
-
+      <div className="space-y-3 overflow-hidden rounded-xl border border-border bg-card p-0 text-center">
         {/**
-         * O QR vem do servidor como SVG inline: determinístico, nítido em qualquer zoom
-         * e sem dependência de biblioteca no cliente.
+         * ── A FAIXA DO TOPO: A COR DO EVENTO (E42) ──────────────────────────────
+         *  O papel tem a cor do evento no código do crachá e no cabeçalho da folha;
+         *  aqui ela é a barra que abre o cartão. O tom é `event` quando o evento
+         *  escolheu cor e o de marca da plataforma quando não escolheu — o
+         *  componente não decide nada disso.
          */}
         <div
-          className="mx-auto w-fit rounded-lg bg-white p-3"
-          data-testid="own-badge-qr"
-          dangerouslySetInnerHTML={{ __html: qrSvg }}
+          aria-hidden
+          data-testid="own-badge-event-bar"
+          /*
+            O TOM é escolhido no SERVIDOR (`'event'` quando o evento tem cor): o
+            componente só sabe qual classe de token usar, nunca um hexadecimal.
+          */
+          className={`h-2 w-full ${eventTone === 'event' ? 'bg-theme-primary' : 'bg-primary'}`}
         />
 
-        <p className="code-data text-lg font-semibold" data-testid="own-badge-code">
-          {code}
-        </p>
+        <div className="space-y-3 p-5">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Badge tone={categoryTone} withDot data-testid="own-badge-category">
+              {categoryLabel}
+            </Badge>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{eventTitle}</p>
+          </div>
 
-        <p className="text-xs text-muted-foreground">
-          {state === 'ACTIVE'
-            ? 'Crachá válido — mostre esta tela no balcão.'
-            : 'Este crachá foi revogado: fale com a organização.'}
-        </p>
+          {/**
+           * O QR vem do servidor como SVG inline: determinístico, nítido em qualquer zoom
+           * e sem dependência de biblioteca no cliente.
+           */}
+          <div
+            className="mx-auto w-fit rounded-lg bg-white p-3"
+            data-testid="own-badge-qr"
+            dangerouslySetInnerHTML={{ __html: qrSvg }}
+          />
 
-        <p className="text-xs text-muted-foreground">{startsAtLabel}</p>
+          <p className="code-data text-lg font-semibold" data-testid="own-badge-code">
+            {code}
+          </p>
+
+          <p className="text-xs text-muted-foreground">
+            {state === 'ACTIVE'
+              ? 'Crachá válido — mostre esta tela no balcão.'
+              : 'Este crachá foi revogado: fale com a organização.'}
+          </p>
+
+          <p className="text-xs text-muted-foreground">{startsAtLabel}</p>
+          <p className="text-xs text-muted-foreground" data-testid="own-badge-tenant">
+            {tenantName}
+          </p>
+        </div>
       </div>
 
       <dl className="grid gap-2 text-sm sm:grid-cols-2">

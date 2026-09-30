@@ -326,3 +326,43 @@ export function rafflePublicationState(input: {
 
   return 'PUBLISHED';
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  E37 — O interruptor do telão (FASE 51)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * A leitura do interruptor, com o padrão LIGADO.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE SÓ `false` DESLIGA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A coluna nasceu `@default(true)` exatamente para não mudar o comportamento de
+ *  sorteio nenhum: quem já projetava o endereço continua projetando. Um valor que a
+ *  plataforma não entende (`null`, `undefined`, lixo de migração) NÃO pode tirar o
+ *  telão do ar no meio da abertura do evento — desligar é ato explícito de alguém, e
+ *  é ele que fica na trilha. O preço dessa escolha é conhecido: um dado corrompido
+ *  mostra o palco, que é o comportamento que a plataforma sempre teve.
+ */
+export function isBigscreenVisible(value: unknown): boolean {
+  return value !== false;
+}
+
+/** Título da página quando o telão está desligado. */
+export const BIGSCREEN_OFF_TITLE = 'Telão desligado';
+
+/**
+ * O que a parede mostra quando a instituição desliga o telão.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTA PÁGINA NÃO É UM 404 (dívida E37)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O organizador testa o endereço ANTES do evento. Se o telão desligado respondesse
+ *  "não encontrado", ele não teria como distinguir duas situações opostas: "eu
+ *  desliguei" e "o endereço está errado/ o sorteio foi apagado". As duas pedem ações
+ *  diferentes — ligar o telão, ou conferir o link. Por isso a página responde, diz
+ *  que está desligada e aponta o caminho de volta, sem revelar NADA do sorteio: nem
+ *  o título do prêmio, nem quem concorre.
+ */
+export const BIGSCREEN_OFF_MESSAGE =
+  'A organização desligou o telão deste sorteio. O endereço está correto — quando o telão ' +
+  'for ligado, esta mesma página passa a mostrar o sorteio ao vivo.';

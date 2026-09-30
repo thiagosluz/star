@@ -134,12 +134,25 @@ export function ParticipantDirectory({
           <table className="w-full text-sm" data-testid="participant-list">
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                {canMessage ? <th className="w-8 px-2 py-2" aria-label="Selecionar" /> : null}
+                {/**
+                  * A coluna de seleção e a de ações NÃO têm texto visível, e é por isso
+                  * que trazem o rótulo em `sr-only` em vez de `aria-label`: o `aria-label`
+                  * nomeia o cabeçalho para o leitor de tela, mas o `axe` continua vendo
+                  * uma célula de cabeçalho VAZIA (`empty-table-header`) — o texto
+                  * escondido resolve os dois, sem mudar um pixel da tabela.
+                  */}
+                {canMessage ? (
+                  <th className="w-8 px-2 py-2">
+                    <span className="sr-only">Selecionar</span>
+                  </th>
+                ) : null}
                 <th className="px-3 py-2 text-left">Pessoa</th>
                 <th className="px-3 py-2 text-left">Participação</th>
                 <th className="px-3 py-2 text-left">Presença</th>
                 <th className="px-3 py-2 text-left">Entrega</th>
-                <th className="px-3 py-2" />
+                <th className="px-3 py-2">
+                  <span className="sr-only">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody>

@@ -66,6 +66,47 @@ export const EXPORT_WATERMARK_NOTICE =
 /** Título da coluna final — a marca que sobrevive à cópia de uma linha. */
 export const EXPORT_WATERMARK_COLUMN = 'Exportado por';
 
+/**
+ * O que a lista de exportações diz quando NINGUÉM baixou (dívida E73 · FASE 51).
+ *
+ * A linha fica, mesmo vazia de download: ausência de texto é lida como tela
+ * quebrada, e a instituição não sabe se ninguém baixou ou se o sistema não conta.
+ */
+export const EXPORT_NO_DOWNLOADERS_LABEL = 'ninguém baixou ainda';
+
+/**
+ * Quem baixou, em uma linha.
+ *
+ * O contador (`downloadCount`) e a trilha podem discordar — a trilha vive em
+ * partições mensais e a retenção das antigas é decisão em aberto (dívida B8). Nesse
+ * caso a tela NÃO inventa autor nem afirma que ninguém baixou: diz o que sabe.
+ *
+ * Os instantes saem no fuso do processo, como a data da exportação na linha de
+ * cima: as duas linhas da MESMA lista precisam falar a mesma língua.
+ */
+export function exportDownloadersLabel(input: {
+  downloaders: readonly { name: string; at: Date }[];
+  downloadCount: number;
+}): string {
+  if (input.downloaders.length === 0) {
+    return input.downloadCount > 0 ? 'quem baixou não está na trilha exibida' : EXPORT_NO_DOWNLOADERS_LABEL;
+  }
+
+  const names = input.downloaders
+    .map(
+      (downloader) =>
+        `${downloader.name} (${downloader.at.toLocaleString('pt-BR', {
+          dateStyle: 'short',
+          timeStyle: 'short',
+        })})`,
+    )
+    .join(', ');
+
+  const hidden = input.downloadCount - input.downloaders.length;
+
+  return `baixado por ${names}${hidden > 0 ? ` · +${hidden} download(s)` : ''}`;
+}
+
 export const EXPORT_FILTER_LABELS: Readonly<Record<string, string>> = {
   query: 'Busca',
   eventId: 'Evento',

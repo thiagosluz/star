@@ -46,6 +46,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
+import { resolveTheme } from '@/domain/events/landing-page';
 import { checkIn, checkOut } from '@/lib/events/attendance-service';
 import {
   canRecordAttendance,
@@ -58,8 +59,11 @@ import {
   canUseCredential,
   credentialStateOf,
   generateBadgeCode,
+  isKnownCredentialCategory,
   normalizeBadgeCode,
+  resolveCredentialCategory,
   type AttendanceContextRef,
+  type CredentialCategoryDefinition,
   type CredentialState,
 } from '@/domain/events/credential-rules';
 
@@ -105,6 +109,15 @@ export interface CredentialRosterEntry {
     revokedAt: Date | null;
     /** Código impresso antes desta fase (legado), sem o formato novo. */
     legacy: boolean;
+    /**
+     * Categoria do crachá (FASE 51 · E42) — o valor CRU da coluna.
+     *
+     * A tela mostra o rótulo e a faixa de cor por `resolveCredentialCategory`, mas o
+     * valor cru sai daqui de propósito: a tela de edição precisa poder DIZER que o
+     * dado gravado não é uma categoria conhecida (valor antigo, importação), em vez
+     * de exibir "Participante" como se alguém tivesse escolhido.
+     */
+    category: string;
   } | null;
   /** Quando a pessoa foi credenciada na portaria (presença com `activityId` nulo). */
   arrivedAt: Date | null;
@@ -137,8 +150,23 @@ export async function listCredentialRoster(input: {
   query?: string | null;
   /** Só quem ainda NÃO tem crachá (o caminho de "emitir os que faltam"). */
   onlyMissing?: boolean;
+  /**
+   * Filtra pela CATEGORIA do crachá (FASE 51 · E42).
+   *
+   * Quem NÃO tem crachá fica de fora quando este filtro está ligado — a categoria
+   * mora no crachá, e "participante" de quem ainda não tem etiqueta seria uma
+   * afirmação sobre dado que não existe. O índice `event_credentials_category_idx`
+   * existe para este predicado.
+   *
+   * `null`/vazio significa "todas as categorias", e não "sem categoria": é assim
+   * que a tela distingue "não filtrei" de "filtrei por participante".
+   */
+  category?: string | null;
 }): Promise<CredentialResult<CredentialRoster>> {
   const query = input.query?.trim() ?? '';
+  const category = isKnownCredentialCategory(input.category)
+    ? input.category.trim().toUpperCase()
+    : null;
 
   try {
     return await withTenant(input.tenantId, async (tx) => {
@@ -161,7 +189,11 @@ export async function listCredentialRoster(input: {
       });
 
       const credentials = await tx.eventCredential.findMany({
-        where: { tenantId: input.tenantId, eventId: input.eventId },
+        where: {
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          ...(category ? { category } : {}),
+        },
         select: {
           id: true,
           userId: true,
@@ -170,6 +202,7 @@ export async function listCredentialRoster(input: {
           issuedAt: true,
           printedAt: true,
           revokedAt: true,
+          category: true,
         },
       });
 
@@ -220,13 +253,26 @@ export async function listCredentialRoster(input: {
       }
 
       /**
-       * A união é feita pelo `userId`: quem tem inscrição, quem tem crachá, e quem
-       * tem os dois. Um visitante com crachá emitido à mão aparece na lista; um
-       * inscrito que ainda não tem crachá também — é ele que falta emitir.
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O FILTRO DE CATEGORIA RESTRINGE OS DOIS LADOS DA UNIÃO (FASE 51 · E42)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A lista é uma UNIÃO: quem tem inscrição, quem tem crachá, e quem tem os
+       *  dois. Filtrar só a consulta de crachá NÃO bastava — quem tem inscrição
+       *  entrava pela inscrição, ficava sem crachá no mapa e aparecia na lista com
+       *  `credential: null`. O sintoma era a tela dizer "Equipe" no filtro e listar
+       *  todo mundo.
+       *
+       *  A régua certa: com filtro ligado, só entra quem tem CRACHÁ daquela
+       *  categoria. Sem crachá não há categoria para filtrar (a categoria mora no
+       *  crachá), e a lista do "falta emitir" é a de sem filtro.
        */
+      const userFilter = category
+        ? (userId: string) => credentialByUser.has(userId)
+        : (userId: string) => registrationByUser.has(userId) || credentialByUser.has(userId);
+
       const userIds = [
         ...new Set([...registrationByUser.keys(), ...credentials.map((row) => row.userId)]),
-      ].filter((userId) => registrationByUser.has(userId) || credentialByUser.has(userId));
+      ].filter(userFilter);
 
       const people = await tx.user.findMany({
         where: { id: { in: userIds } },
@@ -253,6 +299,7 @@ export async function listCredentialRoster(input: {
                 printedAt: credential.printedAt,
                 revokedAt: credential.revokedAt,
                 legacy: normalizeBadgeCode(credential.code) === null,
+                category: credential.category,
               }
             : null,
           arrivedAt: arrivalByUser.get(person.id) ?? null,
@@ -263,6 +310,20 @@ export async function listCredentialRoster(input: {
 
       const needle = query.toLocaleLowerCase('pt-BR');
 
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  AS DUAS LENTES SÃO APLICADAS NA SAÍDA, E A ORDEM IMPORTA (FASE 51 · E42)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O filtro de categoria é aplicado na CONSULTA (só crachá daquela categoria
+       *  volta do banco), então quem não tem crachá some da lista — que é o correto:
+       *  a categoria mora no crachá. Aplicar a mesma lente de novo aqui seria
+       *  redundante e abriria a porta para a lista discordar da contagem.
+       *
+       *  Já os CONTADORES (`withCredential`, `withoutCredential`, `arrived`) são
+       *  medidos sobre `entries` — o quadro inteiro do evento —, e não sobre o
+       *  resultado filtrado: a tela diz "12 sem crachá" para o organizador decidir
+       *  emitir, e um filtro de categoria não pode zerar esse aviso.
+       */
       const filtered = entries.filter((entry) => {
         if (input.onlyMissing && entry.credential && entry.credential.state === 'ACTIVE') return false;
 
@@ -272,6 +333,7 @@ export async function listCredentialRoster(input: {
           entry.name,
           entry.email,
           entry.credential?.code ?? '',
+          entry.credential?.category ?? '',
           ...entry.registrations.map((row) => row.activityTitle ?? 'inscrição no evento'),
         ]
           .join(' ')
@@ -321,6 +383,18 @@ export interface IssuedCredential {
  * Idempotente por (evento, pessoa): quem já tem crachá ativo é PULADO, e não recebe
  * outro código. Reemitir é ato explícito (`reissueCredential`), porque um crachá novo
  * invalida o que está na mão de alguém.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A CATEGORIA É GRAVADA NA EMISSÃO E EM MASSA (FASE 51 · E42)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Emitir 40 crachás de "Equipe" no balcão de credenciamento é o caso comum, e
+ *  obrigar a escolher a categoria pessoa por pessoa faria o organizador desistir e
+ *  imprimir tudo branco — que é exatamente o defeito que esta dívida veio quitar.
+ *  Por isso a categoria é parâmetro do LOTE inteiro, e quem quiser misturar usa a
+ *  edição individual (`setCredentialCategory`).
+ *
+ *  Sem categoria, vale `PARTICIPANT`: é o padrão da coluna e o que preserva o
+ *  comportamento de quem já emitia crachá antes desta fase.
  */
 export async function issueCredentials(input: {
   tenantId: string;
@@ -328,7 +402,11 @@ export async function issueCredentials(input: {
   actorId: string;
   userIds?: readonly string[];
   notes?: string | null;
+  /** Categoria do LOTE. Ausente ou desconhecida vale `PARTICIPANT`. */
+  category?: string | null;
 }): Promise<CredentialResult<{ issued: IssuedCredential[]; skipped: number; truncated: boolean }>> {
+  const category = resolveCredentialCategory(input.category).key;
+
   try {
     const result = await withTenant(input.tenantId, async (tx) => {
       const event = await tx.event.findFirst({
@@ -407,6 +485,7 @@ export async function issueCredentials(input: {
             data: {
               code,
               status: 'ACTIVE',
+              category,
               issuedById: input.actorId,
               issuedAt: new Date(),
               printedAt: null,
@@ -435,6 +514,7 @@ export async function issueCredentials(input: {
             userId,
             code,
             status: 'ACTIVE',
+            category,
             issuedById: input.actorId,
             notes: input.notes ?? null,
           },
@@ -460,6 +540,7 @@ export async function issueCredentials(input: {
             eventId: { from: null, to: input.eventId },
             issued: { from: null, to: issued.length },
             skipped: { from: null, to: candidateIds.length - target.length },
+            category: { from: null, to: category },
             codes: { from: null, to: issued.map((entry) => entry.code).join(', ') },
             revokedReissued: { from: null, to: revoked.size },
           },
@@ -569,6 +650,94 @@ export async function revokeCredential(input: {
   }
 }
 
+/**
+ * Muda a CATEGORIA de um crachá já emitido (FASE 51 · E42).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO NÃO É UMA REEMISSÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O código continua o mesmo — a etiqueta que já está na mão da pessoa continua
+ *  valendo no balcão. Reemitir para trocar a cor da faixa obrigaria a imprimir de
+ *  novo e invalidaria um crachá que funcionava; a categoria é DADO do crachá, não
+ *  parte do código. Quem perdeu a etiqueta usa a impressão, que já existe.
+ *
+ *  A troca entra na trilha com `from`/`to`: "por que o crachá diz Equipe?" é
+ *  pergunta que a recepção faz, e a resposta tem de estar em algum lugar.
+ */
+export async function setCredentialCategory(input: {
+  tenantId: string;
+  credentialId: string;
+  actorId: string;
+  category: string;
+}): Promise<CredentialResult<{ credentialId: string; category: string }>> {
+  /**
+   * Categoria que o domínio não conhece é RECUSADA aqui, e não normalizada em
+   * silêncio: quem troca a categoria está na tela, vendo a lista fechada de opções.
+   * Um valor de fora é gravação de outra coisa — e cair para participante apagaria
+   * a categoria anterior sem ninguém pedir.
+   */
+  if (!isKnownCredentialCategory(input.category)) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Categoria desconhecida. Escolha uma das categorias da lista.',
+    };
+  }
+
+  const category = input.category.trim().toUpperCase();
+
+  try {
+    const outcome = await withTenant(input.tenantId, async (tx) => {
+      const row = await tx.eventCredential.findFirst({
+        where: { id: input.credentialId, tenantId: input.tenantId },
+        select: { id: true, category: true, status: true, revokedAt: true },
+      });
+
+      if (!row) return { error: 'NOT_FOUND' as const };
+
+      /**
+       * Crachá revogado não muda de categoria: o código saiu de circulação e a
+       * categoria descreveria uma etiqueta que não deve existir na porta. O estado
+       * vem de `credentialStateOf` — ler só `revokedAt` deixaria passar um crachá
+       * com `status = REVOKED` e data nula, que é o mesmo crachá inválido.
+       */
+      if (credentialStateOf(row) === 'REVOKED') {
+        return { error: 'ALREADY_REVOKED' as const };
+      }
+
+      if (row.category === category) return { credentialId: row.id, category, changed: false };
+
+      await tx.eventCredential.update({ where: { id: row.id }, data: { category } });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'UPDATE',
+          entityType: 'credential',
+          entityId: row.id,
+          changes: { category: { from: row.category, to: category } },
+        },
+        tx,
+      );
+
+      return { credentialId: row.id, category, changed: true };
+    });
+
+    if ('error' in outcome) {
+      return outcome.error === 'NOT_FOUND'
+        ? { ok: false, code: 'NOT_FOUND', message: 'Crachá não encontrado.' }
+        : { ok: false, code: 'ALREADY_REVOKED', message: 'Este crachá está revogado — emita um novo antes.' };
+    }
+
+    return { ok: true as const, credentialId: outcome.credentialId, category: outcome.category };
+  } catch (error) {
+    console.error(`[credentials] falha ao trocar a categoria do crachá: ${errorMessage(error)}`);
+
+    return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar a categoria do crachá.' };
+  }
+}
+
 /** Marca que os crachás foram impressos (a folha pode ser reimpressa depois). */
 export async function markCredentialsPrinted(input: {
   tenantId: string;
@@ -605,6 +774,14 @@ export interface CredentialScanTarget {
   credentialId: string;
   code: string;
   state: CredentialState;
+  /**
+   * A categoria do crachá, já normalizada (FASE 51 · E42).
+   *
+   * O balcão mostra isto ao LADO do nome: ler o crachá e ver "Palestrante" diz ao
+   * monitor onde a pessoa deve entrar sem ele precisar perguntar — metade do ganho
+   * da faixa de cor no papel.
+   */
+  category: CredentialCategoryDefinition;
   userId: string;
   userName: string;
   userEmail: string;
@@ -627,6 +804,8 @@ interface ResolvedCredential {
   code: string;
   state: CredentialState;
   userId: string;
+  /** Categoria gravada no crachá (valor CRU — a normalização é do alvo da leitura). */
+  category: string;
   /** Achado pelo token legado, e não pelo crachá novo. */
   legacy: boolean;
 }
@@ -661,7 +840,7 @@ async function resolveCredential(tx: TxClient, tenantId: string, rawCode: string
 
   const row = await tx.eventCredential.findFirst({
     where: { tenantId, code: { in: candidates } },
-    select: { id: true, code: true, status: true, revokedAt: true, userId: true },
+    select: { id: true, code: true, status: true, revokedAt: true, userId: true, category: true },
   });
 
   if (row) {
@@ -670,6 +849,7 @@ async function resolveCredential(tx: TxClient, tenantId: string, rawCode: string
       code: row.code,
       state: credentialStateOf(row),
       userId: row.userId,
+      category: row.category,
       legacy: normalized === null,
     };
   }
@@ -698,7 +878,7 @@ async function resolveCredential(tx: TxClient, tenantId: string, rawCode: string
       status: 'ACTIVE',
     },
     update: {},
-    select: { id: true, code: true, status: true, revokedAt: true, userId: true },
+    select: { id: true, code: true, status: true, revokedAt: true, userId: true, category: true },
   });
 
   return {
@@ -706,6 +886,7 @@ async function resolveCredential(tx: TxClient, tenantId: string, rawCode: string
     code: created.code,
     state: credentialStateOf(created),
     userId: created.userId,
+    category: created.category,
     legacy: true,
   };
 }
@@ -798,6 +979,7 @@ async function buildScanTarget(
     credentialId: input.resolved.credentialId,
     code: input.resolved.code,
     state: input.resolved.state,
+    category: resolveCredentialCategory(input.resolved.category),
     userId: person.id,
     userName: person.name,
     userEmail: person.email,
@@ -1409,10 +1591,34 @@ export interface OwnCredential {
   qrPayload: string;
   state: CredentialState;
   issuedAt: Date;
+  /**
+   * A categoria do crachá, já normalizada (FASE 51 · E42).
+   *
+   * Vem resolvida, e não crua: quem lê esta tela é a própria pessoa, e ela precisa
+   * ver a FAIXA e o RÓTULO — não a string do banco. A tela de organização é a única
+   * que mostra o valor cru, porque é a única que edita.
+   */
+  category: CredentialCategoryDefinition;
   /** O que a pessoa pode frequentar (a lista que o monitor vê). */
   registrations: { activityTitle: string | null; status: string }[];
   attendedActivities: number;
   minutesAttended: number;
+  /**
+   * A identidade visual do evento (FASE 51 · E42) — o que faz o crachá da TELA
+   * parecer o crachá do PAPEL.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE A COR DO EVENTO CHEGA AQUI, E NÃO SÓ NO PDF
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A identidade do evento é UM dado (`Event.theme`), lido pela `ThemeScope` na
+   *  página pública e por `prepareBadgePrint` nas três saídas de papel. O crachá
+   *  online é a QUARTA — e se ele ficasse com a cor de marca da plataforma, a
+   *  pessoa veria na tela um crachá diferente do que a organização imprimiu.
+   *  Aqui ele chega RESOLVIDO (`resolveTheme`, a mesma régua da página): o JSON do
+   *  banco pode estar inválido, e um crachá não pode falhar por causa do tema —
+   *  no pior caso ele sai com a identidade da plataforma.
+   */
+  theme: { primaryColor: string | null };
 }
 
 /**
@@ -1432,7 +1638,7 @@ export async function getOwnCredential(input: {
     const outcome = await withTenant(input.tenantId, async (tx) => {
       const event = await tx.event.findFirst({
         where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
-        select: { id: true, title: true, slug: true, startsAt: true },
+        select: { id: true, title: true, slug: true, startsAt: true, theme: true },
       });
 
       if (!event) return { error: 'NOT_FOUND' as const };
@@ -1450,7 +1656,7 @@ export async function getOwnCredential(input: {
 
       const existing = await tx.eventCredential.findFirst({
         where: { tenantId: input.tenantId, eventId: input.eventId, userId: input.userId },
-        select: { id: true, code: true, status: true, revokedAt: true, issuedAt: true },
+        select: { id: true, code: true, status: true, revokedAt: true, issuedAt: true, category: true },
       });
 
       let credential = existing;
@@ -1468,10 +1674,16 @@ export async function getOwnCredential(input: {
             userId: input.userId,
             code,
             status: 'ACTIVE',
+            /**
+             * Quem abre o próprio crachá é PARTICIPANTE até a organização dizer o
+             * contrário (FASE 51 · E42): o papel no RBAC não diz o que a pessoa é no
+             * evento, e a portaria corrige em um clique na área de crachás.
+             */
+            category: 'PARTICIPANT',
             issuedById: input.userId,
             notes: 'Emitido pelo próprio participante na área dele.',
           },
-          select: { id: true, code: true, status: true, revokedAt: true, issuedAt: true },
+          select: { id: true, code: true, status: true, revokedAt: true, issuedAt: true, category: true },
         });
 
         await recordAudit(
@@ -1531,12 +1743,14 @@ export async function getOwnCredential(input: {
       qrPayload: badgeQrPayload(outcome.credential.code),
       state: credentialStateOf(outcome.credential),
       issuedAt: outcome.credential.issuedAt,
+      category: resolveCredentialCategory(outcome.credential.category),
       registrations: outcome.registrations.map((row) => ({
         activityTitle: row.activity?.title ?? null,
         status: row.status,
       })),
       attendedActivities: outcome.attendedActivities,
       minutesAttended: outcome.minutesAttended,
+      theme: { primaryColor: resolveTheme(outcome.event.theme).theme.primaryColor ?? null },
     };
   } catch (error) {
     console.error(`[credentials] falha ao carregar o crachá: ${errorMessage(error)}`);

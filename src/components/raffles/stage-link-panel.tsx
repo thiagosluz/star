@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useActionState, useState } from 'react';
 import Link from 'next/link';
-import { Copy, ExternalLink, MonitorPlay, ShieldCheck } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, MonitorOff, MonitorPlay, ShieldCheck } from 'lucide-react';
 
-import { Button } from '@/components/ui';
+import { Alert, Button } from '@/components/ui';
+import type { BigscreenActionState } from '@/app/actions/bigscreen-actions';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -23,6 +24,18 @@ import { Button } from '@/components/ui';
  *  O aviso do cofre não é decorativo: um telão sem compromisso de semente mostra o
  *  resultado, mas a conferência que ele promete não existe — e é melhor descobrir
  *  isso aqui, com a internet calma, do que no palco.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O INTERRUPTOR DO TELÃO MORA AQUI (FASE 51 · dívida E37)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  É esta a tela em que o organizador CONFERE o endereço antes do evento — então é
+ *  aqui que ele precisa poder negar o acesso até decidir ligar o telão. O palco
+ *  responde desde a criação do sorteio e anuncia o título do prêmio: quem
+ *  descobrisse o link cedo demais veria o que ainda não devia.
+ *
+ *  Desligado, o endereço CONTINUA respondendo — com o aviso de que a organização
+ *  desligou. Se virasse 404, o organizador não teria como distinguir "eu desliguei"
+ *  de "o endereço está errado" na hora de testar.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export interface StageLinkRaffle {
@@ -39,6 +52,85 @@ export interface StageLinkRaffle {
   /** Prêmio anunciado nessa rodada, quando informado (FASE 30). */
   prizeTitle: string | null;
   seedCommitment: string | null;
+  /** O telão está no ar? (E37) */
+  bigscreenVisible: boolean;
+}
+
+type BigscreenAction = (
+  prev: BigscreenActionState | null,
+  formData: FormData,
+) => Promise<BigscreenActionState>;
+
+/**
+ * O interruptor do telão: um formulário de servidor, como o resto da tela.
+ *
+ * Funciona SEM JavaScript (é um `<form>` com ação de servidor — o envio é um POST),
+ * e quem decide é o serviço, que também grava a virada na trilha com autor e hora.
+ */
+function BigscreenSwitch({
+  tenantSlug,
+  eventId,
+  raffleId,
+  visible,
+  action,
+}: {
+  tenantSlug: string;
+  eventId: string;
+  raffleId: string;
+  visible: boolean;
+  action: BigscreenAction;
+}) {
+  const [state, formAction, pending] = useActionState(action, null);
+
+  return (
+    <div
+      className="space-y-2 rounded-md border border-border bg-surface-low p-3"
+      data-testid={`stage-switch-${raffleId}`}
+      data-bigscreen-visible={visible ? 'true' : 'false'}
+    >
+      <p className="text-xs">
+        <strong className="font-medium">{visible ? 'Telão no ar' : 'Telão desligado'}</strong>
+        {' — '}
+        {visible
+          ? 'quem tem o endereço vê o sorteio ao vivo, com o prêmio anunciado.'
+          : 'quem tem o endereço vê apenas o aviso de que a organização desligou; nem o prêmio, nem quem concorre aparecem.'}
+      </p>
+
+      <form action={formAction} className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+        <input type="hidden" name="eventId" value={eventId} />
+        <input type="hidden" name="raffleId" value={raffleId} />
+        <input type="hidden" name="visible" value={visible ? 'false' : 'true'} />
+
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          data-testid={`stage-switch-submit-${raffleId}`}
+        >
+          {pending ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : visible ? (
+            <MonitorOff className="size-3.5" aria-hidden />
+          ) : (
+            <MonitorPlay className="size-3.5" aria-hidden />
+          )}
+          {visible ? 'Desligar o telão' : 'Ligar o telão'}
+        </Button>
+
+        <span className="text-xs text-muted-foreground">
+          A mudança fica na trilha, com quem ligou ou desligou e quando.
+        </span>
+      </form>
+
+      {state?.message ? (
+        <Alert tone={state.ok ? 'success' : 'danger'} data-testid={`stage-switch-feedback-${raffleId}`}>
+          <span>{state.message}</span>
+        </Alert>
+      ) : null}
+    </div>
+  );
 }
 
 function CopyField({ label, value, testId }: { label: string; value: string; testId: string }) {
@@ -82,9 +174,15 @@ const STATUS_LABELS: Record<StageLinkRaffle['status'], string> = {
 export function StageLinkPanel({
   raffles,
   vaultConfigured,
+  tenantSlug,
+  eventId,
+  bigscreenAction,
 }: {
   raffles: readonly StageLinkRaffle[];
   vaultConfigured: boolean;
+  tenantSlug: string;
+  eventId: string;
+  bigscreenAction: BigscreenAction;
 }) {
   if (raffles.length === 0) {
     return (
@@ -167,6 +265,14 @@ export function StageLinkPanel({
                     prêmio anunciado: <strong className="font-medium">{raffle.prizeTitle}</strong>
                   </p>
                 ) : null}
+
+                <BigscreenSwitch
+                  tenantSlug={tenantSlug}
+                  eventId={eventId}
+                  raffleId={raffle.raffleId}
+                  visible={raffle.bigscreenVisible}
+                  action={bigscreenAction}
+                />
               </div>
 
               {/**

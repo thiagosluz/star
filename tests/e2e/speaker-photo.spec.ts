@@ -201,6 +201,13 @@ test.describe('foto do palestrante enviada pela organização', () => {
     await expect(campo.locator('img')).toHaveAttribute('src', /\.webp$/);
 
     await page.getByTestId('speaker-photo-auth-novo').check();
+    /**
+     * O CANAL passou a ser obrigatório na foto nova (FASE 51 · dívida E66): a
+     * declaração é guardada com texto, versão, canal e data, e sem o canal a
+     * plataforma não teria como demonstrar COMO o consentimento foi obtido. A
+     * asserção deste caso não mudou — o contrato é que ficou mais completo.
+     */
+    await page.getByTestId('speaker-photo-channel-novo').selectOption({ label: 'E-mail' });
     await page.getByTestId('save-speaker').click();
 
     await expect(page.getByTestId('admin-speaker-feedback')).toContainText(/cadastrado/i, {

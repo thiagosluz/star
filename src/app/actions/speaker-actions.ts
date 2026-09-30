@@ -317,6 +317,16 @@ const profileSchema = z.object({
   avatarUrl: z.string().trim().max(1024).optional(),
   /** Caixa de seleção: `'on'` quando marcada. A exigência é do serviço. */
   photoAuthorization: z.string().optional(),
+  /**
+   * Por onde o consentimento veio (FASE 51 · dívida E66).
+   *
+   * Chega como CHAVE do enum ou como o rótulo que a pessoa leu — o domínio
+   * normaliza e o serviço recusa o que ele não entende. A obrigatoriedade mora no
+   * serviço, e não aqui: só ele sabe se a foto é NOVA (manter a mesma foto não pede
+   * canal nenhum, e exigir na validação do formulário transformaria a caixa em
+   * obstáculo para salvar uma correção de nome).
+   */
+  photoAuthorizationChannel: z.string().trim().max(40).optional(),
   displayOrder: z.coerce.number().int().min(0).max(9999).optional(),
   isPublic: z.string().optional(),
 });
@@ -347,6 +357,7 @@ export async function saveSpeakerProfileAction(
     bio: (formData.get('bio') as string) || undefined,
     avatarUrl: (formData.get('avatarUrl') as string) ?? undefined,
     photoAuthorization: (formData.get('photoAuthorization') as string) || undefined,
+    photoAuthorizationChannel: (formData.get('photoAuthorizationChannel') as string) || undefined,
     displayOrder: (formData.get('displayOrder') as string) || undefined,
     isPublic: (formData.get('isPublic') as string) || undefined,
   });
@@ -374,6 +385,7 @@ export async function saveSpeakerProfileAction(
     bio: parsed.data.bio ?? null,
     avatarUrl: parsed.data.avatarUrl,
     photoAuthorization: parsed.data.photoAuthorization === 'on',
+    photoAuthorizationChannel: parsed.data.photoAuthorizationChannel ?? null,
     socialLinks: socialPayload(formData),
     displayOrder: parsed.data.displayOrder,
     isPublic: parsed.data.isPublic === undefined ? undefined : parsed.data.isPublic === 'on',
@@ -822,6 +834,11 @@ export async function requestSpeakerAvatarUploadAction(
       mimeType: z.string().trim().min(3).max(160),
       sizeBytes: z.coerce.number().int().positive(),
       magicBytes: z.string().optional(),
+    /** O hash que o navegador calculou — vai ASSINADO no PUT (dívida E26). */
+    checksum: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/i, 'Checksum SHA-256 inválido.')
+      .optional(),
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
@@ -880,7 +897,7 @@ export async function requestSpeakerAvatarUploadAction(
     fileName: parsed.data.fileName,
     mimeType: parsed.data.mimeType,
     sizeBytes: parsed.data.sizeBytes,
-    magicBytes: parseMagicBytes(parsed.data.magicBytes),
+    magicBytes: parseMagicBytes(parsed.data.magicBytes),    checksumSha256: parsed.data.checksum ?? null,
   });
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message, details: result.details };
@@ -1015,6 +1032,11 @@ export async function requestSpeakerMaterialUploadAction(
       mimeType: z.string().trim().min(3).max(160),
       sizeBytes: z.coerce.number().int().positive(),
       magicBytes: z.string().optional(),
+    /** O hash que o navegador calculou — vai ASSINADO no PUT (dívida E26). */
+    checksum: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/i, 'Checksum SHA-256 inválido.')
+      .optional(),
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
@@ -1067,7 +1089,7 @@ export async function requestSpeakerMaterialUploadAction(
     fileName: parsed.data.fileName,
     mimeType: parsed.data.mimeType,
     sizeBytes: parsed.data.sizeBytes,
-    magicBytes: parseMagicBytes(parsed.data.magicBytes),
+    magicBytes: parseMagicBytes(parsed.data.magicBytes),    checksumSha256: parsed.data.checksum ?? null,
   });
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message, details: result.details };

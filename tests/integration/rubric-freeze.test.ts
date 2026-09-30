@@ -145,6 +145,67 @@ async function withSubmittedReview(trackId: string): Promise<void> {
   );
 }
 
+/**
+ * Uma submissão NA CHAMADA, com um parecer enviado nela (FASE 50 · dívida E53).
+ *
+ * A chamada é criada direto pelo `tx` porque o que a regra sob teste lê é a coluna
+ * `reviewRubric` DELA e o `callId` da submissão — o caminho de criação de chamada tem
+ * cobertura própria em `call-for-proposals.test.ts`.
+ */
+async function withCallReview(input: {
+  trackId: string;
+  callRubric: RubricCriterion[];
+}): Promise<{ callId: string; submissionId: string }> {
+  const callId = randomUUID();
+
+  await withTenant(tenantId, async (tx) => {
+    await tx.callForProposals.create({
+      data: {
+        id: callId,
+        tenantId,
+        eventId,
+        kind: 'PAPER',
+        slug: `chamada-${callId.slice(0, 8)}`,
+        title: 'Chamada com rubrica própria',
+        isPublished: true,
+        requiresBlindReview: false,
+        reviewRubric: input.callRubric,
+        trackId: input.trackId,
+      },
+    });
+  });
+
+  const created = await createSubmission({
+    tenantId,
+    eventId,
+    trackId: input.trackId,
+    userId: authorId,
+    title: 'Proposta de chamada com rubrica própria',
+    abstract:
+      'Resumo suficientemente longo para passar pela validação de conteúdo mínimo da submissão, escrito para o teste do congelamento da rubrica da TRILHA quando a submissão pertence a uma chamada que tem rubrica própria.',
+    keywords: ['rubrica', 'chamada', 'trilha'],
+  });
+
+  if (!created.ok) throw new Error(`Falha ao criar a submissão da chamada: ${created.message}`);
+
+  await withTenant(tenantId, async (tx) => {
+    await tx.submission.update({ where: { id: created.id }, data: { callId } });
+
+    await tx.review.create({
+      data: {
+        tenantId,
+        submissionId: created.id,
+        reviewerId,
+        status: 'SUBMITTED',
+        scores: { criterio_0: 8, criterio_1: 7 },
+        submittedAt: new Date(),
+      },
+    });
+  });
+
+  return { callId, submissionId: created.id };
+}
+
 /** Uma trilha com a rubrica dada E um parecer nela — o estado "congelado". */
 async function trackWithReview(slug: string, rubric: RubricCriterion[]): Promise<string> {
   const trackId = await createTrack({ slug: `${slug}-${RUN}`, name: `Trilha ${slug}`, rubric });
@@ -450,5 +511,56 @@ describe('a chamada congela pelo próprio parecer', () => {
 
     expect(counts.byCall).toEqual({});
     expect(counts.byTrack).toEqual({});
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('a trilha só congela por quem avalia POR ELA (FASE 50 · dívida E53)', () => {
+  /** A mesma rubrica de três critérios do bloco anterior — a trilha parte dela. */
+  const base = rubricOf(['Originalidade', 'Método', 'Clareza']);
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O DEFEITO QUE ESTES CASOS PRENDEM
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A contagem era "pareceres em submissões desta trilha", sem olhar a rubrica que a
+   *  submissão REALMENTE usa. A precedência é CHAMADA → TRILHA → PADRÃO, então a
+   *  submissão de uma chamada com rubrica própria nunca leu a rubrica da trilha — e
+   *  mesmo assim a congelava. O organizador criava a chamada com critérios próprios e
+   *  a trilha ficava intocável por causa de pareceres alheios.
+   */
+  it('parecer em submissão de CHAMADA com rubrica própria NÃO congela a trilha', async () => {
+    const trackId = await createTrack({ slug: `e53-chamada-${RUN}`, name: 'Trilha com chamada', rubric: base });
+
+    await withCallReview({ trackId, callRubric: rubricOf(['Viabilidade', 'Clareza do plano']) });
+
+    /** A trilha segue EDITÁVEL: quem avaliou leu a rubrica da chamada, não a dela. */
+    const result = await saveTrackRubric(trackId, rubricOf(['Originalidade', 'Método', 'Clareza', 'Impacto']));
+
+    expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
+  });
+
+  it('chamada SEM rubrica própria continua congelando a trilha (a submissão avalia por ela)', async () => {
+    const trackId = await createTrack({ slug: `e53-sem-rubrica-${RUN}`, name: 'Trilha sem rubrica na chamada', rubric: base });
+
+    /** `reviewRubric: []` é "sem rubrica própria": a proposta cai na rubrica da TRILHA. */
+    await withCallReview({ trackId, callRubric: [] });
+
+    const result = await saveTrackRubric(trackId, rubricOf(['Originalidade', 'Método', 'Clareza', 'Impacto']));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.code).toBe('RUBRIC_FROZEN');
+    expect(result.message).toContain('1 parecer');
+  });
+
+  it('a LISTA de trilhas conta o mesmo que a gravação (o aviso e a recusa não discordam)', async () => {
+    const trackId = await createTrack({ slug: `e53-lista-${RUN}`, name: 'Trilha da lista', rubric: base });
+
+    await withCallReview({ trackId, callRubric: rubricOf(['Viabilidade', 'Clareza do plano']) });
+
+    const counts = await rubricReviewCounts({ tenantId, trackIds: [trackId] });
+
+    expect(counts.byTrack[trackId] ?? 0).toBe(0);
   });
 });

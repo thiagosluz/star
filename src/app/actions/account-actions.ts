@@ -664,6 +664,11 @@ const avatarRequestSchema = z.object({
   mimeType: z.string().trim().max(120),
   sizeBytes: z.coerce.number().int().positive(),
   magicBytes: z.array(z.coerce.number().int().min(0).max(255)).max(16).optional(),
+  /** O hash que o navegador calculou — vai ASSINADO no PUT (dívida E26). */
+  checksum: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/i, 'Checksum SHA-256 inválido.')
+    .optional(),
 });
 
 export async function requestAccountAvatarUploadAction(
@@ -682,6 +687,7 @@ export async function requestAccountAvatarUploadAction(
     ...(typeof magicRaw === 'string' && magicRaw.length > 0
       ? { magicBytes: magicRaw.split(',').map(Number) }
       : {}),
+    checksum: formData.get('checksum') ?? undefined,
   });
 
   if (!parsed.success) {
@@ -694,6 +700,7 @@ export async function requestAccountAvatarUploadAction(
     mimeType: parsed.data.mimeType,
     sizeBytes: parsed.data.sizeBytes,
     magicBytes: parsed.data.magicBytes ?? null,
+    checksumSha256: parsed.data.checksum ?? null,
   });
 
   if (!result.ok) return result;

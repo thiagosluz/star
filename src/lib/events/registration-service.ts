@@ -27,6 +27,7 @@ import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import {
   type RegistrationStatus,
   canTransitionRegistration,
+  registrationIsLive,
   cancelAffectsWaitlist,
   cancelReleasesSeat,
   decideRegistration,
@@ -74,6 +75,7 @@ import {
 } from '@/domain/events/public-registration-rules';
 import { recordAudit } from '@/lib/admin/audit';
 import { rewardRegistrationConfirmedById } from '@/lib/gamification/hooks';
+import { revertRegistrationReward } from '@/lib/gamification/xp-reversal';
 import {
   kindAfterPublicRegistration,
   type MembershipKind as MembershipKindName,
@@ -447,7 +449,12 @@ async function attemptRegistration(
           select: { id: true, status: true },
         });
 
-        if (existing) {
+        /**
+         * Só uma inscrição VIVA bloqueia (FASE 50): CANCELED e NO_SHOW são histórico, e
+         * quem tem histórico pode voltar — a linha nova é que ocupa a vaga (o índice
+         * único parcial do banco é quem garante uma viva por vez).
+         */
+        if (existing && registrationIsLive(existing.status as RegistrationStatus)) {
           const decision = decideRegistration({
             capacity: effectiveCapacity,
             confirmedCount: activity.confirmedCount,
@@ -794,6 +801,11 @@ async function tryReserveSeat(
         registeredAt: new Date(),
         windowDays: activity.confirmationWindowDays!,
         timeZone,
+        /**
+         * O TETO é o início da ATIVIDADE (dívida E49): o prazo pode encurtar, nunca
+         * passar do momento em que a vaga deixa de servir para alguém.
+         */
+        notAfter: activity.startsAt,
       })
     : null;
 
@@ -1450,6 +1462,11 @@ export type CancelOutcome =
 export async function cancelRegistration(input: CancelInput): Promise<CancelOutcome> {
   const { tenantId, registrationId, userId, reason } = input;
 
+  /** Guardados para o estorno do XP, que acontece DEPOIS do commit. */
+  let fromStatus: RegistrationStatus = 'PENDING';
+  let canceledEventId: string | null = null;
+  let canceledActivityId: string | null = null;
+
   try {
     const outcome = await withTenant(
       tenantId,
@@ -1472,6 +1489,10 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
         }
 
         const from = registration.status as RegistrationStatus;
+        fromStatus = from;
+        canceledEventId = registration.eventId;
+        canceledActivityId = registration.activityId;
+
         if (!canTransitionRegistration(from, 'CANCELED')) {
           throw new RegistrationError(
             'INVALID_TRANSITION',
@@ -1577,6 +1598,25 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
      * entrando na plataforma por acaso — e às vezes descobria tarde. O aviso sai
      * DEPOIS do commit (invariante 8): falha de e-mail não desfaz a promoção.
      */
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  CANCELAR DEVOLVE O XP DA VAGA (FASE 50 · dívida E59)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Depois do commit, e só quando a vaga realmente sai: quem estava na lista de
+     *  espera nunca recebeu os 30 XP, então não há o que devolver (o estorno não acha
+     *  crédito e não faz nada). Como todo gancho de recompensa, falhar aqui NÃO desfaz o
+     *  cancelamento — o XP é consequência, não condição.
+     */
+    if (outcome.ok && cancelReleasesSeat(fromStatus)) {
+      await revertRegistrationReward({
+        tenantId,
+        userId,
+        registrationId,
+        eventId: canceledEventId,
+        activityId: canceledActivityId,
+      });
+    }
+
     if (outcome.ok && outcome.promoted) {
       const notice = await notifyWaitlistPromoted({
         tenantId,

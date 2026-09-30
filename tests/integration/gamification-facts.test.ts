@@ -431,6 +431,108 @@ describe('inscrição confirmada', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+describe('cancelamento devolve o XP da vaga (FASE 50 · dívida E59)', () => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O CANCELAMENTO DEVOLVE O XP (FASE 50 · dívida E59)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Os 30 XP são da VAGA, não da intenção: quem desiste devolve o crédito, e a vaga
+   *  que voltou a ser usada paga de novo. O estorno é um LANÇAMENTO NEGATIVO no
+   *  livro-razão (que é append-only) — nunca um `DELETE` do crédito.
+   */
+  it('cancelar DEVOLVE os 30 XP, e quem se inscreve de novo recebe outra vez', async () => {
+    const pessoa = await createUser('Desistente F50');
+
+    /**
+     * A OFICINA DE 10 VAGAS, e não a de vaga única: este caso precisa de uma vaga que
+     * ele mesmo ocupe e devolva — a vaga única é fixture de outro caso deste arquivo.
+     */
+    const inscricao = await registerForActivity({
+      tenantId,
+      eventSlug: OPEN_EVENT_SLUG,
+      activitySlug: 'oficina-aberta',
+      userId: pessoa,
+    });
+
+    expect(inscricao.ok, inscricao.ok ? 'ok' : inscricao.message).toBe(true);
+    if (!inscricao.ok) return;
+
+    expect(inscricao.status).toBe('CONFIRMED');
+    expect(await totalXp(pessoa)).toBe(XP_SOURCES.REGISTRATION_CONFIRMED!);
+
+    const cancelada = await cancelRegistration({
+      tenantId,
+      registrationId: inscricao.registrationId,
+      userId: pessoa,
+      reason: 'não poderei ir',
+    });
+
+    expect(cancelada.ok).toBe(true);
+
+    /** O saldo volta e o estorno fica no extrato, com origem e valor próprios. */
+    expect(await totalXp(pessoa)).toBe(0);
+
+    const estornos = await xpRows(pessoa, 'REGISTRATION_REVERTED');
+    expect(estornos).toHaveLength(1);
+    expect(estornos[0]?.amount).toBe(-XP_SOURCES.REGISTRATION_CONFIRMED!);
+
+    /** O CRÉDITO continua no livro-razão: o extrato conta a história inteira. */
+    expect(await xpRows(pessoa, 'REGISTRATION_CONFIRMED')).toHaveLength(1);
+
+    /** Cancelar de novo é recusado pela transição — e não estorna duas vezes. */
+    await cancelRegistration({
+      tenantId,
+      registrationId: inscricao.registrationId,
+      userId: pessoa,
+      reason: 'de novo',
+    });
+
+    expect(await xpRows(pessoa, 'REGISTRATION_REVERTED')).toHaveLength(1);
+    expect(await totalXp(pessoa)).toBe(0);
+
+    /** A vaga voltou: quem se inscreve de novo usa a vaga e recebe os 30 XP outra vez. */
+    const denovo = await registerForActivity({
+      tenantId,
+      eventSlug: OPEN_EVENT_SLUG,
+      activitySlug: 'oficina-aberta',
+      userId: pessoa,
+    });
+
+    expect(denovo.ok, denovo.ok ? 'ok' : denovo.message).toBe(true);
+    if (!denovo.ok) return;
+
+    expect(await totalXp(pessoa)).toBe(XP_SOURCES.REGISTRATION_CONFIRMED!);
+    expect(await xpRows(pessoa, 'REGISTRATION_CONFIRMED')).toHaveLength(2);
+  });
+
+  it('quem estava na LISTA DE ESPERA e cancela não estorna nada (nunca creditou)', async () => {
+    const pessoa = await createUser('Espera sem XP F50');
+
+    const naEspera = await registerForActivity({
+      tenantId,
+      eventSlug: OPEN_EVENT_SLUG,
+      activitySlug: 'vaga-unica',
+      userId: pessoa,
+    });
+
+    expect(naEspera.ok, naEspera.ok ? 'ok' : naEspera.message).toBe(true);
+    if (!naEspera.ok) return;
+
+    if (naEspera.status === 'WAITLISTED') {
+      await cancelRegistration({
+        tenantId,
+        registrationId: naEspera.registrationId,
+        userId: pessoa,
+        reason: 'desisti da espera',
+      });
+
+      expect(await xpRows(pessoa, 'REGISTRATION_REVERTED')).toHaveLength(0);
+      expect(await totalXp(pessoa)).toBe(0);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 describe('certificado emitido', () => {
   it('credita no documento gerado — e gerar de novo não credita outra vez', async () => {
     const pessoa = await createUser('Certificada F43');

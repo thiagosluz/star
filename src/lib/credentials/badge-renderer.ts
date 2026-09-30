@@ -44,6 +44,12 @@ import {
   mmToPt,
   type LabelSheetLayout,
 } from '@/domain/events/badge-print-rules';
+import {
+  credentialStripeHeight,
+  pdfFillOperator,
+  pdfRgb,
+  resolveCredentialCategory,
+} from '@/domain/events/credential-categories';
 
 /** A4 retrato em pontos: 595 × 842. */
 const PAGE_WIDTH = 595;
@@ -57,6 +63,32 @@ export const BADGES_PER_PAGE = BADGE_COLUMNS * BADGE_ROWS;
 const MARGIN_X = 28;
 const MARGIN_Y = 34;
 
+/**
+ * Cores de TEXTO do desenho, tiradas da paleta da FASE 31 e mantidas por uma
+ * razão simples: elas não são identidade, são legibilidade. O nome é quase preto
+ * porque é lido de longe; o rodapé é cinza porque é metadado. A identidade do
+ * evento e a categoria NÃO entram nesta lista — elas chegam por parâmetro
+ * (`BadgeSheetDocument.theme` e `BadgeLabel.category`).
+ *
+ * Os comentários com `RGB(…)` são o valor de origem da FASE 31, preservados para
+ * que a comparação com o desenho anterior seja possível sem refazer a conta.
+ */
+const TEXT_COLOR = '#0f172a'; // RGB(15, 23, 42) → 0.059 0.090 0.165
+/**
+ * A cor do CÓDIGO quando o evento não escolheu tema.
+ *
+ * Não é a cor de "Participante": o código é dado técnico (o que o monitor digita
+ * quando o leitor falha), e um evento cujo tema coincide com a cor de uma
+ * categoria deixaria código e faixa iguais. Este tom é o da FASE 31, que estava
+ * aqui e continua sendo o de menos surpresa para quem já imprimia.
+ *
+ * O valor é o hexadecimal EXATO daquele operador (28/255, 79/255, 217/255, cada um
+ * em três casas) — trocar por "quase o mesmo tom" mudaria os bytes do PDF de quem
+ * não mexeu em nada.
+ */
+const ACCENT_FALLBACK = '#1c4fd9'; // → 0.110 0.310 0.851
+const MUTED_COLOR = '#6b737f'; // → 0.420 0.451 0.498
+
 export interface BadgeLabel {
   /** Nome da pessoa (o que a porta lê). */
   name: string;
@@ -64,6 +96,35 @@ export interface BadgeLabel {
   code: string;
   /** Linha pequena: evento e, quando houver, a inscrição principal. */
   subtitle?: string | null;
+  /**
+   * Categoria do crachá (FASE 51 · E42) — vira a FAIXA de cor no topo da etiqueta.
+   *
+   * `undefined` vale `PARTICIPANT` (a normalização é do domínio): um lote montado
+   * antes desta fase continua saindo igual, com a faixa da cor de marca.
+   */
+  category?: string | null;
+}
+
+/**
+ * A identidade do evento que entra na arte (FASE 51 · E42).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A COR DO TEMA VEM COMO VALOR E NÃO COMO `var(--ef-…)`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O tema do evento (`Event.theme`, F17/F41) é lido pela `ThemeScope` como custom
+ *  property — e o navegador resolve. PDF e ZPL não resolvem nada: o operador de
+ *  PDF é `r g b rg` e a impressora recebe `^FO…^GB…^FS`. Por isso o serviço
+ *  resolve o tema (`resolveTheme`) e passa o hexadecimal para cá, já validado.
+ *  Cor que não é hexadecimal é DESCARTADA por `pdfRgb` — não há caminho em que um
+ *  valor inventado chegue ao stream.
+ */
+export interface BadgeSheetTheme {
+  /**
+   * Cor de destaque do evento. No crachá ela aparece no CÓDIGO por extenso e na
+   * barra superior do crachá online — a faixa colorida fica com a CATEGORIA, que é
+   * a informação que a portaria precisa distinguir de longe.
+   */
+  primaryColor?: string | null;
 }
 
 export interface BadgeSheetDocument {
@@ -72,6 +133,13 @@ export interface BadgeSheetDocument {
   /** Data de geração — entra no metadado, nunca como `new Date()` escondido. */
   generatedAt: Date;
   badges: readonly BadgeLabel[];
+  /** Tema do evento. Ausente = a identidade da plataforma (comportamento anterior). */
+  theme?: BadgeSheetTheme | null;
+}
+
+/** A cor de destaque do evento, ou a de marca quando o evento não escolheu uma. */
+export function badgeAccentColor(theme: BadgeSheetTheme | null | undefined): string {
+  return pdfRgb(theme?.primaryColor) ? theme!.primaryColor! : ACCENT_FALLBACK;
 }
 
 /** Uma etiqueta desenhada dentro da célula (canto inferior esquerdo da célula). */
@@ -83,15 +151,38 @@ function drawBadge(input: {
   height: number;
   badge: BadgeLabel;
   tenantName: string;
+  /** A cor de destaque do EVENTO — a identidade visual da etiqueta (E42). */
+  accentColor: string;
   /** `false` na folha adesiva: a etiqueta já tem borda, e a moldura viraria tinta a mais. */
   frame?: boolean;
 }): void {
-  const { operations, x, y, width, height, badge, tenantName, frame = true } = input;
+  const { operations, x, y, width, height, badge, tenantName, accentColor, frame = true } = input;
 
   // ── Moldura (marca de corte) ───────────────────────────────────────────────
   if (frame) {
     operations.push('0.72 0.75 0.8 RG 0.5 w', `${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S`);
   }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A FAIXA DA CATEGORIA — A METADE VISUAL DA DÍVIDA E42 (FASE 51)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Num evento grande, a cor por categoria (palestrante, imprensa, equipe) é o que
+   *  faz a recepção achar a pessoa certa sem ler o crachá. A faixa vai no TOPO, com
+   *  a largura inteira: o QR ocupa a esquerda do crachá, e uma barra lateral cairia
+   *  em cima dele na etiqueta estreita (63,5 mm) da folha adesiva.
+   *
+   *  A altura vem do DOMÍNIO (`credentialStripeHeight`), em fração da etiqueta —
+   *  a folha A4 (célula de 193 pt) e o rolo de 100 × 50 mm têm tamanhos muito
+   *  diferentes, e a faixa tem de cair no mesmo lugar relativo nos dois.
+   */
+  const stripe = credentialStripeHeight(height);
+  const category = resolveCredentialCategory(badge.category);
+
+  operations.push(pdfFillOperator(category.color));
+  operations.push(
+    `${x.toFixed(2)} ${(y + height - stripe).toFixed(2)} ${width.toFixed(2)} ${stripe.toFixed(2)} re f`,
+  );
 
   /**
    * ── AS MEDIDAS ACOMPANHAM A CÉLULA (FASE 37) ───────────────────────────────
@@ -139,10 +230,16 @@ function drawBadge(input: {
   const textX = qrX + qrSize + padding;
   const textWidth = x + width - padding - textX;
 
-  operations.push('0.06 0.09 0.16 rg');
+  operations.push(pdfFillOperator(TEXT_COLOR));
 
+  /**
+   * O primeiro cursor é medido a partir da FAIXA, não da borda: sem isso a primeira
+   * linha do nome sairia por baixo da cor da categoria na etiqueta de 33,9 mm, onde
+   * a faixa ocupa 9% de uma altura que já é curta.
+   */
+  const nameTop = y + height - stripe - Math.max(10, 20 * scale);
   const nameLines = wrapText(badge.name, Math.max(8, Math.floor(textWidth / (nameSize * 0.55)))).slice(0, 2);
-  let cursor = y + height - Math.max(16, 30 * scale);
+  let cursor = nameTop;
 
   nameLines.forEach((line) => {
     operations.push(`BT /F2 ${nameSize} Tf ${textX.toFixed(2)} ${cursor.toFixed(2)} Td (${escapePdfText(line)}) Tj ET`);
@@ -150,12 +247,12 @@ function drawBadge(input: {
   });
 
   // Código do crachá: é o que o monitor digita quando o leitor falha.
-  operations.push('0.11 0.31 0.85 rg');
+  operations.push(pdfFillOperator(accentColor));
   operations.push(
     `BT /F2 ${codeSize} Tf ${textX.toFixed(2)} ${(y + Math.max(14, 30 * scale)).toFixed(2)} Td (${escapePdfText(badge.code)}) Tj ET`,
   );
 
-  operations.push('0.42 0.45 0.5 rg');
+  operations.push(pdfFillOperator(MUTED_COLOR));
 
   const subtitle = badge.subtitle ?? tenantName;
   operations.push(
@@ -189,6 +286,8 @@ export function renderBadgeSheetPdf(document: BadgeSheetDocument): Buffer {
   const cellWidth = (PAGE_WIDTH - MARGIN_X * 2) / BADGE_COLUMNS;
   const cellHeight = (PAGE_HEIGHT - MARGIN_Y * 2) / BADGE_ROWS;
 
+  const accentColor = badgeAccentColor(document.theme);
+
   const contents: string[] = [];
 
   for (let page = 0; page < pageCount; page += 1) {
@@ -220,6 +319,7 @@ export function renderBadgeSheetPdf(document: BadgeSheetDocument): Buffer {
         height: cellHeight - 6,
         badge,
         tenantName: document.tenantName,
+        accentColor,
       });
     });
 
@@ -290,6 +390,8 @@ export function renderBadgeLabelSheetPdf(document: BadgeLabelSheetDocument): Buf
   const pageWidth = mmToPt(A4_WIDTH_MM);
   const pageHeight = mmToPt(A4_HEIGHT_MM);
 
+  const accentColor = badgeAccentColor(document.theme);
+
   const firstContents = 3 + fontCount;
   const contentsRef = (page: number) => firstContents + page * 2;
   const pageRef = (page: number) => contentsRef(page) + 1;
@@ -313,6 +415,7 @@ export function renderBadgeLabelSheetPdf(document: BadgeLabelSheetDocument): Buf
         height: position.height,
         badge,
         tenantName: document.tenantName,
+        accentColor,
         frame: false,
       });
     });

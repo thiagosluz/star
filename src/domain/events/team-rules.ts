@@ -25,14 +25,18 @@
  *     iniciais quando não autoriza. Consentimento que nasce ligado é o defeito que a
  *     FASE 22 corrigiu (ADR-139).
  *
- *  3. **A ORDEM É EXPLICÁVEL.** Por etiqueta, líder primeiro, depois alfabética — e a
- *     ordem é ESTÁVEL (o desempate final é o id). Sem isso a grade troca de lugar a
- *     cada requisição, e quem abre a página duas vezes vê duas páginas.
+ *  3. **A ORDEM É EXPLICÁVEL.** Ordem manual da equipe (`displayOrder`, FASE 51) →
+ *     etiqueta alfabética (pt-BR) → líder primeiro → nome → id. A ordem é ESTÁVEL (o
+ *     desempate final é o id): sem isso a grade troca de lugar a cada requisição, e
+ *     quem abre a página duas vezes vê duas páginas. A régua é a de
+ *     `team-order-rules.ts`, e não um `sort` escrito aqui: a tela de administração
+ *     lista as equipes na MESMA ordem, e duas contas de ordem divergem no primeiro dia.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import type { PublicContacts } from '@/domain/profile/public-contacts';
 import { PUBLIC_CONTACT_FIELD } from '@/domain/profile/public-contacts';
 import type { ProfileAudience, PublicProfileField } from '@/domain/profile/public-profile-rules';
+import { orderTeamsForDisplay } from '@/domain/events/team-order-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  A vitrine da equipe
@@ -42,6 +46,12 @@ export interface PublicTeamSource {
   id: string;
   name: string;
   isActive: boolean;
+  /**
+   * A ordem manual da equipe (FASE 51 · dívida E63). `0` = ninguém ordenou: a equipe
+   * continua valendo pela régua antiga (alfabética), que é o que dá conta do caso
+   * comum — a fase não podia reordenar a página de quem não pediu nada.
+   */
+  displayOrder: number;
   members: readonly PublicTeamMemberSource[];
 }
 
@@ -98,17 +108,18 @@ export const TEAM_CARD_LIMIT = 60;
  *  • **foto** só com `avatar` em `PUBLIC` (é página pública: `ATTENDEES_ONLY` não
  *    vale aqui, e o cartão cai para as iniciais);
  *  • **contato** só com o campo `contacts` em `PUBLIC`, e o e-mail só junto dele;
- *  • a ordem é: etiqueta da primeira equipe (alfabética, pt-BR) → líder primeiro →
- *    nome (pt-BR) → id. O id no fim é o que torna a ordem **estável**.
+ *  • a ordem é: `displayOrder` da equipe (manual, quando existe) → nome da equipe
+ *    (pt-BR, quando ninguém ordenou) → líder primeiro → nome (pt-BR) → id. O id no fim
+ *    é o que torna a ordem **estável**.
  */
 export function buildPublicTeam(input: BuildPublicTeamInput): PublicTeamCard[] {
   const limit = input.limit ?? TEAM_CARD_LIMIT;
 
-  const teams = input.teams
-    .filter((team) => team.isActive && team.members.length > 0)
-    .filter((team) => (input.teamId ? team.id === input.teamId : true))
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR') || a.id.localeCompare(b.id));
+  const teams = orderTeamsForDisplay(
+    input.teams
+      .filter((team) => team.isActive && team.members.length > 0)
+      .filter((team) => (input.teamId ? team.id === input.teamId : true)),
+  );
 
   const cards = new Map<string, PublicTeamCard & { firstTeamName: string; teamOrder: number }>();
 

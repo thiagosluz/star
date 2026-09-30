@@ -359,6 +359,58 @@ describe('prazo de confirmação', () => {
     expect(clampWindowDays(undefined)).toBeGreaterThanOrEqual(CONFIRMATION_WINDOW_MIN_DAYS);
   });
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O TETO NO INÍCIO DA ATIVIDADE (FASE 50 · dívida E49)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Sem o teto, quem se inscrevia no último dia antes do evento ficava com prazo até
+   *  DEPOIS de a atividade começar — a vaga presa por uma confirmação que já não servia
+   *  para ninguém.
+   */
+  it('o prazo NÃO passa do início da atividade', () => {
+    const inscricao = new Date('2026-09-22T17:35:00.000Z'); // 14:35 em Bahia
+    const inicioDaAtividade = new Date('2026-09-23T12:00:00.000Z'); // 09:00 em Bahia
+
+    const semTeto = confirmationDueAt({ registeredAt: inscricao, windowDays: 5, timeZone: BAHIA });
+    const comTeto = confirmationDueAt({
+      registeredAt: inscricao,
+      windowDays: 5,
+      timeZone: BAHIA,
+      notAfter: inicioDaAtividade,
+    });
+
+    /** Sem teto o prazo cairia em 27/09; com teto, ele morre quando a atividade começa. */
+    expect(semTeto.toISOString()).toBe('2026-09-28T02:59:00.000Z');
+    expect(comTeto.toISOString()).toBe(inicioDaAtividade.toISOString());
+  });
+
+  it('o teto não encurta um prazo que já caberia antes da atividade', () => {
+    const inscricao = new Date('2026-09-22T17:35:00.000Z');
+
+    const due = confirmationDueAt({
+      registeredAt: inscricao,
+      windowDays: 1,
+      timeZone: BAHIA,
+      notAfter: new Date('2026-10-30T12:00:00.000Z'),
+    });
+
+    expect(due.toISOString()).toBe('2026-09-24T02:59:00.000Z'); // 23/09 23:59 Bahia
+  });
+
+  it('atividade JÁ COMEÇADA dá prazo na hora, e nunca um prazo vencido no passado', () => {
+    const inscricao = new Date('2026-09-22T17:35:00.000Z');
+    const jaComecou = new Date('2026-09-22T11:00:00.000Z');
+
+    const due = confirmationDueAt({
+      registeredAt: inscricao,
+      windowDays: 3,
+      timeZone: BAHIA,
+      notAfter: jaComecou,
+    });
+
+    expect(due.toISOString()).toBe(inscricao.toISOString());
+  });
+
   it('fuso desconhecido não vira data absurda', () => {
     const inscricao = new Date('2026-09-22T17:35:00.000Z');
     const due = confirmationDueAt({ registeredAt: inscricao, windowDays: 1, timeZone: 'Marte/Olympus' });

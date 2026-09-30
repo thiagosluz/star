@@ -450,6 +450,245 @@ export const SPEAKER_AVATAR_SOURCE_LABELS: Record<SpeakerAvatarSource, string> =
 export const SPEAKER_AVATAR_ORGANIZATION_NOTE =
   'A organização enviou esta foto para a vitrine do evento. Você pode trocá-la ou removê-la quando quiser.';
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  A DECLARAÇÃO DE AUTORIZAÇÃO DA FOTO (FASE 51 · dívida E66)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O texto que a organização LÊ e aceita ao publicar a foto de um palestrante.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O TEXTO MORA NO DOMÍNIO, E NÃO NA TELA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Três lugares precisam da MESMA redação: a tela (o que a pessoa lê), o serviço
+ *  (o que fica gravado na coluna) e a trilha/serviço de prova (o que se apresenta
+ *  quando o uso da imagem é questionado). Se a frase fosse montada no JSX e o
+ *  serviço gravasse outra coisa, a "prova" seria a lembrança de quem escreveu a
+ *  tela — e o texto gravado poderia nem existir no dia seguinte, porque ninguém
+ *  versiona arquivo de componente.
+ *
+ *  É o mesmo desenho do consentimento do QR do patrocinador (FASE 42,
+ *  `sponsorConsentText`): a frase que a pessoa leu é parte da prova, e prova que se
+ *  remonta depois não é prova do que foi aceito.
+ */
+export const PHOTO_AUTHORIZATION_TEXT =
+  'Declaro, em nome da organização, que obtive do palestrante a autorização para publicar ' +
+  'esta foto na vitrine pública do evento e nos materiais da instituição. O consentimento foi ' +
+  'obtido fora da plataforma, pelo canal registrado ao lado, e o palestrante pode pedir a ' +
+  'retirada da imagem a qualquer momento — a organização responde por esta declaração.';
+
+/**
+ * Versão da redação acima.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O TEXTO É VERSIONADO (E POR QUE A VERSÃO VAI GRAVADA)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Mudar a redação amanhã (novo prazo, novo uso, nova base legal) NÃO PODE reescrever
+ *  o que foi aceito hoje. Sem a versão gravada ao lado do texto, uma alteração da
+ *  constante faria toda declaração antiga parecer ter aceitado a redação nova — e a
+ *  instituição ficaria com uma prova que ela nunca leu. Com a versão, cada linha do
+ *  banco se explica sozinha: `v1` aceitou `v1`, e quem aceitou `v1` não herdou a `v2`.
+ *
+ *  `VarChar(8)` no schema: a versão é um rótulo curto, não um identificador.
+ */
+export const PHOTO_AUTHORIZATION_VERSION = 'v1';
+
+/**
+ * Por onde o consentimento chegou.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O CANAL É OBRIGATÓRIO, E POR QUE ELE É DADO DO DOMÍNIO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  "Tenho autorização" sem dizer COMO ela foi obtida é metade da prova: a LGPD pede
+ *  a base e o caminho, não só a afirmação. E o canal precisa ser uma lista fechada
+ *  (com rótulo em português para a tela) porque o valor é gravado em coluna
+ *  (`photoAuthorizationChannel`) e depois LIDO por quem confere: "email", "e-mail",
+ *  "E-mail" e "por email" seriam quatro valores para o mesmo fato, e nenhum
+ *  agrupamento funcionaria.
+ */
+export const PHOTO_AUTHORIZATION_CHANNELS = [
+  'EMAIL',
+  'PHONE',
+  'EVENT_CONTRACT',
+  'SIGNED_DOCUMENT',
+  'OTHER',
+] as const;
+
+export type PhotoAuthorizationChannel = (typeof PHOTO_AUTHORIZATION_CHANNELS)[number];
+
+export const PHOTO_AUTHORIZATION_CHANNEL_LABELS: Record<PhotoAuthorizationChannel, string> = {
+  EMAIL: 'E-mail',
+  PHONE: 'Telefone ou WhatsApp',
+  EVENT_CONTRACT: 'Contrato do evento',
+  SIGNED_DOCUMENT: 'Documento assinado',
+  OTHER: 'Outro meio',
+};
+
+/** Teto do rótulo curto do canal na tela (o valor gravado é a chave do enum). */
+export const MAX_PHOTO_AUTHORIZATION_CHANNEL_LABEL = 40;
+
+/**
+ * Normaliza o canal recebido do formulário.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE NÃO A PLATAFORMA NÃO ENTENDE VIRA `null`, NUNCA CHUTE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A tela manda a CHAVE do enum, mas quem digita a URL de uma Server Action manda o
+ *  que quiser. Aceitar o rótulo em português ("E-mail", "Telefone ou WhatsApp")
+ *  torna o caminho tolerante a quem cola o que leu; qualquer outra coisa — inclusive
+ *  valor desconhecido — devolve `null`, e o serviço transforma `null` em recusa.
+ *  Adivinhar (`OTHER` para tudo) apagaria a diferença entre "não sei" e "outro", que
+ *  é justamente o que a coluna existe para registrar.
+ */
+export function normalizePhotoAuthorizationChannel(
+  value: unknown,
+): PhotoAuthorizationChannel | null {
+  if (typeof value !== 'string') return null;
+
+  const clean = value
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s_-]+/g, ' ')
+    .toUpperCase();
+  const key = clean.replace(/ /g, '_');
+
+  if ((PHOTO_AUTHORIZATION_CHANNELS as readonly string[]).includes(key)) {
+    return key as PhotoAuthorizationChannel;
+  }
+
+  const byLabel = PHOTO_AUTHORIZATION_CHANNELS.find(
+    (channel) =>
+      PHOTO_AUTHORIZATION_CHANNEL_LABELS[channel]
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[\s_-]+/g, ' ')
+        .toUpperCase() === clean,
+  );
+
+  return byLabel ?? null;
+}
+
+/** Rótulo humano de uma chave gravada; `null` quando não há canal registrado. */
+export function photoAuthorizationChannelLabel(value: string | null | undefined): string | null {
+  const channel = normalizePhotoAuthorizationChannel(value);
+
+  return channel === null ? null : PHOTO_AUTHORIZATION_CHANNEL_LABELS[channel];
+}
+
+/** O que fica gravado no perfil quando a declaração é aceita. */
+export interface PhotoAuthorizationRecord {
+  /** O texto EXATO que a organização leu. */
+  text: string;
+  version: string;
+  channel: PhotoAuthorizationChannel;
+  at: Date;
+}
+
+export type PhotoAuthorizationRefusalCode =
+  | 'DECLARATION_REQUIRED'
+  | 'CHANNEL_REQUIRED'
+  | 'INVALID_CHANNEL';
+
+export type PhotoAuthorizationVerdict =
+  | {
+      ok: true;
+      /** Declaração NOVA a gravar (`null` = manter a que existe). */
+      write: PhotoAuthorizationRecord | null;
+      /**
+       * A declaração gravada descreve uma foto que não está mais publicada?
+       *
+       * `true` na REMOÇÃO da foto: a declaração era sobre aquela imagem, e mantê-la
+       * deixaria no banco uma autorização para publicar algo que não existe.
+       */
+      clear: boolean;
+    }
+  | { ok: false; code: PhotoAuthorizationRefusalCode; message: string };
+
+/**
+ * A ÚNICA régua de "a foto publicada tem base declarada?".
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A CHECAGEM É SOBRE A FOTO NOVA — NÃO SOBRE A GRAVAÇÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Só a troca de imagem pede declaração. Corrigir um nome, marcar/desmarcar a
+ *  vitrine ou reenviar o mesmo endereço não podem reabrir a pergunta: a caixa que
+ *  se marca sem ler (porque a tela não deixa salvar sem ela) deixa de significar
+ *  qualquer coisa no dia em que for questionada. É a mesma régua da FASE 46, agora
+ *  com o canal e o texto.
+ *
+ *  `at` entra por parâmetro porque o domínio é puro: quem sabe a hora é o serviço.
+ */
+export function evaluatePhotoAuthorization(input: {
+  /** Foto publicada ANTES desta gravação (`null` = não havia foto). */
+  previousPhotoUrl: string | null;
+  /** Foto que esta gravação publica (`null` = a foto saiu do ar). */
+  nextPhotoUrl: string | null;
+  /** A caixa "tenho autorização" foi marcada? */
+  declared: boolean;
+  /** O canal informado no formulário (chave do enum ou rótulo lido). */
+  channel: string | null | undefined;
+  at: Date;
+}): PhotoAuthorizationVerdict {
+  const unchanged = input.nextPhotoUrl === input.previousPhotoUrl;
+
+  if (unchanged) {
+    return { ok: true, write: null, clear: false };
+  }
+
+  /**
+   * Foto REMOVIDA: a declaração sai junto.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE LIMPAR (E O QUE ISSO NÃO APAGA)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A declaração era sobre AQUELA foto. Se ela sai do ar e a autorização fica
+   *  gravada, o perfil passa a afirmar uma base legal para uma imagem que ninguém
+   *  publica — e o próximo leitor (a instituição, um auditor, a própria tela) não
+   *  tem como saber que ela se refere a uma foto que já não existe. Pior: uma
+   *  publicada depois por outro caminho (o próprio palestrante no portal) ficaria
+   *  parecendo coberta por uma declaração que ela nunca teve.
+   *
+   *  O FATO não se perde: a trilha de auditoria guarda o texto, a versão, o canal e
+   *  a data que foram retirados, com autor e hora. O que sai é o estado ATUAL do
+   *  perfil, que passa a descrever só a foto que está publicada.
+   */
+  if (input.nextPhotoUrl === null) {
+    return { ok: true, write: null, clear: true };
+  }
+
+  if (!input.declared) {
+    return {
+      ok: false,
+      code: 'DECLARATION_REQUIRED',
+      message: 'Confirme que você tem autorização do palestrante para publicar esta foto.',
+    };
+  }
+
+  const channel = normalizePhotoAuthorizationChannel(input.channel);
+  const informed = typeof input.channel === 'string' && input.channel.trim().length > 0;
+
+  if (channel === null) {
+    return {
+      ok: false,
+      code: informed ? 'INVALID_CHANNEL' : 'CHANNEL_REQUIRED',
+      message: informed
+        ? 'Canal de autorização desconhecido. Escolha uma das opções oferecidas.'
+        : 'Diga por qual canal a autorização foi obtida (e-mail, telefone/WhatsApp, contrato do evento, documento assinado ou outro).',
+    };
+  }
+
+  return {
+    ok: true,
+    write: {
+      text: PHOTO_AUTHORIZATION_TEXT,
+      version: PHOTO_AUTHORIZATION_VERSION,
+      channel,
+      at: input.at,
+    },
+    clear: false,
+  };
+}
+
 export const MATERIAL_VISIBILITY_LABELS: Record<MaterialVisibility, string> = {
   PUBLIC: 'Aberto a qualquer visitante',
   ATTENDEES_ONLY: 'Somente inscritos na atividade',

@@ -385,4 +385,93 @@ test.describe('editor visual do certificado', () => {
     await page.goto(templatesUrl());
     await expect(page.getByTestId(`template-art-${stored.id}`)).toContainText('KB');
   });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  A CAIXA TAMBÉM ANDA POR TECLADO (dívida E55)
+   *
+   *  Arrastar exige ponteiro e o formulário numérico ao lado resolve o caso — mas quem
+   *  navega por teclado não conseguia mexer no PALCO. O cenário foca a caixa e move com
+   *  as setas, provando:
+   *
+   *    • **seta = 1 mm** e **Shift + seta = 10 mm** (o passo grande é o que torna
+   *      atravessar 297 mm viável);
+   *    • o formulário numérico acompanha (a fonte da verdade continua sendo o estado do
+   *      editor — não há um segundo lugar onde a posição viva);
+   *    • o anúncio na região viva, que é o retorno de quem não vê a caixa se mover;
+   *    • e que o valor SALVO é o que o teclado produziu.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  test('6. o TECLADO move a caixa no palco, e o número ao lado acompanha', async ({ page }) => {
+    const stored = await storedTemplate(`Modelo Clássico ${RUN_ID}`);
+    if (!stored) throw new Error('O modelo do cenário 1 deveria existir.');
+
+    await signInAs(page, organizerEmail);
+    await page.goto(`${templatesUrl()}?modelo=${stored.id}`);
+
+    /** `stage-element-1` é o SEGUNDO elemento do modelo — o mesmo dos campos "do elemento 2". */
+    const box = page.getByTestId('stage-element-1');
+    await expect(box).toBeVisible();
+
+    const xField = page.getByLabel('X do elemento 2');
+    const yField = page.getByLabel('Y do elemento 2');
+
+    const antes = { x: Number(await xField.inputValue()), y: Number(await yField.inputValue()) };
+
+    await box.focus();
+    await expect(box).toBeFocused();
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A DIREÇÃO DO TESTE É ESCOLHIDA PELO QUE CABE NA PÁGINA
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O modelo pronto tem um elemento LARGO (o título ocupa quase toda a folha), e o
+     *  cenário 3 deixou a caixa encostada na borda direita: mover para a direita não
+     *  tem para onde ir. O teste anda para a ESQUERDA e para BAIXO — e a borda vira uma
+     *  asserção própria, logo abaixo, em vez de um movimento que não acontece.
+     */
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowDown');
+
+    await expect(async () => {
+      expect(Number(await xField.inputValue())).toBe(antes.x - 1);
+      expect(Number(await yField.inputValue())).toBeCloseTo(antes.y + 1, 1);
+    }).toPass({ timeout: 10_000 });
+
+    /** 10 mm com Shift — e o anúncio diz onde a caixa ficou. */
+    await page.keyboard.press('Shift+ArrowLeft');
+
+    await expect(async () => {
+      expect(Number(await xField.inputValue())).toBe(antes.x - 11);
+    }).toPass({ timeout: 10_000 });
+
+    await expect(page.getByTestId('template-stage-announce')).toContainText('Elemento 2 em');
+
+    /** Encostada na borda, o movimento é RECUSADO com o motivo — nada sai da folha. */
+    for (let passo = 0; passo < 14; passo += 1) {
+      await page.keyboard.press('Shift+ArrowRight');
+    }
+
+    await expect(page.getByTestId('template-stage-announce')).toContainText('na borda da página');
+
+    const parado = Number(await xField.inputValue());
+
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect.poll(async () => Number(await xField.inputValue()), { timeout: 5_000 }).toBe(parado);
+
+    const depois = { x: Number(await xField.inputValue()), y: Number(await yField.inputValue()) };
+
+    /** E o que o teclado escreveu é o que o servidor grava. */
+    await page.getByTestId('template-submit').click();
+    await expect(page.getByTestId('template-saved')).toBeVisible({ timeout: 30_000 });
+
+    await expect
+      .poll(async () => layoutOf(await storedTemplate(`Modelo Clássico ${RUN_ID}`)).elements[1]?.xMm, {
+        timeout: 30_000,
+      })
+      .toBe(depois.x);
+
+    const saved = layoutOf(await storedTemplate(`Modelo Clássico ${RUN_ID}`));
+    expect(saved.elements[1]?.yMm).toBe(depois.y);
+  });
 });

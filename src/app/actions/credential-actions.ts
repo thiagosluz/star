@@ -34,7 +34,11 @@ import {
   recordCredentialPresence,
   revokeCredential,
 } from '@/lib/events/credential-service';
-import { normalizeBadgeCode } from '@/domain/events/credential-rules';
+import {
+  isKnownCredentialCategory,
+  normalizeBadgeCode,
+  resolveCredentialCategory,
+} from '@/domain/events/credential-rules';
 
 export type CredentialActionState = ActionGuardState;
 
@@ -151,6 +155,9 @@ export async function recordPresenceAction(
       userName: target.userName,
       userImage: target.userImage,
       code: target.code,
+      /** A faixa da categoria também no balcão (FASE 51 · E42). */
+      categoryLabel: target.category.label,
+      categoryColor: target.category.color,
       activityTitle: parsed.data.contextKind === 'ACTIVITY' ? (target.registrations.find((row) => row.activityId === parsed.data.activityId)?.activityTitle ?? null) : null,
       minutes,
       registered: target.registered,
@@ -268,17 +275,41 @@ export async function issueCredentialsAction(
       eventId: z.string().uuid(),
       /** Vazio = todos os inscritos que ainda não têm crachá. */
       userIds: z.array(z.string().uuid()).optional(),
+      /**
+       * Categoria do LOTE (FASE 51 · E42). Vazio cai no padrão do domínio
+       * (`PARTICIPANT`) — é o crachá de quem já era emitido antes desta fase.
+       */
+      category: z.string().trim().max(20).optional(),
       notes: z.string().trim().max(300).optional(),
     })
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
       eventId: formData.get('eventId'),
       userIds: formData.getAll('userIds').filter((value): value is string => typeof value === 'string' && value.length > 0),
+      category: (formData.get('category') as string) || undefined,
       notes: (formData.get('notes') as string) || undefined,
     });
 
   if (!parsed.success) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para emitir crachás.' };
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CATEGORIA QUE O DOMÍNIO NÃO CONHECE É RECUSADA, E NÃO TROCADA PELO PADRÃO
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O `select` da tela só oferece o catálogo, então um valor de fora chegou por
+   *  requisição montada à mão. Cair para participante em silêncio imprimiria 40
+   *  crachás de equipe na cor errada — e ninguém confere cor de faixa ao receber a
+   *  folha. Aqui a diferença entre "não informei" (padrão) e "informei errado"
+   *  (recusa) é o que impede o lote inteiro de sair errado.
+   */
+  if (parsed.data.category !== undefined && !isKnownCredentialCategory(parsed.data.category)) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Categoria de crachá desconhecida. Escolha uma das categorias da lista.',
+    };
   }
 
   const auth = await guardAction({
@@ -295,12 +326,15 @@ export async function issueCredentialsAction(
     eventId: parsed.data.eventId,
     actorId: auth.userId,
     userIds: parsed.data.userIds && parsed.data.userIds.length > 0 ? parsed.data.userIds : undefined,
+    category: parsed.data.category ?? null,
     notes: parsed.data.notes ?? null,
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/credenciamento/crachas'));
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+  const categoryLabel = resolveCredentialCategory(parsed.data.category).label;
 
   if (result.issued.length === 0) {
     return {
@@ -315,7 +349,7 @@ export async function issueCredentialsAction(
 
   return {
     ok: true,
-    message: `${result.issued.length} crachá(s) emitido(s)${result.skipped > 0 ? ` · ${result.skipped} já tinha(m) crachá` : ''}${
+    message: `${result.issued.length} crachá(s) emitido(s) como ${categoryLabel}${result.skipped > 0 ? ` · ${result.skipped} já tinha(m) crachá` : ''}${
       result.truncated ? ' · o lote foi limitado (emita o restante na próxima vez)' : ''
     }.`,
     data: { issued: result.issued.length, skipped: result.skipped, codes: result.issued.map((row) => row.code) },

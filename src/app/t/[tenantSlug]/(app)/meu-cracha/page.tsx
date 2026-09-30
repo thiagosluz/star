@@ -151,6 +151,7 @@ export default async function OwnBadgePage({
               tenantSlug={tenantSlug}
               eventId={badge.eventId}
               eventTitle={badge.eventTitle}
+              tenantName={tenantName}
               eventSlug={badge.eventSlug}
               startsAtLabel={badge.startsAt.toLocaleString('pt-BR', {
                 dateStyle: 'long',
@@ -167,6 +168,15 @@ export default async function OwnBadgePage({
               activities={badge.registrations.map((row) => row.activityTitle ?? 'Inscrição no evento')}
               attendedActivities={badge.attendedActivities}
               minutesAttended={badge.minutesAttended}
+              /*
+                A identidade visual chega PRONTA do servidor: o rótulo vem do
+                catálogo do domínio (a mesma régua do PDF, das etiquetas e do ZPL) e
+                o TOM é do primitivo `Badge` — o componente não escolhe cor, que é o
+                que a trava do design system exige (FASE 51 · E42).
+              */
+              categoryLabel={badge.category.label}
+              categoryTone={badge.category.tone}
+              eventTone={badge.theme.primaryColor ? 'event' : null}
               generateAction={generateOwnCredentialAction}
             />
           ) : null}

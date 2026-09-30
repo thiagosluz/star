@@ -39,6 +39,7 @@ import {
   setRaffleVisibilityAction,
   updateRoundAnnouncementAction,
 } from '@/app/actions/raffle-actions';
+import { setBigscreenVisibilityAction } from '@/app/actions/bigscreen-actions';
 
 export const metadata = { title: 'Sorteios' };
 export const dynamic = 'force-dynamic';
@@ -133,6 +134,11 @@ export default async function RafflesPage({
           id: true,
           title: true,
           status: true,
+          /**
+           * O interruptor do telão (E37): a tela de "Palco e auditoria" precisa do
+           * estado ATUAL para oferecer a virada — e mostrar se a parede está no ar.
+           */
+          bigscreenVisible: true,
           rounds: {
             orderBy: { roundNumber: 'asc' },
             select: { roundNumber: true, seedCommitment: true, prizeTitle: true, drawnAt: true },
@@ -172,6 +178,7 @@ export default async function RafflesPage({
         roundNumber: headline?.roundNumber ?? null,
         prizeTitle: headline?.prizeTitle ?? null,
         seedCommitment: headline?.seedCommitment ?? null,
+        bigscreenVisible: row.bigscreenVisible,
       };
     }),
   );
@@ -261,10 +268,17 @@ export default async function RafflesPage({
         <p className="text-xs text-muted-foreground">
           O telão mostra o compromisso da semente e a contagem ao vivo enquanto o público espera, e se
           revela sozinho quando a apuração acontece. O endereço é o mesmo desde a criação do sorteio —
-          teste antes do evento e projete no dia.
+          teste antes do evento e projete no dia. O interruptor desliga a parede sem apagar nada: quem
+          tem o link passa a ver só o aviso até você ligar de novo.
         </p>
 
-        <StageLinkPanel raffles={stageLinks} vaultConfigured={vault.configured} />
+        <StageLinkPanel
+          raffles={stageLinks}
+          vaultConfigured={vault.configured}
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          bigscreenAction={setBigscreenVisibilityAction}
+        />
       </section>
 
       <section className="space-y-4" aria-labelledby="historico">

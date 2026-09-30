@@ -163,3 +163,41 @@ export function describeAttendanceContext(context: AttendanceContextRef): string
 
   return context.activityTitle ? `Atividade: ${context.activityTitle}` : 'Atividade';
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A CATEGORIA DO CRACHÁ MORA EM `credential-categories.ts` (FASE 51 · E42)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O catálogo, o rótulo e a cor estão aqui ao lado porque este é o módulo de
+ *  crachá, mas a implementação fica no arquivo próprio: são duas preocupações
+ *  diferentes (o CÓDIGO do crachá e a IDENTIDADE dele) e o arquivo de categorias
+ *  é lido, sozinho, pelos quatro renderizadores. A reexportação existe para não
+ *  haver duas portas de entrada para a mesma regra.
+ */
+export {
+  CREDENTIAL_CATEGORIES,
+  CREDENTIAL_CATEGORY_DEFINITIONS,
+  CREDENTIAL_CATEGORY_LIST,
+  CREDENTIAL_CATEGORY_PALETTE,
+  CREDENTIAL_CATEGORY_TONES,
+  CREDENTIAL_CATEGORY_TOKENS,
+  CREDENTIAL_STRIPE_HEIGHT_RATIO,
+  CREDENTIAL_STRIPE_MAX_PT,
+  CREDENTIAL_STRIPE_MAX_RATIO,
+  CREDENTIAL_STRIPE_MIN_PT,
+  DEFAULT_CREDENTIAL_CATEGORY,
+  credentialCategoryColor,
+  credentialCategoryLabel,
+  credentialCategoryToken,
+  credentialCategoryTone,
+  credentialStripeHeight,
+  isKnownCredentialCategory,
+  pdfFillOperator,
+  pdfRgb,
+  resolveCredentialCategory,
+  type CredentialCategory,
+  type CredentialCategoryColorKey,
+  type CredentialCategoryDefinition,
+  type CredentialCategoryTone,
+  type PdfRgb,
+} from './credential-categories';

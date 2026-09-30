@@ -22,8 +22,10 @@ import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/pri
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { resolveArt, resolvePalette } from '@/domain/gamification/card-rules';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
+import type { CatalogScope } from '@/domain/gamification/catalog-rules';
 import type { CardRarity, CardTrigger, TaskKind, XpSourceKind } from '@/domain/gamification/types';
 import type { AdminResult } from '@/lib/admin/catalog-service';
+import { CATALOG_ENTITY_TYPE, readCatalogArchiveTrail } from '@/lib/admin/catalog-archive-service';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cartas
@@ -213,7 +215,7 @@ export async function deleteCardTemplate(input: {
           tenantId: input.tenantId,
           userId: input.actorId,
           action: 'DELETE',
-          entityType: 'card_template',
+          entityType: CATALOG_ENTITY_TYPE.card,
           entityId: card.id,
           changes: {
             name: { from: card.name, to: null },
@@ -278,7 +280,7 @@ export async function deleteMission(input: {
           tenantId: input.tenantId,
           userId: input.actorId,
           action: 'DELETE',
-          entityType: 'task_definition',
+          entityType: CATALOG_ENTITY_TYPE.mission,
           entityId: mission.id,
           changes: {
             name: { from: mission.name, to: null },
@@ -326,13 +328,38 @@ export interface AdminCardRow {
   /** QRs de patrocinador que a concedem (idem). */
   usedByQrCodes: number;
   eventId: string | null;
+  /**
+   * Quando e por quem a carta foi arquivada (FASE 51 · dívida E58).
+   *
+   * `null` no catálogo ativo. No escopo `ARQUIVADOS` vêm da TRILHA (uma consulta para
+   * a lista inteira), e não de uma coluna: a trilha já guardava as duas pontas desde a
+   * FASE 43, e duplicá-las no modelo seria uma segunda verdade sobre o mesmo fato.
+   */
+  archivedAt: Date | null;
+  archivedByName: string | null;
 }
 
-export async function listCardTemplates(tenantId: string): Promise<AdminCardRow[]> {
-  const rows = await withTenant(tenantId, (tx) =>
-    tx.cardTemplate.findMany({
-      where: { tenantId, deletedAt: null },
-      orderBy: [{ rarity: 'asc' }, { name: 'asc' }],
+/**
+ * Lista o catálogo de cartas.
+ *
+ * O `scope` é EXPLÍCITO e tem `ATIVOS` como padrão: quem chamava esta função antes da
+ * FASE 51 continua lendo o mesmo universo (o seletor de prêmio da tela de missões, por
+ * exemplo, não pode oferecer uma carta arquivada como recompensa).
+ */
+export async function listCardTemplates(
+  tenantId: string,
+  scope: CatalogScope = 'ATIVOS',
+): Promise<AdminCardRow[]> {
+  return await withTenant(tenantId, async (tx) => {
+    const archived = scope === 'ARQUIVADOS';
+
+    const rows = await tx.cardTemplate.findMany({
+      where: { tenantId, ...(archived ? { deletedAt: { not: null } } : { deletedAt: null }) },
+      /**
+       * Arquivada sai do mais RECENTE para o mais antigo: quem abriu a lista acabou de
+       * excluir alguma coisa por engano, e é essa que precisa estar no topo.
+       */
+      orderBy: archived ? [{ deletedAt: 'desc' }, { name: 'asc' }] : [{ rarity: 'asc' }, { name: 'asc' }],
       take: 200,
       select: {
         id: true,
@@ -352,6 +379,7 @@ export async function listCardTemplates(tenantId: string): Promise<AdminCardRow[
         art: true,
         triggerCondition: true,
         eventId: true,
+        deletedAt: true,
         /**
          * As três contagens que a tela precisa para não deixar a organização excluir
          * uma carta no escuro (FASE 43): quantas pessoas já a ganharam (o álbum delas
@@ -360,31 +388,41 @@ export async function listCardTemplates(tenantId: string): Promise<AdminCardRow[
          */
         _count: { select: { userCards: true, taskDefinitions: true, sponsorQrCodes: true } },
       },
-    }),
-  );
+    });
 
-  return rows.map((row) => ({
-    id: row.id,
-    slug: row.slug,
-    name: row.name,
-    description: row.description,
-    lore: row.lore,
-    rarity: row.rarity,
-    trigger: row.trigger,
-    levelRequired: row.levelRequired,
-    maxSupply: row.maxSupply,
-    mintedCount: row.mintedCount,
-    dropWeight: row.dropWeight,
-    isActive: row.isActive,
-    isSecret: row.isSecret,
-    palette: row.palette,
-    art: row.art,
-    triggerCondition: row.triggerCondition,
-    ownedBy: row._count.userCards,
-    usedByMissions: row._count.taskDefinitions,
-    usedByQrCodes: row._count.sponsorQrCodes,
-    eventId: row.eventId,
-  }));
+    const trail = archived
+      ? await readCatalogArchiveTrail(tx, {
+          tenantId,
+          entityType: CATALOG_ENTITY_TYPE.card,
+          entityIds: rows.map((row) => row.id),
+        })
+      : null;
+
+    return rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      lore: row.lore,
+      rarity: row.rarity,
+      trigger: row.trigger,
+      levelRequired: row.levelRequired,
+      maxSupply: row.maxSupply,
+      mintedCount: row.mintedCount,
+      dropWeight: row.dropWeight,
+      isActive: row.isActive,
+      isSecret: row.isSecret,
+      palette: row.palette,
+      art: row.art,
+      triggerCondition: row.triggerCondition,
+      ownedBy: row._count.userCards,
+      usedByMissions: row._count.taskDefinitions,
+      usedByQrCodes: row._count.sponsorQrCodes,
+      eventId: row.eventId,
+      archivedAt: row.deletedAt,
+      archivedByName: trail?.get(row.id)?.byName ?? null,
+    }));
+  });
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -523,13 +561,24 @@ export interface AdminMissionRow {
   displayOrder: number;
   completions: number;
   claims: number;
+  /** Quando e por quem a missão foi arquivada (FASE 51 · dívida E58) — `null` se ativa. */
+  archivedAt: Date | null;
+  archivedByName: string | null;
 }
 
-export async function listMissions(tenantId: string): Promise<AdminMissionRow[]> {
-  const rows = await withTenant(tenantId, (tx) =>
-    tx.taskDefinition.findMany({
-      where: { tenantId, deletedAt: null },
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+export async function listMissions(
+  tenantId: string,
+  scope: CatalogScope = 'ATIVOS',
+): Promise<AdminMissionRow[]> {
+  return await withTenant(tenantId, async (tx) => {
+    const archived = scope === 'ARQUIVADOS';
+
+    const rows = await tx.taskDefinition.findMany({
+      where: { tenantId, ...(archived ? { deletedAt: { not: null } } : { deletedAt: null }) },
+      /** Arquivada mais recente primeiro — a mesma razão da lista de cartas. */
+      orderBy: archived
+        ? [{ deletedAt: 'desc' }, { name: 'asc' }]
+        : [{ displayOrder: 'asc' }, { name: 'asc' }],
       take: 200,
       select: {
         id: true,
@@ -545,30 +594,41 @@ export async function listMissions(tenantId: string): Promise<AdminMissionRow[]>
         isActive: true,
         isVisible: true,
         displayOrder: true,
+        deletedAt: true,
         rewardCard: { select: { slug: true } },
         progress: { select: { status: true } },
       },
-    }),
-  );
+    });
 
-  return rows.map((row) => ({
-    id: row.id,
-    slug: row.slug,
-    name: row.name,
-    description: row.description,
-    kind: row.kind,
-    trigger: row.trigger,
-    target: row.target,
-    xpReward: row.xpReward,
-    rewardCardSlug: row.rewardCard?.slug ?? null,
-    rewardCardTemplateId: row.rewardCardTemplateId,
-    repeatEveryHours: row.repeatEveryHours,
-    isActive: row.isActive,
-    isVisible: row.isVisible,
-    displayOrder: row.displayOrder,
-    completions: row.progress.filter((entry) => entry.status === 'COMPLETED' || entry.status === 'CLAIMED').length,
-    claims: row.progress.filter((entry) => entry.status === 'CLAIMED').length,
-  }));
+    const trail = archived
+      ? await readCatalogArchiveTrail(tx, {
+          tenantId,
+          entityType: CATALOG_ENTITY_TYPE.mission,
+          entityIds: rows.map((row) => row.id),
+        })
+      : null;
+
+    return rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      kind: row.kind,
+      trigger: row.trigger,
+      target: row.target,
+      xpReward: row.xpReward,
+      rewardCardSlug: row.rewardCard?.slug ?? null,
+      rewardCardTemplateId: row.rewardCardTemplateId,
+      repeatEveryHours: row.repeatEveryHours,
+      isActive: row.isActive,
+      isVisible: row.isVisible,
+      displayOrder: row.displayOrder,
+      completions: row.progress.filter((entry) => entry.status === 'COMPLETED' || entry.status === 'CLAIMED').length,
+      claims: row.progress.filter((entry) => entry.status === 'CLAIMED').length,
+      archivedAt: row.deletedAt,
+      archivedByName: trail?.get(row.id)?.byName ?? null,
+    }));
+  });
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

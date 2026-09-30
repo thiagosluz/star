@@ -25,6 +25,7 @@ import { XP_SOURCES, XP_SOURCE_LABELS } from '../../src/domain/gamification/xp-r
 import {
   CARD_TRIGGERS,
   MISSION_TRIGGER_KINDS,
+  NON_MISSION_XP_SOURCE_KINDS,
   RETIRED_XP_SOURCE_KINDS,
   XP_SOURCE_KINDS,
   cardTriggerLabel,
@@ -74,10 +75,24 @@ describe('as origens que o formulário de missão oferece', () => {
   });
 
   it('oferece todas as outras: nenhuma origem some em silêncio', () => {
-    /** A união fecha: oferecidas ∪ aposentadas = todas as origens do enum. */
-    expect([...MISSION_TRIGGER_KINDS, ...RETIRED_XP_SOURCE_KINDS].sort()).toEqual(
-      [...XP_SOURCE_KINDS].sort(),
-    );
+    /**
+     * A união fecha em TRÊS listas (FASE 50): oferecidas como missão, aposentadas (sem
+     * emissor) e emitidas-sem-missão (o estorno do cancelamento). Origem nova tem de
+     * entrar em UMA delas — o teste é o que impede a quarta categoria acidental.
+     */
+    expect([
+      ...MISSION_TRIGGER_KINDS,
+      ...RETIRED_XP_SOURCE_KINDS,
+      ...NON_MISSION_XP_SOURCE_KINDS,
+    ].sort()).toEqual([...XP_SOURCE_KINDS].sort());
+  });
+
+  it('o ESTORNO do cancelamento é emitido e NUNCA vira gatilho de missão', () => {
+    expect(XP_SOURCE_KINDS).toContain('REGISTRATION_REVERTED');
+    expect(NON_MISSION_XP_SOURCE_KINDS).toContain('REGISTRATION_REVERTED');
+    expect(MISSION_TRIGGER_KINDS).not.toContain('REGISTRATION_REVERTED');
+    /** E não é "aposentada": tem emissor de verdade (o cancelamento da inscrição). */
+    expect(RETIRED_XP_SOURCE_KINDS).not.toContain('REGISTRATION_REVERTED');
   });
 
   it('as aposentadas continuam no enum, com rótulo — o histórico precisa ser legível', () => {

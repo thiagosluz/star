@@ -28,6 +28,7 @@ import {
 } from '@/domain/speakers/speaker-rules';
 import { parseSponsorLogoScale, type SponsorLogoScale } from '@/domain/events/sponsor-rules';
 import { buildPublicTeam, type PublicTeamCard } from '@/domain/events/team-rules';
+import { orderTeamsForDisplay } from '@/domain/events/team-order-rules';
 import { parseProfileAudiences } from '@/domain/profile/public-profile-rules';
 import { readPublicContacts } from '@/domain/profile/public-contacts';
 
@@ -630,6 +631,13 @@ async function loadEventDetail(
             id: true,
             name: true,
             isActive: true,
+            /**
+             * A ordem manual da equipe (FASE 51 · dívida E63). Lida aqui e aplicada em
+             * `buildPublicTeam` — o banco não ordena por ela porque zero significa
+             * "sem opinião" e um `ORDER BY displayOrder` colocaria as equipes que
+             * ninguém ordenou ANTES das ordenadas, que é o inverso do pedido.
+             */
+            displayOrder: true,
             members: {
               orderBy: [{ isLead: 'desc' }, { createdAt: 'asc' }],
               select: {
@@ -851,6 +859,7 @@ async function loadEventDetail(
     id: team.id,
     name: team.name,
     isActive: team.isActive,
+    displayOrder: team.displayOrder,
     members: team.members
       .filter(isShowable)
       .map((member) => ({
@@ -928,7 +937,16 @@ async function loadEventDetail(
     speakers,
     sponsors,
     tracks,
-    teams: teams.map((team) => ({ id: team.id, name: team.name, memberCount: team.members.length })),
+    /**
+     * A lista de equipes sai na MESMA ordem dos cartões (`orderTeamsForDisplay`): com a
+     * ordem manual ligada, uma lista alfabética ao lado de cartões ordenados faria a
+     * página se contradizer sobre qual é "a primeira equipe".
+     */
+    teams: orderTeamsForDisplay(teams).map((team) => ({
+      id: team.id,
+      name: team.name,
+      memberCount: team.members.length,
+    })),
     organizers,
   };
 }

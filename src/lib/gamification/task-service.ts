@@ -85,6 +85,13 @@ const TRIGGER_LABELS: Readonly<Record<XpSourceKind, string>> = {
   REFERRAL: 'Indique alguém',
   SPONSOR_QR: 'Visite o estande de um patrocinador',
   REGISTRATION_CONFIRMED: 'Confirme sua inscrição',
+  /**
+   * ESTORNO (FASE 50 · dívida E59): a frase existe porque o mapa é FECHADO de
+   * propósito, e o formulário de missão só oferece `MISSION_TRIGGER_KINDS` — o estorno
+   * não está lá, então esta frase nunca vira missão. Ela está aqui para que acrescentar
+   * origem nova continue sendo uma decisão consciente, e não um `?? trigger` silencioso.
+   */
+  REGISTRATION_REVERTED: 'Estorno de inscrição cancelada',
   CERTIFICATE_ISSUED: 'Emita um certificado',
   RAFFLE_WON: 'Seja sorteado numa rodada',
 };

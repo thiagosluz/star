@@ -136,6 +136,8 @@ export async function requestMaterialUpload(input: {
   mimeType: string;
   sizeBytes: number;
   magicBytes?: readonly number[] | null;
+  /** SHA-256 declarado pelo navegador — vai ASSINADO no PUT (dívida E26). */
+  checksumSha256?: string | null;
 }): Promise<MaterialResult<MaterialUploadTicket>> {
   const validation = validateMaterialUpload({
     fileName: input.fileName,
@@ -216,6 +218,7 @@ export async function requestMaterialUpload(input: {
       objectKey,
       contentType: validation.mimeType,
       contentLength: input.sizeBytes,
+      checksumSha256: input.checksumSha256,
     });
 
     return {

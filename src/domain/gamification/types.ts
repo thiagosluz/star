@@ -35,7 +35,16 @@ export type XpSourceKind =
   /** Certificado emitido para a própria pessoa (FASE 43). */
   | 'CERTIFICATE_ISSUED'
   /** Posição premiada numa rodada de sorteio (FASE 43). */
-  | 'RAFFLE_WON';
+  | 'RAFFLE_WON'
+  /**
+   * ESTORNO da inscrição confirmada (FASE 50 · dívida E59).
+   *
+   * É a origem do lançamento NEGATIVO que devolve o XP de uma vaga cancelada. Existe
+   * separada de `ADMIN_ADJUSTMENT` porque a trilha precisa dizer POR QUE o saldo caiu —
+   * "ajuste administrativo" esconderia a causa. E não é gatilho de carta nem de missão:
+   * ninguém ganha nada por cancelar.
+   */
+  | 'REGISTRATION_REVERTED';
 
 export const XP_SOURCE_KINDS: readonly XpSourceKind[] = [
   'CHECKIN',
@@ -52,6 +61,7 @@ export const XP_SOURCE_KINDS: readonly XpSourceKind[] = [
   'REGISTRATION_CONFIRMED',
   'CERTIFICATE_ISSUED',
   'RAFFLE_WON',
+  'REGISTRATION_REVERTED',
 ];
 
 /**
@@ -84,6 +94,21 @@ export const MISSION_TRIGGER_KINDS: readonly XpSourceKind[] = [
 
 /** Origens que existem no enum mas NÃO têm emissor: não viram missão. */
 export const RETIRED_XP_SOURCE_KINDS: readonly XpSourceKind[] = ['REFERRAL', 'BONUS'];
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A TERCEIRA CATEGORIA: TEM EMISSOR, E MESMO ASSIM NÃO VIRA MISSÃO (FASE 50)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `RETIRED` quer dizer "ninguém emite". O estorno da inscrição cancelada é o
+ *  contrário: alguém emite (o cancelamento), e ele **não pode** ser oferecido como
+ *  gatilho de missão — ninguém "conquista" devolver XP, e uma missão que progredisse
+ *  com cancelamento seria um incentivo perverso.
+ *
+ *  A lista existe para que a ausência seja uma DECISÃO registrada, e não um
+ *  esquecimento: sem ela, o estorno ficaria no limbo entre "aposentada" (mentira: tem
+ *  emissor) e "sumida em silêncio" (era o defeito que o teste desta lista prendia).
+ */
+export const NON_MISSION_XP_SOURCE_KINDS: readonly XpSourceKind[] = ['REGISTRATION_REVERTED'];
 
 /** Raridade da carta. Espelha `enum CardRarity`. */
 export type CardRarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';

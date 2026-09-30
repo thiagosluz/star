@@ -35,20 +35,26 @@
  *  correção de um erro de digitação seria pior que a divergência cosmética.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  A CONTAGEM É CONSERVADORA DE PROPÓSITO
+ *  A CONTAGEM OLHA A RUBRICA QUE A SUBMISSÃO REALMENTE USA (FASE 50 · dívida E53)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  A rubrica de uma submissão resolve por precedência CHAMADA → TRILHA → PADRÃO. Em
- *  tese, uma submissão de uma chamada com rubrica própria não é afetada pela trilha —
- *  mas contá-la assim exigiria resolver a rubrica de CADA submissão para saber se ela
- *  realmente usa a da trilha. A contagem aqui é "pareceres em submissões desta
- *  trilha", sem essa distinção: erra para o lado de CONGELAR, que é o lado seguro, e
- *  a mensagem diz exatamente o que foi contado.
+ *  A rubrica de uma submissão resolve por precedência CHAMADA → TRILHA → PADRÃO, e
+ *  até a FASE 49 a contagem da TRILHA ignorava isso: contava "pareceres em submissões
+ *  desta trilha", incluindo as de chamadas que têm rubrica PRÓPRIA — submissões que
+ *  nunca leram a rubrica da trilha. O efeito era uma trilha congelar por um motivo que
+ *  não era dela: o organizador criava a chamada com rubrica própria, e a trilha ficava
+ *  intocável por causa de pareceres que não a usam.
+ *
+ *  Agora a contagem da trilha EXCLUI as submissões cuja chamada tem rubrica própria, e
+ *  a da chamada inclui todas as dela (a chamada vence a trilha — é ela que manda no
+ *  que aqueles pareceres leram). A pergunta "esta rubrica é própria?" é a MESMA que a
+ *  precedência faz (`rubricIsCustom`, no domínio): uma noção só, dois usos.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import {
   parseRubric,
+  rubricIsCustom,
   rubricShapeChanged,
   rubricShapeDiff,
   rubricShapeDiffLabel,
@@ -70,16 +76,36 @@ export async function countRubricReviews(
 ): Promise<number> {
   if (!input.trackId && !input.callId) return 0;
 
-  return tx.review.count({
+  /**
+   * CHAMADA: todos os pareceres das submissões dela contam — a rubrica da chamada
+   * vence a da trilha, então ela é o que aqueles revisores leram (ou passariam a ler).
+   */
+  if (input.callId) {
+    return tx.review.count({
+      where: {
+        tenantId: input.tenantId,
+        submission: { callId: input.callId, deletedAt: null },
+      },
+    });
+  }
+
+  /**
+   * TRILHA: só conta quem avalia POR ELA. A submissão de uma chamada com rubrica
+   * própria é governada pela chamada e sai da conta (dívida E53).
+   *
+   * A leitura traz a rubrica da chamada de cada parecer e a decisão é do domínio
+   * (`rubricIsCustom`) — o mesmo critério da precedência. O volume é o de pareceres de
+   * uma trilha, e isto roda numa edição de rubrica, não numa listagem.
+   */
+  const rows = await tx.review.findMany({
     where: {
       tenantId: input.tenantId,
-      submission: {
-        ...(input.callId ? { callId: input.callId } : {}),
-        ...(input.trackId ? { trackId: input.trackId } : {}),
-        deletedAt: null,
-      },
+      submission: { trackId: input.trackId, deletedAt: null },
     },
+    select: { submission: { select: { call: { select: { reviewRubric: true } } } } },
   });
+
+  return rows.filter((row) => !rubricIsCustom(row.submission.call?.reviewRubric)).length;
 }
 
 /**
@@ -163,10 +189,19 @@ export async function rubricReviewCounts(input: {
             tenantId: input.tenantId,
             submission: { trackId: { in: [...input.trackIds] }, deletedAt: null },
           },
-          select: { submission: { select: { trackId: true } } },
+          select: {
+            submission: { select: { trackId: true, call: { select: { reviewRubric: true } } } },
+          },
         });
 
         for (const row of rows) {
+          /**
+           * A LISTA precisa contar a MESMA coisa que o congelamento (dívida E53): o
+           * aviso da tela e a recusa da gravação não podem discordar, senão a tela diz
+           * "0 pareceres" e a gravação recusa por causa de um.
+           */
+          if (rubricIsCustom(row.submission.call?.reviewRubric)) continue;
+
           const key = row.submission.trackId;
           if (key) byTrack[key] = (byTrack[key] ?? 0) + 1;
         }

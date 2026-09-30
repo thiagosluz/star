@@ -1220,3 +1220,87 @@ describe('exclusão do rascunho — só o autor, e só antes do envio', () => {
     expect(result.code).toBe('NOT_FOUND');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('integridade do upload: o checksum é do STORAGE (FASE 50 · dívida E26)', () => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O DEFEITO QUE ESTES DOIS CASOS PRENDEM
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O `PUT` assinado não levava checksum nenhum: o storage não tinha o que reportar e
+   *  a confirmação se contentava com o TAMANHO — que não distingue o arquivo enviado
+   *  de outro com o mesmo número de bytes.
+   *
+   *  A correção NÃO é gravar um metadado nosso com o hash declarado: isso compararia a
+   *  declaração do cliente com a declaração do cliente, e passaria sempre (pior que a
+   *  conferência por tamanho, porque fingiria conferir). O que verifica é o
+   *  `x-amz-checksum-sha256` assinado: o storage calcula o hash do corpo que RECEBEU,
+   *  recusa o PUT que não casa e grava o valor CALCULADO no objeto.
+   */
+  it('o storage devolve o checksum que CALCULOU, e a confirmação compara os dois lados', async () => {
+    const checksum = createHash('sha256').update(PDF).digest('hex');
+    const objectKey = `testes/e26-ok-${RUN}.pdf`;
+    const bucket = BUCKETS.submissions();
+
+    const ticket = await createUploadUrl({
+      bucket,
+      objectKey,
+      contentType: 'application/pdf',
+      contentLength: PDF.length,
+      checksumSha256: checksum,
+    });
+
+    /** O header do checksum é OBRIGATÓRIO: ele entra na assinatura. */
+    expect(ticket.requiredHeaders['x-amz-checksum-sha256']).toBe(
+      Buffer.from(checksum, 'hex').toString('base64'),
+    );
+
+    const put = await fetch(ticket.uploadUrl, {
+      method: 'PUT',
+      headers: ticket.requiredHeaders,
+      body: PDF,
+    });
+
+    expect(put.ok, `PUT falhou: HTTP ${put.status}`).toBe(true);
+
+    /**
+     * A PROVA: quem reporta o hash é o armazenamento, não a nossa aplicação — e ele é
+     * igual ao declarado porque o corpo era o do hash.
+     */
+    const stored = await inspectObject(bucket, objectKey);
+    expect(stored.checksum).toBe(checksum);
+  });
+
+  it('corpo diferente do hash assinado é RECUSADO pelo próprio storage', async () => {
+    const checksum = createHash('sha256').update(PDF).digest('hex');
+    const objectKey = `testes/e26-trocado-${RUN}.pdf`;
+    const bucket = BUCKETS.submissions();
+
+    /** Mesmo TAMANHO, conteúdo diferente: é o caso que a conferência por tamanho não pega. */
+    const trocado = Buffer.from(PDF);
+    trocado[5] = trocado[5] === 0x2d ? 0x5f : 0x2d;
+
+    expect(trocado.length).toBe(PDF.length);
+
+    const ticket = await createUploadUrl({
+      bucket,
+      objectKey,
+      contentType: 'application/pdf',
+      contentLength: trocado.length,
+      checksumSha256: checksum,
+    });
+
+    const put = await fetch(ticket.uploadUrl, {
+      method: 'PUT',
+      headers: ticket.requiredHeaders,
+      body: trocado,
+    });
+
+    /** O storage recusa o upload (BadDigest): não existe objeto trocado no bucket. */
+    expect(put.ok).toBe(false);
+    expect(put.status).toBeGreaterThanOrEqual(400);
+
+    const stored = await inspectObject(bucket, objectKey);
+    expect(stored.exists).toBe(false);
+  });
+});

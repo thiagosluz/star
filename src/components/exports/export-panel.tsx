@@ -8,6 +8,7 @@ import {
   EXPORT_KIND_LABELS,
   EXPORT_TTL_HOURS,
   EXPORT_WATERMARK_NOTICE,
+  exportDownloadersLabel,
   type ExportKind,
 } from '@/domain/exports/export-rules';
 
@@ -28,6 +29,14 @@ import {
  *  Pedir é um POST de formulário e a ação volta para a MESMA tela com
  *  `?exportacao=<id>`; então o botão de baixar e a lista de exportações recentes são
  *  HTML servido pelo servidor. Nada aqui depende do bundle carregar.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  QUEM BAIXOU APARECE NA PRÓPRIA LISTA (dívida E73 · FASE 51)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O nome de quem baixou estava só na trilha de auditoria: quem quisesse saber
+ *  precisava sair da tela e abrir a auditoria. Aqui a linha DIZ — nome e instante
+ *  dos últimos downloads —, e quando não houve nenhum ela diz "ninguém baixou
+ *  ainda", porque uma linha sem essa informação é lida como tela quebrada.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export interface ExportPanelFilters {
@@ -211,10 +220,27 @@ function RecentList({
             data-testid={`${testId}-recent-${record.id}`}
             data-status={record.status}
           >
-            <span className="text-muted-foreground">
-              {record.createdAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
-              {record.authorName} · {record.rowCount} linha(s)
-              {record.downloadCount > 0 ? ` · ${record.downloadCount} download(s)` : ''}
+            <span className="space-y-0.5">
+              <span className="block text-muted-foreground">
+                {record.createdAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
+                {record.authorName} · {record.rowCount} linha(s)
+                {record.downloadCount > 0 ? ` · ${record.downloadCount} download(s)` : ''}
+              </span>
+
+              {/*
+                O TEXTO de quem baixou é montado pelo DOMÍNIO
+                (`exportDownloadersLabel`): a regra "sem download diz que ninguém
+                baixou" fica presa por teste, e a tela só imprime.
+              */}
+              <span
+                className="block text-muted-foreground"
+                data-testid={`${testId}-downloaders-${record.id}`}
+              >
+                {exportDownloadersLabel({
+                  downloaders: record.downloaders,
+                  downloadCount: record.downloadCount,
+                })}
+              </span>
             </span>
 
             <span className="flex items-center gap-2">

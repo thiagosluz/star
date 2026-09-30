@@ -550,6 +550,14 @@ export async function updateMySpeakerProfile(input: {
           bio: true,
           avatarUrl: true,
           avatarSource: true,
+          /**
+           * A declaração da organização entra na leitura para poder SAIR quando a foto
+           * muda (FASE 51 · dívida E66): ela foi feita sobre uma imagem específica.
+           */
+          photoAuthorizationText: true,
+          photoAuthorizationVersion: true,
+          photoAuthorizationChannel: true,
+          photoAuthorizationAt: true,
           isConfirmed: true,
         },
       });
@@ -573,6 +581,18 @@ export async function updateMySpeakerProfile(input: {
 
       const nextAvatarUrl =
         input.avatarUrl === undefined ? profile.avatarUrl : input.avatarUrl?.trim() || null;
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A DECLARAÇÃO DA ORGANIZAÇÃO SAI QUANDO A FOTO MUDA (FASE 51 · dívida E66)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A declaração (texto, versão, canal e data) foi feita sobre UMA imagem. Se o
+       *  próprio palestrante a substitui ou a remove, manter a declaração faria o
+       *  perfil afirmar uma base legal para uma foto que não é mais aquela — e a
+       *  imagem nova, publicada pelo titular, não precisa dela. O que o palestrante
+       *  envia é dele; o que a declaração cobria saiu do ar.
+       */
+      const photoChanged = nextAvatarUrl !== profile.avatarUrl;
 
       const data = {
         name: draft.name,
@@ -608,6 +628,14 @@ export async function updateMySpeakerProfile(input: {
               : 'SPEAKER',
         socialLinks: draft.socialLinks as unknown as object,
         isConfirmed: true,
+        ...(photoChanged && profile.photoAuthorizationAt !== null
+          ? {
+              photoAuthorizationText: null,
+              photoAuthorizationVersion: null,
+              photoAuthorizationChannel: null,
+              photoAuthorizationAt: null,
+            }
+          : {}),
       };
 
       await tx.speakerProfile.update({ where: { id: profile.id }, data });
@@ -641,6 +669,19 @@ export async function updateMySpeakerProfile(input: {
             { name: data.name, email: data.email, institution: data.institution, company: data.company, roleTitle: data.roleTitle, bio: data.bio },
             ['name', 'email', 'institution', 'company', 'roleTitle', 'bio'],
           ),
+          /**
+           * A retirada da declaração entra na trilha com autor e hora: o que sai do
+           * perfil continua respondível, e quem retirou foi a própria pessoa dona da
+           * imagem (FASE 51 · dívida E66).
+           */
+          ...(photoChanged && profile.photoAuthorizationVersion !== null
+            ? {
+                autorizacaoDaFoto: {
+                  from: `declarada pela organização (${profile.photoAuthorizationVersion})`,
+                  to: 'retirada com a troca da foto pelo palestrante',
+                },
+              }
+            : {}),
         },
         tx,
       );

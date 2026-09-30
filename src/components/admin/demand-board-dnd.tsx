@@ -4,10 +4,16 @@ import { useState, useTransition } from 'react';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 import type { DemandActionState } from '@/app/actions/demand-actions';
+import {
+  keyboardMoveAnnouncement,
+  keyboardMoveEdgeAnnouncement,
+  keyboardMoveTarget,
+  type DemandMoveDirection,
+} from '@/domain/events/demand-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ARRASTAR E SOLTAR DO QUADRO (FASE 38)
+ *  ARRASTAR E SOLTAR DO QUADRO (FASE 38) · TECLADO (FASE 50, dívida E51)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  A ROLETA É APRESENTAÇÃO, O QUADRO TAMBÉM (mesma lição da FASE 30)
@@ -28,6 +34,19 @@ import type { DemandActionState } from '@/app/actions/demand-actions';
  *  deliberada: os cartões são renderizados pelo SERVIDOR, com os dados do banco, e
  *  amarrar handler a cada um obrigaria a transformar cada cartão em componente de
  *  cliente — mais bundle e mais lugares para divergir do que a tela mostra.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A TERCEIRA PORTA: TECLADO (dívida E51)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O arrastar reordena DENTRO da coluna, e o formulário do cartão só troca de COLUNA:
+ *  quem não usa ponteiro não tinha como mudar a ordem. O teclado entra por `Alt +
+ *  ↑/↓` — e não por setas soltas — porque a seta sozinha ROLA a página e é usada por
+ *  outros widgets (o `<select>` do próprio cartão); o acorde com Alt é o gesto
+ *  conhecido de "mover o item", e não colide com nada que já esteja na tela.
+ *
+ *  A escrita é a MESMA do arrastar: `moveDemandAction` com `fromColumnId` = coluna
+ *  vista pela tela (é o que detecta a corrida — ADR-203). Não existe um segundo motor
+ *  de reordenação.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function DemandBoardDnd({
@@ -35,15 +54,22 @@ export function DemandBoardDnd({
   tenantSlug,
   eventId,
   canMove,
+  keyboardHintId,
   children,
 }: {
   action: (prev: DemandActionState | null, formData: FormData) => Promise<DemandActionState>;
   tenantSlug: string;
   eventId: string;
   canMove: boolean;
+  /**
+   * Id do aviso que ENSINA o atalho — o cartão aponta para ele com
+   * `aria-describedby`, então quem chega pelo teclado ouve os atalhos ao focar.
+   */
+  keyboardHintId?: string;
   children: React.ReactNode;
 }) {
   const [feedback, setFeedback] = useState<DemandActionState | null>(null);
+  const [announcement, setAnnouncement] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -130,6 +156,78 @@ export function DemandBoardDnd({
     });
   }
 
+  /**
+   * Reordenar DENTRO da coluna, pelo teclado.
+   *
+   * A contagem e o índice saem do DOM — o mesmo lugar de onde o arrastar os lê —,
+   * porque é a ordem que a PESSOA está vendo. O servidor confere de novo (a escrita é
+   * condicional pelo `columnId`), então divergência vira `ALREADY_MOVED`, e não uma
+   * posição inventada.
+   */
+  function onKeyDown(event: React.KeyboardEvent): void {
+    if (!canMove || !event.altKey) return;
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+
+    const card = (event.target as HTMLElement).closest('[data-demand-id]');
+    if (!card) return;
+
+    const demandId = card.getAttribute('data-demand-id');
+    const columnId = card.getAttribute('data-demand-column');
+    if (!demandId || !columnId) return;
+
+    const title = card.getAttribute('data-demand-title') ?? 'a demanda';
+    const rawIndex = Number(card.getAttribute('data-demand-index'));
+    const count = card.closest('[data-column-drop]')?.querySelectorAll('[data-demand-id]').length ?? 0;
+    const direction: DemandMoveDirection = event.key === 'ArrowUp' ? 'up' : 'down';
+
+    /** O acorde é NOSSO: sem isto o navegador rola a página junto. */
+    event.preventDefault();
+
+    const target = keyboardMoveTarget({ index: rawIndex, count, direction });
+
+    if (!target.moved) {
+      setAnnouncement(keyboardMoveEdgeAnnouncement({ title, direction }));
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set('tenantSlug', tenantSlug);
+    formData.set('eventId', eventId);
+    formData.set('demandId', demandId);
+    /** Mesma coluna: o `fromColumnId` é o que a tela viu — a trava da ADR-203. */
+    formData.set('fromColumnId', columnId);
+    formData.set('toColumnId', columnId);
+    formData.set('toIndex', String(target.toIndex));
+
+    startTransition(async () => {
+      const state = await action(null, formData);
+
+      /**
+       * Sucesso aqui NÃO usa o `feedback` ("Demanda movida."): ele repetiria, em outra
+       * região viva, o que o anúncio já diz com a posição. Falha usa — a mensagem do
+       * servidor (inclusive `ALREADY_MOVED`) é o que a pessoa precisa ler.
+       */
+      setFeedback(state.ok ? null : state);
+
+      if (!state.ok) return;
+
+      setAnnouncement(
+        keyboardMoveAnnouncement({ title, position: target.toIndex + 1, count }),
+      );
+
+      /**
+       * O foco volta para o cartão depois de a tela ser regravada pelo servidor: sem
+       * isto, a segunda tecla iria para o `body` e quem move por teclado teria de
+       * tabular de novo a cada casa andada.
+       */
+      requestAnimationFrame(() => {
+        const moved = document.querySelector<HTMLElement>(`[data-demand-id="${demandId}"]`);
+
+        if (moved && document.activeElement !== moved) moved.focus();
+      });
+    });
+  }
+
   return (
     <div
       className="space-y-3"
@@ -137,6 +235,7 @@ export function DemandBoardDnd({
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       onDrop={onDrop}
+      onKeyDown={onKeyDown}
       data-testid="demand-board"
     >
       {feedback ? (
@@ -158,6 +257,19 @@ export function DemandBoardDnd({
         </p>
       ) : null}
 
+      {/**
+       * A região viva do movimento por teclado. Fica SEMPRE no DOM (mesmo vazia) porque
+       * região que nasce junto com o texto não é anunciada por todo leitor de tela.
+       */}
+      <p
+        role="status"
+        aria-live="polite"
+        data-testid="demand-board-announce"
+        className={`text-xs text-muted-foreground ${announcement ? '' : 'sr-only'}`}
+      >
+        {announcement}
+      </p>
+
       {pending ? (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="demand-board-pending">
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -166,8 +278,9 @@ export function DemandBoardDnd({
       ) : null}
 
       {canMove ? (
-        <p className="text-xs text-muted-foreground">
-          Arraste o cartão para outra coluna, ou use o formulário de cada cartão.
+        <p id={keyboardHintId} className="text-xs text-muted-foreground">
+          Arraste o cartão para outra coluna, use o formulário de cada cartão ou, com o cartão
+          focado, <strong>Alt + ↑/↓</strong> para mudar a ordem dentro da coluna.
         </p>
       ) : null}
 

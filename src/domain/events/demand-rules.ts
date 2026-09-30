@@ -198,6 +198,87 @@ export function moveWithinList(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Reordenação por TECLADO (dívida E51)
+// ───────────────────────────────────────────────────────────────────────────────
+export type DemandMoveDirection = 'up' | 'down';
+
+export interface KeyboardMoveTarget {
+  /**
+   * Índice de destino na lista JÁ SEM o cartão movido — a MESMA conta que o arrastar
+   * faz ao soltar sobre um cartão. É o que o serviço espera (`MoveDemandInput.toIndex`).
+   */
+  toIndex: number;
+  /** `false` quando o cartão já está no topo (ou no fim): nada é escrito. */
+  moved: boolean;
+}
+
+/**
+ * Para onde o cartão vai ao subir (ou descer) UMA casa dentro da coluna.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A CONTA É ESSA (e não `index ± 1` na lista inteira)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O serviço insere o cartão numa lista que NÃO o contém: subir uma casa devolve o
+ *  índice anterior (`i - 1`), mas descer precisa do índice DEPOIS da próxima (`i + 1`),
+ *  porque a vizinha de baixo anda uma posição para cima quando o cartão sai. Errar
+ *  isso faz o cartão pular duas casas ao descer — o defeito clássico do `splice`
+ *  (armadilha que `moveWithinList` documenta do outro lado).
+ *
+ *  Nas pontas nada acontece, e o `moved: false` é resposta de negócio: a tela ANUNCIA
+ *  "já é a primeira" em vez de mandar um movimento que não muda nada.
+ */
+export function keyboardMoveTarget(input: {
+  index: number;
+  count: number;
+  direction: DemandMoveDirection;
+}): KeyboardMoveTarget {
+  const last = Math.max(0, input.count - 1);
+  const index = clampIndex(input.index, last);
+
+  if (input.direction === 'up') {
+    return index <= 0 ? { toIndex: 0, moved: false } : { toIndex: index - 1, moved: true };
+  }
+
+  return index >= last ? { toIndex: last, moved: false } : { toIndex: index + 1, moved: true };
+}
+
+/** `1ª`, `2ª`, `3ª`… — ordinal feminino, porque quem se move é "a demanda". */
+export function ordinalFeminine(position: number): string {
+  return `${position}ª`;
+}
+
+/**
+ * O que a região `aria-live` anuncia depois do movimento por teclado.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ANUNCIAR A POSIÇÃO, E NÃO "MOVIDO"
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Quem move por teclado não vê o cartão trocar de lugar: sem a frase, o retorno seria
+ *  o silêncio (ou um "ok" que não diz onde a coisa foi parar). A posição nova vem do
+ *  índice que a tela JÁ tinha — o servidor confirma a escrita, e o anúncio descreve o
+ *  que ela pediu.
+ */
+export function keyboardMoveAnnouncement(input: {
+  title: string;
+  position: number;
+  count: number;
+}): string {
+  return `A demanda "${input.title}" agora é a ${ordinalFeminine(input.position)} de ${
+    input.count
+  } na coluna.`;
+}
+
+/** O caminho de volta: o cartão já está na ponta e NADA foi escrito. */
+export function keyboardMoveEdgeAnnouncement(input: {
+  title: string;
+  direction: DemandMoveDirection;
+}): string {
+  return input.direction === 'up'
+    ? `A demanda "${input.title}" já é a primeira da coluna.`
+    : `A demanda "${input.title}" já é a última da coluna.`;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Prazo
 // ───────────────────────────────────────────────────────────────────────────────
 /**

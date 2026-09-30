@@ -68,6 +68,14 @@ export const XP_SOURCES: Readonly<Record<XpSourceKind, number>> = {
    * concede a carta de "sorteado" — sem inventar pontuação.
    */
   RAFFLE_WON: 0,
+  /**
+   * ESTORNO: valor próprio é ZERO de propósito (FASE 50 · dívida E59).
+   *
+   * Quem devolve o XP é o lançamento negativo, com o valor do crédito que ele estorna —
+   * uma constante aqui seria uma segunda fonte de verdade para o mesmo número, e o dia
+   * em que o valor da inscrição mudasse o estorno devolveria a quantia errada.
+   */
+  REGISTRATION_REVERTED: 0,
 } as const;
 
 /** Rótulos em pt-BR para o extrato de XP. */
@@ -86,6 +94,7 @@ export const XP_SOURCE_LABELS: Readonly<Record<XpSourceKind, string>> = {
   REGISTRATION_CONFIRMED: 'Inscrição confirmada',
   CERTIFICATE_ISSUED: 'Certificado emitido',
   RAFFLE_WON: 'Sorteio ganho',
+  REGISTRATION_REVERTED: 'Estorno de inscrição cancelada',
 };
 
 // ───────────────────────────────────────────────────────────────────────────────

@@ -182,6 +182,20 @@
   --input: var(--ef-outline-variant);
   --ring: var(--ef-primary-container);
 
+  /**
+   * ─── A COR DE DESTAQUE DO EVENTO (FASE 51 · dívida E42) ─────────────────────
+   *
+   *  O tema do evento (`Event.theme.primaryColor`, F17/F41) é publicado pela
+   *  `ThemeScope` sob o prefixo `--ef-` — que existe para o CSS da PÁGINA PÚBLICA,
+   *  não para os componentes do sistema. O crachá é o primeiro componente do
+   *  sistema que precisa da cor do evento fora da página pública, e sem um nome
+   *  semântico ele teria de escrever a cor na mão (o que a trava reprova).
+   *
+   *  Aqui o evento ganha um TOKEN: a `ThemeScope` o sobrescreve quando há cor
+   *  escolhida, e a queda é a marca da plataforma — que é o que o crachá já usava.
+   */
+  --theme-primary: var(--primary);
+
   /* Tipografia e forma */
   --radius: 0.5rem;
   --content-max: 1600px;
@@ -240,6 +254,9 @@
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Destaque do EVENTO (FASE 51 · E42) — a `ThemeScope` sobrescreve a variável */
+  --color-theme-primary: var(--theme-primary);
 
   /* Raridade — exposta como cor para texto/borda e como gradiente nas classes */
   --color-tier-common: var(--ef-tier-common-from);

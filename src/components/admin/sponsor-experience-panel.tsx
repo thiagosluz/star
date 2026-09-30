@@ -1,18 +1,19 @@
 import { QrCode, ShieldCheck, UserPlus, Users } from 'lucide-react';
 
-import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
+import { AdminForm, Field } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
+import { SponsorQrCreateForm } from '@/components/admin/sponsor-qr-create-form';
 import { SponsorQrShare } from '@/components/sponsors/sponsor-qr-share';
 import { ExportPanel } from '@/components/exports/export-panel';
 import type { ExportRecordView } from '@/lib/exports/export-service';
 import type { SponsorQrSheet } from '@/lib/sponsors/sponsor-qr-sheet';
 import type { SponsorQrPanelRow, SponsorPortalLead, SponsorTeamRow } from '@/lib/sponsors/sponsor-portal-service';
+import { saveSponsorQrWithConfirmationAction } from '@/app/actions/sponsor-qr-actions';
 import {
   deleteSponsorQrAction,
   inviteSponsorUserAction,
   linkSponsorUserAction,
   removeSponsorUserAction,
-  saveSponsorQrAction,
   setSponsorQrActiveAction,
 } from '@/app/actions/sponsor-portal-actions';
 
@@ -53,6 +54,7 @@ export function SponsorExperiencePanel({
   createdExport,
   returnTo,
   exportError,
+  confirmarQr,
 }: {
   tenantSlug: string;
   eventId: string;
@@ -72,6 +74,12 @@ export function SponsorExperiencePanel({
   returnTo: string;
   /** Motivo da recusa do pedido de exportação, quando volta com ?erro=. */
   exportError: string | null;
+  /**
+   * O patrocinador cujo aviso de QR repetido veio aberto (dívida E57), quando a
+   * página volta com `?confirmarQr=<sponsorId>` — o segundo passo de quem navega
+   * SEM JavaScript. `null` no caminho normal.
+   */
+  confirmarQr: string | null;
 }) {
   if (sponsors.length === 0) return null;
 
@@ -191,53 +199,27 @@ export function SponsorExperiencePanel({
               <p className="text-xs text-muted-foreground">Nenhum QR deste patrocinador ainda.</p>
             )}
 
-            <details className="rounded-md border border-border p-3">
+            <details
+              className="rounded-md border border-border p-3"
+              /**
+               * O `<details>` abre sozinho quando a página voltou do passo 2 sem
+               * JavaScript (`?confirmarQr=<sponsorId>`, dívida E57): sem isso, o
+               * aviso que o operador acabou de pedir para ver nasceria FECHADO.
+               */
+              open={confirmarQr === sponsor.id}
+            >
               <summary className="cursor-pointer text-xs font-medium">Criar QR do estande</summary>
               <div className="pt-3">
-                <AdminForm
-                  action={saveSponsorQrAction}
-                  submitLabel="Criar QR"
-                  testId={`qr-new-${sponsor.id}`}
-                  compact
-                >
-                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                  <input type="hidden" name="eventId" value={eventId} />
-                  <input type="hidden" name="sponsorId" value={sponsor.id} />
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Nome do QR" name="label" required placeholder="Estande — entrada" />
-                    <Field
-                      label="XP por visita"
-                      name="xpAmount"
-                      type="number"
-                      min={0}
-                      max={500}
-                      defaultValue={0}
-                      hint="0 = QR só de contato"
-                    />
-                    <SelectField
-                      label="Carta da visita"
-                      name="cardTemplateId"
-                      options={[{ value: '', label: 'Nenhuma carta' }, ...cardOptions]}
-                      defaultValue=""
-                    />
-                    <Field
-                      label="Autorização (dias)"
-                      name="consentDays"
-                      type="number"
-                      min={1}
-                      max={365}
-                      defaultValue={90}
-                      hint="Por quanto tempo o contato fica visível"
-                    />
-                  </div>
-
-                  {eventOptions.length > 1 ? (
-                    <p className="text-xs text-muted-foreground">
-                      O evento do crédito é o desta tela ({eventOptions[0]?.label}).
-                    </p>
-                  ) : null}
-                </AdminForm>
+                <SponsorQrCreateForm
+                  action={saveSponsorQrWithConfirmationAction}
+                  tenantSlug={tenantSlug}
+                  eventId={eventId}
+                  sponsorId={sponsor.id}
+                  cardOptions={cardOptions}
+                  returnTo={returnTo}
+                  confirmedByNavigation={confirmarQr === sponsor.id}
+                  eventLabel={eventOptions[0]?.label ?? 'o desta tela'}
+                />
               </div>
             </details>
 

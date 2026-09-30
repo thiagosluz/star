@@ -320,14 +320,28 @@ function normalizeText(value: unknown, max: number): string | null {
  * de `zonedWallTimeToInstant` (horário de verão), em vez de somar 24 h × N — somar
  * horas erraria o dia exatamente nas viradas de horário de verão.
  *
- * O prazo NÃO é limitado pela data da atividade aqui: quem decide se ainda dá tempo é
- * o organizador, ao escolher os dias, e a inscrição só é aceita enquanto a janela de
- * inscrição está aberta.
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O PRAZO NÃO PASSA DO INÍCIO DA ATIVIDADE (FASE 50 · dívida E49)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O organizador escolhe "5 dias", e quem se inscrevia no ÚLTIMO dia antes do evento
+ *  ficava com prazo até DEPOIS de a atividade começar: a varredura olhava o prazo da
+ *  pessoa, e a vaga seguia retida por uma confirmação que já não servia para nada — a
+ *  atividade tinha começado, e o lugar estava preso com quem talvez não viesse.
+ *
+ *  Agora o prazo tem TETO no início da atividade (ou do evento, quando a inscrição é no
+ *  evento inteiro): vencido o teto, a vaga volta para a fila enquanto ainda há tempo de
+ *  alguém usá-la. O teto nunca é ANTERIOR à inscrição — quem se inscreve numa atividade
+ *  já começada recebe o prazo na hora, e não um prazo vencido no passado.
  */
 export function confirmationDueAt(input: {
   registeredAt: Date;
   windowDays: number;
   timeZone: string;
+  /**
+   * Início da atividade (ou do evento): o teto do prazo. Ausente = sem teto, que é o
+   * caso de quem não tem data marcada.
+   */
+  notAfter?: Date | null;
 }): Date {
   const days = clampWindowDays(input.windowDays);
   const local = instantToZonedWallTime(input.registeredAt, input.timeZone);
@@ -342,7 +356,22 @@ export function confirmationDueAt(input: {
     target.getUTCDate(),
   )}T${pad(CONFIRMATION_DUE_HOUR)}:${pad(CONFIRMATION_DUE_MINUTE)}`;
 
-  return zonedWallTimeToInstant(wallTime, input.timeZone) ?? input.registeredAt;
+  const dueAt = zonedWallTimeToInstant(wallTime, input.timeZone) ?? input.registeredAt;
+
+  if (!input.notAfter) return dueAt;
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  TETO, e não SUBSTITUIÇÃO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O prazo é o MENOR entre o calculado e o início da atividade. Devolver o teto
+   *  direto ESTICARIA o prazo de quem tem janela curta (o defeito apareceu no primeiro
+   *  teste desta regra: 1 dia de janela com teto em outubro virava outubro).
+   */
+  const teto =
+    input.notAfter.getTime() > input.registeredAt.getTime() ? input.notAfter : input.registeredAt;
+
+  return teto.getTime() < dueAt.getTime() ? teto : dueAt;
 }
 
 export function clampWindowDays(value: unknown): number {

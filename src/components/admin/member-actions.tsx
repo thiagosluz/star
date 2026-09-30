@@ -7,6 +7,7 @@ import { AlertCircle, Check, Loader2, ShieldCheck } from 'lucide-react';
 import { Badge, Button, Checkbox } from '@/components/ui';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import {
+  demoteMemberAction,
   removeMemberAction,
   updateMemberRolesAction,
   type MemberActionState,
@@ -197,7 +198,45 @@ export function MemberRowActions({
         )}
 
         {canRemove && !isSelf ? (
-          <div className="border-t border-border pt-3">
+          <div className="space-y-3 border-t border-border pt-3">
+            {/**
+              * ───────────────────────────────────────────────────────────────────────
+              *  DUAS SAÍDAS, E A ORDEM IMPORTA (FASE 50 · dívida C7)
+              * ───────────────────────────────────────────────────────────────────────
+              *  "Sair da equipe" e "remover o acesso" deixaram de ser a mesma coisa. A
+              *  primeira é a opção MENOS destrutiva — a pessoa deixa de organizar e
+              *  continua participante —, então ela vem primeiro e com o texto que
+              *  explica a diferença. Antes existia só a segunda, e quem tinha inscrição
+              *  perdia também a área de participante sem querer.
+              */}
+            <InlineActionForm
+              action={demoteMemberAction}
+              submitLabel="Converter em participante"
+              testId={`demote-member-${userId}`}
+              confirm={{
+                title: `Converter ${memberName} em participante?`,
+                description: (
+                  <>
+                    <span className="block">
+                      A pessoa <strong className="font-medium">sai da equipe</strong> e{' '}
+                      <strong className="font-medium">todos os papéis</strong> desta
+                      instituição são revogados — inclusive os de evento e de atividade. A
+                      vaga volta para a quota do plano.
+                    </span>
+                    <span className="mt-2 block">
+                      Ela <strong className="font-medium">continua participante</strong>: as
+                      inscrições, os certificados e as cartas seguem acessíveis.
+                    </span>
+                  </>
+                ),
+                confirmLabel: 'Converter em participante',
+                tone: 'default',
+              }}
+            >
+              <input type="hidden" name="tenantSlug" value={tenantSlug} />
+              <input type="hidden" name="userId" value={userId} />
+            </InlineActionForm>
+
             <InlineActionForm
               action={removeMemberAction}
               submitLabel="Remover acesso"

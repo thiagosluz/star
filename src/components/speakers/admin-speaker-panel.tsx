@@ -1,11 +1,20 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
-import { Copy, Loader2, Plus, RefreshCw, Unlink, UserPlus } from 'lucide-react';
+import { Copy, Loader2, Plus, RefreshCw, ShieldCheck, Unlink, UserPlus } from 'lucide-react';
 
 import { Alert, Button, ConfirmDialog, Field, Input, Select, fieldAria } from '@/components/ui';
-import { SPEAKER_ROLE_TITLES, type SpeakerAvatarSource } from '@/domain/speakers/speaker-rules';
+import {
+  PHOTO_AUTHORIZATION_CHANNELS,
+  PHOTO_AUTHORIZATION_CHANNEL_LABELS,
+  PHOTO_AUTHORIZATION_TEXT,
+  PHOTO_AUTHORIZATION_VERSION,
+  SPEAKER_ROLE_TITLES,
+  evaluatePhotoAuthorization,
+  type SpeakerAvatarSource,
+} from '@/domain/speakers/speaker-rules';
 import type { SpeakerActionState } from '@/app/actions/speaker-actions';
+import type { SpeakerPhotoDeclaration } from '@/lib/speakers/speaker-service';
 import type { AssetUploadAction } from '@/components/admin/asset-upload';
 import { SpeakerPhotoField } from '@/components/speakers/speaker-photo-field';
 
@@ -103,7 +112,61 @@ export interface EditableSpeaker {
   bio: string | null;
   avatarUrl: string | null;
   avatarSource: SpeakerAvatarSource | null;
+  /** Declaração de autorização vigente da foto publicada (FASE 51 · dívida E66). */
+  photoDeclaration: SpeakerPhotoDeclaration | null;
   isPublic: boolean;
+}
+
+/**
+ * Espelho, no NAVEGADOR, da MESMA régua que o serviço aplica à declaração da foto
+ * (FASE 51 · dívida E66).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A REGRA NÃO FOI REESCRITA AQUI
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O aviso "diga por qual canal" precisa aparecer ANTES da ida ao servidor quando a
+ *  pessoa acabou de subir uma foto — mas duplicar a condição no cliente faria as duas
+ *  versões divergirem no primeiro ajuste (é a armadilha clássica do sorteio: a mesma
+ *  regra em dois lugares vira duas regras). Então a checagem chama
+ *  `evaluatePhotoAuthorization`, a função pura que o serviço usa.
+ *
+ *  A AUTORIDADE CONTINUA SENDO O SERVIDOR: sem JavaScript o formulário é enviado
+ *  normalmente e a recusa vem do serviço, com a mesma mensagem. Aqui é conveniência —
+ *  nunca a barreira. E o aviso sai no MESMO lugar da resposta do servidor
+ *  (`Feedback`), porque duas caixas de erro na mesma tela ensinariam a pessoa a
+ *  procurar a mensagem em dois lugares.
+ */
+function usePhotoDeclarationGuard(previousPhotoUrl: string | null): {
+  guardMessage: string | null;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+} {
+  const [guardMessage, setGuardMessage] = useState<string | null>(null);
+
+  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    const data = new FormData(event.currentTarget);
+    const text = (name: string): string => {
+      const value = data.get(name);
+      return typeof value === 'string' ? value.trim() : '';
+    };
+
+    const verdict = evaluatePhotoAuthorization({
+      previousPhotoUrl,
+      nextPhotoUrl: text('avatarUrl') || null,
+      declared: text('photoAuthorization').length > 0,
+      channel: text('photoAuthorizationChannel'),
+      at: new Date(),
+    });
+
+    if (verdict.ok) {
+      setGuardMessage(null);
+      return;
+    }
+
+    event.preventDefault();
+    setGuardMessage(verdict.message);
+  };
+
+  return { guardMessage, onSubmit };
 }
 
 /**
@@ -153,21 +216,105 @@ function SpeakerFields({
         ─────────────────────────────────────────────────────────────────────────────
          Publicar a foto de alguém é dado pessoal de terceiro. A plataforma não tem
          como verificar o consentimento (ele acontece por e-mail, por telefone, no
-         contrato do evento) — o que ela pode fazer é guardar QUEM declarou. O serviço
-         só exige a caixa quando a foto é NOVA; manter a mesma foto não pede nada.
+         contrato do evento) — o que ela pode fazer é guardar QUEM declarou, SOB QUE
+         TEXTO e POR QUAL CANAL. O serviço só exige a caixa e o canal quando a foto é
+         NOVA; manter a mesma foto não pede nada.
       */}
-      <label className="flex items-start gap-2 text-xs text-muted-foreground">
-        <input
-          type="checkbox"
-          name="photoAuthorization"
-          className="mt-0.5"
-          data-testid={`speaker-photo-auth-${speaker?.speakerProfileId ?? 'novo'}`}
-        />
-        <span>
-          Tenho autorização do palestrante para publicar esta foto na vitrine do evento.
-          A declaração fica registrada na trilha de auditoria.
-        </span>
-      </label>
+      <div
+        className="space-y-2 rounded-md border border-border bg-muted/40 p-3"
+        data-testid={`speaker-photo-declaration-${speaker?.speakerProfileId ?? 'novo'}`}
+      >
+        <p className="flex items-center gap-1.5 text-xs font-medium">
+          <ShieldCheck className="size-3.5" aria-hidden />
+          Declaração de autorização da foto
+        </p>
+
+        {/*
+          O TEXTO VEM DO DOMÍNIO — é o MESMO que o serviço grava no perfil. Escrever
+          aqui uma frase parecida (ou só o rótulo "tenho autorização") seria pedir que
+          alguém aceitasse um texto que não existe em lugar nenhum, e a prova gravada
+          não corresponderia ao que foi lido.
+        */}
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid={`speaker-photo-declaration-text-${speaker?.speakerProfileId ?? 'novo'}`}
+        >
+          {PHOTO_AUTHORIZATION_TEXT}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Redação <strong className="font-medium">{PHOTO_AUTHORIZATION_VERSION}</strong> — esta é a
+          versão que fica gravada junto da sua declaração, para que mudar o texto no futuro não
+          reescreva o que foi aceito hoje.
+        </p>
+
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            name="photoAuthorization"
+            className="mt-0.5"
+            data-testid={`speaker-photo-auth-${speaker?.speakerProfileId ?? 'novo'}`}
+          />
+          <span>Li o texto acima e declaro que tenho esta autorização do palestrante.</span>
+        </label>
+
+        <Field
+          name={`photo-channel-${speaker?.speakerProfileId ?? 'novo'}`}
+          label="Canal por onde a autorização foi obtida"
+          hint="Obrigatório quando a foto é nova — é ele que registra COMO o consentimento chegou."
+        >
+          <Select
+            id={`photo-channel-${speaker?.speakerProfileId ?? 'novo'}`}
+            name="photoAuthorizationChannel"
+            defaultValue={speaker?.photoDeclaration?.channel ?? ''}
+            data-testid={`speaker-photo-channel-${speaker?.speakerProfileId ?? 'novo'}`}
+          >
+            <option value="">Não informado</option>
+            {PHOTO_AUTHORIZATION_CHANNELS.map((channel) => (
+              <option key={channel} value={channel}>
+                {PHOTO_AUTHORIZATION_CHANNEL_LABELS[channel]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        {/*
+          ── A DECLARAÇÃO VIGENTE (FASE 51 · dívida E66) ─────────────────────────────
+          A tela não diz apenas "declarada": diz QUAL redação, POR QUAL canal e QUANDO.
+          É isso que permite a quem publica conferir, meses depois, o que exatamente
+          está valendo para a foto que está no ar — e perceber quando a redação gravada
+          é anterior à atual.
+        */}
+        {speaker?.photoDeclaration ? (
+          <div
+            className="space-y-0.5 rounded border border-border bg-card p-2 text-xs text-muted-foreground"
+            data-testid={`speaker-photo-declaration-current-${speaker.speakerProfileId}`}
+            data-declaration-version={speaker.photoDeclaration.version ?? ''}
+          >
+            <p>
+              Declaração gravada: redação{' '}
+              <strong className="font-medium">{speaker.photoDeclaration.version ?? 'anterior'}</strong>
+              {speaker.photoDeclaration.channelLabel
+                ? ` · obtida por ${speaker.photoDeclaration.channelLabel}`
+                : ' · canal não informado'}
+              {speaker.photoDeclaration.at
+                ? ` · em ${speaker.photoDeclaration.at.toLocaleDateString('pt-BR')}`
+                : ''}
+              .
+            </p>
+            {speaker.photoDeclaration.versionIsCurrent ? null : (
+              <p className="text-warning-strong">
+                Esta declaração foi feita sob uma redação anterior. Ela continua valendo pelo que foi
+                aceito naquele momento; publicar uma foto nova pedirá a redação atual.
+              </p>
+            )}
+          </div>
+        ) : speaker?.avatarUrl ? (
+          <p className="text-xs text-muted-foreground">
+            Não há declaração gravada para esta foto (publicada antes deste registro existir, ou
+            enviada pelo próprio palestrante).
+          </p>
+        ) : null}
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field name="name" label="Nome">
@@ -258,6 +405,8 @@ export function SpeakerCreateForm({
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   const [open, setOpen] = useState(false);
+  // Cadastro novo não tem foto anterior: qualquer imagem publicada aqui é nova.
+  const { guardMessage, onSubmit } = usePhotoDeclarationGuard(null);
 
   const token = typeof state?.data?.inviteToken === 'string' ? state.data.inviteToken : null;
   const expiresAt = typeof state?.data?.inviteExpiresAt === 'string' ? state.data.inviteExpiresAt : null;
@@ -270,7 +419,12 @@ export function SpeakerCreateForm({
       </Button>
 
       {open ? (
-        <form action={formAction} className="space-y-3 rounded-lg border border-border bg-card p-4" data-testid="speaker-form">
+        <form
+          action={formAction}
+          onSubmit={onSubmit}
+          className="space-y-3 rounded-lg border border-border bg-card p-4"
+          data-testid="speaker-form"
+        >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
 
           <SpeakerFields
@@ -285,7 +439,12 @@ export function SpeakerCreateForm({
             assumir o próprio perfil.
           </p>
 
-          <Feedback state={state} />
+          {/*
+            UMA MENSAGEM POR VEZ, NO MESMO LUGAR: o aviso do espelho (antes do envio) e a
+            resposta do serviço aparecem no mesmo `Feedback` — duas caixas de erro na
+            mesma tela ensinariam a pessoa a procurar a mensagem em dois lugares.
+          */}
+          <Feedback state={guardMessage ? { ok: false, message: guardMessage } : state} />
 
           {token ? <InviteTokenBox token={token} expiresAt={expiresAt} /> : null}
 
@@ -326,12 +485,13 @@ export function SpeakerEditForm({
   confirmUploadAction: AssetUploadAction;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+  const { guardMessage, onSubmit } = usePhotoDeclarationGuard(speaker.avatarUrl);
 
   return (
     <details className="rounded-lg border border-border bg-card" data-testid={`speaker-edit-${speaker.speakerProfileId}`}>
       <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Editar cadastro</summary>
 
-      <form action={formAction} className="space-y-3 border-t border-border p-4">
+      <form action={formAction} onSubmit={onSubmit} className="space-y-3 border-t border-border p-4">
         <input type="hidden" name="tenantSlug" value={tenantSlug} />
         <input type="hidden" name="speakerProfileId" value={speaker.speakerProfileId} />
 
@@ -343,8 +503,8 @@ export function SpeakerEditForm({
           confirmUploadAction={confirmUploadAction}
         />
 
-        <Feedback state={state} />
-
+        {/* Uma mensagem por vez, no mesmo lugar da resposta do serviço (ver o cadastro). */}
+        <Feedback state={guardMessage ? { ok: false, message: guardMessage } : state} />
         <Button type="submit" disabled={pending} data-testid={`save-speaker-${speaker.speakerProfileId}`}>
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
           Salvar alterações

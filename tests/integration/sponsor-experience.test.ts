@@ -284,6 +284,15 @@ describe('leitura do QR: crédito e consentimento', () => {
   let qrCode: string;
 
   it('a primeira leitura credita XP e grava o contato autorizado', async () => {
+    /**
+     * ─── `confirmed: true` É CONSEQUÊNCIA DA DÍVIDA E57 (FASE 51) ───────────────
+     *
+     *  Este arquivo já criou um QR do MESMO patrocinador no MESMO evento no primeiro
+     *  caso deste `describe`. A partir da F51, o segundo QR do mesmo par avisa e
+     *  exige confirmação explícita — o cenário aqui mede a LEITURA (crédito e
+     *  consentimento), não o aviso, então o ato é declarado como confirmado.
+     *  O aviso e a recusa têm teste próprio (`tests/integration/f51-sponsor-qr-repeat.test.ts`).
+     */
     const created = await saveSponsorQrCode({
       tenantId,
       actorId: organizerId,
@@ -293,6 +302,7 @@ describe('leitura do QR: crédito e consentimento', () => {
       xpAmount: 80,
       cardTemplateId: null,
       consentDays: 90,
+      confirmed: true,
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -552,6 +562,7 @@ describe('revogação e vencimento (LGPD)', () => {
   });
 
   it('autorização vencida fecha o acesso sozinha', async () => {
+    /** Terceiro QR deste patrocinador no evento: ver a nota do caso da leitura (E57). */
     const qr = await saveSponsorQrCode({
       tenantId,
       actorId: organizerId,
@@ -561,6 +572,7 @@ describe('revogação e vencimento (LGPD)', () => {
       xpAmount: 10,
       cardTemplateId: null,
       consentDays: 1,
+      confirmed: true,
     });
     expect(qr.ok).toBe(true);
     if (!qr.ok) return;

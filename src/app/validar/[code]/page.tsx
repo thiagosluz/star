@@ -217,10 +217,23 @@ export default async function ValidateCertificatePage({
         </>
       ) : null}
 
-      <nav className="text-sm">
-        <Link href="/" className="font-medium underline underline-offset-4">
-          Ir para a página inicial
-        </Link>
+      <nav className="space-y-1 text-sm">
+        {/*
+          O caminho para a CONFERÊNCIA EM LOTE (dívida E7) fica aqui porque é aqui que
+          quem confere chega: a pessoa valida um documento, percebe que tem uma pilha
+          deles e precisa do próximo passo — colar a lista inteira. Sem este link, a tela
+          de lote existiria sem porta de entrada.
+        */}
+        <p>
+          <Link href="/validar/lote" className="font-medium underline underline-offset-4">
+            Conferir vários certificados de uma vez (lista de até 50 códigos)
+          </Link>
+        </p>
+        <p>
+          <Link href="/" className="font-medium underline underline-offset-4">
+            Ir para a página inicial
+          </Link>
+        </p>
       </nav>
     </main>
   );

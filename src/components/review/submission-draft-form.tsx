@@ -31,8 +31,10 @@ import type { ActionState } from '@/app/actions/review-actions';
  *  será recusado depois. Quem decide, no entanto, é o servidor: a tela repete a
  *  regra para ajudar, não para autorizar.
  *
- *  A TRILHA não está aqui de propósito: trocá-la mudaria a rubrica, o requisito de
- *  versão cega e a fila de revisores — decisão do comitê, não ajuste de texto.
+ *  A TRILHA entrou na FASE 51 (dívida E32), com a guarda do domínio: a troca só é
+ *  oferecida enquanto NADA depende da classificação (rascunho, sem parecer e sem
+ *  atribuição). Quando ela não pode ser trocada, a tela DIZ o motivo e o caminho em
+ *  vez de esconder o campo — quem errou a trilha precisa saber o que fazer agora.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 function SaveButton() {
@@ -50,6 +52,8 @@ export function SubmissionDraftForm({
   tenantSlug,
   submissionId,
   initial,
+  tracks,
+  canChangeTrack,
   action,
 }: {
   tenantSlug: string;
@@ -59,7 +63,17 @@ export function SubmissionDraftForm({
     abstract: string;
     keywords: readonly string[];
     language: string;
+    trackId: string | null;
   };
+  /**
+   * Trilhas que o seletor oferece (FASE 51 · dívida E32) e se a troca está LIBERADA.
+   *
+   * A liberação vem decidida do SERVIDOR (`canChangeSubmissionTrack`): a tela não
+   * recalcula a regra, senão as duas respostas podem divergir — e oferecer uma troca
+   * que o serviço vai recusar é pior que não oferecer.
+   */
+  tracks: readonly { id: string; name: string }[];
+  canChangeTrack: boolean;
   action: (prev: ActionState | null, formData: FormData) => Promise<ActionState>;
 }) {
   const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
@@ -74,6 +88,7 @@ export function SubmissionDraftForm({
     title: initial.title,
     abstract: initial.abstract,
     language: initial.language,
+    trackId: initial.trackId ?? '',
   });
 
   const update = (patch: Partial<typeof fields>) =>
@@ -135,6 +150,36 @@ export function SubmissionDraftForm({
             <option value="es">Espanhol</option>
           </Select>
         </Field>
+
+        {canChangeTrack && tracks.length > 0 ? (
+          <Field
+            name="trackId"
+            label="Trilha"
+            hint="A trilha define a rubrica de avaliação, o requisito de versão cega e a fila de revisores."
+          >
+            <Select
+              {...fieldAria('trackId', { hint: true })}
+              name="trackId"
+              value={fields.trackId}
+              onChange={(event) => update({ trackId: event.target.value })}
+              data-testid="draft-track"
+            >
+              <option value="">Sem trilha (a classificação fica com o comitê)</option>
+              {tracks.map((track) => (
+                <option key={track.id} value={track.id}>
+                  {track.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+
+        {!canChangeTrack ? (
+          <p className="text-xs text-muted-foreground" data-testid="draft-track-locked">
+            A trilha desta submissão não pode mais ser trocada: a partir do envio, ela decide a
+            rubrica, a versão cega e a fila de revisores. Fale com o comitê para reclassificar.
+          </p>
+        ) : null}
 
         {state && !state.ok ? (
           <div

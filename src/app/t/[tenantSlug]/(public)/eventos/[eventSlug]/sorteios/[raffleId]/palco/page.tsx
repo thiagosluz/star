@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { MonitorOff } from 'lucide-react';
 
 import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository';
 import { getRaffleStageView } from '@/lib/raffles/raffle-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { BIGSCREEN_OFF_MESSAGE, BIGSCREEN_OFF_TITLE } from '@/domain/raffles/stage-rules';
 import { ThemeScope } from '@/components/events/theme-scope';
 import { RaffleStage, type StageModel, type StageRoundModel } from '@/components/raffles/raffle-stage';
 
@@ -31,9 +34,11 @@ export const dynamic = 'force-dynamic';
  *    2. **O compromisso aparece ANTES da apuração.** É o que dá sentido ao
  *       commit-reveal: compromisso que só se torna visível depois não prova que a
  *       semente foi escolhida antes. Esta é a única tela que mostra isso;
- *    3. **O título do prêmio é público.** É o que o telão anuncia — e é o que ele
- *       existe para fazer. O endereço é um UUID não enumerável, e a página pede
- *       `noindex`: ela é para projetar, não para aparecer em busca.
+ *    3. **O título do prêmio é público — ENQUANTO O TELÃO ESTIVER LIGADO (E37).** É o
+ *       que o telão anuncia, e é o que ele existe para fazer; desde a FASE 51 a
+ *       instituição pode negar o acesso até decidir ligá-lo, e aí a página diz isso. O
+ *       endereço é um UUID não enumerável, e a página pede `noindex`: ela é para
+ *       projetar, não para aparecer em busca.
  *
  *  A PRIVACIDADE dos nomes é a mesma de todo o resto: o servidor entrega o nome já
  *  mascarado (`publicWinnerName`), e o telão não decide consentimento — quem
@@ -62,11 +67,61 @@ export async function generateMetadata({
 
   if (!stage) return { title: 'Sorteio' };
 
+  /**
+   * Desligado, o título da aba é só "telão desligado": usar o título do sorteio aqui
+   * devolveria pela janela o que a página acabou de recusar mostrar — e o nome do
+   * sorteio costuma carregar o prêmio ("Sorteio do notebook").
+   */
+  if (!stage.bigscreenVisible) {
+    return { title: BIGSCREEN_OFF_TITLE, robots: { index: false, follow: false } };
+  }
+
   return {
     title: `${stage.title} — palco do sorteio`,
     description: `Acompanhe ao vivo o sorteio de ${event.title}.`,
     robots: { index: false, follow: false },
   };
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O TELÃO DESLIGADO NÃO É UM 404 (E37 · FASE 51)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O organizador testa o endereço ANTES do evento. Se o palco desligado respondesse
+ *  "não encontrado", ele não teria como distinguir "eu desliguei" de "o endereço está
+ *  errado" — duas situações opostas, com ações opostas: ligar o telão, ou conferir o
+ *  link. Por isso a página RESPONDE, diz que está desligada e mostra o caminho de
+ *  volta. O que ela não faz é contar nada do sorteio: nem o título do prêmio, nem
+ *  quem concorre.
+ */
+function BigscreenOff({ tenantSlug, eventId }: { tenantSlug: string; eventId: string }) {
+  return (
+    <main
+      className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-4 p-8 text-center"
+      data-testid="stage-off"
+    >
+      <MonitorOff className="size-10 text-muted-foreground" aria-hidden />
+      <h1 className="text-2xl font-semibold tracking-tight" data-testid="stage-off-title">
+        {BIGSCREEN_OFF_TITLE}
+      </h1>
+      <p className="text-sm text-muted-foreground" data-testid="stage-off-message">
+        {BIGSCREEN_OFF_MESSAGE}
+      </p>
+      {/*
+        O caminho de volta é o que torna a página útil para quem ORGANIZA: ele chega
+        aqui pelo endereço que vai projetar, vê que está fora do ar e tem como ligar.
+        Quem não tem permissão chega na tela de sorteios e é barrado lá — a guarda é do
+        servidor, não deste link.
+      */}
+      <Link
+        href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/sorteios`)}
+        className="text-sm underline underline-offset-4"
+        data-testid="stage-off-organizer-link"
+      >
+        Organização: ligar o telão
+      </Link>
+    </main>
+  );
 }
 
 export default async function RaffleStagePage({
@@ -89,6 +144,18 @@ export default async function RaffleStagePage({
   });
 
   if (!stage) notFound();
+
+  /**
+   * O INTERRUPTOR VEM ANTES DO TELÃO (E37 · FASE 51): desligado, esta página não
+   * monta a parede nem o fluxo ao vivo — ela não tem o conteúdo para montar.
+   */
+  if (!stage.bigscreenVisible) {
+    return (
+      <ThemeScope theme={event.theme}>
+        <BigscreenOff tenantSlug={tenantSlug} eventId={event.id} />
+      </ThemeScope>
+    );
+  }
 
   const basePath = `/eventos/${event.slug}/sorteios/${raffleId}`;
 

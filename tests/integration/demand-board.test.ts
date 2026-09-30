@@ -795,3 +795,53 @@ describe('isolamento entre instituições', () => {
     expect(visible).toBe(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('janela de cartões por coluna (FASE 50 · dívida E52)', () => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O DEFEITO: O QUADRO TRAZIA TODAS AS DEMANDAS DO EVENTO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Um evento com histórico longo montava centenas de cartões que ninguém ia olhar. A
+   *  leitura passou a ter TETO por coluna — e o que fica de fora é ANUNCIADO com o
+   *  número, porque esconder em silêncio faria a demanda parecer que sumiu.
+   */
+  it('a coluna respeita o teto e diz QUANTOS cartões tem ao todo', async () => {
+    /** `boardOf` já lança quando a leitura falha: aqui ele devolve o QUADRO. */
+    const board = await boardOf();
+    const primeira = board.columns[0]!;
+    const autor = await createUser('Autora da janela');
+
+    /** Sete cartões na PRIMEIRA coluna, com teto de três. */
+    for (let index = 0; index < 7; index++) {
+      const created = await createDemand({
+        tenantId,
+        actorId: autor,
+        eventId,
+        columnId: primeira.id,
+        title: `Demanda da janela ${index + 1}`,
+      });
+
+      expect(created.ok, created.ok ? 'ok' : created.message).toBe(true);
+    }
+
+    const janela = await loadDemandBoard({ tenantId, eventId, cardsPerColumn: 3 });
+
+    expect(janela.ok).toBe(true);
+    if (!janela.ok) return;
+
+    const coluna = janela.board.columns.find((item) => item.id === primeira.id)!;
+
+    expect(coluna.cards).toHaveLength(3);
+    expect(coluna.totalCards).toBeGreaterThanOrEqual(7);
+
+    /** A verdade do total não depende da janela: pedir mais traz mais. */
+    const maior = await loadDemandBoard({ tenantId, eventId, cardsPerColumn: 50 });
+    expect(maior.ok).toBe(true);
+    if (!maior.ok) return;
+
+    const colunaMaior = maior.board.columns.find((item) => item.id === primeira.id)!;
+
+    expect(colunaMaior.cards.length).toBe(coluna.totalCards);
+  }, 60_000);
+});

@@ -21,10 +21,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { claimMission } from '@/lib/gamification/task-service';
 import { setCardPinned } from '@/lib/gamification/card-service';
-import {
-  ensureCardShareLink,
-  revokeCardShareLink,
-} from '@/lib/gamification/card-share-service';
+import { revokeCardShareLink } from '@/lib/gamification/card-share-service';
 import { adjustXp } from '@/lib/gamification/xp-service';
 import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { awardTopReviewers } from '@/lib/gamification/achievement-service';
@@ -256,71 +253,16 @@ export async function pinCardAction(
   };
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
-//  Compartilhar a carta (FASE 48)
-// ───────────────────────────────────────────────────────────────────────────────
-const shareCardSchema = z.object({
-  tenantSlug: z.string().trim().min(1).max(63),
-  userCardId: z.string().uuid(),
-});
-
 /**
- * Cria (ou reaproveita) o link público de UMA carta.
- *
- * A posse é conferida no BANCO pelo serviço, com o `userId` da sessão — o
- * `userCardId` que chega do formulário é palpite até ser conferido. O que volta é
- * o endereço pronto e o TEXTO que vai acompanhá-lo: a tela não monta frase, para
- * que o mesmo texto valha no botão, na cópia e na prévia do link.
+ * ───────────────────────────────────────────────────────────────────────────────
+ *  Compartilhar a carta — a criação do link mudou de casa na FASE 51
+ * ───────────────────────────────────────────────────────────────────────────────
+ *  `shareCardAction` criava o link SEM validade e sem contagem, e ficou órfã quando a
+ *  dívida E70 trouxe prazo opcional e medição de acessos: a criação passou a viver em
+ *  `card-share-actions.ts` (com a validade escolhida na tela). A ação antiga foi
+ *  REMOVIDA em vez de deixada no lugar — duas portas para criar o mesmo link
+ *  divergiriam no primeiro ajuste, e a que ninguém usa é a que ninguém testa.
  */
-export async function shareCardAction(
-  _prev: GamificationActionState | null,
-  formData: FormData,
-): Promise<GamificationActionState> {
-  const parsed = shareCardSchema.safeParse({
-    tenantSlug: formData.get('tenantSlug'),
-    userCardId: formData.get('userCardId'),
-  });
-
-  if (!parsed.success) {
-    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para compartilhar a carta.' };
-  }
-
-  const auth = await guard({
-    tenantSlug: parsed.data.tenantSlug,
-    permission: PERMISSIONS.CARD_READ_OWN,
-    requiresOwnership: true,
-  });
-
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
-
-  const result = await ensureCardShareLink({
-    tenantId: auth.tenantId,
-    userId: auth.userId,
-    tenantSlug: parsed.data.tenantSlug,
-    tenantName: auth.tenantName,
-    userCardId: parsed.data.userCardId,
-  });
-
-  if (!result.ok) return { ok: false, code: result.code, message: result.message };
-
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/cartas'));
-
-  return {
-    ok: true,
-    message: result.state.url
-      ? 'Link pronto. Quem abrir vê apenas esta carta.'
-      : 'Este link não pode ser exibido de novo — revogue e crie outro.',
-    data: {
-      url: result.state.url,
-      linkId: result.state.linkId,
-      shareText: result.state.shareText,
-      shareDisplayName: result.state.shareDisplayName,
-      showsRealName: result.state.showsRealName,
-      createdAt: result.state.createdAt?.toISOString() ?? null,
-    },
-  };
-}
-
 const revokeShareSchema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
   linkId: z.string().uuid(),

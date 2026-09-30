@@ -16,8 +16,8 @@ import { EmptyCardSlot } from '@/components/gamification/card-visual';
 import {
   pinCardAction,
   revokeCardShareAction,
-  shareCardAction,
 } from '@/app/actions/gamification-actions';
+import { createCardShareAction } from '@/app/actions/card-share-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -235,7 +235,23 @@ async function ShareCardSection({
       initialText={share.state.shareText}
       initialDisplayName={share.state.shareDisplayName}
       showsRealName={share.state.showsRealName}
-      createAction={shareCardAction}
+      initialStatusLabel={share.state.statusLabel}
+      initialViewCount={share.state.viewCount}
+      initialLastViewedLabel={share.state.lastViewedLabel}
+      /**
+       * Só o que a tela desenha atravessa para o cliente: os rótulos já vêm
+       * montados no fuso da instituição (o painel roda no navegador, e formatar
+       * data lá mostraria o fuso de quem está olhando, não o da carta).
+       */
+      initialHistory={share.state.history.map((link) => ({
+        linkId: link.linkId,
+        createdAtLabel: link.createdAtLabel,
+        status: link.status,
+        statusLabel: link.statusLabel,
+        viewCount: link.viewCount,
+        viewsLabel: link.viewsLabel,
+      }))}
+      createAction={createCardShareAction}
       revokeAction={revokeCardShareAction}
     />
   );

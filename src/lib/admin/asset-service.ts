@@ -125,6 +125,8 @@ export async function requestAssetUpload(input: {
   mimeType: string;
   sizeBytes: number;
   magicBytes?: readonly number[] | null;
+  /** SHA-256 declarado pelo navegador — vai ASSINADO no PUT (dívida E26). */
+  checksumSha256?: string | null;
 }): Promise<AssetResult<AssetUploadTicket>> {
   const validation = validateImageUpload({
     target: input.target,
@@ -194,6 +196,7 @@ export async function requestAssetUpload(input: {
       objectKey,
       contentType: validation.mimeType,
       contentLength: input.sizeBytes,
+      checksumSha256: input.checksumSha256,
     });
 
     return {

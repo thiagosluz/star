@@ -33,7 +33,8 @@ import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { BUCKETS, deleteObject } from '@/lib/storage/s3-client';
-import { ASSET_TARGET_LABELS, type AssetTarget } from '@/domain/events/image-rules';
+import { ASSET_TARGET_LABELS, imageFormatLabel, type AssetTarget } from '@/domain/events/image-rules';
+import { MEDIA_LIBRARY_LIMIT, MEDIA_NO_SOURCE_EVENT } from '@/domain/events/media-filter-rules';
 
 export type MediaErrorCode = 'NOT_FOUND' | 'IN_USE' | 'STORAGE' | 'INTERNAL';
 
@@ -138,11 +139,51 @@ export interface MediaAssetRow {
   inUse: boolean;
 }
 
+/**
+ * Filtros do acervo (dívida E19).
+ *
+ * Todos opcionais e COMBINÁVEIS, e todos aplicados no BANCO — ver o bloco
+ * "POR QUE O FILTRO É NO BANCO" em `listMediaLibrary`.
+ */
+export interface MediaLibraryFilters {
+  /** Texto livre: procura no nome do arquivo e na URL. */
+  search?: string | null;
+  /** Tipo GRAVADO (`image/webp`, `image/png`…) — o mesmo que a tela exibe. */
+  mimeType?: string | null;
+  /** Evento de origem, ou `MEDIA_NO_SOURCE_EVENT` para o que não tem evento. */
+  sourceEventId?: string | null;
+  /** `true` = só em uso · `false` = só sem uso · `null`/ausente = todos. */
+  inUse?: boolean | null;
+}
+
+/** Uma opção dos seletores, com quantas imagens ela alcança AGORA. */
+export interface MediaLibraryOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
 export interface MediaLibrary {
   assets: MediaAssetRow[];
+  /** Soma dos bytes do RESULTADO (o que a lista mostra). */
   totalBytes: number;
-  /** Soma dos bytes dividida por MB, arredondada — para o cabeçalho da tela. */
+  /** Soma do resultado dividida por MB, arredondada. */
   totalMegabytes: number;
+  /** Quantas imagens o filtro alcançou no banco — pode ser maior que `assets.length`. */
+  matchedCount: number;
+  /** Teto aplicado à lista (`MEDIA_LIBRARY_LIMIT`). */
+  limit: number;
+  /** `true` quando o resultado não coube no teto: a tela avisa "mostrando N de M". */
+  truncated: boolean;
+  /**
+   * Números do ACERVO INTEIRO (sem os filtros da pessoa, respeitando só o escopo da
+   * tela). É o cabeçalho: "N imagem(ns) no acervo · M em uso · X MB".
+   */
+  library: { count: number; inUse: number; bytes: number; megabytes: number };
+  /** Opções do filtro de tipo, tiradas do PRÓPRIO acervo. */
+  typeOptions: MediaLibraryOption[];
+  /** Opções do filtro de evento de origem, tiradas do próprio acervo. */
+  eventOptions: MediaLibraryOption[];
 }
 
 /**
@@ -151,36 +192,133 @@ export interface MediaLibrary {
  * O uso é calculado numa passada só: carrega eventos, patrocinadores e blocos da
  * instituição e procura cada URL. Fazer uma consulta por imagem seria mais simples
  * de escrever e muito pior de usar — a lista tem dezenas de itens.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O FILTRO É NO BANCO (dívida E19)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A tentação era trazer as 200 mais recentes — como sempre — e filtrar em memória.
+ *  Isso NÃO resolve o problema: com 200 linhas em mãos, "só as que estão em uso" na
+ *  verdade significa "as que estão em uso ENTRE as 200 mais recentes". Numa
+ *  instituição com dois anos de acervo, a imagem que a pessoa procura é justamente a
+ *  que ficou fora da janela, e o filtro responderia "nada encontrado" sobre um arquivo
+ *  que existe. Filtrar em memória também não mudaria a quantidade de trabalho: as 200
+ *  linhas já teriam sido lidas e transferidas.
+ *
+ *  Então as quatro condições viram cláusula de `where`, e o teto passa a cortar o
+ *  RESULTADO do filtro, não o acervo. O uso continua vindo da MESMA função da tela
+ *  (`collectUsages`): o filtro "em uso" consulta o conjunto de URLs que ela devolve,
+ *  em vez de reimplementar a regra — duas implementações da mesma pergunta divergem
+ *  no primeiro caso de borda (URL com barra final, imagem externa num bloco).
  */
 export async function listMediaLibrary(
   tenantId: string,
-  options: { eventId?: string; includeEverywhere?: boolean } = {},
+  options: {
+    eventId?: string;
+    includeEverywhere?: boolean;
+    filters?: MediaLibraryFilters;
+  } = {},
 ): Promise<MediaLibrary> {
+  const filters = options.filters ?? {};
+
   return withTenant(tenantId, async (tx) => {
-    const assets = await tx.mediaAsset.findMany({
-      where: {
-        tenantId,
-        deletedAt: null,
-        // O padrão é o acervo da instituição; a tela do evento pode filtrar.
-        ...(options.eventId && !options.includeEverywhere ? { eventId: options.eventId } : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: 200,
-      select: {
-        id: true,
-        url: true,
-        fileName: true,
-        mimeType: true,
-        sizeBytes: true,
-        target: true,
-        eventId: true,
-        createdAt: true,
-        uploadedBy: { select: { name: true } },
-        event: { select: { title: true } },
-      },
-    });
+    /**
+     * Escopo da tela (instituição × evento), ANTES dos filtros da pessoa. Os números
+     * do cabeçalho saem daqui: o "N em uso" do acervo não pode encolher porque
+     * alguém filtrou por tipo.
+     */
+    const scope = {
+      tenantId,
+      deletedAt: null,
+      ...(options.eventId && !options.includeEverywhere ? { eventId: options.eventId } : {}),
+    };
+
+    const search = filters.search?.trim();
+    const sourceEventId = filters.sourceEventId ?? null;
+
+    const where = {
+      ...scope,
+      ...(search
+        ? {
+            OR: [
+              { fileName: { contains: search, mode: 'insensitive' as const } },
+              /**
+               * A URL entra na busca porque o caminho do objeto carrega o nome do
+               * arquivo e a pasta do alvo (`.../assets/gallery/…`): é por ela que se
+               * acha o que foi enviado para a galeria quando o nome na tela já foi
+               * trocado. A LEGENDA fica de fora de propósito — ela pertence ao bloco
+               * da página, não ao arquivo, e o mesmo arquivo pode ter várias.
+               */
+              { url: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+      ...(filters.mimeType ? { mimeType: filters.mimeType } : {}),
+      ...(sourceEventId === MEDIA_NO_SOURCE_EVENT
+        ? { eventId: null }
+        : sourceEventId
+          ? { eventId: sourceEventId }
+          : {}),
+    };
 
     const usage = await collectUsages(tx, tenantId);
+    /**
+     * O conjunto de URLs usadas é o MESMO que a tela já calcula para dizer "em uso" em
+     * cada linha. O tamanho dele é limitado pelo que a instituição tem (eventos,
+     * patrocinadores, fotos e blocos) — e o `in`/`notIn` é o preço de responder
+     * "quais dá para apagar" sem reimplementar a regra de uso.
+     */
+    const usedUrls = [...usage.keys()];
+
+    const withUsage =
+      filters.inUse === true
+        ? { ...where, url: { in: usedUrls } }
+        : filters.inUse === false
+          ? { ...where, url: { notIn: usedUrls } }
+          : where;
+
+    const [aggregate, inUseCount, matchedCount, assets, typeGroups, eventGroups] =
+      await Promise.all([
+        tx.mediaAsset.aggregate({
+          where: scope,
+          _count: { _all: true },
+          _sum: { sizeBytes: true },
+        }),
+        tx.mediaAsset.count({ where: { ...scope, url: { in: usedUrls } } }),
+        tx.mediaAsset.count({ where: withUsage }),
+        tx.mediaAsset.findMany({
+          where: withUsage,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: MEDIA_LIBRARY_LIMIT,
+          select: {
+            id: true,
+            url: true,
+            fileName: true,
+            mimeType: true,
+            sizeBytes: true,
+            target: true,
+            eventId: true,
+            createdAt: true,
+            uploadedBy: { select: { name: true } },
+            event: { select: { title: true } },
+          },
+        }),
+        /**
+         * As opções dos seletores saem do ACERVO, não de uma lista fixa no código.
+         * Tipo que a instituição não tem não vira opção inútil, e tipo que ela venha a
+         * ter (outro formato, outro alvo) aparece sozinho — sem mexer na tela.
+         */
+        tx.mediaAsset.groupBy({
+          by: ['mimeType'],
+          where: scope,
+          _count: { _all: true },
+          orderBy: { mimeType: 'asc' },
+        }),
+        tx.mediaAsset.groupBy({
+          by: ['eventId'],
+          where: scope,
+          _count: { _all: true },
+        }),
+      ]);
 
     const rows: MediaAssetRow[] = assets.map((asset) => {
       const usages = usage.get(asset.url) ?? [];
@@ -202,12 +340,60 @@ export async function listMediaLibrary(
       };
     });
 
+    const eventIds = eventGroups
+      .map((group) => group.eventId)
+      .filter((id): id is string => Boolean(id));
+
+    const events = eventIds.length
+      ? await tx.event.findMany({
+          where: { id: { in: eventIds } },
+          select: { id: true, title: true },
+        })
+      : [];
+
+    const eventTitleById = new Map(events.map((event) => [event.id, event.title]));
+    const withoutEvent = eventGroups.find((group) => group.eventId === null);
+
     const totalBytes = rows.reduce((sum, row) => sum + row.sizeBytes, 0);
+    const libraryBytes = aggregate._sum.sizeBytes ?? 0;
 
     return {
       assets: rows,
       totalBytes,
       totalMegabytes: Math.round((totalBytes / 1024 / 1024) * 10) / 10,
+      matchedCount,
+      limit: MEDIA_LIBRARY_LIMIT,
+      truncated: matchedCount > rows.length,
+      library: {
+        count: aggregate._count._all,
+        inUse: inUseCount,
+        bytes: libraryBytes,
+        megabytes: Math.round((libraryBytes / 1024 / 1024) * 10) / 10,
+      },
+      typeOptions: typeGroups.map((group) => ({
+        value: group.mimeType,
+        label: imageFormatLabel(group.mimeType),
+        count: group._count._all,
+      })),
+      eventOptions: [
+        ...(withoutEvent
+          ? [
+              {
+                value: MEDIA_NO_SOURCE_EVENT,
+                label: 'Sem evento (acervo da instituição)',
+                count: withoutEvent._count._all,
+              },
+            ]
+          : []),
+        ...eventGroups
+          .filter((group): group is typeof group & { eventId: string } => Boolean(group.eventId))
+          .map((group) => ({
+            value: group.eventId,
+            label: eventTitleById.get(group.eventId) ?? 'Evento removido',
+            count: group._count._all,
+          }))
+          .sort((left, right) => left.label.localeCompare(right.label, 'pt-BR')),
+      ],
     };
   });
 }

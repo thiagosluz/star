@@ -20,8 +20,8 @@ import {
 } from '@/app/actions/credential-actions';
 import { QrCameraReader } from '@/components/credentials/qr-camera-reader';
 import { describeAttendanceContext } from '@/domain/events/credential-rules';
+import { cameraDeviceStorageKey } from '@/domain/events/camera-device-rules';
 import { useOfflineQueue } from '@/components/credentials/use-offline-queue';
-
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MODO MONITOR — o balcão do credenciamento (FASE 31 · OFFLINE-FIRST NA FASE 35)
@@ -58,11 +58,14 @@ type Feedback = {
 
 /**
  * Pausa a câmera enquanto a action está em curso.
+ *
+ * A chave da lente escolhida é por EVENTO: o mesmo notebook opera eventos
+ * diferentes, e a câmera certa no estande não é a certa na portaria (E42).
  */
-function ScanGate({ onRead }: { onRead: (code: string) => void }) {
+function ScanGate({ onRead, storageKey }: { onRead: (code: string) => void; storageKey: string }) {
   const { pending } = useFormStatus();
 
-  return <QrCameraReader onRead={onRead} paused={pending} />;
+  return <QrCameraReader onRead={onRead} paused={pending} storageKey={storageKey} />;
 }
 
 function SubmitButton({ label }: { label: string }) {
@@ -228,6 +231,13 @@ export function MonitorConsole({
   const outcomeAction = typeof feedback?.data?.action === 'string' ? feedback.data.action : null;
   const outcomeName = typeof feedback?.data?.userName === 'string' ? feedback.data.userName : null;
   const outcomeMinutes = typeof feedback?.data?.minutes === 'number' ? feedback.data.minutes : null;
+  /**
+   * A categoria vem do servidor JÁ RESOLVIDA (E42) — o balcão mostra a mesma faixa
+   * que está no papel. O tom entra por `data-category`, e não por uma cor escolhida
+   * aqui: componente do sistema não escreve cor (trava do design system).
+   */
+  const outcomeCategory =
+    typeof feedback?.data?.categoryLabel === 'string' ? feedback.data.categoryLabel : null;
 
   return (
     <section className="space-y-4" data-testid="monitor-console">
@@ -423,7 +433,7 @@ export function MonitorConsole({
           <SubmitButton label="Registrar" />
         </div>
 
-        <ScanGate onRead={submitCode} />
+        <ScanGate onRead={submitCode} storageKey={cameraDeviceStorageKey(eventId)} />
 
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <span className="text-muted-foreground">Atalho rápido para fechar sessão:</span>
@@ -463,6 +473,12 @@ export function MonitorConsole({
             )}
             {outcomeName ?? feedback.message}
           </p>
+
+          {feedback.ok && outcomeCategory ? (
+            <p className="text-xs text-muted-foreground" data-testid="monitor-category">
+              Categoria do crachá: <span className="font-medium text-foreground">{outcomeCategory}</span>
+            </p>
+          ) : null}
 
           <p className="text-sm">{feedback.ok && outcomeName ? feedback.message : feedback.ok ? '' : feedback.message}</p>
 

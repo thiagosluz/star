@@ -27,13 +27,24 @@
  */
 import { withTenant } from '@/lib/db/tenant-client';
 import { listCredentialRoster } from '@/lib/events/credential-service';
-import type { BadgeLabel } from '@/lib/credentials/badge-renderer';
+import { resolveTheme } from '@/domain/events/landing-page';
+import type { BadgeLabel, BadgeSheetTheme } from '@/lib/credentials/badge-renderer';
 
 export interface BadgePrintBatch {
   tenantName: string;
   eventTitle: string;
   eventSlug: string;
   badges: BadgeLabel[];
+  /**
+   * A identidade do EVENTO (FASE 51 · E42) — a cor com que as três saídas de papel
+   * desenham o crachá.
+   *
+   * Vem resolvida do BANCO (`Event.theme`, o mesmo dado que a `ThemeScope` aplica na
+   * página pública), e não da tela: a folha é gerada por uma rota HTTP que ninguém
+   * abre com o tema em mãos, e um parâmetro de query a mais seria uma segunda fonte
+   * para a mesma cor — exatamente o que a F17 decidiu não ter.
+   */
+  theme: BadgeSheetTheme;
 }
 
 export type BadgePrintOutcome =
@@ -59,7 +70,7 @@ export async function prepareBadgePrint(input: {
     withTenant(input.tenantId, (tx) =>
       tx.event.findFirst({
         where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
-        select: { title: true, slug: true },
+        select: { title: true, slug: true, theme: true },
       }),
     ),
     listCredentialRoster({ tenantId: input.tenantId, eventId: input.eventId }),
@@ -91,9 +102,15 @@ export async function prepareBadgePrint(input: {
     };
   }
 
+  /**
+   * A categoria entra em CADA etiqueta, e não no lote: a folha em massa mistura
+   * categorias (40 participantes + 6 da equipe) e é justamente a cor de cada um que
+   * faz a faixa servir para alguma coisa na porta.
+   */
   const badges: BadgeLabel[] = chosen.map((entry) => ({
     name: entry.name,
     code: entry.credential!.code,
+    category: entry.credential!.category,
     subtitle: `${event.title}${
       entry.registrations.length > 0 ? ` · ${entry.registrations.length} inscrição(ões)` : ''
     }`,
@@ -106,9 +123,23 @@ export async function prepareBadgePrint(input: {
     }),
   );
 
+  /**
+   * `resolveTheme` normaliza o que veio do banco e cai no padrão quando o JSON está
+   * inválido — a mesma régua da página pública. O crachá nunca falha por causa do
+   * tema: no pior caso ele sai com a cor de marca da plataforma, que é o desenho
+   * anterior a esta fase.
+   */
+  const { theme } = resolveTheme(event.theme);
+
   return {
     ok: true,
-    batch: { tenantName: tenant.name, eventTitle: event.title, eventSlug: event.slug, badges },
+    batch: {
+      tenantName: tenant.name,
+      eventTitle: event.title,
+      eventSlug: event.slug,
+      badges,
+      theme: { primaryColor: theme.primaryColor ?? null },
+    },
   };
 }
 

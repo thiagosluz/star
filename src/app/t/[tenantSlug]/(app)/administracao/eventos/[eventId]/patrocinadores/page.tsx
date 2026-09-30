@@ -112,10 +112,10 @@ export default async function EventSponsorsPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
   /** `exportacao` traz o pedido recém-criado de contatos (FASE 49). */
-  searchParams: Promise<{ exportacao?: string; erro?: string }>;
+  searchParams: Promise<{ exportacao?: string; erro?: string; confirmarQr?: string }>;
 }) {
   const { tenantSlug, eventId } = await params;
-  const { exportacao, erro } = await searchParams;
+  const { exportacao, erro, confirmarQr } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
@@ -634,6 +634,12 @@ export default async function EventSponsorsPage({
         createdExport={createdExport}
         returnTo={returnTo}
         exportError={erro ?? null}
+        /*
+          O segundo passo do QR repetido chega por QUERY STRING (dívida E57): quem
+          navega sem JavaScript confirma por um link, e o servidor reabre o
+          formulário daquele patrocinador já com a confirmação marcada.
+        */
+        confirmarQr={confirmarQr ?? null}
       />
     </main>
   );

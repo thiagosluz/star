@@ -7,7 +7,7 @@ import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
-import { loadDemandBoard } from '@/lib/events/demand-service';
+import { DEMAND_COLUMN_PAGE_SIZE, loadDemandBoard } from '@/lib/events/demand-service';
 import {
   DEMAND_PRIORITIES,
   DEMAND_PRIORITY_LABELS,
@@ -27,6 +27,17 @@ import {
 
 export const metadata = { title: 'Demandas do evento' };
 export const dynamic = 'force-dynamic';
+
+/**
+ * Id do aviso que ensina o atalho de teclado (dívida E51).
+ *
+ * Vive AQUI, no servidor, e não no componente de cliente, porque os dois precisam do
+ * mesmo valor: o aviso é renderizado pelo cliente (`keyboardHintId`) e o cartão aponta
+ * para ele com `aria-describedby`, montado aqui. Constante exportada de módulo
+ * `'use client'` chegaria ao servidor como referência de cliente — um objeto, não a
+ * string —, então a fonte é a página, e o cliente recebe o valor por prop.
+ */
+const KEYBOARD_HINT_ID = 'demand-board-keyboard-hint';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -59,10 +70,12 @@ export default async function EventDemandsPage({
     equipe?: string;
     situacao?: string;
     busca?: string;
+    /** Quantos cartões por coluna — o "carregar mais" da coluna truncada (E52). */
+    cartoes?: string;
   }>;
 }) {
   const { tenantSlug, eventId } = await params;
-  const { responsavel, equipe, situacao, busca } = await searchParams;
+  const { responsavel, equipe, situacao, busca, cartoes } = await searchParams;
 
   const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
@@ -87,9 +100,25 @@ export default async function EventDemandsPage({
   const canManage = allowed(PERMISSIONS.DEMAND_MANAGE);
   const canConfigure = allowed(PERMISSIONS.DEMAND_TEAM_MANAGE);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O TETO DE CARTÕES POR COLUNA (FASE 50 · dívida E52)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O quadro trazia TODAS as demandas do evento numa consulta. O teto padrão cabe num
+   *  quadro de operação; quando uma coluna passa dele, a tela diz quantos ficaram de
+   *  fora e oferece o link que reabre com mais — o caminho é um parâmetro de URL, então
+   *  funciona sem JavaScript.
+   */
+  const pedido = Number.parseInt(cartoes ?? '', 10);
+  const cardsPerColumn = Math.min(
+    Math.max(Number.isFinite(pedido) ? pedido : DEMAND_COLUMN_PAGE_SIZE, 1),
+    500,
+  );
+
   const result = await loadDemandBoard({
     tenantId,
     eventId,
+    cardsPerColumn,
     filters: {
       assigneeId: responsavel ?? null,
       teamId: equipe ?? null,
@@ -102,6 +131,26 @@ export default async function EventDemandsPage({
 
   const { board } = result;
   const basePath = `/administracao/eventos/${eventId}/demandas`;
+
+  /**
+   * O link de "ver mais" PRESERVA os filtros da tela: perder o filtro ao pedir mais
+   * cartões mostraria outra lista, e a pessoa acharia que o quadro mudou sozinho.
+   */
+  const moreCardsQuery = (totalDaColuna: number): string => {
+    const next = new URLSearchParams();
+
+    if (responsavel) next.set('responsavel', responsavel);
+    if (equipe) next.set('equipe', equipe);
+    if (situacao) next.set('situacao', situacao);
+    if (busca) next.set('busca', busca);
+
+    next.set(
+      'cartoes',
+      String(Math.min(500, Math.max(totalDaColuna, cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE))),
+    );
+
+    return next.toString();
+  };
   const boardPath = tenantPath(tenantSlug, basePath);
 
   const situationTone = (situation: string): string => {
@@ -398,6 +447,7 @@ export default async function EventDemandsPage({
         tenantSlug={tenantSlug}
         eventId={eventId}
         canMove={canManage}
+        keyboardHintId={KEYBOARD_HINT_ID}
       >
         {board.columns.map((column) => (
           <section
@@ -424,6 +474,30 @@ export default async function EventDemandsPage({
               <p className="px-1 py-4 text-xs text-muted-foreground">Nenhuma demanda aqui.</p>
             ) : null}
 
+            {/**
+              * ─────────────────────────────────────────────────────────────────────
+              *  COLUNA TRUNCADA SE ANUNCIA E DÁ O CAMINHO (FASE 50 · dívida E52)
+              * ─────────────────────────────────────────────────────────────────────
+              *  Esconder cartão em silêncio seria pior que a lentidão: quem organiza
+              *  concluiria que a demanda sumiu. O aviso diz QUANTOS ficaram de fora, e o
+              *  link reabre o quadro com mais — parâmetro de URL, sem JavaScript.
+              */}
+            {column.totalCards > column.cards.length ? (
+              <p
+                className="rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground"
+                data-testid={`demand-column-truncated-${column.id}`}
+              >
+                Mostrando {column.cards.length} de {column.totalCards} demandas.{' '}
+                <Link
+                  href={`${basePath}?${moreCardsQuery(column.totalCards)}`}
+                  className="underline underline-offset-4"
+                  data-testid={`demand-column-more-${column.id}`}
+                >
+                  Ver mais
+                </Link>
+              </p>
+            ) : null}
+
             {column.cards.map((card, index) => (
               <article
                 key={card.id}
@@ -431,8 +505,31 @@ export default async function EventDemandsPage({
                 data-demand-column={column.id}
                 data-demand-index={index}
                 data-demand-situation={card.situation}
+                /**
+                 * O nome vai no DOM porque o ANÚNCIO do movimento por teclado precisa
+                 * dele ("A demanda X agora é a 2ª de 5"): ler o texto do link seria
+                 * depender da marcação interna, que muda por motivo de layout.
+                 */
+                data-demand-title={card.title}
+                /**
+                 * ─────────────────────────────────────────────────────────────────────
+                 *  O CARTÃO É FOCÁVEL, E O ATALHO VEM DESCRITO (dívida E51)
+                 * ─────────────────────────────────────────────────────────────────────
+                 *  `tabIndex={0}` põe o cartão na ordem de tabulação; o
+                 *  `aria-describedby` aponta para o aviso que ensina o `Alt + ↑/↓`, então
+                 *  quem chega pelo teclado OUVE o atalho ao focar — em vez de descobri-lo
+                 *  por acaso. Sem permissão de mover não há atalho: o cartão continua
+                 *  focável (o link do título é o conteúdo), mas nada é anunciado.
+                 */
+                tabIndex={canManage ? 0 : undefined}
+                aria-describedby={canManage ? KEYBOARD_HINT_ID : undefined}
                 draggable={canManage}
                 data-testid={`demand-card-${card.id}`}
+                /**
+                 * O anel de foco NÃO é escrito aqui: o `globals.css` já o aplica a todo
+                 * `[tabindex]` com `focus-visible` (o anel é do sistema, não de quem
+                 * lembra de escrever a classe).
+                 */
                 className={`space-y-2 rounded-md border p-2 text-sm ${situationTone(card.situation)}`}
               >
                 <Link

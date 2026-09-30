@@ -79,6 +79,60 @@ export function pageFormat(format: CertificatePageFormat): PageFormat {
 }
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A CAIXA MOVE POR PONTEIRO E POR TECLADO, COM A MESMA RÉGUA (dívida E55)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O arrastar convertia pixel em milímetro e prendia o resultado na página com dois
+ *  `clamp` escritos ali mesmo. O teclado precisa da MESMA conta — e duas cópias da
+ *  mesma regra divergem: uma delas deixaria a caixa sair da página (o layout é
+ *  validado no servidor, e o organizador veria o erro só ao salvar).
+ *
+ *  Então a régua vive aqui, e as duas portas a chamam.
+ */
+export interface ElementBoxMm {
+  xMm: number;
+  yMm: number;
+  widthMm: number;
+  heightMm: number;
+}
+
+/** Passo do movimento por teclado: 1 mm por seta (a página é medida em milímetros). */
+export const ELEMENT_NUDGE_MM = 1;
+
+/** Com Shift: 10 mm de uma vez — atravessar 297 mm a 1 mm por toque seria hostil. */
+export const ELEMENT_NUDGE_FAST_MM = 10;
+
+/** Prende a caixa à página: sem negativo e sem passar da borda direita/inferior. */
+export function clampElementPosition(
+  element: ElementBoxMm,
+  page: CertificatePageFormat,
+): { xMm: number; yMm: number } {
+  const { widthMm, heightMm } = pageFormat(page);
+
+  return {
+    xMm: Math.min(Math.max(element.xMm, 0), Math.max(widthMm - element.widthMm, 0)),
+    yMm: Math.min(Math.max(element.yMm, 0), Math.max(heightMm - element.heightMm, 0)),
+  };
+}
+
+/** A caixa deslocada em milímetros, já presa à página. */
+export function nudgeElementPosition(input: {
+  element: ElementBoxMm;
+  page: CertificatePageFormat;
+  dxMm: number;
+  dyMm: number;
+}): { xMm: number; yMm: number } {
+  return clampElementPosition(
+    {
+      ...input.element,
+      xMm: input.element.xMm + input.dxMm,
+      yMm: input.element.yMm + input.dyMm,
+    },
+    input.page,
+  );
+}
+
+/**
  * Converte o que veio do formulário/banco em formato de página conhecido.
  *
  * `null` para desconhecido: o chamador escolhe o padrão (A4 paisagem) em vez de

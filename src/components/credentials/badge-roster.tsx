@@ -2,13 +2,15 @@
 
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { BadgeCheck, Ban, Loader2, Printer, Users } from 'lucide-react';
+import { BadgeCheck, Ban, Loader2, Printer, Tags, Users } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import type { CredentialActionState } from '@/app/actions/credential-actions';
+import type { CredentialCategoryActionState } from '@/app/actions/credential-category-actions';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ÁREA DE CRACHÁS (FASE 31)
+ *  ÁREA DE CRACHÁS (FASE 31 · CATEGORIA NA FASE 51 · E42)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O QUE A TELA PRECISA RESOLVER, NA ORDEM DO BALCÃO
@@ -22,8 +24,30 @@ import type { CredentialActionState } from '@/app/actions/credential-actions';
  *  Emissão e impressão são atos DIFERENTES: emitir cria o código, imprimir registra
  *  que a etiqueta saiu. Quem reimprime uma folha perdida não deve gerar códigos novos
  *  — o crachá que está na mão de alguém continuaria valendo, e o novo o invalidaria.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A CATEGORIA É ESCOLHIDA EM DOIS LUGARES, E POR UM MOTIVO (FASE 51 · E42)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  • **No LOTE** (`emitCategory`) — emitir 40 crachás de equipe de uma vez é o caso
+ *    comum da secretaria, e obrigar a escolher pessoa por pessoa faria o organizador
+ *    desistir e imprimir tudo na cor padrão, que é o defeito que a dívida quita;
+ *  • **Na LINHA** (o seletor ao lado do código) — o caso da porta: a pessoa chega
+ *    com a faixa errada e a recepção corrige ali. Trocar a categoria NÃO reemite o
+ *    código, então o crachá que está na mão dela continua valendo no balcão.
+ *
+ *  O `tone` de cada linha vem do catálogo do domínio (o mesmo que o PDF e o ZPL
+ *  usam) — o componente não escolhe cor, que é o que a trava do design system exige.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+export interface RosterCategoryOption {
+  value: string;
+  label: string;
+  /** Tom do primitivo `Badge` (E42) — a tela não escolhe cor. */
+  tone: 'primary' | 'info' | 'success' | 'warning' | 'danger' | 'neutral';
+  /** O que a categoria significa, para o seletor explicar a escolha. */
+  description: string;
+}
+
 export interface RosterEntry {
   userId: string;
   name: string;
@@ -39,6 +63,18 @@ export interface RosterEntry {
   registrationStatus: string | null;
   attendedActivities: number;
   minutesAttended: number;
+  /**
+   * Categoria GRAVADA no crachá, como está no banco (E42).
+   *
+   * Cru de propósito: é ele que o seletor da linha marca, e um valor fora do
+   * catálogo (crachá antigo, importação) aparece como "—" em vez de mentir que
+   * alguém escolheu "Participante".
+   */
+  category: string | null;
+  /** Rótulo em português da categoria normalizada. */
+  categoryLabel: string | null;
+  /** Tom do `Badge` da categoria normalizada. */
+  categoryTone: RosterCategoryOption['tone'] | null;
 }
 
 function EmitButton({ label, testId }: { label: string; testId: string }) {
@@ -291,23 +327,43 @@ export function BadgeRoster({
   tenantSlug,
   eventId,
   missingCount,
+  categories,
   emitAction,
   revokeAction,
+  categoryAction,
   pdfPath,
 }: {
   entries: readonly RosterEntry[];
   tenantSlug: string;
   eventId: string;
   missingCount: number;
+  /** O catálogo de categorias, do domínio — a tela não inventa nem ordena. */
+  categories: readonly RosterCategoryOption[];
   emitAction: (prev: CredentialActionState | null, formData: FormData) => Promise<CredentialActionState>;
   revokeAction: (prev: CredentialActionState | null, formData: FormData) => Promise<CredentialActionState>;
+  /** Troca a categoria de UM crachá (E42) — o código continua o mesmo. */
+  categoryAction: (
+    prev: CredentialCategoryActionState | null,
+    formData: FormData,
+  ) => Promise<CredentialCategoryActionState>;
   /** Endereço-base da folha de crachás (PDF); o evento e a seleção vão na query. */
   pdfPath: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /**
+   * A categoria do LOTE. Começa em branco ("Participante") porque é o padrão do
+   * domínio e o crachá de quem já era emitido antes desta fase — e o valor viaja
+   * dentro do MESMO formulário da emissão, para não existir um segundo clique que
+   * alguém possa esquecer.
+   */
+  const [emitCategory, setEmitCategory] = useState<string>(categories[0]?.value ?? 'PARTICIPANT');
   const [emitState, emitFormAction] = useActionState<CredentialActionState | null, FormData>(emitAction, null);
   const [revokeState, revokeFormAction] = useActionState<CredentialActionState | null, FormData>(
     revokeAction,
+    null,
+  );
+  const [categoryState, categoryFormAction] = useActionState<CredentialCategoryActionState | null, FormData>(
+    categoryAction,
     null,
   );
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -339,12 +395,37 @@ export function BadgeRoster({
   return (
     <div className="space-y-4" data-testid="badge-roster">
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface-low p-3">
-        <form action={emitFormAction} data-testid="badge-emit-form">
+        <form action={emitFormAction} data-testid="badge-emit-form" className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="eventId" value={eventId} />
           {[...selected].map((userId) => (
             <input key={userId} type="hidden" name="userIds" value={userId} />
           ))}
+
+          {/**
+           * ── A CATEGORIA DO LOTE (E42) ─────────────────────────────────────────
+           *  Um `select` com o catálogo do domínio: a emissão em massa é o caminho
+           *  da secretaria (40 crachás de equipe), e escolher pessoa por pessoa ali
+           *  faria o organizador desistir da cor.
+           */}
+          <label className="space-y-1 text-xs font-medium">
+            Categoria do lote
+            <select
+              name="category"
+              value={emitCategory}
+              onChange={(event) => setEmitCategory(event.target.value)}
+              aria-label="Categoria dos crachás emitidos"
+              data-testid="badge-emit-category"
+              className="block min-w-48 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+            >
+              {categories.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <EmitButton
             label={
               selected.size > 0
@@ -367,7 +448,7 @@ export function BadgeRoster({
               : `Imprimir a folha (${printableCount} selecionado(s))`}
           </a>
           <span className="text-muted-foreground">
-            Folha A4 com 8 crachás por página: QR Code, código e nome.
+            Folha A4 com 8 crachás por página: QR Code, código, nome e a faixa da categoria.
           </span>
         </div>
       </div>
@@ -385,6 +466,16 @@ export function BadgeRoster({
           className={`text-sm ${emitState.ok ? 'text-success-strong' : 'text-destructive'}`}
         >
           {emitState.message}
+        </p>
+      ) : null}
+
+      {categoryState ? (
+        <p
+          role={categoryState.ok ? 'status' : 'alert'}
+          data-testid="badge-category-feedback"
+          className={`text-sm ${categoryState.ok ? 'text-success-strong' : 'text-destructive'}`}
+        >
+          {categoryState.message}
         </p>
       ) : null}
 
@@ -436,6 +527,23 @@ export function BadgeRoster({
             <span className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
               {entry.code ? (
                 <>
+                  {/**
+                   * ── A FAIXA DA CATEGORIA NA LISTA (E42) ────────────────────────
+                   *  O mesmo tom que sai no papel: quem confere a lista antes de
+                   *  imprimir vê a cor que vai para a etiqueta — e um crachá com
+                   *  valor fora do catálogo aparece como "—", sem fingir que é
+                   *  participante.
+                   */}
+                  {entry.categoryLabel && entry.categoryTone ? (
+                    <Badge tone={entry.categoryTone} withDot size="sm" data-testid={`badge-category-${entry.userId}`}>
+                      {entry.categoryLabel}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground" data-testid={`badge-category-${entry.userId}`}>
+                      categoria não definida
+                    </span>
+                  )}
+
                   <span className="code-data" data-testid={`badge-code-${entry.userId}`}>
                     {entry.code}
                   </span>
@@ -449,6 +557,53 @@ export function BadgeRoster({
                     {entry.printed ? ' · impresso' : ''}
                     {entry.legacy ? ' · crachá anterior' : ''}
                   </span>
+
+                  {/**
+                   * ── TROCAR A CATEGORIA NA PORTA (E42) ──────────────────────────
+                   *  Formulário próprio, com o `credentialId` do crachá: o código
+                   *  NÃO muda, então a etiqueta que está na mão da pessoa continua
+                   *  valendo — o que muda é a cor da próxima impressão e o que a
+                   *  lista mostra.
+                   */}
+                  {entry.state === 'ACTIVE' && entry.credentialId ? (
+                    <form action={categoryFormAction} className="flex items-center gap-1">
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <input type="hidden" name="credentialId" value={entry.credentialId} />
+                      <label className="sr-only" htmlFor={`category-${entry.userId}`}>
+                        Categoria do crachá de {entry.name}
+                      </label>
+                      <select
+                        id={`category-${entry.userId}`}
+                        name="category"
+                        defaultValue={entry.category ?? ''}
+                        data-testid={`badge-category-select-${entry.userId}`}
+                        className="rounded-md border border-border bg-background px-2 py-0.5 text-xs"
+                      >
+                        {/* A opção vazia só existe para um valor FORA do catálogo:
+                            sem ela o `select` mostraria "Participante" para um dado
+                            que não é participante. Desabilitada, ela não é escolhível. */}
+                        {entry.category === null || entry.categoryLabel === null ? (
+                          <option value="" disabled>
+                            Definir categoria…
+                          </option>
+                        ) : null}
+                        {categories.map((category) => (
+                          <option key={category.value} value={category.value}>
+                            {category.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        data-testid={`badge-category-save-${entry.userId}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 hover:bg-muted"
+                      >
+                        <Tags className="size-3" aria-hidden />
+                        Trocar
+                      </button>
+                    </form>
+                  ) : null}
 
                   {entry.state === 'ACTIVE' ? (
                     revoking === entry.userId ? (

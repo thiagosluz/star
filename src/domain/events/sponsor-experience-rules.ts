@@ -340,3 +340,61 @@ export const sponsorQrInputSchema = z.object({
 });
 
 export type SponsorQrInput = z.input<typeof sponsorQrInputSchema>;
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  QR REPETIDO NO MESMO EVENTO (FASE 51 · dívida E57)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Quantos QRs aquele patrocinador já tem NAQUELE evento antes deste.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE AVISAR E CONFIRMAR, E NÃO IMPOR UM TETO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Um patrocinador pode legitimamente ter DOIS estandes no mesmo evento — a
+ *  praça de alimentação e o palco principal —, e cada um precisa do próprio QR
+ *  para o lead não se misturar. Um teto fixo recusaria um caso real e a
+ *  instituição contornaria o sistema (dois cadastros do mesmo patrocinador, que
+ *  é pior: quebra o contrato em dois).
+ *
+ *  O que a dívida descreve é outro problema: **cada código novo é uma chance nova
+ *  de creditar a mesma gente**. O crédito continua correto (um XP por pessoa POR
+ *  QR, garantido pelo índice único de `sponsor_scans`), mas dez QRs no mesmo
+ *  estande viram dez leituras da mesma pessoa — e a instituição não descobre isso
+ *  olhando o painel depois.
+ *
+ *  Então a decisão é da INSTITUIÇÃO, com o número na mão: o sistema conta, diz o
+ *  efeito por extenso e exige um segundo passo. É a mesma régua de "avisar e
+ *  confirmar" que o projeto já usa onde o ato é legítimo mas tem consequência.
+ */
+export const SPONSOR_QR_REPEAT_THRESHOLD = 1;
+
+/**
+ * A contagem que dispara o aviso. `0` = é o primeiro QR do patrocinador neste
+ * evento; qualquer valor acima disso exige confirmação explícita.
+ */
+export function sponsorQrRepeatWarning(input: {
+  /** QRs do MESMO patrocinador no MESMO evento, antes de criar este. */
+  existingInEvent: number;
+  /** O ato já foi confirmado pela instituição (segundo passo da tela)? */
+  confirmed: boolean;
+}): { required: boolean; blocked: boolean; message: string | null } {
+  const existing = Math.max(0, Math.trunc(input.existingInEvent));
+
+  if (existing < SPONSOR_QR_REPEAT_THRESHOLD) {
+    return { required: false, blocked: false, message: null };
+  }
+
+  /**
+   * A mensagem carrega o NÚMERO e a CONSEQUÊNCIA, sempre as duas: "já tem 3 QRs"
+   * sozinho não diz por que isso importa, e "cada QR credita de novo" sozinho não
+   * diz quanto já existe. Quem decide precisa das duas coisas.
+   */
+  const plural = existing === 1 ? '1 QR' : `${existing} QRs`;
+  const message =
+    `Este patrocinador já tem ${plural} neste evento. ` +
+    'Cada código novo é uma chance nova de creditar a mesma pessoa: quem ler os dois ' +
+    'QRs recebe o crédito duas vezes (um por código), e isso é o esperado — ' +
+    'confirme apenas se forem estandes diferentes.';
+
+  return { required: true, blocked: !input.confirmed, message };
+}

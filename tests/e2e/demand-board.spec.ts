@@ -118,6 +118,22 @@ async function tableOf(demandId: string) {
 }
 
 /**
+ * A ordem dos cartões de UMA coluna, na mesma régua da tela (`position` crescente).
+ *
+ * A asserção de reordenação precisa da ORDEM, e não do `columnId`: é isso que o teclado
+ * muda — o cartão fica na mesma coluna e troca de lugar dentro dela.
+ */
+async function columnOrder(columnId: string): Promise<string[]> {
+  const rows = await e2eDb.demand.findMany({
+    where: { columnId },
+    orderBy: [{ position: 'asc' }, { id: 'asc' }],
+    select: { id: true },
+  });
+
+  return rows.map((row) => row.id);
+}
+
+/**
  * Arrasta um cartão até uma coluna com eventos REAIS de HTML5.
  *
  * O `dragTo` do Playwright emula mouse, e mouse não dispara `dragstart` de HTML5 no
@@ -151,6 +167,20 @@ async function dragCardToColumn(
     },
     { column: columnId, demand: demandId },
   );
+}
+
+/**
+ * Abre o formulário de criação SÓ se ele estiver fechado.
+ *
+ * O estado do `<details>` é do DOM e sobrevive à regravação da página: depois de criar
+ * um cartão ele continua aberto, e um clique cego no `summary` o fecharia — deixando o
+ * campo invisível para o passo seguinte.
+ */
+async function openCreateForm(page: import('@playwright/test').Page): Promise<void> {
+  const details = page.getByTestId('demand-create');
+  const aberto = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+
+  if (!aberto) await details.locator('summary').click();
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -474,4 +504,186 @@ test.describe('quadro de demandas internas', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByTestId('demand-board')).toHaveCount(0);
   });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  A TERCEIRA PORTA: TECLADO (dívida E51)
+   *
+   *  O arrastar reordena DENTRO da coluna e o formulário do cartão troca de COLUNA —
+   *  quem não usa ponteiro não tinha como mudar a ordem. O cenário monta três cartões
+   *  na MESMA coluna e move o último para cima com `Alt + ↑`, provando:
+   *
+   *    • a ordem gravada no banco (a escrita é a mesma do arrastar, com a trava da
+   *      ADR-203 pelo `fromColumnId`);
+   *    • o anúncio na região viva (quem não vê a tela precisa ouvir a posição nova);
+   *    • o FOCO no cartão depois da regravação (sem ele, a segunda tecla iria para o
+   *      `body`);
+   *    • e que a seta SOZINHA não move nada — o acorde é `Alt + seta`.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  test('6. o teclado reordena o cartão DENTRO da coluna e anuncia a posição', async ({ page }) => {
+    await signInAs(page, organizerEmail);
+    await page.goto(boardUrl());
+
+    /** Dois cartões novos caem na primeira coluna ("A fazer"), junto do que já está lá. */
+    for (const title of ['Separar os banners', 'Revisar a lista de presença']) {
+      /**
+       * O `<details>` do formulário fica ABERTO depois de enviar: clicar no `summary`
+       * sem conferir FECHA o painel, e o campo deixa de estar visível (a primeira
+       * versão deste cenário mediu o próprio clique, e não o quadro).
+       */
+      await openCreateForm(page);
+
+      const form = page.getByTestId('demand-create-form');
+      await form.getByTestId('demand-title').fill(title);
+      await form.getByTestId('inline-submit').click();
+
+      await expect
+        .poll(async () => (await boardState()).demands.some((demand) => demand.title === title), {
+          timeout: 30_000,
+        })
+        .toBe(true);
+    }
+
+    await page.reload();
+
+    const state = await boardState();
+    const column = state.columns[0]!;
+    const ordem = await columnOrder(column.id);
+
+    expect(ordem.length).toBeGreaterThanOrEqual(3);
+
+    const ultimo = ordem[ordem.length - 1]!;
+    const card = page.getByTestId(`demand-card-${ultimo}`);
+
+    /**
+     * O cartão precisa ser FOCÁVEL para o teclado alcançá-lo — é o `tabIndex` que a
+     * dívida E51 acrescentou —, e o atalho vem descrito no aviso referenciado por
+     * `aria-describedby`.
+     */
+    await card.focus();
+    await expect(card).toBeFocused();
+
+    /** A seta SOZINHA não reordena: sem o `Alt` o navegador rola a página. */
+    await page.keyboard.press('ArrowUp');
+
+    await expect.poll(async () => (await columnOrder(column.id)).indexOf(ultimo), { timeout: 10_000 }).toBe(
+      ordem.length - 1,
+    );
+
+    await page.keyboard.press('Alt+ArrowUp');
+
+    const posicaoEsperada = ordem.length - 2;
+
+    await expect
+      .poll(async () => (await columnOrder(column.id)).indexOf(ultimo), { timeout: 30_000 })
+      .toBe(posicaoEsperada);
+
+    /** A tela mostra a ordem nova, e o anúncio diz QUAL posição o cartão passou a ter. */
+    await expect(card).toHaveAttribute('data-demand-index', String(posicaoEsperada));
+    await expect(page.getByTestId('demand-board-announce')).toContainText(
+      `agora é a ${posicaoEsperada + 1}ª de ${ordem.length} na coluna`,
+    );
+
+    /** O foco continua no cartão: sem isso, a próxima tecla se perderia. */
+    await expect(card).toBeFocused();
+
+    /**
+     * A trilha guarda o fato como qualquer outro movimento — o teclado não é um caminho
+     * paralelo de escrita.
+     */
+    const kinds = (await tableOf(ultimo)).map((entry) => entry.kind);
+    expect(kinds[kinds.length - 1]).toBe('MOVED');
+
+    /** Na ponta, o anúncio é honesto: "já é a primeira", e nada é escrito. */
+    const movimentosAntes = (await tableOf(ultimo)).length;
+    const primeiro = (await columnOrder(column.id))[0]!;
+
+    await page.getByTestId(`demand-card-${primeiro}`).focus();
+    await page.keyboard.press('Alt+ArrowUp');
+
+    await expect(page.getByTestId('demand-board-announce')).toContainText('já é a primeira da coluna');
+    await expect.poll(async () => (await columnOrder(column.id))[0], { timeout: 10_000 }).toBe(primeiro);
+    expect((await tableOf(ultimo)).length).toBe(movimentosAntes);
+  });
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A COLUNA TRUNCADA SE ANUNCIA (FASE 50 · dívida E52)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O quadro deixou de trazer todas as demandas do evento: cada coluna tem um teto, e
+   *  o que ficou de fora aparece com o NÚMERO e o caminho para ver o resto. Aqui o teto
+   *  é forçado a 1 pela URL — é o mesmo parâmetro que o link "Ver mais" usa.
+   */
+  test('7. coluna com mais cartões do que a janela avisa quantos ficaram de fora', async ({ page }) => {
+    await signInAs(page, organizerEmail);
+
+    /**
+     * A COLUNA É PREPARADA PELO PRÓPRIO CASO: dois cartões na primeira coluna, criados
+     * pela tela. Depender do que os casos anteriores deixaram faria o teste passar ou
+     * falhar conforme a ordem — o defeito que a dívida E71 descreve.
+     */
+    /** A leitura cria o quadro (e as colunas) — depois dela as linhas existem. */
+    await page.goto(boardUrl());
+
+    const coluna = await primeiraColuna();
+
+    /**
+     * Dois cartões DIRETO no banco: é fixture, não comportamento sob teste (a criação
+     * pela tela já tem o caso 1). O que este caso mede é a JANELA da coluna.
+     */
+    await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+
+      await tx.demand.createMany({
+        data: [
+          {
+            tenantId,
+            boardId: coluna.boardId,
+            eventId,
+            columnId: coluna.id,
+            title: `Truncada A ${RUN_ID}`,
+            priority: 'NORMAL',
+            position: 900,
+          },
+          {
+            tenantId,
+            boardId: coluna.boardId,
+            eventId,
+            columnId: coluna.id,
+            title: `Truncada B ${RUN_ID}`,
+            priority: 'NORMAL',
+            position: 901,
+          },
+        ],
+      });
+    });
+
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}/demandas?cartoes=1`);
+
+    const aviso = page.getByTestId(`demand-column-truncated-${coluna.id}`);
+
+    await expect(aviso).toBeVisible({ timeout: 20_000 });
+    await expect(aviso).toContainText('Mostrando 1 de');
+
+    /** O caminho para ver o resto está na tela e é um link de verdade (sem JS). */
+    await expect(page.getByTestId(`demand-column-more-${coluna.id}`)).toBeVisible();
+
+    /** E a contagem do cabeçalho mostra a JANELA, não o total escondido. */
+    await expect(page.getByTestId(`demand-column-count-${coluna.id}`)).toHaveText('1');
+  });
 });
+
+/** A primeira coluna do quadro (a de menor posição) e o quadro a que ela pertence. */
+async function primeiraColuna(): Promise<{ id: string; boardId: string }> {
+  const primeira = await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+
+    return tx.demandColumn.findFirstOrThrow({
+      where: { tenantId, board: { eventId } },
+      orderBy: { position: 'asc' },
+      select: { id: true, boardId: true },
+    });
+  });
+
+  return { id: primeira.id, boardId: primeira.boardId };
+}

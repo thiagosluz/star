@@ -24,8 +24,9 @@ import {
   assignableTenantRoles,
   getTeamOverview,
   removeMember,
-  updateMemberRoles,
 } from '../../src/lib/admin/member-service';
+import { demoteMemberToParticipant } from '../../src/lib/admin/member-demotion';
+import { updateMemberRoles } from '../../src/lib/admin/member-service';
 import { ensureStorageRoom, storageUsage } from '../../src/lib/storage/storage-quota';
 import { requestAssetUpload } from '../../src/lib/admin/asset-service';
 import { requestMaterialUpload } from '../../src/lib/speakers/material-service';
@@ -741,5 +742,141 @@ describe('remoção de membro', () => {
     // readmissível porque é uma LINHA (status), não um usuário apagado.
     expect(tenantSlug).toBe(`f21-membros-${RUN}`);
     expect(tightTenantSlug).toBe(`f21-apertada-${RUN}`);
+  }, 90_000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('converter em participante (FASE 50 · dívida C7)', () => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O DEFEITO: SAIR DA EQUIPE TIRAVA A ÁREA DE PARTICIPANTE TAMBÉM
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O vínculo é UMA linha por (instituição, pessoa): remover gravava `REMOVED` e o
+   *  acesso de participante ia junto — quem tinha inscrição e certificado perdia a
+   *  própria área, e as inscrições continuavam registradas na instituição.
+   *
+   *  Aqui a pessoa é membro da equipe COM inscrição no evento, e a conversão precisa
+   *  tirar a equipe (papéis, quota, tela) e MANTER o participante.
+   */
+  it('sai da equipe, perde os papéis e CONTINUA participante', async () => {
+    const pessoa = await createUser('equipe-que-vira-participante');
+    const registrationId = randomUUID();
+
+    await adminPrisma.userTenantProfile.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        userId: pessoa,
+        status: 'ACTIVE',
+        kind: 'MEMBER',
+        joinedAt: new Date(),
+      },
+    });
+
+    await withTenant(tenantId, (tx) =>
+      tx.registration.create({
+        data: {
+          id: registrationId,
+          tenantId,
+          eventId,
+          activityId: null,
+          userId: pessoa,
+          status: 'CONFIRMED',
+        },
+      }),
+    );
+
+    const comPapel = await updateMemberRoles({
+      tenantId,
+      actorId: ownerId,
+      userId: pessoa,
+      roles: ['STAFF'],
+    });
+
+    expect(comPapel.ok, comPapel.ok ? 'ok' : comPapel.message).toBe(true);
+
+    const before = await getTeamOverview(tenantId);
+    expect(before.members.some((member) => member.userId === pessoa)).toBe(true);
+
+    const result = await demoteMemberToParticipant({
+      tenantId,
+      actorId: ownerId,
+      userId: pessoa,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
+
+    /** Saiu da equipe: a vaga do plano voltou e a tela não o lista mais. */
+    const after = await getTeamOverview(tenantId);
+    expect(after.memberCount).toBe(before.memberCount - 1);
+    expect(after.members.some((member) => member.userId === pessoa)).toBe(false);
+    expect(after.participantCount).toBeGreaterThanOrEqual(before.participantCount);
+
+    /** Nenhum papel vivo — inclusive os de evento e atividade. */
+    const liveRoles = await withTenant(tenantId, (tx) =>
+      tx.roleAssignment.count({ where: { tenantId, userId: pessoa, revokedAt: null } }),
+    );
+    expect(liveRoles).toBe(0);
+
+    /** E o ESSENCIAL: o vínculo segue ATIVO, como PARTICIPANTE. */
+    const profile = await withTenant(tenantId, (tx) =>
+      tx.userTenantProfile.findFirstOrThrow({
+        where: { tenantId, userId: pessoa },
+        select: { kind: true, status: true, deletedAt: true },
+      }),
+    );
+
+    expect(profile.kind).toBe('PARTICIPANT');
+    expect(profile.status).toBe('ACTIVE');
+    expect(profile.deletedAt).toBeNull();
+
+    /** A inscrição continua lá — é ela que a área de participante mostra. */
+    const inscricao = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirstOrThrow({
+        where: { id: registrationId },
+        select: { status: true, userId: true },
+      }),
+    );
+
+    expect(inscricao.userId).toBe(pessoa);
+    expect(inscricao.status).toBe('CONFIRMED');
+
+    /** E a trilha guarda a conversão com as duas pontas. */
+    const audit = await withTenant(tenantId, (tx) =>
+      tx.auditLog.findFirst({
+        where: { tenantId, entityId: pessoa, entityType: 'UserTenantProfile', action: 'UPDATE' },
+        select: { changes: true },
+      }),
+    );
+
+    expect(audit).not.toBeNull();
+  }, 90_000);
+
+  it('RECUSA converter a si mesmo e o ÚLTIMO proprietário', async () => {
+    const self = await demoteMemberToParticipant({ tenantId, actorId: ownerId, userId: ownerId });
+
+    expect(self.ok).toBe(false);
+    if (!self.ok) expect(self.code).toBe('SELF');
+
+    /** O dono do tenant do arquivo é o único proprietário ativo destes testes. */
+    const outro = await createUser('dono-a-converter');
+    await adminPrisma.userTenantProfile.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        userId: outro,
+        status: 'ACTIVE',
+        kind: 'MEMBER',
+      },
+    });
+
+    const semVinculo = await demoteMemberToParticipant({
+      tenantId,
+      actorId: ownerId,
+      userId: nobodyId,
+    });
+
+    expect(semVinculo.ok).toBe(false);
+    if (!semVinculo.ok) expect(semVinculo.code).toBe('NOT_FOUND');
   }, 90_000);
 });

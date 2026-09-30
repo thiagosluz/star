@@ -43,6 +43,11 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import { isSha256Hex } from '@/domain/review/submission-rules';
+
+/** A chave do metadado de checksum — a MESMA na assinatura e na leitura (dívida E26). */
+const CHECKSUM_METADATA_KEY = 'sha256';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Configuração
 // ───────────────────────────────────────────────────────────────────────────────
@@ -223,21 +228,57 @@ export async function createUploadUrl(input: {
   contentType: string;
   contentLength: number;
   expiresInSeconds?: number;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O SHA-256 DECLARADO VAI COMO CHECKSUM DO STORAGE (FASE 50 · dívida E26)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até aqui o `PUT` assinado não levava checksum nenhum: o storage não tinha o que
+   *  reportar, e `verifyStoredObject` caía na conferência por TAMANHO — que não
+   *  distingue o arquivo enviado de outro com o mesmo número de bytes.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE NÃO UM METADADO NOSSO (`x-amz-meta-sha256`)
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  Parece a solução óbvia e NÃO É: o metadado é aquilo que o cliente escreveu. A
+   *  confirmação compararia a declaração do cliente com... a declaração do cliente, e
+   *  a verificação passaria sempre — pior que a conferência por tamanho, porque
+   *  fingiria conferir.
+   *
+   *  O QUE VERIFICA DE VERDADE é o checksum do STORAGE (`x-amz-checksum-sha256`): o
+   *  MinIO calcula o SHA-256 do corpo que recebeu, **RECUSA** o PUT quando o corpo não
+   *  casa com o valor assinado (`BadDigest`) e grava o valor calculado no objeto. Na
+   *  confirmação, `inspectObject` lê esse valor e `verifyStoredObject` compara o
+   *  declarado com o que o STORAGE calculou — dois lados independentes.
+   *
+   *  O header entra em `signableHeaders`: sem ele, a assinatura não confere e o upload
+   *  nem começa.
+   */
+  checksumSha256?: string | null;
 }): Promise<UploadTicket> {
   const expiresIn = input.expiresInSeconds ?? UPLOAD_URL_TTL_SECONDS;
+  const checksum = isSha256Hex(input.checksumSha256 ?? '') ? input.checksumSha256!.toLowerCase() : null;
 
   const command = new PutObjectCommand({
     Bucket: input.bucket,
     Key: input.objectKey,
     ContentType: input.contentType,
     ContentLength: input.contentLength,
+    ...(checksum
+      ? {
+          ChecksumAlgorithm: 'SHA256' as const,
+          /** O storage espera BASE64; a aplicação fala hexadecimal. */
+          ChecksumSHA256: Buffer.from(checksum, 'hex').toString('base64'),
+        }
+      : {}),
   });
 
   const uploadUrl = await getSignedUrl(publicClient(), command, {
     expiresIn,
-    // Assina também o tipo de conteúdo: o navegador precisa enviar exatamente
-    // este `Content-Type`.
-    signableHeaders: new Set(['content-type', 'content-length']),
+    signableHeaders: new Set([
+      'content-type',
+      'content-length',
+      ...(checksum ? ['x-amz-checksum-sha256'] : []),
+    ]),
   });
 
   return {
@@ -246,6 +287,9 @@ export async function createUploadUrl(input: {
     bucket: input.bucket,
     requiredHeaders: {
       'Content-Type': input.contentType,
+      ...(checksum
+        ? { 'x-amz-checksum-sha256': Buffer.from(checksum, 'hex').toString('base64') }
+        : {}),
     },
     expiresInSeconds: expiresIn,
   };
@@ -280,7 +324,21 @@ export async function inspectObject(
 ): Promise<StoredObjectInfo> {
   try {
     const head = await s3.send(
-      new HeadObjectCommand({ Bucket: bucket, Key: objectKey }),
+      new HeadObjectCommand({
+        Bucket: bucket,
+        Key: objectKey,
+        /**
+         * ───────────────────────────────────────────────────────────────────────────
+         *  SEM ISTO O STORAGE NÃO CONTA O CHECKSUM (FASE 50 · dívida E26)
+         * ───────────────────────────────────────────────────────────────────────────
+         *  O objeto carrega o `x-amz-checksum-sha256` desde o PUT, mas o `HeadObject`
+         *  só devolve os valores de checksum quando a leitura PEDE por eles
+         *  (`x-amz-checksum-mode: ENABLED`). Sem esta linha o upload assinado passa a
+         *  existir e a inspeção continua devolvendo `null` — a correção ficaria
+         *  invisível, e foi isso que o teste desta fase pegou.
+         */
+        ChecksumMode: 'ENABLED',
+      }),
     );
 
     return {
@@ -312,11 +370,19 @@ function normalizeChecksum(head: {
   ChecksumSHA256?: string;
   Metadata?: Record<string, string>;
 }): string | null {
-  // Metadado próprio, em hexadecimal — é o formato que usamos.
-  const fromMetadata = head.Metadata?.['sha256'];
-  if (fromMetadata && /^[a-f0-9]{64}$/i.test(fromMetadata)) {
-    return fromMetadata.toLowerCase();
-  }
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A ORDEM IMPORTA: PRIMEIRO O CHECKSUM DO STORAGE (FASE 50 · dívida E26)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `ChecksumSHA256` é o que o STORAGE calculou do corpo que recebeu (e conferiu na
+   *  hora do PUT). Ele vem primeiro porque é o único valor independente da declaração
+   *  do cliente.
+   *
+   *  Os metadados vêm DEPOIS, e continuam sendo lidos para não perder o checksum de
+   *  objeto antigo: `sha256-hash` é o nome que o upload do SERVIDOR gravou até então
+   *  (nele o hash é calculado dos bytes enviados, então vale como conferência), e
+   *  `sha256` ficou como chave canônica.
+   */
 
   if (head.ChecksumSHA256) {
     try {
@@ -370,7 +436,7 @@ export async function putObjectBuffer(input: {
       Body: input.body,
       ContentType: input.contentType,
       ContentLength: input.body.length,
-      Metadata: { 'sha256-hash': checksum, ...(input.metadata ?? {}) },
+      Metadata: { [CHECKSUM_METADATA_KEY]: checksum, ...(input.metadata ?? {}) },
     }),
   );
 

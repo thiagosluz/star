@@ -63,6 +63,22 @@ export type AdminErrorCode =
    * excluí-la deixaria a promessa sem prêmio, e a recusa diz quantos são.
    */
   | 'CARD_IN_USE'
+  /**
+   * O item que se tentou restaurar já está ativo (FASE 51 · dívida E58).
+   *
+   * Não é erro de sistema: é a resposta do `updateMany` condicional quando duas abas
+   * (ou duas pessoas) restauram o mesmo item — a segunda recebe "já está ativa", que
+   * é a verdade, em vez de uma segunda entrada na trilha.
+   */
+  | 'ALREADY_ACTIVE'
+  /**
+   * Já existe um item ATIVO com o mesmo nome do que se quer restaurar (FASE 51).
+   *
+   * O slug não colide (o índice único `(tenantId, slug)` é total e reserva o slug
+   * enquanto o item está arquivado), mas o NOME não é único em lugar nenhum — e
+   * restaurar produziria duas cartas (ou missões) ativas com o mesmo nome.
+   */
+  | 'ARCHIVE_CONFLICT'
   /** A capacidade nova da sala ficaria abaixo de atividade já configurada/ocupada. */
   | 'ROOM_CAPACITY_BELOW_USAGE'
   /** O plano da instituição atingiu o limite de eventos (FASE 12, item C2). */

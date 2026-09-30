@@ -14,6 +14,7 @@ import {
   deleteTeamAction,
   setTeamMembersAction,
 } from '@/app/actions/demand-actions';
+import { moveTeamOrderAction } from '@/app/actions/team-order-actions';
 
 export const metadata = { title: 'Equipes do evento' };
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,22 @@ export const dynamic = 'force-dynamic';
  *  Só vínculo `MEMBER` ATIVO da instituição. Participante de evento não é força de
  *  trabalho por acidente — e a lista de candidatos é a mesma da atribuição de
  *  demanda, porque duas definições de "quem trabalha aqui" divergiriam.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A ORDEM NA VITRINE (FASE 51 · dívida E63)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A página pública ordenava as equipes por nome — o que dá conta do caso comum, mas
+ *  não permite o "a presidência primeiro, depois a diretoria na ordem que eu decidir".
+ *  Aqui ficam as setas que definem essa ordem, e elas são FORMULÁRIOS: funcionam sem
+ *  JavaScript, como o resto das ações desta tela.
+ *
+ *  A lista é a MESMA que a vitrine mostra (a régua de `team-order-rules`), e não a
+ *  ordem alfabética do banco: se as duas divergissem, "subir" moveria a equipe para
+ *  um lugar que a página pública não mostra.
+ *
+ *  Quem já foi ordenado vem primeiro, do menor para o maior; quem nunca foi ordenado
+ *  (zero = "sem opinião") fica depois, em ordem alfabética — assim a equipe nova não
+ *  entra no meio da lista que o organizador montou.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export default async function EventTeamsPage({
@@ -96,7 +113,8 @@ export default async function EventTeamsPage({
           <Link href={tenantPath(tenantSlug, '/meu-perfil-publico')} className="underline">
             perfil público
           </Link>
-          .
+          . As setas <strong>↑</strong> e <strong>↓</strong> definem a ordem das equipes nessa
+          vitrine — equipes sem ordem definida ficam depois das ordenadas, em ordem alfabética.
         </p>
       </header>
 
@@ -107,7 +125,7 @@ export default async function EventTeamsPage({
         </p>
       ) : (
         <ul className="space-y-4" data-testid="teams-list">
-          {board.teams.map((team) => (
+          {board.teams.map((team, index) => (
             <li key={team.id} className="rounded-lg border border-border bg-card p-4" data-testid={`team-${team.id}`}>
               <header className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -121,12 +139,51 @@ export default async function EventTeamsPage({
                     ) : (
                       'sem líder definido'
                     )}{' '}
-                    · {team.openDemands} demanda(s) em aberto
+                    · {team.openDemands} demanda(s) em aberto ·{' '}
+                    {team.displayOrder > 0 ? `${index + 1}º na vitrine` : 'sem ordem definida'}
                   </p>
                   {team.description ? (
                     <p className="mt-1 text-xs text-muted-foreground">{team.description}</p>
                   ) : null}
                 </div>
+
+                {/**
+                 * As setas da ORDEM (FASE 51 · dívida E63). Ficam fora do bloco
+                 * `canConfigure` de membros? Não: quem administra a equipe administra a
+                 * ordem dela — é a MESMA permissão (`demand:team:manage`), e a barreira
+                 * de verdade está na Server Action.
+                 *
+                 * Dois formulários, e não um com dois botões: o `InlineActionForm` envia
+                 * `requestSubmit()` de UM formulário, e a direção viaja como campo oculto —
+                 * é o mesmo desenho das colunas do quadro.
+                 */}
+                {canConfigure ? (
+                  <div className="flex items-center gap-1">
+                    <InlineActionForm
+                      action={moveTeamOrderAction}
+                      submitLabel="↑"
+                      testId={`team-up-${team.id}`}
+                      className="inline-flex"
+                    >
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <input type="hidden" name="teamId" value={team.id} />
+                      <input type="hidden" name="direction" value="up" />
+                    </InlineActionForm>
+
+                    <InlineActionForm
+                      action={moveTeamOrderAction}
+                      submitLabel="↓"
+                      testId={`team-down-${team.id}`}
+                      className="inline-flex"
+                    >
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <input type="hidden" name="teamId" value={team.id} />
+                      <input type="hidden" name="direction" value="down" />
+                    </InlineActionForm>
+                  </div>
+                ) : null}
               </header>
 
               {canConfigure ? (

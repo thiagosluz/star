@@ -1,19 +1,26 @@
 import Link from 'next/link';
-import { Layers, Pencil } from 'lucide-react';
+import { ArchiveRestore, Layers, Pencil } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RARITY_LABELS, resolveArt, resolvePalette } from '@/domain/gamification/card-rules';
+import {
+  CATALOG_SCOPE_LABELS,
+  catalogScopeFromQuery,
+  catalogScopeToggleLabel,
+} from '@/domain/gamification/catalog-rules';
 import { cardBackContent, resolveCardStage } from '@/domain/gamification/card-presentation';
+import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, type CardTrigger } from '@/domain/gamification/types';
 import { listCardTemplates, type AdminCardRow } from '@/lib/admin/gamification-admin-service';
-import { listAdminEvents } from '@/lib/admin/catalog-service';
+import { listAdminEvents, type AdminEventRow } from '@/lib/admin/catalog-service';
 import { withTenant } from '@/lib/db/tenant-client';
 import { HoloCard } from '@/components/gamification/holo-card';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { deleteCardTemplateAction, saveCardTemplateAction } from '@/app/actions/admin-actions';
+import { restoreCardTemplateAction } from '@/app/actions/catalog-archive-actions';
 import { grantCardAction } from '@/app/actions/gamification-actions';
 
 export const metadata = { title: 'Cartas' };
@@ -255,13 +262,33 @@ function CardFields({
  * Cada carta aparece RENDERIZADA com a paleta real: o organizador precisa ver o
  * que está criando. Uma tabela de códigos hexadecimais não diz se a carta ficou
  * legível — e o participante é quem descobriria isso, sem poder reclamar.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O FILTRO "MOSTRAR ARQUIVADOS" (FASE 51 · dívida E58)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A exclusão é lógica desde a FASE 43, e a carta saía de todas as telas ao mesmo
+ *  tempo: quem excluísse por engano não tinha onde vê-la de novo. O filtro é um
+ *  PARÂMETRO DE ENDEREÇO (`?arquivados=1`) — funciona sem JavaScript, pode ser
+ *  marcado e mandado para um colega —, e a lista de arquivados é a MESMA listagem
+ *  com outro escopo, mostrando quando e por quem cada carta foi excluída (a trilha
+ *  guarda isso desde a FASE 43).
+ *
+ *  Na visão de arquivados NÃO há criar, editar nem conceder: uma carta arquivada não
+ *  é sorteada, e o serviço de gravação nem a encontra (`deletedAt: null` no filtro).
+ *  Oferecer o formulário seria oferecer um caminho que responde "carta não encontrada".
  */
 export default async function AdminCardsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>;
+  searchParams: Promise<{ arquivados?: string }>;
 }) {
   const { tenantSlug } = await params;
+  const { arquivados } = await searchParams;
+
+  const scope = catalogScopeFromQuery(arquivados);
+  const arquivando = scope === 'ARQUIVADOS';
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
@@ -269,16 +296,19 @@ export default async function AdminCardsPage({
   });
 
   const [cards, events, participants] = await Promise.all([
-    listCardTemplates(tenantId),
-    listAdminEvents(tenantId),
-    withTenant(tenantId, (tx) =>
-      tx.userTenantProfile.findMany({
-        where: { tenantId, status: 'ACTIVE', deletedAt: null },
-        orderBy: { joinedAt: 'asc' },
-        take: 200,
-        select: { user: { select: { id: true, name: true } } },
-      }),
-    ),
+    listCardTemplates(tenantId, scope),
+    /** A visão de arquivo não carrega o que ela não usa (ver o cabeçalho acima). */
+    arquivando ? Promise.resolve([] as AdminEventRow[]) : listAdminEvents(tenantId),
+    arquivando
+      ? Promise.resolve([] as { user: { id: string; name: string } }[])
+      : withTenant(tenantId, (tx) =>
+          tx.userTenantProfile.findMany({
+            where: { tenantId, status: 'ACTIVE', deletedAt: null },
+            orderBy: { joinedAt: 'asc' },
+            take: 200,
+            select: { user: { select: { id: true, name: true } } },
+          }),
+        ),
   ]);
 
   const eventOptions = [
@@ -322,14 +352,40 @@ export default async function AdminCardsPage({
         </p>
       </header>
 
+      {/*
+        O FILTRO É UM LINK — sem JavaScript, com endereço próprio e sem estado escondido.
+        Ele fica FORA da seção da lista porque vale para as duas vistas: é o mesmo
+        catálogo, lido de outro ângulo.
+      */}
+      <nav className="flex flex-wrap items-center gap-3 text-sm" aria-label="Escopo do catálogo">
+        <Link
+          href={
+            arquivando
+              ? tenantPath(tenantSlug, '/administracao/cartas')
+              : `${tenantPath(tenantSlug, '/administracao/cartas')}?arquivados=1`
+          }
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 font-medium hover:bg-muted"
+          data-testid="cards-archive-toggle"
+          aria-current={arquivando ? 'page' : undefined}
+        >
+          <ArchiveRestore className="size-4" aria-hidden />
+          {catalogScopeToggleLabel(scope)}
+        </Link>
+        <span className="text-xs text-muted-foreground" data-testid="cards-scope-label">
+          {CATALOG_SCOPE_LABELS[scope]}
+        </span>
+      </nav>
+
       <section className="space-y-4" aria-labelledby="catalogo">
         <h2 id="catalogo" className="text-lg font-semibold tracking-tight">
-          Catálogo ({cards.length})
+          {arquivando ? `Arquivadas (${cards.length})` : `Catálogo (${cards.length})`}
         </h2>
 
         {cards.length === 0 ? (
           <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground" data-testid="cards-empty">
-            Nenhuma carta cadastrada.
+            {arquivando
+              ? 'Nenhuma carta arquivada. O que for excluído aparece aqui, com a data e o autor da exclusão.'
+              : 'Nenhuma carta cadastrada.'}
           </p>
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2" data-testid="admin-card-list">
@@ -381,6 +437,18 @@ export default async function AdminCardsPage({
                       {card.isSecret ? ' · secreta' : ''}
                     </p>
                     {/*
+                      QUANDO E POR QUEM FOI ARQUIVADA (FASE 51 · E58). Os dois dados vêm da
+                      TRILHA, numa consulta só para a lista — e sem eles "restaurar" seria uma
+                      decisão no escuro: a pessoa não saberia se aquilo foi um engano de ontem
+                      ou uma decisão deliberada de um ano atrás.
+                    */}
+                    {arquivando && card.archivedAt ? (
+                      <p className="text-muted-foreground" data-testid={`card-archived-${card.id}`}>
+                        Arquivada em {formatZonedDateTime(card.archivedAt, timezone)} por{' '}
+                        {card.archivedByName ?? 'conta removida'}
+                      </p>
+                    ) : null}
+                    {/*
                       ONDE A CARTA É USADA (FASE 43): sem isto, excluir é um tiro no
                       escuro — e a exclusão de quem é prêmio de missão/QR é recusada.
                     */}
@@ -392,42 +460,72 @@ export default async function AdminCardsPage({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                  <details className="min-w-0 flex-1">
-                    <summary className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium">
-                      <Pencil className="size-3.5" aria-hidden />
-                      Editar carta
-                    </summary>
-                    <div className="pt-3">
-                      <AdminForm
-                        action={saveCardTemplateAction}
-                        submitLabel="Salvar carta"
-                        testId={`card-form-${card.id}`}
-                        compact
+                  {arquivando ? (
+                    /**
+                     * Arquivada só tem UMA ação: voltar. Editar e excluir ficam de fora porque
+                     * o serviço de gravação procura a linha com `deletedAt: null` — oferecer os
+                     * formulários seria oferecer um caminho que responde "carta não encontrada".
+                     */
+                    <InlineActionForm
+                      action={restoreCardTemplateAction}
+                      submitLabel="Restaurar"
+                      testId={`card-restore-${card.id}`}
+                      confirm={{
+                        title: `Restaurar a carta “${card.name}”?`,
+                        description: `Ela volta ao catálogo ativo e volta a ser concedida.${
+                          card.archivedAt
+                            ? ` Arquivada em ${formatZonedDateTime(card.archivedAt, timezone)}${
+                                card.archivedByName ? ` por ${card.archivedByName}` : ''
+                              }.`
+                            : ''
+                        }`,
+                        confirmLabel: 'Restaurar carta',
+                        tone: 'default',
+                      }}
+                    >
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="cardTemplateId" value={card.id} />
+                    </InlineActionForm>
+                  ) : (
+                    <>
+                      <details className="min-w-0 flex-1">
+                        <summary className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium">
+                          <Pencil className="size-3.5" aria-hidden />
+                          Editar carta
+                        </summary>
+                        <div className="pt-3">
+                          <AdminForm
+                            action={saveCardTemplateAction}
+                            submitLabel="Salvar carta"
+                            testId={`card-form-${card.id}`}
+                            compact
+                          >
+                            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                            <input type="hidden" name="cardTemplateId" value={card.id} />
+                            <CardFields triggerOptions={triggerOptions} eventOptions={eventOptions} card={card} />
+                          </AdminForm>
+                        </div>
+                      </details>
+
+                      <InlineActionForm
+                        action={deleteCardTemplateAction}
+                        submitLabel="Excluir"
+                        variant="destructive"
+                        testId={`card-delete-${card.id}`}
+                        confirm={{
+                          title: `Excluir a carta “${card.name}”?`,
+                          description:
+                            card.usedByMissions > 0 || card.usedByQrCodes > 0
+                              ? `Ela é prêmio de ${card.usedByMissions} missão(ões) e de ${card.usedByQrCodes} QR de patrocinador — a exclusão vai ser recusada até trocar o prêmio.`
+                              : `A carta sai do catálogo e deixa de ser concedida. ${card.ownedBy > 0 ? `As ${card.ownedBy} pessoa(s) que já a ganharam continuam com ela no álbum.` : 'Ninguém a ganhou ainda.'} Ela pode ser restaurada em "Mostrar arquivados".`,
+                          confirmLabel: 'Excluir carta',
+                        }}
                       >
                         <input type="hidden" name="tenantSlug" value={tenantSlug} />
                         <input type="hidden" name="cardTemplateId" value={card.id} />
-                        <CardFields triggerOptions={triggerOptions} eventOptions={eventOptions} card={card} />
-                      </AdminForm>
-                    </div>
-                  </details>
-
-                  <InlineActionForm
-                    action={deleteCardTemplateAction}
-                    submitLabel="Excluir"
-                    variant="destructive"
-                    testId={`card-delete-${card.id}`}
-                    confirm={{
-                      title: `Excluir a carta “${card.name}”?`,
-                      description:
-                        card.usedByMissions > 0 || card.usedByQrCodes > 0
-                          ? `Ela é prêmio de ${card.usedByMissions} missão(ões) e de ${card.usedByQrCodes} QR de patrocinador — a exclusão vai ser recusada até trocar o prêmio.`
-                          : `A carta sai do catálogo e deixa de ser concedida. ${card.ownedBy > 0 ? `As ${card.ownedBy} pessoa(s) que já a ganharam continuam com ela no álbum.` : 'Ninguém a ganhou ainda.'}`,
-                      confirmLabel: 'Excluir carta',
-                    }}
-                  >
-                    <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                    <input type="hidden" name="cardTemplateId" value={card.id} />
-                  </InlineActionForm>
+                      </InlineActionForm>
+                    </>
+                  )}
                 </div>
               </li>
             ))}
@@ -435,46 +533,55 @@ export default async function AdminCardsPage({
         )}
       </section>
 
-      <section className="space-y-4 rounded-xl border border-border bg-card p-5" aria-labelledby="nova-carta">
-        <h2 id="nova-carta" className="text-lg font-semibold tracking-tight">
-          Nova carta
-        </h2>
+      {/*
+        Criar e conceder só existem no catálogo ATIVO: uma carta arquivada não é
+        concedida (o motor de recompensas filtra `deletedAt: null`), e o formulário de
+        criação não tem o que fazer numa lista que só restaura.
+      */}
+      {arquivando ? null : (
+        <>
+          <section className="space-y-4 rounded-xl border border-border bg-card p-5" aria-labelledby="nova-carta">
+            <h2 id="nova-carta" className="text-lg font-semibold tracking-tight">
+              Nova carta
+            </h2>
 
-        <AdminForm action={saveCardTemplateAction} submitLabel="Criar carta" testId="create-card">
-          <input type="hidden" name="tenantSlug" value={tenantSlug} />
-          <CardFields triggerOptions={triggerOptions} eventOptions={eventOptions} />
-        </AdminForm>
-      </section>
+            <AdminForm action={saveCardTemplateAction} submitLabel="Criar carta" testId="create-card">
+              <input type="hidden" name="tenantSlug" value={tenantSlug} />
+              <CardFields triggerOptions={triggerOptions} eventOptions={eventOptions} />
+            </AdminForm>
+          </section>
 
-      {participants.length > 0 ? (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5" aria-labelledby="conceder">
-          <h2 id="conceder" className="text-lg font-semibold tracking-tight">
-            Conceder carta manualmente
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            A concessão respeita nível exigido, janela de disponibilidade e tiragem — um passe livre administrativo
-            criaria cartas além do limite e destruiria a escassez da coleção.
-          </p>
+          {participants.length > 0 ? (
+            <section className="space-y-4 rounded-xl border border-border bg-card p-5" aria-labelledby="conceder">
+              <h2 id="conceder" className="text-lg font-semibold tracking-tight">
+                Conceder carta manualmente
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                A concessão respeita nível exigido, janela de disponibilidade e tiragem — um passe livre administrativo
+                criaria cartas além do limite e destruiria a escassez da coleção.
+              </p>
 
-          <AdminForm action={grantCardAction} submitLabel="Conceder" testId="grant-card" compact>
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+              <AdminForm action={grantCardAction} submitLabel="Conceder" testId="grant-card" compact>
+                <input type="hidden" name="tenantSlug" value={tenantSlug} />
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <SelectField
-                label="Participante"
-                name="userId"
-                options={participants.map((row) => ({ value: row.user.id, label: row.user.name }))}
-              />
-              <SelectField
-                label="Carta"
-                name="cardTemplateId"
-                options={cards.map((card) => ({ value: card.id, label: `${card.name} (${RARITY_LABELS[card.rarity]})` }))}
-              />
-              <Field label="Motivo" name="reason" placeholder="Premiação da hackathon" />
-            </div>
-          </AdminForm>
-        </section>
-      ) : null}
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <SelectField
+                    label="Participante"
+                    name="userId"
+                    options={participants.map((row) => ({ value: row.user.id, label: row.user.name }))}
+                  />
+                  <SelectField
+                    label="Carta"
+                    name="cardTemplateId"
+                    options={cards.map((card) => ({ value: card.id, label: `${card.name} (${RARITY_LABELS[card.rarity]})` }))}
+                  />
+                  <Field label="Motivo" name="reason" placeholder="Premiação da hackathon" />
+                </div>
+              </AdminForm>
+            </section>
+          ) : null}
+        </>
+      )}
     </main>
   );
 }

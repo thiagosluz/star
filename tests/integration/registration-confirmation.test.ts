@@ -68,6 +68,8 @@ async function createActivity(input: {
   windowDays?: number | null;
   requirements?: unknown;
   place?: string | null;
+  /** Início da atividade — o TETO do prazo (dívida E49). */
+  startsAt?: Date;
 }): Promise<string> {
   const result = await saveActivity({
     tenantId,
@@ -78,8 +80,8 @@ async function createActivity(input: {
     type: 'WORKSHOP',
     status: 'SCHEDULED',
     modality: 'IN_PERSON',
-    startsAt: eventStartsAt,
-    endsAt: new Date(eventStartsAt.getTime() + 3 * 3_600_000),
+    startsAt: input.startsAt ?? eventStartsAt,
+    endsAt: new Date((input.startsAt ?? eventStartsAt).getTime() + 3 * 3_600_000),
     workloadMinutes: 180,
     capacity: input.capacity,
     waitlistEnabled: input.waitlistEnabled ?? false,
@@ -230,6 +232,94 @@ describe('inscrição em atividade que exige confirmação', () => {
     expect(messages[0]!.subject).toContain('Confirme sua vaga');
     /** Aviso do SISTEMA não tem autor humano — atribuir a alguém seria inventar autoria. */
     expect(messages[0]!.sentById).toBeNull();
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O PRAZO NÃO PASSA DO INÍCIO DA ATIVIDADE (FASE 50 · dívida E49)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A atividade começa em DOIS dias e a janela pedida é de CINCO. Sem o teto, a vaga
+   *  ficaria retida por três dias DEPOIS de a oficina começar — presa com quem talvez
+   *  não viesse, e sem tempo de ninguém usar.
+   */
+  it('quando a atividade começa antes da janela, o prazo é o INÍCIO dela', async () => {
+    const inicio = new Date(now.getTime() + 2 * 86_400_000);
+
+    /**
+     * O evento compartilhado começa em 30 dias, e a atividade precisa caber no período
+     * DELE — então este caso monta o próprio evento, começando em dois dias. É o
+     * cenário real da dívida: o evento é amanhã e a janela pedida é de cinco dias.
+     */
+    const eventoId = randomUUID();
+    const eventoSlug = `evento-teto-${RUN}`;
+
+    await withTenant(tenantId, (tx) =>
+      tx.event.create({
+        data: {
+          id: eventoId,
+          tenantId,
+          slug: eventoSlug,
+          title: 'Evento que começa antes do prazo',
+          status: 'REGISTRATION_OPEN',
+          modality: 'IN_PERSON',
+          timezone: TIME_ZONE,
+          startsAt: inicio,
+          endsAt: new Date(inicio.getTime() + 86_400_000),
+          capacity: null,
+          confirmedCount: 0,
+        },
+      }),
+    );
+
+    const atividade = await saveActivity({
+      tenantId,
+      actorId: organizerId,
+      eventId: eventoId,
+      slug: `teto-${RUN}`,
+      title: 'Oficina que começa antes do prazo',
+      type: 'WORKSHOP',
+      status: 'SCHEDULED',
+      modality: 'IN_PERSON',
+      startsAt: inicio,
+      endsAt: new Date(inicio.getTime() + 3 * 3_600_000),
+      workloadMinutes: 180,
+      capacity: 5,
+      waitlistEnabled: false,
+      requiresRegistration: true,
+      confirmationPolicy: 'REQUIRED',
+      confirmationWindowDays: 5,
+      confirmationRequirements: [{ kind: 'DONATION', label: '1 kg de alimento', note: null }],
+      confirmationPlace: 'Secretaria do bloco B',
+    });
+
+    if (!atividade.ok) throw new Error(`Falha ao criar a atividade: ${atividade.message}`);
+
+    const atividadeId = atividade.activityId;
+
+    const pessoa = await createUser('Pessoa do teto');
+
+    const result = await registerForActivity({
+      tenantId,
+      eventSlug: eventoSlug,
+      activitySlug: `teto-${RUN}`,
+      userId: pessoa,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.status).toBe('PENDING');
+    expect(result.confirmationDueAt?.toISOString()).toBe(inicio.toISOString());
+
+    /** A linha gravada diz o mesmo que a resposta — a tela, o e-mail e a varredura leem daqui. */
+    const registro = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirstOrThrow({
+        where: { activityId: atividadeId, userId: pessoa },
+        select: { confirmationDueAt: true },
+      }),
+    );
+
+    expect(registro.confirmationDueAt?.toISOString()).toBe(inicio.toISOString());
   });
 
   it('com a vaga retida, a segunda pessoa vai para a lista de espera', async () => {

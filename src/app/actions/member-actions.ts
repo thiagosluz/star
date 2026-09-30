@@ -26,6 +26,7 @@ import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { removeMember, updateMemberRoles } from '@/lib/admin/member-service';
+import { demoteMemberToParticipant } from '@/lib/admin/member-demotion';
 
 export interface MemberActionState {
   ok: boolean;
@@ -186,6 +187,67 @@ export async function removeMemberAction(
     ok: true,
     message:
       `${result.name} não tem mais acesso à instituição.` +
+      (result.revokedRoles.length > 0
+        ? ` Papéis revogados: ${result.revokedRoles.join(', ')}.`
+        : ''),
+  };
+}
+
+/**
+ * Converte o acesso de EQUIPE em PARTICIPANTE (FASE 50 · dívida C7).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A MESMA PERMISSÃO DA REMOÇÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Converter tira o acesso de organização — é a mesma decisão de "tirar o acesso",
+ *  feita com um destino melhor. Exigir `tenant:role:assign` (do OWNER) aqui seria
+ *  manter no ADMIN o poder de remover e negar o de remover SEM perder a área de
+ *  participante, que é a opção menos destrutiva das duas.
+ */
+export async function demoteMemberAction(
+  _prev: MemberActionState | null,
+  formData: FormData,
+): Promise<MemberActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      userId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      userId: formData.get('userId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Membro inválido.' };
+  }
+
+  const access = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.TENANT_MEMBER_REMOVE,
+  });
+
+  if (!access.ok) return access.state;
+
+  const result = await demoteMemberToParticipant({
+    tenantId: access.tenantId,
+    actorId: access.userId,
+    userId: parsed.data.userId,
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/equipe'));
+  /** A vaga da equipe é liberada: o painel mostra o mesmo número. */
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao'), 'layout');
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  return {
+    ok: true,
+    message:
+      `${result.name} saiu da equipe e continua como participante — as inscrições, ` +
+      `os certificados e as cartas seguem acessíveis.` +
       (result.revokedRoles.length > 0
         ? ` Papéis revogados: ${result.revokedRoles.join(', ')}.`
         : ''),

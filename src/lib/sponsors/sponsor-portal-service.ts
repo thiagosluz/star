@@ -49,6 +49,7 @@ import {
   isValidSponsorQrCode,
   normalizeSponsorQrCode,
   sponsorConsentText,
+  sponsorQrRepeatWarning,
   type LeadAccessState,
 } from '@/domain/events/sponsor-experience-rules';
 import {
@@ -67,6 +68,13 @@ export type SponsorPortalErrorCode =
   | 'NO_ACCOUNT'
   | 'ALREADY_LINKED'
   | 'INVITE_INVALID'
+  /**
+   * O patrocinador já tem QR neste evento e a instituição ainda não confirmou
+   * (FASE 51 · dívida E57). É um código PRÓPRIO, e não `INVALID_INPUT`, porque a
+   * tela precisa distinguir "os dados estão errados" de "falta um segundo passo" —
+   * o segundo passo reenvia o MESMO formulário com a confirmação.
+   */
+  | 'CONFIRMATION_REQUIRED'
   | 'INTERNAL';
 
 export type SponsorPortalResult<T> =
@@ -403,11 +411,40 @@ export interface SaveSponsorQrInput {
   xpAmount: number;
   cardTemplateId: string | null;
   consentDays: number;
+  /**
+   * A instituição viu o aviso de QR repetido e confirmou (FASE 51 · dívida E57).
+   *
+   * Sem este campo, criar o SEGUNDO QR do mesmo patrocinador no mesmo evento é
+   * recusado com `CONFIRMATION_REQUIRED` e a contagem no `details`. A decisão é da
+   * instituição — o mesmo patrocinador pode ter dois estandes —, mas ela precisa
+   * ver o número e o efeito antes de decidir.
+   */
+  confirmed?: boolean;
+}
+
+/**
+ * Quantos QRs o patrocinador já tem NAQUELE evento.
+ *
+ * A contagem é do PAR (patrocinador, evento): o mesmo patrocinador em outro evento
+ * tem os QRs dele, e somá-los faria um cadastro legítimo da edição passada
+ * disparar aviso na edição nova. `deletedAt: null` porque o QR excluído saiu de
+ * circulação — contá-lo avisaria sobre um código que ninguém consegue ler.
+ */
+export async function countSponsorQrCodesInEvent(
+  tenantId: string,
+  sponsorId: string,
+  eventId: string,
+): Promise<number> {
+  return withTenant(tenantId, (tx) =>
+    tx.sponsorQrCode.count({ where: { tenantId, sponsorId, eventId, deletedAt: null } }),
+  );
 }
 
 export async function saveSponsorQrCode(
   input: SaveSponsorQrInput,
-): Promise<SponsorPortalResult<{ qrId: string; code: string; created: boolean }>> {
+): Promise<
+  SponsorPortalResult<{ qrId: string; code: string; created: boolean; existingInEvent: number }>
+> {
   try {
     return await withTenant(input.tenantId, async (tx) => {
       const sponsor = await tx.sponsor.findFirst({
@@ -426,6 +463,39 @@ export async function saveSponsorQrCode(
 
       if (!event) {
         return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
+      }
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O AVISO DE QR REPETIDO ACONTECE NA CRIAÇÃO, E NÃO NA EDIÇÃO (E57)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  Editar um QR que já existe não cria código novo e não aumenta a chance de
+       *  creditar a mesma gente — então não há o que avisar. É o `if (input.qrId)`
+       *  abaixo que separa os dois caminhos.
+       */
+      if (!input.qrId) {
+        const existingInEvent = await tx.sponsorQrCode.count({
+          where: {
+            tenantId: input.tenantId,
+            sponsorId: input.sponsorId,
+            eventId: input.eventId,
+            deletedAt: null,
+          },
+        });
+
+        const warning = sponsorQrRepeatWarning({
+          existingInEvent,
+          confirmed: input.confirmed === true,
+        });
+
+        if (warning.blocked) {
+          return {
+            ok: false as const,
+            code: 'CONFIRMATION_REQUIRED' as const,
+            message: warning.message!,
+            details: [`QRs já existentes neste evento: ${existingInEvent}`],
+          };
+        }
       }
 
       /**
@@ -493,7 +563,16 @@ export async function saveSponsorQrCode(
           tx,
         );
 
-        return { ok: true as const, qrId: before.id, code: before.code, created: false };
+        const existingInEvent = await tx.sponsorQrCode.count({
+          where: {
+            tenantId: input.tenantId,
+            sponsorId: input.sponsorId,
+            eventId: input.eventId,
+            deletedAt: null,
+          },
+        });
+
+        return { ok: true as const, qrId: before.id, code: before.code, created: false, existingInEvent };
       }
 
       /**
@@ -529,6 +608,15 @@ export async function saveSponsorQrCode(
         data: { id: qrId, tenantId: input.tenantId, code, createdById: input.actorId, ...data },
       });
 
+      const existingInEvent = await tx.sponsorQrCode.count({
+        where: {
+          tenantId: input.tenantId,
+          sponsorId: input.sponsorId,
+          eventId: input.eventId,
+          deletedAt: null,
+        },
+      });
+
       await recordAudit(
         {
           tenantId: input.tenantId,
@@ -540,12 +628,19 @@ export async function saveSponsorQrCode(
             label: { from: null, to: data.label },
             code: { from: null, to: code },
             xpAmount: { from: null, to: data.xpAmount },
+            /**
+             * A CONFIRMAÇÃO entra na trilha (E57): "por que este patrocinador tem
+             * quatro QRs?" é pergunta que a instituição faz depois, e a resposta tem
+             * de estar gravada — foi uma decisão humana, com o aviso na frente.
+             */
+            repeatedInEvent: { from: null, to: existingInEvent },
+            confirmed: { from: null, to: input.confirmed === true },
           },
         },
         tx,
       );
 
-      return { ok: true as const, qrId, code, created: true };
+      return { ok: true as const, qrId, code, created: true, existingInEvent };
     });
   } catch (error) {
     return toFailure('saveSponsorQrCode', error, 'Não foi possível salvar o QR do patrocinador.');

@@ -19,7 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { adminPrisma } from '../../src/lib/db/admin-client';
 import { withTenant } from '../../src/lib/db/tenant-client';
@@ -88,6 +88,39 @@ async function register(userId: string, activityId: string | null, status = 'CON
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A FIXTURE PERTENCE AO DESCRIBE QUE A USA (dívida E71)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE ESTAVA ERRADO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Os crachás eram emitidos por testes do PRIMEIRO `describe` e o restante do arquivo
+ *  os consumia: rodar um caso isolado com `-t` falhava com `Cannot read properties of
+ *  null` — o `credential` do roster simplesmente não existia. A dívida apareceu
+ *  justamente ao investigar a corrida do balcão: investigar UM caso era impossível.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE "GARANTIR", E NÃO "EMITIR SEMPRE"
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Emitir de novo é idempotente (F31): quem já tem crachá não recebe outro. E um crachá
+ *  REVOGADO não é reemitido por aqui de propósito — reemitir depois de revogar é o ATO
+ *  que um dos testes mede, e ele precisa ser do teste, não da fixture.
+ */
+async function ensureEventCredentials(userIds: readonly string[]): Promise<void> {
+  for (const userId of userIds) {
+    const existing = await withTenant(tenantId, (tx) =>
+      tx.eventCredential.findFirst({ where: { tenantId, eventId, userId }, select: { id: true } }),
+    );
+
+    if (existing) continue;
+
+    const issued = await issueCredentials({ tenantId, eventId, actorId, userIds: [userId] });
+
+    if (!issued.ok) throw new Error(`não foi possível emitir o crachá da fixture: ${issued.message}`);
+  }
+}
+
 beforeAll(async () => {
   tenantId = randomUUID();
   otherTenantId = randomUUID();
@@ -246,6 +279,9 @@ describe('a lista de participantes e a emissão de crachás', () => {
   });
 
   it('emitir de novo NÃO gera outro código (crachá na mão de alguém não muda)', async () => {
+    /** O caso mede a SEGUNDA emissão: quem ainda não tem crachá é fixture do caso. */
+    await ensureEventCredentials([people.ana, people.bruno, people.carla]);
+
     const again = await issueCredentials({ tenantId, eventId, actorId });
 
     expect(again.ok).toBe(true);
@@ -280,6 +316,9 @@ describe('a lista de participantes e a emissão de crachás', () => {
   });
 
   it('a emissão entra na trilha de auditoria', async () => {
+    /** Sem emissão anterior não há o que auditar: a fixture é do caso. */
+    await ensureEventCredentials([people.ana, people.bruno, people.carla]);
+
     const entries = await listAuditLog(tenantId, { limit: 50 });
     const created = entries.find((entry) => entry.entityType === 'credential' && entry.action === 'CREATE');
 
@@ -290,6 +329,13 @@ describe('a lista de participantes e a emissão de crachás', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('a leitura no balcão', () => {
+  /**
+   * A fixture do descrever é GARANTIDA aqui (E71): os testes deste bloco leem o crachá
+   * de quem tem inscrição, e antes isso dependia de um teste de outro `describe`.
+   */
+  beforeEach(async () => {
+    await ensureEventCredentials([people.ana, people.bruno, people.carla]);
+  });
   async function codeOf(userId: string): Promise<string> {
     const roster = await listCredentialRoster({ tenantId, eventId });
 
@@ -396,6 +442,13 @@ describe('a leitura no balcão', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('credenciamento (portaria) é diferente de frequência (atividade)', () => {
+  /**
+   * A fixture do descrever é GARANTIDA aqui (E71): os testes deste bloco leem o crachá
+   * de quem tem inscrição, e antes isso dependia de um teste de outro `describe`.
+   */
+  beforeEach(async () => {
+    await ensureEventCredentials([people.ana, people.bruno, people.carla]);
+  });
   it('a portaria grava a CHEGADA e marca a inscrição do evento', async () => {
     const roster = await listCredentialRoster({ tenantId, eventId, query: 'Bruno' });
     if (!roster.ok) throw new Error('lista indisponível');
@@ -692,6 +745,13 @@ describe('credenciamento (portaria) é diferente de frequência (atividade)', ()
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('concorrência e fechamento automático', () => {
+  /**
+   * A fixture do descrever é GARANTIDA aqui (E71): os testes deste bloco leem o crachá
+   * de quem tem inscrição, e antes isso dependia de um teste de outro `describe`.
+   */
+  beforeEach(async () => {
+    await ensureEventCredentials([people.ana, people.bruno, people.carla]);
+  });
   it('DOIS leitores do MESMO crachá produzem UMA sessão', async () => {    const roster = await listCredentialRoster({ tenantId, eventId, query: 'Bruno' });
     if (!roster.ok) throw new Error('lista indisponível');
     const code = roster.entries[0]!.credential!.code;
@@ -889,6 +949,16 @@ describe('concorrência e fechamento automático', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('revogação do crachá', () => {
+  /**
+   * O Diego é a pessoa DESTE bloco (a que não tem inscrição e recebe crachá à mão):
+   * garantir o crachá dele aqui é o que torna estes dois casos executáveis sozinhos
+   * (dívida E71). Um crachá já revogado NÃO é reemitido pela fixture — reemitir depois
+   * de revogar é o que o segundo caso mede.
+   */
+  beforeEach(async () => {
+    await ensureEventCredentials([people.diego]);
+  });
+
   it('revoga com motivo e a trilha guarda a mudança', async () => {
     const roster = await listCredentialRoster({ tenantId, eventId, query: 'Diego' });
     if (!roster.ok) throw new Error('lista indisponível');
@@ -938,7 +1008,26 @@ describe('revogação do crachá', () => {
   it('reemitir cria um código NOVO e o antigo sai de circulação', async () => {
     const before = await listCredentialRoster({ tenantId, eventId, query: 'Diego' });
     if (!before.ok) throw new Error('lista indisponível');
-    const oldCode = before.entries[0]!.credential!.code;
+
+    const current = before.entries[0]!.credential!;
+
+    /**
+     * O cenário é "perdeu o crachá → revogou → reemitiu", e a REVOGAÇÃO faz parte da
+     * fixture: antes este caso dependia da revogação feita pelo caso anterior, e por
+     * isso não rodava sozinho.
+     */
+    if (current.state !== 'REVOKED') {
+      const revoked = await revokeCredential({
+        tenantId,
+        credentialId: current.id,
+        actorId,
+        reason: 'Reemissão pedida no teste',
+      });
+
+      if (!revoked.ok) throw new Error(`não foi possível revogar: ${revoked.message}`);
+    }
+
+    const oldCode = current.code;
 
     const issued = await issueCredentials({ tenantId, eventId, actorId, userIds: [people.diego] });
 

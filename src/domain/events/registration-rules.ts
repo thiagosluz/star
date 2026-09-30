@@ -258,6 +258,30 @@ const ALLOWED_TRANSITIONS: Record<RegistrationStatus, readonly RegistrationStatu
   NO_SHOW: [],
 };
 
+/**
+ * A inscrição está VIVA?
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A MESMA DEFINIÇÃO DO ÍNDICE ÚNICO PARCIAL (FASE 50 · defeito encontrado na E59)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O banco garante uma inscrição viva por (atividade, pessoa) com um índice único
+ *  PARCIAL: `WHERE status IN ('PENDING','CONFIRMED','WAITLISTED','ATTENDED')`. A
+ *  intenção está escrita na migração `20260916214408_registration_live_unique` e no
+ *  comentário do modelo: um cancelamento é TERMINAL na LINHA, e a pessoa pode se
+ *  inscrever de novo criando uma linha NOVA.
+ *
+ *  A checagem da aplicação, porém, recusava qualquer linha existente — inclusive
+ *  CANCELED e NO_SHOW. O efeito era o inverso do projetado: quem cancelava (ou quem
+ *  perdia a vaga pelo prazo da FASE 34, que cancela sozinho) **nunca mais conseguia se
+ *  inscrever naquela atividade**, e a mensagem ainda dizia "você já está inscrito".
+ *
+ *  Esta função é a fonte única da pergunta, para que a regra da aplicação e o índice do
+ *  banco não possam divergir — o teste que a prende compara com as quatro situações.
+ */
+export function registrationIsLive(status: RegistrationStatus): boolean {
+  return status === 'PENDING' || status === 'CONFIRMED' || status === 'WAITLISTED' || status === 'ATTENDED';
+}
+
 export function canTransitionRegistration(
   from: RegistrationStatus,
   to: RegistrationStatus,

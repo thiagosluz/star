@@ -32,6 +32,7 @@
  *  Puro: sem Prisma, sem Next, sem `Buffer` — só aritmética, `TextEncoder` e string.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { credentialStripeHeight } from './credential-categories';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Unidades
@@ -457,6 +458,11 @@ export interface ZplBadge {
   code: string;
   eventTitle: string;
   tenantName: string;
+  /**
+   * Categoria do crachá (FASE 51 · E42) — vira a FAIXA de cor no topo da etiqueta.
+   * Ausente ou desconhecida vale `PARTICIPANT`, pela normalização do domínio.
+   */
+  category?: string | null;
 }
 
 /**
@@ -469,30 +475,69 @@ export interface ZplBadge {
  * O ZPL não quebra linha sozinho: o nome é quebrado aqui, em ATÉ DUAS linhas, e o que
  * não couber é cortado — uma etiqueta de 100 mm com o nome em quatro linhas empurraria o
  * código para fora do papel.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A FAIXA DA CATEGORIA (FASE 51 · E42)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `^FO x,y^GB w,h,h ^FS` desenha a barra de cor no topo, com a largura inteira da
+ *  etiqueta — o equivalente exato da faixa do PDF. A geometria vem do DOMÍNIO
+ *  (`credentialStripeHeight`), em fração da etiqueta, para a folha A4 e o rolo
+ *  concordarem sobre onde a cor fica.
+ *
+ *  **A faixa desloca todo o conteúdo para baixo**, e isso não é detalhe: o ZPL
+ *  imprime o que estiver fora do papel, e o QR é desenhado a partir do topo. Sem o
+ *  deslocamento, uma etiqueta de 50 mm com faixa perderia a base do QR — a leitura
+ *  falharia na porta, que é onde o crachá existe.
  */
 export function buildBadgeZpl(badge: ZplBadge, config: ThermalLabelConfig): string {
   const widthDots = mmToDots(config.widthMm, config.dpi);
   const heightDots = mmToDots(config.heightMm, config.dpi);
 
   const padding = mmToDots(3, config.dpi);
+
+  /**
+   * ── A FAIXA DA CATEGORIA (FASE 51 · E42) ─────────────────────────────────────
+   *  `^FO0,0^GB<largura>,<altura>,<espessura>^FS` é uma BARRA PREENCHIDA no topo da
+   *  etiqueta — o equivalente exato da faixa do PDF. A geometria vem do DOMÍNIO
+   *  (`credentialStripeHeight`), em fração da etiqueta, para a folha A4 e o rolo
+   *  concordarem sobre onde a cor fica.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE A COR NÃO APARECE NO ARQUIVO ZPL
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A impressora térmica tem UMA cor. O que distingue a categoria no papel é a
+   *  faixa SÓLIDA — e é por isso que o desenho não depende de tinta colorida: no
+   *  rolo, "participante" e "palestrante" continuam distinguíveis pela barra, mesmo
+   *  que toda a impressão saia preta.
+   *
+   *  A cor do DOMÍNIO entra mesmo assim, e não é enfeite: `credentialCategoryColor`
+   *  é a régua que garante que o PDF, o crachá da tela e o rolo falem da MESMA
+   *  categoria com a MESMA paleta. Ela não é escrita aqui porque a térmica não a
+   *  usaria; quem a usa são as outras três saídas.
+   */
+  const stripe = Math.round(credentialStripeHeight(heightDots));
+
   /**
    * O QR ocupa a ALTURA da etiqueta, com teto de 30 mm: numa etiqueta de 100 × 50 mm ele
    * chegaria a 44 mm e comeria todo o espaço do nome — e um QR de 30 mm já é lido de
    * longe por qualquer leitor de balcão.
+   *
+   * O `- stripe` existe para a faixa não empurrar a base do QR para fora do papel: o
+   * ZPL imprime o que não cabe, e o que passa da borda simplesmente some.
    */
   const qrSizeDots = Math.max(
     mmToDots(12, config.dpi),
-    Math.min(heightDots - padding * 2, mmToDots(30, config.dpi), Math.round(widthDots * 0.4)),
+    Math.min(heightDots - padding * 2 - stripe, mmToDots(30, config.dpi), Math.round(widthDots * 0.4)),
   );
   const textX = padding + qrSizeDots + mmToDots(3, config.dpi);
   const textWidthDots = Math.max(mmToDots(10, config.dpi), widthDots - textX - padding);
 
   const codeHeight = Math.max(14, Math.round(heightDots * 0.15));
   const originHeight = Math.max(10, Math.round(heightDots * 0.11));
-  /** O que sobra da etiqueta para o NOME, depois do código, da origem e dos respiros. */
+  /** O que sobra da etiqueta para o NOME, depois da faixa, do código, da origem e dos respiros. */
   const nameBlockDots = Math.max(
     codeHeight,
-    heightDots - padding * 2 - codeHeight - originHeight - (8 + 6),
+    heightDots - padding * 2 - stripe - codeHeight - originHeight - (8 + 6),
   );
 
   const name = fitZplName(badge.name, textWidthDots, heightDots, nameBlockDots);
@@ -507,11 +552,13 @@ export function buildBadgeZpl(badge: ZplBadge, config: ThermalLabelConfig): stri
     '^LH0,0',
   ];
 
+  lines.push(`^FO0,0^GB${widthDots},${stripe},${stripe}^FS`);
+
   lines.push(
-    `^FO${padding},${padding}^BQN,2,${config.qrMagnification}^FH^FDLA,${zplFieldText(badge.code)}^FS`,
+    `^FO${padding},${padding + stripe + 4}^BQN,2,${config.qrMagnification}^FH^FDLA,${zplFieldText(badge.code)}^FS`,
   );
 
-  let cursor = padding;
+  let cursor = padding + stripe + 4;
 
   name.lines.forEach((line, index) => {
     lines.push(`^FO${textX},${cursor}^A0N,${name.fontDots},${name.fontDots}^FH^FD${zplFieldText(line)}^FS`);

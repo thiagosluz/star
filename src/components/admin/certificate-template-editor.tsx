@@ -12,10 +12,20 @@ import {
   CERTIFICATE_FONT_LABELS,
   CERTIFICATE_VARIABLES,
   DEFAULT_ELEMENT_COLOR,
+  ELEMENT_NUDGE_FAST_MM,
+  ELEMENT_NUDGE_MM,
   MAX_LAYOUT_ELEMENTS,
+  nudgeElementPosition,
   type CertificatePageFormat,
 } from '@/domain/certificates/certificate-layout-rules';
 import { Input, Select } from '@/components/ui';
+
+/**
+ * Id do aviso que ensina os atalhos do palco — referenciado por cada caixa com
+ * `aria-describedby` (dívida E55). Aqui os dois lados vivem no MESMO módulo, então a
+ * constante atravessa sem o problema de fronteira servidor/cliente.
+ */
+const STAGE_HINT_ID = 'template-stage-keyboard-hint';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -141,6 +151,7 @@ interface StageProps {
 
 function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onResize }: StageProps) {
   const [widthMm, heightMm] = page === 'A4_PORTRAIT' ? [210, 297] : [297, 210];
+  const [announcement, setAnnouncement] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{
     index: number;
@@ -193,11 +204,20 @@ function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onR
     const deltaYMm = (event.clientY - state.startY) * state.mmPerPxY;
 
     if (state.mode === 'move') {
-      onMove(
-        state.index,
-        clamp(round(state.origin.xMm + deltaXMm), 0, widthMm - state.origin.widthMm),
-        clamp(round(state.origin.yMm + deltaYMm), 0, heightMm - state.origin.heightMm),
-      );
+      /**
+       * A régua do DOMÍNIO (`nudgeElementPosition`) prende a caixa à página — a mesma
+       * função que o teclado usa. Duas cópias da mesma conta divergem, e a que
+       * divergisse deixaria a caixa sair da folha sem a tela perceber (o layout só é
+       * validado ao salvar).
+       */
+      const next = nudgeElementPosition({
+        element: state.origin,
+        page,
+        dxMm: round(state.origin.xMm + deltaXMm) - state.origin.xMm,
+        dyMm: round(state.origin.yMm + deltaYMm) - state.origin.yMm,
+      });
+
+      onMove(state.index, next.xMm, next.yMm);
       return;
     }
 
@@ -212,16 +232,60 @@ function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onR
     drag.current = null;
   };
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A CAIXA TAMBÉM ANDA POR TECLADO (dívida E55)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Arrastar exige ponteiro, e o formulário numérico ao lado resolve o caso — mas quem
+   *  navega por teclado não tinha como mexer no PALCO (mesma família da dívida E51, no
+   *  quadro de demandas).
+   *
+   *  Setas = 1 mm; Shift + setas = 10 mm. A página tem 297 × 210 mm: a 1 mm por toque,
+   *  atravessá-la seria hostil; a 10 mm, seis toques resolvem.
+   *
+   *  A escrita vai pelo MESMO `onMove` do arrastar — o estado do editor continua sendo a
+   *  fonte da verdade, e as linhas numéricas do formulário acompanham sozinhas (é o que
+   *  o teste prende).
+   */
+  const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
+    const element = elements[index];
+    if (!element) return;
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+
+    /** O acorde é nosso: sem isto o navegador rola a página junto com o movimento. */
+    event.preventDefault();
+
+    const step = event.shiftKey ? ELEMENT_NUDGE_FAST_MM : ELEMENT_NUDGE_MM;
+    const dxMm = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+    const dyMm = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+
+    const next = nudgeElementPosition({ element, page, dxMm, dyMm });
+
+    if (next.xMm === element.xMm && next.yMm === element.yMm) {
+      setAnnouncement(
+        `Elemento ${index + 1} está na borda da página: não há para onde mover.`,
+      );
+      return;
+    }
+
+    onSelect(index);
+    onMove(index, next.xMm, next.yMm);
+    setAnnouncement(`Elemento ${index + 1} em ${next.xMm} mm por ${next.yMm} mm.`);
+  };
+
   return (
-    <div
-      ref={stageRef}
-      onPointerMove={handleMove}
-      onPointerUp={endDrag}
-      onPointerLeave={endDrag}
-      data-testid="template-stage"
-      className="relative w-full overflow-hidden rounded-md border border-border bg-card shadow-sm"
-      style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
-    >
+    <div className="space-y-2">
+      <div
+        ref={stageRef}
+        onPointerMove={handleMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        data-testid="template-stage"
+        className="relative w-full overflow-hidden rounded-md border border-border bg-card shadow-sm"
+        style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
+      >
       {backgroundHref ? (
         // eslint-disable-next-line @next/next/no-img-element -- a arte é um data: URI do bucket privado
         <img src={backgroundHref} alt="" className="pointer-events-none absolute inset-0 size-full object-fill" />
@@ -242,12 +306,14 @@ function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onR
             role="button"
             tabIndex={0}
             aria-label={`Elemento ${index + 1}: ${label}`}
+            aria-describedby={STAGE_HINT_ID}
             title={`Elemento ${index + 1}: ${label}`}
             data-testid={`stage-element-${index}`}
             onPointerDown={(event) => {
               onSelect(index);
               beginDrag(event, index, 'move');
             }}
+            onKeyDown={(event) => handleKeyDown(event, index)}
             onFocus={() => onSelect(index)}
             className={`absolute cursor-move overflow-hidden rounded-sm border text-xs leading-tight ${
               isSelected ? 'border-primary bg-primary/10' : 'border-dashed border-border bg-foreground/5'
@@ -280,6 +346,30 @@ function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onR
           </div>
         );
       })}
+      </div>
+
+      {/**
+       * O aviso que ENSINA o atalho, e a região que ANUNCIA o resultado.
+       *
+       * O aviso é referenciado por cada caixa (`aria-describedby`): quem chega pelo
+       * teclado ouve os atalhos ao focar, em vez de descobri-los por tentativa. E o
+       * anúncio existe porque mover uma caixa posicionada por `absolute` não muda a
+       * posição dela na árvore — sem a frase, quem não vê a tela apertaria a seta e não
+       * ouviria nada.
+       */}
+      <p id={STAGE_HINT_ID} className="text-xs text-muted-foreground">
+        No palco, a caixa focada anda com as <strong>setas</strong> (1 mm) e com{' '}
+        <strong>Shift + setas</strong> (10 mm). As medidas aparecem nos campos ao lado.
+      </p>
+
+      <p
+        role="status"
+        aria-live="polite"
+        data-testid="template-stage-announce"
+        className={`text-xs text-muted-foreground ${announcement ? '' : 'sr-only'}`}
+      >
+        {announcement}
+      </p>
     </div>
   );
 }

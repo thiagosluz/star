@@ -41,6 +41,7 @@ import {
 } from '@/lib/storage/s3-client';
 import {
   MAX_FILE_SIZE_BYTES,
+  canChangeSubmissionTrack,
   canDeleteSubmission,
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
@@ -74,6 +75,16 @@ export type SubmissionErrorCode =
   | 'UPLOAD_MISSING'
   | 'TRACK_NOT_FOUND'
   | 'TRACK_LIMIT_REACHED'
+  /**
+   * A troca de trilha foi recusada por DEPENDÊNCIA (FASE 51 · dívida E32): já existe
+   * parecer, já existe atribuição, ou a submissão já saiu do rascunho. Códigos
+   * próprios porque a tela mostra caminhos diferentes para cada caso — e porque
+   * "NOT_EDITABLE" faria a pessoa procurar um problema de permissão que não existe.
+   */
+  | 'HAS_REVIEWS'
+  | 'HAS_ASSIGNMENTS'
+  | 'NOT_DRAFT'
+  | 'INVALID_TRACK'
   | 'CFP_CLOSED'
   | 'NOT_READY'
   /**
@@ -528,6 +539,12 @@ export async function requestUpload(
         objectKey,
         contentType: input.mimeType,
         contentLength: input.sizeBytes,
+        /**
+         * O hash que o NAVEGADOR calculou entra assinado no PUT (dívida E26): é o que
+         * faz o storage devolver um checksum na confirmação, em vez de obrigar a
+         * conferência a se contentar com o tamanho.
+         */
+        checksumSha256: input.checksum,
       });
 
       return {
@@ -853,6 +870,14 @@ export interface UpdateSubmissionDraftInput {
   abstract: string;
   keywords: readonly string[];
   language: string;
+  /**
+   * Trilha ESCOLHIDA na edição (FASE 51 · dívida E32).
+   *
+   * `undefined` = a tela não mandou trilha (não mexe); `null` = "sem trilha" (só vale
+   * onde a chamada não exige uma). A distinção importa: sem ela, uma tela antiga
+   * apagaria a trilha da submissão em silêncio.
+   */
+  trackId?: string | null;
 }
 
 /**
@@ -874,9 +899,11 @@ export interface UpdateSubmissionDraftInput {
  *    • CONTEÚDO — as mesmas regras do envio (`validateSubmissionContent`), para o
  *      rascunho não guardar algo que o envio vai recusar.
  *
- *  A TRILHA fica de fora de propósito: trocá-la mudaria a rubrica de avaliação, o
- *  requisito de versão cega e a fila de revisores — é uma decisão do comitê, não
- *  um ajuste de texto. Quem errou a trilha exclui o rascunho e cria outro.
+ *  A TRILHA entra desde a FASE 51 (dívida E32), com a guarda do domínio
+ *  (`canChangeSubmissionTrack`): só o RASCUNHO sem parecer e sem atribuição pode ser
+ *  reclassificado, porque é a partir daí que a trilha passa a decidir rubrica, versão
+ *  cega e fila de revisores. Antes, quem errasse o seletor excluía o rascunho e
+ *  recomeçava — e recomeçar do zero por causa de um campo é como se perde um trabalho.
  */
 export async function updateSubmissionDraft(
   input: UpdateSubmissionDraftInput,
@@ -910,6 +937,13 @@ export async function updateSubmissionDraft(
           language: true,
           status: true,
           submittedById: true,
+          eventId: true,
+          trackId: true,
+          /**
+           * As duas DEPENDÊNCIAS da classificação: parecer e atribuição. É por elas
+           * (e não só pelo estado) que a troca de trilha é permitida ou recusada.
+           */
+          _count: { select: { reviews: true, assignments: true } },
         },
       });
 
@@ -931,11 +965,47 @@ export async function updateSubmissionDraft(
         );
       }
 
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  A TROCA DE TRILHA É VERIFICADA NO SERVIDOR, E SÓ QUANDO HÁ TROCA
+       * ─────────────────────────────────────────────────────────────────────────
+       *  `undefined` significa "a tela não mandou trilha" e não pode apagar nada; um
+       *  valor IGUAL ao atual não é troca e não deve ser recusado por causa de um
+       *  parecer que já existe (a pessoa está corrigindo o resumo, não classificando).
+       */
+      let nextTrackId = submission.trackId;
+
+      if (input.trackId !== undefined && (input.trackId ?? null) !== (submission.trackId ?? null)) {
+        const verdict = canChangeSubmissionTrack({
+          status: submission.status as SubmissionStatus,
+          reviewCount: submission._count.reviews,
+          assignmentCount: submission._count.assignments,
+        });
+
+        if (!verdict.allowed) {
+          throw new SubmissionError(verdict.code ?? 'NOT_EDITABLE', verdict.message ?? 'Não é possível trocar a trilha.');
+        }
+
+        if (input.trackId) {
+          const track = await tx.track.findFirst({
+            where: { id: input.trackId, eventId: submission.eventId, deletedAt: null },
+            select: { id: true },
+          });
+
+          if (!track) {
+            throw new SubmissionError('INVALID_TRACK', 'Trilha inválida para este evento.');
+          }
+        }
+
+        nextTrackId = input.trackId;
+      }
+
       const data = {
         title: input.title.trim(),
         abstract: input.abstract.trim(),
         keywords,
         language: input.language,
+        trackId: nextTrackId,
       };
 
       await tx.submission.update({ where: { id: submission.id }, data });
@@ -1180,6 +1250,58 @@ export async function resolveRubric(
 }
 
 /** Detalhe completo de uma submissão, sob RLS. */
+/**
+ * A submissão aceita troca de TRILHA agora? (FASE 51 · dívida E32)
+ *
+ * A pergunta é respondida pelo domínio (`canChangeSubmissionTrack`) e as dependências
+ * vêm do BANCO — parecer e atribuição. Existe como função própria para que a TELA e o
+ * SERVIÇO façam a mesma pergunta: a tela esconde o seletor com esta resposta, e o
+ * serviço recusa a troca com a mesma regra. Duas contagens, uma decisão.
+ */
+export async function canChangeSubmissionTrackOf(
+  tenantId: string,
+  submissionId: string,
+): Promise<{ allowed: boolean; message?: string }> {
+  const row = await withTenant(tenantId, (tx) =>
+    tx.submission.findFirst({
+      where: { id: submissionId, deletedAt: null },
+      select: {
+        status: true,
+        _count: { select: { reviews: true, assignments: true } },
+      },
+    }),
+  );
+
+  if (!row) return { allowed: false, message: 'Submissão não encontrada.' };
+
+  return canChangeSubmissionTrack({
+    status: row.status as SubmissionStatus,
+    reviewCount: row._count.reviews,
+    assignmentCount: row._count.assignments,
+  });
+}
+
+/**
+ * As trilhas que o rascunho pode escolher (FASE 51 · dívida E32).
+ *
+ * Devolve só as trilhas VIVAS do evento da submissão, em ordem estável: o seletor da
+ * tela não pode oferecer trilha de outro evento (o serviço recusaria, mas oferecer e
+ * depois recusar é pior que não oferecer) nem trilha excluída.
+ */
+export async function listTrackOptionsForSubmission(
+  tenantId: string,
+  eventId: string,
+): Promise<{ id: string; name: string }[]> {
+  return withTenant(tenantId, (tx) =>
+    tx.track.findMany({
+      where: { eventId, deletedAt: null },
+      orderBy: [{ name: 'asc' }],
+      select: { id: true, name: true },
+      take: 200,
+    }),
+  );
+}
+
 export async function getSubmission(
   tenantId: string,
   submissionId: string,

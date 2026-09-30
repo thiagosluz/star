@@ -70,6 +70,7 @@ function save(input: {
   name: string;
   avatarUrl?: string | null;
   photoAuthorization?: boolean;
+  photoAuthorizationChannel?: string | null;
 }) {
   return saveSpeakerProfile({
     tenantId,
@@ -80,6 +81,7 @@ function save(input: {
     ...(input.photoAuthorization === undefined
       ? {}
       : { photoAuthorization: input.photoAuthorization }),
+    photoAuthorizationChannel: input.photoAuthorizationChannel ?? null,
   });
 }
 
@@ -104,6 +106,8 @@ describe('foto enviada pela organização', () => {
       name: `Palestrante Convidado ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
 
     expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
@@ -125,6 +129,8 @@ describe('foto enviada pela organização', () => {
       name: `Com Trilha ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
 
     expect(result.ok).toBe(true);
@@ -154,6 +160,8 @@ describe('foto enviada pela organização', () => {
       name: `Com Trilha ${RUN}`,
       avatarUrl: PHOTO_DO_PALESTRANTE,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
     expect(replaced.ok).toBe(true);
 
@@ -189,6 +197,8 @@ describe('foto enviada pela organização', () => {
       name: `Nome Antigo ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -218,6 +228,8 @@ describe('foto enviada pela organização', () => {
       name: `Para Remover ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -246,6 +258,8 @@ describe('foto enviada pela organização', () => {
       name: `Na Lista ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -265,6 +279,8 @@ describe('o palestrante assume o perfil e a foto muda de origem', () => {
       name: `Assume o Perfil ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
@@ -319,6 +335,8 @@ describe('o palestrante assume o perfil e a foto muda de origem', () => {
       name: `Remove a Foto ${RUN}`,
       avatarUrl: PHOTO_DA_ORGANIZACAO,
       photoAuthorization: true,
+      // O canal passou a ser obrigatório na foto NOVA (FASE 51 · dívida E66).
+      photoAuthorizationChannel: 'EMAIL',
     });
     expect(created.ok).toBe(true);
     if (!created.ok) return;

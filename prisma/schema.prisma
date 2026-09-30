@@ -232,6 +232,18 @@ model EventCredential {
 
   /// Observação da organização (ex.: "crachá de imprensa", "equipe de apoio").
   notes String? @db.VarChar(300)
+  /// Categoria do crachá (FASE 51 · dívida E42) — a faixa de cor da etiqueta.
+  ///
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  POR QUE A CATEGORIA É ESCOLHIDA, E NÃO DEDUZIDA
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  A etiqueta não distinguia ninguém: num evento grande, a cor por categoria
+  ///  (palestrante, equipe, imprensa) é o que faz a recepção achar a pessoa certa sem
+  ///  ler o crachá. Deduzir do papel seria adivinhação — o mesmo ADMIN pode ser a
+  ///  diretoria ou o apoio técnico —, e a categoria é decisão da portaria. Os valores
+  ///  vivem em `CREDENTIAL_CATEGORIES` (domínio) e o padrão preserva o crachá que já
+  ///  existe.
+  category String @default("PARTICIPANT") @db.VarChar(20)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
@@ -411,6 +423,8 @@ enum XpSourceKind {
   REGISTRATION_CONFIRMED
   /// Certificado emitido para a própria pessoa (FASE 43).
   CERTIFICATE_ISSUED
+  /// Estorno do XP de uma inscrição cancelada (FASE 50).
+  REGISTRATION_REVERTED
   /// Posição premiada numa rodada de sorteio (FASE 43).
   RAFFLE_WON
 }
@@ -585,6 +599,20 @@ model Raffle {
   /// Publicar o resultado na página pública do evento (FASE 16). Opt-in: publicar
   /// nome de ganhador é ato da instituição, e o nome sai mascarado por padrão.
   isPublic Boolean @default(false)
+  /// O TELÃO está no ar? (FASE 51 · dívida E37)
+  ///
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  POR QUE ISTO NÃO É A REGRA DO `isPublic`
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  São dois públicos diferentes: `isPublic` decide se o RESULTADO aparece na página
+  ///  do evento para quem procura depois; este interruptor decide se o PALCO — o
+  ///  endereço que o organizador projeta no telão — responde AGORA, e ele mostra o
+  ///  TÍTULO DO PRÊMIO antes da apuração. É justamente isso que não pode escapar para
+  ///  quem descobrisse o link cedo.
+  ///
+  ///  Nasce LIGADO para não mudar o comportamento de sorteio nenhum: quem já usava o
+  ///  endereço continua usando, e a instituição passa a ter como DESLIGAR.
+  bigscreenVisible Boolean @default(true)
 
   status RaffleStatus @default(DRAFT)
 
@@ -1696,6 +1724,23 @@ model SpeakerProfile {
   ///  ao entrar no portal para poder substituir ou remover — e sem a coluna a tela
   ///  não teria como distinguir a foto dele da foto que puseram no lugar.
   avatarSource SpeakerAvatarSource?
+  /// ─── A DECLARAÇÃO DE AUTORIZAÇÃO DA FOTO (FASE 51 · dívida E66) ──────────────
+  /// Até aqui a plataforma guardava só QUEM afirmou ter autorização (na trilha). Isso
+  /// responsabiliza quem publicou, mas não demonstra a base legal: se o uso da imagem
+  /// for questionado, a instituição mostraria a declaração dela mesma.
+  ///
+  /// O texto e a VERSÃO ficam gravados junto da foto, como já acontece no consentimento
+  /// do QR do patrocinador (`consentText`/`consentVersion`, FASE 42): mudar a redação
+  /// da declaração amanhã não reescreve o que foi aceito hoje.
+  photoAuthorizationText String? @db.Text
+  /// Versão da redação aceita. Nula em foto publicada antes desta fase.
+  photoAuthorizationVersion String? @db.VarChar(8)
+  /// Por onde o consentimento veio (e-mail, telefone, contrato do evento…).
+  ///
+  /// Obrigatório na tela quando a foto é nova: sem o canal, a declaração fica sem
+  /// rastro de COMO foi obtida — que é metade do que se precisa demonstrar.
+  photoAuthorizationChannel String? @db.VarChar(40)
+  photoAuthorizationAt      DateTime? @db.Timestamptz(6)
   /// Redes e páginas: `{ linkedin?, github?, lattes?, website?, instagram?, youtube? }`.
   /// Validado no domínio (`sanitizeSocialLinks`) — só http(s) de host conhecido.
   socialLinks Json    @default("{}")
@@ -3048,6 +3093,24 @@ model CardShareLink {
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   /// Revogação: o link deixa de abrir e a linha permanece como histórico.
   revokedAt DateTime? @db.Timestamptz(6)
+  /// Validade OPCIONAL do link (FASE 51 · dívida E70). `null` = não expira.
+  ///
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  POR QUE O PADRÃO É NÃO EXPIRAR
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  O link é a carta da PESSOA, e uma carta que some sozinha é pior que um link
+  ///  antigo: quem compartilhou no currículo descobriria o endereço morto meses depois.
+  ///  O prazo é uma ESCOLHA de quem cria (para o que circula numa campanha, por
+  ///  exemplo), e a tela oferece as opções com "sem prazo" como primeira.
+  expiresAt DateTime? @db.Timestamptz(6)
+  /// Quantas vezes a página PÚBLICA foi aberta (FASE 51 · dívida E70).
+  ///
+  /// É o que responde "quantas vezes esta carta foi vista?" — o dono vê o número na
+  /// própria lista. Conta LEITURA, não pessoa: quem abre duas vezes conta duas, e a tela
+  /// diz isso em vez de sugerir audiência.
+  viewCount Int @default(0)
+  /// Última abertura — permite ver "links vivos há meses que ninguém abre".
+  lastViewedAt DateTime? @db.Timestamptz(6)
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -3929,6 +3992,19 @@ model EventTeam {
   name        String  @db.VarChar(80)
   description String? @db.VarChar(300)
   isActive    Boolean @default(true)
+  /// Ordem da equipe na vitrine pública (FASE 51 · dívida E63).
+  ///
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  POR QUE A ORDEM É DA EQUIPE, E NÃO DE CADA PESSOA
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  Guardar posição de PESSOAS faz a lista envelhecer em silêncio: alguém sai e a
+  ///  posição 3 vira a 4 sem ninguém perceber. A equipe é uma lista curta, que a
+  ///  organização mantém de fato, e o líder (que já é dado desde a FASE 38) continua
+  ///  vindo primeiro DENTRO de cada equipe. As duas réguas juntas dão o "presidente
+  ///  primeiro, depois a diretoria na ordem que eu decidir" sem inventar outra tela.
+  ///
+  ///  Zero é "sem opinião": quem nunca ordenou nada continua na ordem alfabética.
+  displayOrder Int @default(0)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)

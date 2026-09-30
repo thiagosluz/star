@@ -6,16 +6,18 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listCredentialRoster } from '@/lib/events/credential-service';
-import { BadgeRoster, type RosterEntry } from '@/components/credentials/badge-roster';
+import { CREDENTIAL_CATEGORY_LIST, resolveCredentialCategory } from '@/domain/events/credential-rules';
+import { BadgeRoster, type RosterCategoryOption, type RosterEntry } from '@/components/credentials/badge-roster';
 import { issueCredentialsAction, revokeCredentialAction } from '@/app/actions/credential-actions';
+import { setCredentialCategoryAction } from '@/app/actions/credential-category-actions';
 
 export const metadata = { title: 'Crachás' };
 export const dynamic = 'force-dynamic';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ÁREA DE CRACHÁS (FASE 31)
- *  `/t/<slug>/credenciamento/crachas?evento=<eventId>`
+ *  ÁREA DE CRACHÁS (FASE 31 · CATEGORIA NA FASE 51 · E42)
+ *  `/t/<slug>/credenciamento/crachas?evento=<eventId>&categoria=<CATEGORIA>`
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE ELA É SEPARADA DO CREDENCIAMENTO
@@ -29,6 +31,13 @@ export const dynamic = 'force-dynamic';
  *  A tela mostra TODOS os participantes do evento — quem tem inscrição no evento, quem
  *  tem inscrição em atividade e quem recebeu crachá à mão (equipe, palestrante,
  *  imprensa) — com a situação de credenciamento de cada um.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O CATÁLOGO DE CATEGORIAS É DO DOMÍNIO, E A TELA SÓ O APRESENTA (E42)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Rótulo, descrição e TOM saem de `CREDENTIAL_CATEGORY_LIST` — a mesma régua que o
+ *  PDF, as etiquetas, o ZPL e o crachá online leem. Escrever a lista aqui faria a
+ *  tela oferecer uma categoria que o papel não sabe desenhar.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export default async function BadgesPage({
@@ -36,10 +45,10 @@ export default async function BadgesPage({
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>;
-  searchParams: Promise<{ evento?: string; q?: string; faltando?: string }>;
+  searchParams: Promise<{ evento?: string; q?: string; faltando?: string; categoria?: string }>;
 }) {
   const { tenantSlug } = await params;
-  const { evento, q, faltando } = await searchParams;
+  const { evento, q, faltando, categoria } = await searchParams;
 
   const { tenantId, tenantName } = await requirePagePermission({
     tenantSlug,
@@ -59,36 +68,66 @@ export default async function BadgesPage({
 
   const selectedEventId = evento && events.some((event) => event.id === evento) ? evento : events[0]?.id ?? null;
 
+  /**
+   * O filtro de categoria é aplicado NA CONSULTA (o índice
+   * `event_credentials_category_idx` existe para isso) — quem não tem crachá não tem
+   * categoria, e por isso sai da lista filtrada. O valor desconhecido é ignorado: a
+   * tela não pode "filtrar" por uma categoria que não existe e devolver lista vazia
+   * como se o evento não tivesse ninguém.
+   */
   const roster = selectedEventId
     ? await listCredentialRoster({
         tenantId,
         eventId: selectedEventId,
         query: q ?? null,
         onlyMissing: faltando === '1',
+        category: categoria ?? null,
       })
     : null;
 
+  const categoryOptions: RosterCategoryOption[] = CREDENTIAL_CATEGORY_LIST.map((definition) => ({
+    value: definition.key,
+    label: definition.label,
+    tone: definition.tone,
+    description: definition.description,
+  }));
+
   const entries: RosterEntry[] =
     roster?.ok === true
-      ? roster.entries.map((entry) => ({
-          userId: entry.userId,
-          name: entry.name,
-          email: entry.email,
-          credentialId: entry.credential?.id ?? null,
-          code: entry.credential?.code ?? null,
-          state: entry.credential?.state ?? null,
-          legacy: entry.credential?.legacy ?? false,
-          printed: entry.credential?.printedAt !== null && entry.credential?.printedAt !== undefined,
-          arrivedLabel: entry.arrivedAt
-            ? entry.arrivedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-            : null,
-          activities: entry.registrations
-            .filter((row) => row.activityId !== null)
-            .map((row) => row.activityTitle ?? 'Atividade'),
-          registrationStatus: entry.registrations.find((row) => row.activityId === null)?.status ?? null,
-          attendedActivities: entry.attendedActivities,
-          minutesAttended: entry.minutesAttended,
-        }))
+      ? roster.entries.map((entry) => {
+          /**
+           * O valor CRU diz se a categoria está no catálogo: um crachá gravado com
+           * texto de outra geração aparece como "categoria não definida" na lista, em
+           * vez de ser exibido como "Participante" — que seria afirmar uma escolha que
+           * ninguém fez.
+           */
+          const raw = entry.credential?.category ?? null;
+          const known = raw !== null && CREDENTIAL_CATEGORY_LIST.some((item) => item.key === raw.toUpperCase());
+          const definition = known ? resolveCredentialCategory(raw) : null;
+
+          return {
+            userId: entry.userId,
+            name: entry.name,
+            email: entry.email,
+            credentialId: entry.credential?.id ?? null,
+            code: entry.credential?.code ?? null,
+            state: entry.credential?.state ?? null,
+            legacy: entry.credential?.legacy ?? false,
+            printed: entry.credential?.printedAt !== null && entry.credential?.printedAt !== undefined,
+            arrivedLabel: entry.arrivedAt
+              ? entry.arrivedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              : null,
+            activities: entry.registrations
+              .filter((row) => row.activityId !== null)
+              .map((row) => row.activityTitle ?? 'Atividade'),
+            registrationStatus: entry.registrations.find((row) => row.activityId === null)?.status ?? null,
+            attendedActivities: entry.attendedActivities,
+            minutesAttended: entry.minutesAttended,
+            category: raw,
+            categoryLabel: definition?.label ?? null,
+            categoryTone: definition?.tone ?? null,
+          };
+        })
       : [];
 
   const missingCount = roster?.ok === true ? roster.withoutCredential : 0;
@@ -113,7 +152,9 @@ export default async function BadgesPage({
         </h1>
         <p className="text-sm text-muted-foreground">
           Um crachá por pessoa no evento, com o código que o balcão lê. O QR Code carrega só o código —
-          nome, e-mail e identificador de pessoa <strong>não</strong> vão na etiqueta.
+          nome, e-mail e identificador de pessoa <strong>não</strong> vão na etiqueta. A{' '}
+          <strong>categoria</strong> é a faixa de cor da etiqueta: num evento grande, é o que faz a
+          recepção achar a pessoa certa sem ler o crachá.
         </p>
       </header>
 
@@ -148,6 +189,24 @@ export default async function BadgesPage({
           />
         </label>
 
+        <label className="space-y-1 text-xs font-medium">
+          Categoria
+          <select
+            name="categoria"
+            defaultValue={categoria ?? ''}
+            aria-label="Categoria do crachá"
+            data-testid="badge-category-filter"
+            className="block min-w-44 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+          >
+            <option value="">Todas as categorias</option>
+            {categoryOptions.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="flex items-center gap-2 pb-2 text-xs">
           <input
             type="checkbox"
@@ -180,6 +239,7 @@ export default async function BadgesPage({
         <p className="text-xs text-muted-foreground" data-testid="badge-summary">
           {roster.total} participante(s) · {roster.withCredential} com crachá · {roster.withoutCredential} sem
           crachá · {roster.arrived} já credenciado(s)
+          {categoria ? ' · filtrado por categoria' : ''}
         </p>
       ) : null}
 
@@ -189,8 +249,10 @@ export default async function BadgesPage({
           tenantSlug={tenantSlug}
           eventId={selectedEventId}
           missingCount={missingCount}
+          categories={categoryOptions}
           emitAction={issueCredentialsAction}
           revokeAction={revokeCredentialAction}
+          categoryAction={setCredentialCategoryAction}
           pdfPath={`/api/t/${tenantSlug}/credenciamento/crachas/folha`}
         />
       ) : (

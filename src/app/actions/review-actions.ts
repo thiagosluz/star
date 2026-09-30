@@ -228,6 +228,16 @@ export async function createSubmissionAction(
 const updateDraftSchema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
   submissionId: z.string().uuid(),
+  /**
+   * Trilha escolhida (FASE 51 · dívida E32). Campo AUSENTE (`null`) e campo VAZIO
+   * (`''`) significam coisas diferentes: ausente não mexe na trilha (telas antigas
+   * continuam funcionando), vazio é "sem trilha". A distinção é do serviço, que só
+   * verifica a guarda quando há TROCA de verdade.
+   */
+  trackId: z.preprocess(
+    (value) => (value === null || value === undefined ? undefined : value),
+    z.union([z.literal('').transform(() => null), z.string().uuid()]).optional(),
+  ),
   title: z.string().trim().min(1).max(300),
   abstract: z.string().trim().min(1).max(5000),
   keywords: z
@@ -261,6 +271,7 @@ export async function updateSubmissionDraftAction(
     abstract: formData.get('abstract'),
     keywords: formData.get('keywords'),
     language: formData.get('language') || 'pt-BR',
+    trackId: formData.get('trackId'),
   });
 
   if (!parsed.success) {
@@ -288,6 +299,7 @@ export async function updateSubmissionDraftAction(
     abstract: parsed.data.abstract,
     keywords: parsed.data.keywords,
     language: parsed.data.language,
+    trackId: parsed.data.trackId,
   });
 
   if (!result.ok) {

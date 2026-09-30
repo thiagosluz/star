@@ -91,6 +91,7 @@ export async function GET(
     eventTitle: prepared.batch.eventTitle,
     generatedAt: new Date(),
     badges: prepared.batch.badges,
+    theme: prepared.batch.theme,
   });
 
   return new Response(new Uint8Array(pdf), {

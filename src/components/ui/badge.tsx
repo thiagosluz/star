@@ -37,6 +37,23 @@ const badgeVariants = cva(
         warning: 'bg-warning-soft text-warning-strong',
         danger: 'bg-destructive-soft text-destructive',
         info: 'bg-secondary/60 text-secondary-strong',
+        /**
+         * ─── O TOM DE IDENTIDADE DO EVENTO (FASE 51 · E42) ──────────────────────
+         *
+         *  As seis faixas de crachá são tom de STATUS (a lista acima), e está certo:
+         *  categoria de crachá é estado operacional — "quem é esta pessoa na porta".
+         *
+         *  A SÉTIMA entrada não é categoria: é a cor do PRÓPRIO EVENTO, que o
+         *  organizador escolhe no tema (`Event.theme.primaryColor`, F17/F41). Sem
+         *  ela, um evento que escolheu roxo teria o crachá da tela na cor de marca
+         *  da plataforma e o crachá IMPRESSO na cor dele — dois crachás do mesmo
+         *  evento discordando, que é exatamente o defeito que a E42 quita.
+         *
+         *  O token `--theme-primary` nasce igual à marca e é sobrescrito pela
+         *  `ThemeScope` quando o evento tem cor: nenhum componente precisa saber se
+         *  o evento escolheu ou não.
+         */
+        event: 'bg-theme-primary text-primary-foreground',
       },
       size: {
         sm: 'h-5',
@@ -56,6 +73,7 @@ const DOT_CLASS: Record<BadgeTone, string> = {
   warning: 'bg-warning',
   danger: 'bg-destructive',
   info: 'bg-secondary-strong',
+  event: 'bg-theme-primary',
 };
 
 export function Badge({

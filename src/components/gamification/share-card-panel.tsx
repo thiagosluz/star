@@ -1,11 +1,13 @@
 'use client';
 
 import { useActionState, useEffect, useState } from 'react';
-import { Check, Link2, Share2, Trash2 } from 'lucide-react';
+import { Check, Clock, Link2, Share2, Trash2 } from 'lucide-react';
 
 import {
+  DEFAULT_SHARE_VALIDITY,
   SHARE_CHANNELS,
   SHARE_CHANNEL_LABELS,
+  SHARE_VALIDITY_CHOICES,
   shareIntent,
   type ShareChannel,
 } from '@/domain/gamification/card-share-rules';
@@ -13,7 +15,7 @@ import type { GamificationActionState } from '@/app/actions/gamification-actions
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  COMPARTILHAR A CARTA (FASE 48)
+ *  COMPARTILHAR A CARTA (FASE 48) — com prazo, contagem e histórico (E70 · FASE 51)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  QUEM COMPARTILHA É O DONO, E A TELA DIZ O QUE VAI SAIR
@@ -28,8 +30,33 @@ import type { GamificationActionState } from '@/app/actions/gamification-actions
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Por isso o token é SELADO no banco (não só hasheado): fechar a tela e voltar
  *  depois devolve o MESMO endereço, sem invalidar o que já foi enviado.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O PRAZO NASCE EM "SEM PRAZO" (dívida E70)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O `<select>` abre com a primeira opção do domínio — "Sem prazo" —, e o texto ao
+ *  lado explica a escolha em vez de deixar a pessoa adivinhar: o link é dela e
+ *  deve continuar abrindo até que ELA o revogue. O prazo é a exceção, não o
+ *  contrário, e a data escolhida a mão só é usada pela opção "Escolher a data"
+ *  (o campo fica sempre visível para a tela funcionar sem JavaScript).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O NÚMERO DE ABERTURAS CONTA VISITA, NÃO PESSOA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A mesma carta aberta duas vezes conta duas — e a tela DIZ isso. Um número
+ *  solto ao lado de uma carta é lido como "quantas pessoas viram", e a instituição
+ *  responderia "quantas vezes esta carta foi vista?" com um dado errado.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+export interface ShareHistoryItem {
+  linkId: string;
+  createdAtLabel: string;
+  status: string;
+  statusLabel: string;
+  viewCount: number;
+  viewsLabel: string;
+}
+
 export interface ShareCardPanelProps {
   tenantSlug: string;
   userCardId: string;
@@ -39,8 +66,18 @@ export interface ShareCardPanelProps {
   initialText: string;
   initialDisplayName: string;
   showsRealName: boolean;
+  /** Validade já rotulada ("sem prazo", "expira em 12/03/2027", "expirado"). */
+  initialStatusLabel: string | null;
+  initialViewCount: number;
+  initialLastViewedLabel: string | null;
+  /** Histórico de links do dono, do mais novo ao mais antigo. */
+  initialHistory: readonly ShareHistoryItem[];
   createAction: (prev: GamificationActionState | null, formData: FormData) => Promise<GamificationActionState>;
   revokeAction: (prev: GamificationActionState | null, formData: FormData) => Promise<GamificationActionState>;
+}
+
+function textOr(value: unknown, fallback: string | null): string | null {
+  return typeof value === 'string' ? value : fallback;
 }
 
 export function ShareCardPanel({
@@ -51,6 +88,10 @@ export function ShareCardPanel({
   initialText,
   initialDisplayName,
   showsRealName,
+  initialStatusLabel,
+  initialViewCount,
+  initialLastViewedLabel,
+  initialHistory,
   createAction,
   revokeAction,
 }: ShareCardPanelProps) {
@@ -67,22 +108,22 @@ export function ShareCardPanel({
    *  criação e CONTINUA preenchido depois de revogar. Ler `created.data.url`
    *  primeiro mostrava o endereço morto como se estivesse vivo — a pessoa copiava
    *  um link que não abre. O E2E pegou exatamente isto.
+   *
+   *  O mesmo vale para os NÚMEROS: o estado que veio da criação não pode continuar
+   *  descrevendo um link que já foi revogado. Depois de revogar, quem conta a
+   *  história é o HISTÓRICO — onde a linha revogada aparece com o que ela viveu.
    */
   const justRevoked = revoked?.ok === true;
+  const fresh = !justRevoked && created?.ok === true ? created.data : undefined;
 
-  const url = justRevoked
-    ? null
-    : typeof created?.data?.url === 'string'
-      ? created.data.url
-      : initialUrl;
-  const linkId = justRevoked
-    ? null
-    : typeof created?.data?.linkId === 'string'
-      ? created.data.linkId
-      : initialLinkId;
-  const text = typeof created?.data?.shareText === 'string' ? created.data.shareText : initialText;
-  const displayName =
-    typeof created?.data?.shareDisplayName === 'string' ? created.data.shareDisplayName : initialDisplayName;
+  const url = textOr(fresh?.url, justRevoked ? null : initialUrl);
+  const linkId = textOr(fresh?.linkId, justRevoked ? null : initialLinkId);
+  const text = textOr(fresh?.shareText, initialText) ?? initialText;
+  const displayName = textOr(fresh?.shareDisplayName, initialDisplayName) ?? initialDisplayName;
+
+  const statusLabel = textOr(fresh?.statusLabel, justRevoked ? null : initialStatusLabel);
+  const viewCount = typeof fresh?.viewCount === 'number' ? fresh.viewCount : initialViewCount;
+  const lastViewedLabel = textOr(fresh?.lastViewedLabel, initialLastViewedLabel);
 
   useEffect(() => {
     if (!copied) return;
@@ -91,6 +132,7 @@ export function ShareCardPanel({
   }, [copied]);
 
   const channelUrl = url ?? '';
+  const hasLink = statusLabel !== null;
 
   return (
     <section className="space-y-4 rounded-xl border border-border bg-card p-5" data-testid="share-panel">
@@ -175,9 +217,38 @@ export function ShareCardPanel({
           </form>
         </div>
       ) : (
-        <form action={createFormAction} className="space-y-2">
+        <form action={createFormAction} className="space-y-3">
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="userCardId" value={userCardId} />
+
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="space-y-1 text-xs font-medium">
+              Prazo do link
+              <select
+                name="validade"
+                defaultValue={DEFAULT_SHARE_VALIDITY}
+                data-testid="share-validity"
+                className="block min-w-48 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+              >
+                {SHARE_VALIDITY_CHOICES.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium">
+              Data (só para “Escolher a data”)
+              <input
+                type="date"
+                name="dia"
+                data-testid="share-validity-day"
+                className="block rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
+              />
+            </label>
+          </div>
+
           <button
             type="submit"
             disabled={creating}
@@ -186,11 +257,74 @@ export function ShareCardPanel({
           >
             {creating ? 'Preparando o link…' : 'Criar link público'}
           </button>
+
           <p className="text-xs text-muted-foreground">
-            O link é seu e pode ser revogado quando quiser.
+            Sem prazo é o padrão: o link continua abrindo até você revogá-lo. Com prazo, ele para
+            sozinho no fim do dia escolhido (no fuso da instituição).
           </p>
         </form>
       )}
+
+      {hasLink ? (
+        <dl
+          className="grid gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:grid-cols-3"
+          data-testid="share-metrics"
+        >
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Validade</dt>
+            <dd className="text-sm font-medium" data-testid="share-status">
+              {statusLabel}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Aberturas</dt>
+            <dd className="text-sm font-medium" data-testid="share-view-count">
+              {viewCount}
+            </dd>
+            <dd className="text-xs text-muted-foreground">cada visita conta, não cada pessoa</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">Última abertura</dt>
+            <dd className="text-sm font-medium" data-testid="share-last-view">
+              {lastViewedLabel ?? '—'}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      <div className="space-y-2 border-t border-border pt-3">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <Clock className="size-3.5" aria-hidden />
+          Histórico de links desta carta
+        </h3>
+
+        {initialHistory.length === 0 ? (
+          <p className="text-xs text-muted-foreground" data-testid="share-history-empty">
+            Nenhum link criado ainda.
+          </p>
+        ) : (
+          <ul className="space-y-1.5" data-testid="share-history">
+            {initialHistory.map((item) => (
+              <li
+                key={item.linkId}
+                className="flex flex-wrap items-center justify-between gap-2 text-xs"
+                data-testid={`share-history-${item.linkId}`}
+                data-status={item.status}
+              >
+                <span className="text-muted-foreground">
+                  Criado em {item.createdAtLabel} · {item.viewsLabel}
+                </span>
+                <span className="font-medium">{item.statusLabel}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          O histórico guarda todos os endereços desta carta, inclusive os que já não abrem: revogado
+          foi você quem fechou; expirado é o prazo que venceu.
+        </p>
+      </div>
 
       {created && !created.ok ? (
         <p className="text-sm text-destructive" data-testid="share-error">

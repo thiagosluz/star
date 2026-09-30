@@ -4,7 +4,9 @@ import { CheckCircle2, Clock, FileText, AlertCircle } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import {
+  canChangeSubmissionTrackOf,
   getSubmission,
+  listTrackOptionsForSubmission,
   resolveRubric,
 } from '@/lib/review/submission-service';
 import { getSubmissionAuthors } from '@/lib/review/author-service';
@@ -104,6 +106,18 @@ export default async function SubmissionDetailPage({
   const uploadKinds: UploadKind[] = submission.requiresBlindReview
     ? ['BLIND_PDF', 'IDENTIFIED_PDF']
     : ['IDENTIFIED_PDF'];
+
+  /**
+   * Trilha: o seletor e a permissão de troca (FASE 51 · dívida E32).
+   *
+   * As dependências vêm do BANCO (parecer e atribuição), e a leitura só acontece
+   * quando a tela vai mesmo oferecer a troca — não se paga uma consulta por uma
+   * decisão que já está tomada pelo estado.
+   */
+  const trackChangeVerdict = await canChangeSubmissionTrackOf(tenantId, submissionId);
+  const trackOptions = trackChangeVerdict.allowed
+    ? await listTrackOptionsForSubmission(tenantId, submission.eventId)
+    : [];
 
   /** Bloqueios que impedem o envio, calculados no servidor. */
   const blockers: string[] = [];
@@ -224,7 +238,14 @@ export default async function SubmissionDetailPage({
             abstract: submission.abstract,
             keywords: submission.keywords,
             language: submission.language,
+            trackId: submission.trackId,
           }}
+          tracks={trackOptions}
+          /**
+           * A liberação é decidida AQUI, pela regra do domínio, com as dependências
+           * lidas do banco — a tela não recalcula nada (FASE 51 · dívida E32).
+           */
+          canChangeTrack={trackChangeVerdict.allowed}
           action={updateSubmissionDraftAction}
         />
       ) : (

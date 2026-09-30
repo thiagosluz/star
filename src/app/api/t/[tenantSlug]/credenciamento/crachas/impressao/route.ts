@@ -139,6 +139,7 @@ export async function GET(
       batch.badges.map((badge) => ({
         name: badge.name,
         code: badge.code,
+        category: badge.category ?? null,
         eventTitle: batch.eventTitle,
         tenantName: batch.tenantName,
       })),
@@ -165,6 +166,7 @@ export async function GET(
     eventTitle: batch.eventTitle,
     generatedAt: new Date(),
     badges: batch.badges,
+    theme: batch.theme,
     layout: layoutResult!.layout,
   });
 
