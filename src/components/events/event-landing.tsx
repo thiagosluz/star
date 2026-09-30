@@ -114,7 +114,7 @@ export function EventLanding({
 
   return (
     <ThemeScope theme={event.theme}>
-      <div
+      <main
         className={
           theme.animation === 'none'
             ? ''
@@ -338,7 +338,7 @@ export function EventLanding({
             </p>
           </div>
         </footer>
-      </div>
+      </main>
     </ThemeScope>
   );
 }

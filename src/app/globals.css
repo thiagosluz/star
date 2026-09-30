@@ -102,7 +102,27 @@
   --ef-success: #10b981;
   --ef-success-strong: #059669;
   --ef-warning: #f59e0b;
-  --ef-warning-strong: #d97706;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O AVISO TEM DOIS TONS, PORQUE TEM DUAS SUPERFÍCIES (FASE 52 · dívida E74)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O tom único (`#d97706`) media **2,89:1** sobre o painel claro (`warning-soft`,
+   *  `#fff2e4`) e 3,19:1 sobre o branco do cartão — reprovado no AA, que pede 4,5:1.
+   *  Escurecer para servir ao painel derrubava o TELÃO (`inverse-surface`, `#2c3039`)
+   *  para 1,86:1: **não existe um valor que sirva às duas superfícies**, e foi por isso
+   *  que o portão de acessibilidade isentou estes nós por uma fase inteira.
+   *
+   *  Agora são dois, cada um medido contra a superfície onde vive (e presos por teste
+   *  em `tests/unit/f52-warning-contrast.test.ts`):
+   *    • `warning-strong` — painéis e cartões CLAROS: `#92400e`, **6,44:1** sobre o
+   *      aviso suave e **7,09:1** sobre o branco. A folga é de propósito: texto sobre
+   *      aviso às vezes é envolvido por `opacity-90`, e o tom não pode cair abaixo do
+   *      limite por causa de um invólucro.
+   *    • `warning-strong-on-dark` — telão do sorteio: `#fcd34d`, **9,17:1** sobre
+   *      `#2c3039`.
+   */
+  --ef-warning-strong: #92400e;
+  --ef-warning-strong-on-dark: #fcd34d;
   --ef-danger: #ef4444;
   --ef-danger-strong: #dc2626;
 
@@ -168,6 +188,7 @@
   --success-soft: color-mix(in oklab, var(--ef-success) 12%, var(--ef-surface-lowest));
   --warning: var(--ef-warning);
   --warning-strong: var(--ef-warning-strong);
+  --warning-strong-on-dark: var(--ef-warning-strong-on-dark);
   --warning-soft: color-mix(in oklab, var(--ef-warning) 14%, var(--ef-surface-lowest));
   --destructive: var(--ef-danger-strong);
   --destructive-foreground: #ffffff;
@@ -243,6 +264,7 @@
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-strong: var(--warning-strong);
+  --color-warning-strong-on-dark: var(--warning-strong-on-dark);
   --color-warning-soft: var(--warning-soft);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);

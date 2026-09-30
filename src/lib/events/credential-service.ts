@@ -421,12 +421,41 @@ export async function issueCredentials(input: {
       let candidateIds: string[];
 
       if (explicit) {
-        const people = await tx.userTenantProfile.findMany({
-          where: { tenantId: input.tenantId, userId: { in: explicit }, deletedAt: null },
-          select: { userId: true },
-        });
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  A EMISSÃO À MÃO ACEITA QUEM A TELA OFERECE (FASE 52 · dívida I1)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  A lista de crachás monta o roster por INSCRIÇÃO no evento (`registrations`)
+         *  — é o que diz quem é público daquele evento. Aqui, na seleção explícita, a
+         *  busca era só por VÍNCULO (`user_tenant_profiles`), e as duas populações não
+         *  são a mesma: quem se inscreveu pelo formulário público e não tem vínculo
+         *  aparece na tela com a caixa de seleção, é escolhido pela secretaria… e a
+         *  emissão responde **"Nenhum participante para emitir crachá"** — culpando a
+         *  seleção por um dado que existe.
+         *
+         *  O crachá é da PESSOA no evento. Quem tem inscrição no evento é elegível, com
+         *  ou sem vínculo; o vínculo continua valendo (é o caso de quem é da equipe e
+         *  recebe crachá sem inscrição). A união é a régua certa — e é a mesma que a
+         *  tela já usava.
+         */
+        const [people, registered] = await Promise.all([
+          tx.userTenantProfile.findMany({
+            where: { tenantId: input.tenantId, userId: { in: explicit }, deletedAt: null },
+            select: { userId: true },
+          }),
+          tx.registration.findMany({
+            where: {
+              tenantId: input.tenantId,
+              eventId: input.eventId,
+              userId: { in: explicit },
+              deletedAt: null,
+              status: { not: 'CANCELED' },
+            },
+            select: { userId: true },
+          }),
+        ]);
 
-        candidateIds = people.map((row) => row.userId);
+        candidateIds = [...new Set([...people, ...registered].map((row) => row.userId))];
       } else {
         const registrations = await tx.registration.findMany({
           where: {

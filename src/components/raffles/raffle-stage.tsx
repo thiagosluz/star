@@ -677,7 +677,11 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
               </span>
             </p>
           ) : (
-            <p className="text-warning-strong" data-testid="stage-no-commitment">
+            /**
+             * O TELÃO É SUPERFÍCIE ESCURA (FASE 52 · dívida E74): o tom de aviso dos
+             * painéis claros daria 1,86:1 aqui. Este é o par do escuro — 9,17:1.
+             */
+            <p className="text-warning-strong-on-dark" data-testid="stage-no-commitment">
               Este sorteio não tem compromisso de semente: o resultado é auditável por hash, mas não
               reproduzível por terceiros.
             </p>

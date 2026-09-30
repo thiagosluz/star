@@ -189,7 +189,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('arquivo do catálogo', () => {
-  test.fixme('1. excluir a carta a leva para o arquivo, com data e autor; restaurar a traz de volta', async ({
+  test('1. excluir a carta a leva para o arquivo, com data e autor; restaurar a traz de volta', async ({
     page,
   }) => {
     await signInAs(page, adminEmail);
@@ -208,7 +208,8 @@ test.describe('arquivo do catálogo', () => {
     // ── O arquivo tem a carta, com QUEM excluiu e QUANDO ─────────────────────
     await page.getByTestId('cards-archive-toggle').click();
 
-    expect(page.url()).toContain('arquivados=1');
+    // `expect(page).toHaveURL` ESPERA a navegação; `page.url()` a lê na hora e mente.
+    await expect(page).toHaveURL(/arquivados=1/);
     await expect(page.getByTestId('cards-scope-label')).toContainText('Arquivados');
     await expect(page.getByTestId(`admin-card-${cardId}`)).toContainText('Carta do Arquivo');
 
@@ -239,7 +240,7 @@ test.describe('arquivo do catálogo', () => {
     expect(carta.isActive).toBe(true);
   });
 
-  test.fixme('2. a missão percorre o mesmo caminho', async ({ page }) => {
+  test('2. a missão percorre o mesmo caminho', async ({ page }) => {
     await signInAs(page, adminEmail);
     await page.goto(`/t/${tenantSlug}/administracao/missoes`);
 
@@ -252,7 +253,8 @@ test.describe('arquivo do catálogo', () => {
     await expect(page.getByTestId(`admin-mission-${missionId}`)).toHaveCount(0, { timeout: 30_000 });
 
     await page.getByTestId('missions-archive-toggle').click();
-    expect(page.url()).toContain('arquivados=1');
+    // `expect(page).toHaveURL` ESPERA a navegação; `page.url()` a lê na hora e mente.
+    await expect(page).toHaveURL(/arquivados=1/);
 
     await expect(page.getByTestId(`admin-mission-${missionId}`)).toContainText('Missão do Arquivo');
     await expect(page.getByTestId(`mission-archived-${missionId}`)).toContainText(
@@ -274,7 +276,7 @@ test.describe('arquivo do catálogo', () => {
     expect(missao.isVisible).toBe(true);
   });
 
-  test.fixme('3. o filtro do arquivo funciona SEM JavaScript', async ({ browser }) => {
+  test('3. o filtro do arquivo funciona SEM JavaScript', async ({ browser }) => {
     /**
      * ─────────────────────────────────────────────────────────────────────────────
      *  A PROVA DA DÍVIDA E58

@@ -93,7 +93,7 @@ export default async function CommunicationPage({
   const sandbox = isSandboxSender(from);
 
   return (
-    <div className="space-y-8" data-testid="communication-page">
+    <main className="space-y-8" data-testid="communication-page">
       <PageHeader
         title="Comunicação"
         description="O que a plataforma enviou em nome da instituição: convites, avisos de avaliação, conquistas e certificados."
@@ -272,6 +272,6 @@ export default async function CommunicationPage({
           </>
         ) : null}
       </Alert>
-    </div>
+    </main>
   );
 }

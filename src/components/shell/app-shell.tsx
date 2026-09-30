@@ -198,9 +198,23 @@ export function AppShell({
           </span>
         </header>
 
-        <main className={cn('flex-1 px-4 py-6 lg:px-8 lg:py-8', contentClassName)}>
+        {/**
+          * ─────────────────────────────────────────────────────────────────────────
+          *  A CASCA NÃO É O LANDMARK — A PÁGINA É (FASE 52 · dívida E75)
+          * ─────────────────────────────────────────────────────────────────────────
+          *  Aqui havia um `<main>`, e cada página autenticada renderiza o SEU: duas
+          *  regiões principais na mesma tela confundem leitor de tela e quebram o modo
+          *  estrito do Playwright (`locator('main')` resolve dois elementos).
+          *
+          *  Quem perdeu o landmark foi a CASCA, e não as telas: este wrapper é
+          *  espaçamento e largura — quem diz "este é o conteúdo principal desta tela" é
+          *  a própria tela. As quatro páginas que se apoiavam neste `<main>` ganharam o
+          *  seu (administração, equipe, comunicação e a prévia da página pública, que
+          *  herda o da `EventLanding`).
+          */}
+        <div className={cn('flex-1 px-4 py-6 lg:px-8 lg:py-8', contentClassName)}>
           <div className="mx-auto w-full max-w-[var(--content-max)]">{children}</div>
-        </main>
+        </div>
       </div>
     </div>
   );

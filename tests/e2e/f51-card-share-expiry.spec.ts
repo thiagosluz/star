@@ -222,7 +222,7 @@ test.describe('prazo e contagem do link compartilhado', () => {
    *  abre e responde IGUAL ao inexistente — está preso por teste de integração, que
    *  compara os três objetos campo a campo; o que falta é a jornada de navegador.
    */
-  test.fixme('2. link vencido não abre e responde igual ao inexistente', async ({ page, browser }) => {
+  test('2. link vencido não abre e responde igual ao inexistente', async ({ page, browser }) => {
     const tenant = await createTenant({
       label: 'f51vencido',
       name: `Instituição f51vencido ${RUN_ID}`,
@@ -251,10 +251,23 @@ test.describe('prazo e contagem do link compartilhado', () => {
       const expired = await visitor.goto(publicPath);
       const missing = await visitor.goto(`/t/${tenant.slug}/carta/${'a'.repeat(22)}`);
 
-      /** A MESMA resposta para "venceu" e "nunca existiu" — nada vaza a diferença. */
+      /**
+       * A MESMA resposta para "venceu" e "nunca existiu" — nada vaza a diferença.
+       *
+       * A comparação é do que o VISITANTE LÊ (`body`), e não do HTML inteiro: o
+       * `<head>` carrega a URL canônica da página, e ela contém o próprio token que o
+       * visitante acabou de digitar. Comparar bytes mediria que dois endereços
+       * diferentes têm endereços diferentes — e não é isso que a promessa diz.
+       */
       expect(expired?.status()).toBe(404);
       expect(missing?.status()).toBe(404);
-      expect(await expired?.text()).toBe(await missing?.text());
+
+      const textoVencido = await visitor.locator('body').innerText();
+      await visitor.goto(`/t/${tenant.slug}/carta/${'a'.repeat(22)}`);
+      const textoInexistente = await visitor.locator('body').innerText();
+
+      expect(textoVencido).toBe(textoInexistente);
+      expect(textoVencido).not.toMatch(/expirad|venceu|prazo/i);
     } finally {
       await anonymous.close();
     }

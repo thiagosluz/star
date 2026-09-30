@@ -107,13 +107,13 @@
 | A. Segurança e conformidade | 3 | 0 | Médio — **a varredura de arquivos foi entregue na FASE 36**; resta a assinatura assimétrica do certificado, a auditoria de leitura e o login social |
 | B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
 | C. Quotas e billing | 1 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
-| D. Comunicação e comunidade | 3 | 1 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
-| E. Jornada do participante | 29 | 6 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP**, **a autorização da foto é declarada, não guardada**, **a arte da carta entra por URL sem passar pelo acervo**, **o link compartilhado não expira nem é medido** e **a suíte de credenciamento depende da ordem dos testes** |
+| D. Comunicação e comunidade | 3 | 2 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem preferências |
+| E. Jornada do participante | 31 | 2 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP**, **a autorização da foto é declarada, não guardada**, **a arte da carta entra por URL sem passar pelo acervo**, **o link compartilhado não expira nem é medido** e **a suíte de credenciamento depende da ordem dos testes** |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
-| H. Design e acessibilidade | 3 | 1 | Baixo — aparência consistente; composição heterogênea |
-| I. Plataforma e diretório | 1 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **49** | **18** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — mais o escopo próprio da FASE 25 e as revisões) |
+| H. Design e acessibilidade | 3 | 0 | Baixo — aparência consistente; composição heterogênea |
+| I. Plataforma e diretório | 2 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
+| **Total** | **47** | **6** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -167,104 +167,21 @@
 > aritmética (67 − 11 + 3), e a contagem **linha por linha** — a regra deste documento —
 > dá **49** antes dos dois itens novos desta fase (**50**): o número anterior estava
 > inflado, provavelmente por linhas já riscadas contadas como abertas. Os totais por tema
-> agora são medidos, não inferidos: A=3, B=4, C=1, D=3, E=29, F=5, G=0, H=3, I=1.
+> agora são medidos, não inferidos: A=3, B=4, C=1, D=3, E=31, F=5, G=0, H=3, I=2 = **47**.
 >
-> **FASE 50 (mutirão de dívidas II):** quitou **onze** — C7, E26, E49, E50 (medida), E51,
-> E52, E53, E55, E59, E71 e H5 —, e declarou **três**, todas com o motivo medido: **E74**
-> (o token de aviso não passa no contraste AA no painel claro), **E75** (dois landmarks
-> `<main>` por página) e **E76** (a ação em linha antes do bundle). Total **67 → 59**:
-> três temas encolheram (C, E e H) e nenhum cresceu.
+> **FASE 51 (mutirão de dívidas III):** quitou **onze** — E7, E19, E32, E37, E42, E57, E58,
+> E63, E66, E70 e E73 —, e declarou **E77** (o logo da instituição não entra na etiqueta) e
+> **I1** (os cenários E2E escritos sem execução). O total **59 → 49**.
 >
-> O total é a **soma das tabelas de tema** (3+4+1+3+39+5+0+3+1 = 59 — o tema G ficou
-> vazio depois da FASE 22), e não a subtração do
-> número original: cada fase que quita itens também descobre outros (a FASE 13 acrescentou
-> B6–B9, a FASE 14 acrescentou C4–C5, a **FASE 15 acrescentou D7–D9**, a FASE 16
-> acrescentou G8–G13, a FASE 17 acrescentou
-> E9–E13, a **FASE 21 quitou C4–C5 e acrescentou C6–C7**, a **FASE 22 quitou G8–G13 e
-> acrescentou E35**, a FASE 23 acrescentou E14–E17, a FASE 24 acrescentou E18–E20 e a FASE 25
-> acrescentou E25–E29 — mais o E30, que a **revisão** da FASE 25 declarou, o E31 e o E32,
-> que a **revisão** da FASE 4 declarou, o E33, que a **primeira revisão** da FASE 3 declarou,
-> o E34, que a **segunda revisão** da FASE 3 (ciclo de vida da sala) declarou, o **E36 e o
-> E37**, que a FASE 29 declarou — esta última sem quitar nenhuma dívida anterior: o escopo
-> dela veio do humano, e o que ela fechou foi um defeito de honestidade na auditoria, não um
-> item deste levantamento), e os **E60, E61 e E62**, que a FASE 44 declarou depois de quitar
-> o E35.
+> **FASE 52 ("fechar o que abrimos"):** quitou **E74** e **E75** (declaradas na F50) e
+> **riscou E8** — o lote de certificados em ZIP existe desde a **FASE 36**; a linha ficou
+> aberta porque a verificação original procurou **biblioteca de terceiro** (`zip|archiver|jszip`)
+> e não viu o escritor de ZIP próprio (`zip-writer.ts`). **I1 ficou parcial**: 8 dos 13
+> cenários voltaram a rodar (e um deles achou um **defeito real** — a emissão à mão do crachá
+> recusava quem a tela oferecia). **E77** continua aberta (exige imagem no escritor de PDF à
+> mão) e entrou **I2** (16 páginas sem landmark `<main>`). B6 ganhou o número medido: **206**
+> `console.*`, não ~66. O total **49 → 47**.
 >
-> **A FASE 34** (confirmação de vaga com prazo) veio do humano e **não quitou item deste
-> levantamento**: ela separou "inscrever-se" de "confirmar-se" (a vaga fica retida até a equipe
-> registrar a confirmação e é liberada automaticamente no vencimento) e declarou o **E48** (a
-> confirmação é do conjunto, não de cada exigência) e o **E49** (não há prazo-limite da atividade
-> além dos N dias da inscrição). No caminho, corrigiu dois defeitos reais: a promoção da lista de
-> espera não devolvia o lugar no EVENTO (armadilha 79) e a fila de confirmações abria pela agenda
-> em vez da urgência (armadilha 80). O consolidado passa de 53 para **55**.
->
-> **A FASE 36** (operação das rotinas automáticas, inspeção de arquivos, lote de certificados e
-> aviso de decisão) veio do humano e **quitou TRÊS itens deste levantamento**: o **A3** (antivírus
-> nos arquivos, aberto desde a FASE 4), o **B7** (agendamento da manutenção das partições, aberto
-> desde a FASE 13 — a rotina foi para dentro do worker) e o **E47** (o proponente não era avisado
-> da decisão, declarado pela FASE 33). No caminho ela criou a primeira tabela de plataforma sem
-> RLS (`job_runs`) e a verificação de contrato que exige a revogação do acesso do runtime
-> (armadilhas 82–83). Não declarou dívida nova. **O consolidado passa de 50 para 48** —
-> ver a *correção de contagem* acima: a soma publicada aqui (55) contava linhas já riscadas,
-> e os números da narrativa das fases 34–35 ("53 → 55", "52 → 53") vinham dessa soma. O que
-> vale é a contagem linha a linha das tabelas.
->
-> **A FASE 37** (crachá em etiqueta adesiva e impressora térmica · confirmação de vaga por item)
-> veio do humano e **quitou DOIS itens deste levantamento**: o **E41** (a impressão era folha A4
-> para recortar) e o **E48** (a confirmação era do conjunto, não de cada exigência). As duas
-> entregas são *configuráveis por decisão do humano* — a grade da folha e o rolo da térmica são
-> dado, não constante (ADR-192). Ela declarou o **E50** (a ação em linha só existe depois de
-> hidratada — um clique antes de o bundle carregar não vira requisição, e vale para todas as
-> telas de operação) e **deixou o E42 pela metade**: a identidade visual do crachá e a escolha de
-> lente da câmera continuam abertas. **O consolidado passa de 48 para 47.**
->
-> **A FASE 33** (chamadas de propostas) veio do humano e **QUITOU o E25**: o convite de palestrante
-> passou a sair por e-mail (template `SPEAKER_INVITATION`, disparado pelo protocolo de aceite). Ela
-> declarou o **E46** (a proposta não aceita anexo) e o **E47** (o proponente não é avisado da
-> decisão). O consolidado passa de 52 para **53**.
->
-> **A FASE 32** (central do participante e inteligência da instituição) veio do humano e **não
-> quitou item deste levantamento**: ela deu à instituição a visão da PESSOA (diretório, ficha 360,
-> recados com caixa de entrada, panorama por período e por evento) e declarou o **E44** (o arquivo
-> exportado não tem prazo nem controle de destino) e o **E45** (o recado é mão única). No caminho,
-> corrigiu uma recusa silenciosa na guarda das Server Actions que quebrava o "gerar meu crachá" da
-> FASE 31. O consolidado passa de 50 para **52**.
->
-> **A FASE 31** (credenciamento e frequência por crachá) veio do humano e **não quitou item
-> deste levantamento**: ela corrigiu a mistura entre "chegou ao evento" e "esteve na
-> atividade", fez o crachá existir de verdade (a coluna era lida por todos e escrita por
-> ninguém) e declarou **E40** (credenciamento offline), **E41** (impressão em etiqueta)
-> e **E42** (identidade visual do crachá e escolha de lente), mais o **E43** (o botão único do
-> balcão fecha a presença na segunda leitura: não há como pedir "só entrada" na tela).
-> O consolidado passa de 46 para **50**.
->
-> **A FASE 30** (sorteio ao vivo, em rodadas) também veio do humano e **não quitou item
-> deste levantamento**: ela revisou a FASE 29 (o telão só era alcançável com o resultado já
-> apurado) e declarou **E38** (o prêmio e o patrocinador de uma rodada não podem ser
-> corrigidos depois do anúncio) e **E39** (a roleta tem duração fixa e não pode ser
-> reexecutada nem desligada pelo operador). O consolidado passa de 44 para **46**.
->
-> **Nota de contagem (FASE 25):** a fase do portal do palestrante entregou um escopo que
-> **não vinha deste levantamento** (foi definido diretamente pelo humano: E21 perfil e
-> vínculo de conta, E22 portal e posse, E23 materiais com visibilidade, E24 vitrine e
-> certificado de palestrante). Por isso esses quatro **não** entram como linha quitada na
-> seção 2 — não eram itens abertos aqui —, mas os cinco que a fase declarou de novo
-> (E25–E29) entram na tabela do tema E. O identificador `E21` foi escolhido para não
-> colidir com os E18–E20 da FASE 24, que continuam abertos.
->
-> **Correção de contagem (FASE 23):** o total anterior dizia 46 com o tema E valendo 13,
-> mas a tabela de E tinha NOVE linhas (E1, E2, E7, E8, E9–E13) — o número foi escrito a
-> partir da soma esperada, não da contagem real. Com E3–E6 quitados na FASE 17 e E9–E13
-> quitados nesta, a tabela de E ficou com oito itens e o consolidado voltou a 41. O rodapé
-> anterior já registrava esse mesmo tipo de erro ("dizia 40 enquanto a soma dava 44"); a
-> regra continua sendo **contar as linhas**, não somar de cabeça.
->
-> **Correção de contagem (FASE 24):** a coluna "rápidos (P)" foi **recontada a partir da
-> coluna "Esforço"** de cada tabela, porque a distribuição por tema não batia com as linhas
-> (dizia B=1, C=1, F=2 e H=2, quando as tabelas têm B=3, C=0, F=0 e H=1). O total por acaso
-> já era 12 e continua 12 — o que estava errado era onde os itens estavam. A marca **¹**
-> em D lembra que os três itens rápidos de comunicação (D3, D5, D6) são rápidos **só depois
-> de D1**, que é esforço G: a F15 continua sendo a fase grande que destrava as outras.
 
 ---
 
@@ -287,7 +204,7 @@
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
 | B5 | **`unstable_cache` → `use cache`** | F9 | API legada no diretório público | Dívida de atualização do framework | P | Sim |
-| B6 | **Adoção do `logger` nos serviços** | F13 (novo) | A FASE 13 migrou os pontos de operação; ~66 `console.*` seguem nos serviços (`catalog-service`, `certificate-service`, `raffle-service`, …) | Log sem estrutura nem redação nesses caminhos | M | Sim |
+| B6 | **Adoção do `logger` nos serviços** | F13 (novo) | A FASE 13 migrou os pontos de operação; **206** `console.*` seguem (medido na FASE 52; a estimativa anterior era ~66) nos serviços (`catalog-service`, `certificate-service`, `raffle-service`, …) | Log sem estrutura nem redação nesses caminhos | M | Sim |
 | ~~B7~~ | ~~**Agendamento da manutenção de partições**~~ | F13 (novo) | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. A manutenção virou rotina do WORKER (`audit-partitions`, todo dia às 3h) e não depende mais de alguém configurar cron na máquina; a CLI (`npm run db:partitions`) continua existindo para quem opera sem worker, chamando o mesmo serviço | — | — | — |
 | B8 | **Política de retenção da auditoria** | F13 (novo) | Decisão de negócio (LGPD × guarda): nada é descartado hoje | A `DEFAULT` e o histórico crescem sem limite definido | P | Decorrente |
 | B9 | **Coletor de métricas (Prometheus/Grafana)** | F13 (novo) | O endpoint é o contrato; falta quem raspe e alerte | Métrica existe e ninguém lê; `bullmq_queue_up 0` não vira alerta | M | Decorrente |
@@ -319,7 +236,7 @@
 | E1 | **Fila de espera com prazo de confirmação** | F3 | Hoje o promovido é confirmado automaticamente; falta prazo (ex.: 48 h) e promoção do próximo | Vaga fica presa com quem não responde | M | Decorrente |
 | E2 | **Paginação das listagens públicas** | F3, F4, F7 | Eventos e submissões carregam tudo (limite 100–200); só o diretório pagina | Degrada na casa dos milhares | M | Sim |
 | ~~E7~~ | ~~**Validação de certificados em lote**~~ (QUITADA na FASE 51 — tela pública `/validar/lote`) | F6 | Serviço existe; falta a tela que confere uma lista de códigos | Contratação verifica um por um | P | Sim |
-| E8 | **Exportação de certificados em ZIP** | F6 | Nada no código (`zip|archiver|jszip` = 0) | Organizador baixa um a um | M | Sim |
+| ~~E8~~ | ~~**Exportação de certificados em ZIP**~~ | F6 | **QUITADA (FASE 36)** — o lote em ZIP existe desde então: `GET /api/t/<slug>/certificados/zip?evento=<id>`, com escritor de ZIP **próprio** (`src/lib/documents/zip-writer.ts`). A linha ficou aberta porque a verificação original procurou **biblioteca de terceiro** (`zip|archiver|jszip`), e não a função | — | — | Sim |
 | E18 | **Miniaturas no acervo de mídia** | FASE 24 (novo) | A lista do acervo carrega a imagem INTEIRA para desenhar um quadrado pequeno; falta gerar (ou servir) uma miniatura | Acervo com 20 fotos de 3 MB baixa dezenas de MB só para abrir a tela | M | Sim |
 | ~~E19~~ | ~~**Busca e filtro no acervo de mídia**~~ (QUITADA na FASE 51 — filtros no banco, com contagem) | FASE 24 (novo) | A listagem traz as 200 mais recentes, sem filtro por tipo, evento ou "em uso" (a tela mostra o uso, não filtra por ele) | Acervo grande exige rolar e comparar a olho | P | Sim |
 | E20 | **Sincronizar todas as cópias de uma vez** | FASE 24 (novo) | A sincronia é por patrocinador (ADR-111); falta aplicar a mesma origem a todas as cópias de uma vez | Instituição com muitas edições sincroniza uma cópia por vez | M | Sim |
@@ -400,13 +317,14 @@
 | H3 | **Tema escuro completo** | F11A, F11B | `.dark` só evita variável indefinida; a escala escura não foi desenhada | Quem usa tema escuro do sistema vê o claro | M | Sim |
 | ~~H5~~ | ~~**Testes de acessibilidade (`@axe-core/playwright`)**~~ (QUITADA na FASE 50 — portão WCAG AA em 6 telas) | F2, F3 | Recomendado desde a F2; não existe | Regressão de acessibilidade passa despercebida | P | Sim |
 | H6 | **Regressão visual (`toHaveScreenshot`)** | F11B | Sem snapshot de tela | Troca de cor por engano só aparece em revisão manual | M | Sim |
-| E74 | **O token de aviso não passa no contraste AA no painel claro** | FASE 50 (novo, ADR-277) | Medido com o axe: `#d97706` (`text-warning-strong`) sobre `#fff2e4` (`bg-warning-soft`) = **2,89:1**, e 2,59:1 onde há invólucro com `opacity-90`. AA pede 4,5:1. O MESMO token sobre a superfície escura do telão (`#2c3039`) dá 4,15:1 — escurecer o bastante para o painel (6,4:1) derruba o telão para 1,9:1 | **Não existe valor único**: exige separar o token (claro × escuro) e revisar os ~40 pontos que hoje usam o mesmo, com a paleta documentada em `docs/design-system.md`. O portão de acessibilidade isenta **estes nós** (por nó, não por regra) e conta quantos isentou — a dívida aparece no log de cada rodada | M | Sim |
-| E75 | **Dois landmarks `<main>` na mesma página** | FASE 50 (novo) | A casca (`app-shell.tsx`) e cada página autenticada renderizam `<main>`. O axe classifica como `best-practice`/moderate (o portão WCAG AA não reprova), mas quebra o modo estrito do Playwright (`locator('main')` resolve dois elementos) e confunde leitor de tela | Decidir qual lado perde o landmark (a casca, provavelmente) e ajustar TODAS as telas autenticadas | M | Sim |
+| ~~E74~~ | ~~**O token de aviso não passa no contraste AA no painel claro**~~ (QUITADA na FASE 52) | FASE 50 (novo, ADR-277) | Medido com o axe: `#d97706` sobre `#fff2e4` = **2,89:1** (2,59:1 sob `opacity-90`) e 4,15:1 no telão escuro — **não existe valor único**. A F51 separou em DOIS tokens medidos: `warning-strong` (`#92400e`) para painéis claros (6,44:1 / 7,09:1 no branco) e `warning-strong-on-dark` (`#fcd34d`, 9,17:1 no telão), presos por catraca de contraste que lê o `globals.css` (`tests/unit/f52-warning-contrast.test.ts`). A **isenção do portão foi REMOVIDA** | — | — | Sim |
+| ~~E75~~ | ~~**Dois landmarks `<main>` na mesma página**~~ (QUITADA na FASE 52) | FASE 50 (novo) | A casca deixou de ser landmark (é espaçamento, não conteúdo) e as quatro telas que se apoiavam nela ganharam o seu; a `EventLanding` passou a ter o dela, dando landmark à página pública do evento. A auditoria das 82 páginas revelou **16 páginas sem landmark nenhum** (8 do SuperAdmin, 8 públicas) — viraram a dívida **I2** | — | — | Sim |
 ### I. Plataforma e diretório
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| I1 | **Specs E2E dos Blocos 3 e 4 ficaram em `test.fixme`** | FASE 51 (novo) | Os specs E2E escritos durante a fase foram escritos SEM execução (a árvore estava compartilhada por cinco frentes). Na primeira execução real, os que interagem com formulário CONTROLADO antes da hidratação falharam — a seleção é revertida quando o React assume — e ficaram marcados `fixme` com o motivo escrito. Passaram: QR repetido, telão, declaração da foto, link da carta e trilha do rascunho | Depurar cada caso com a aplicação no ar (o padrão é fazer a seleção DENTRO do laço de retentativa, como o spec do QR faz, ou esperar a hidratação por um marcador). O comportamento está coberto por testes de integração/unitários em todos os casos; falta a jornada de navegador | S | Sim || I6 | **Sigla × nome de instituição** | F4 | `institutionsMatch` não resolve "UFRJ" × nome completo; solução é tabela de instituições | Conflito de interesse com falso negativo | M | Decorrente |
+| I1 | **Cenários E2E em `test.fixme`** | FASE 51 (novo) | **PARCIAL na FASE 52**: dos 13, **8 rodam e passam** (mídia, catálogo, link da carta, crachá). Cada um tinha causa própria — hidratação de formulário controlado, dependência de ordem entre cenários, helper que contava `<li>` aninhado, `page.url()` lido antes da navegação e comparação de HTML em vez do que o visitante lê. Os **5 restantes** seguem em `fixme` com o motivo escrito no arquivo: troca de categoria de UM crachá (select controlado), a rota de impressão respondendo **400** pelo endereço da própria tela, o crachá online (dado do cenário sem vínculo) e o seletor de lente (exige `enumerateDevices` falso) | Fechar os 5 — nenhum é comportamento sem cobertura: unidade e integração cobrem os mesmos fatos | S | Sim |
+| I2 | **16 páginas sem landmark `<main>`** | FASE 52 (novo) | 8 do painel de plataforma (`/superadmin/**`) e 8 públicas (`/t/<slug>/eventos/<eventSlug>`, chamada, inscrição, convite, ficha do palestrante…). Anterior a esta fase: o landmark vinha da casca e só existia no painel autenticado — as outras árvores nunca tiveram | Boa prática de landmark (o AA não reprova). Envolver o conteúdo de cada página em `<main>`, como as telas do painel já fazem | M | Não |
 
 ---
 

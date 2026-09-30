@@ -221,7 +221,16 @@ export default async function AdminEventDetailPage({
             className="font-medium underline underline-offset-4"
             data-testid="landing-link"
           >
-            Página pública →
+            {/*
+              O RÓTULO DIZ O VERBO, E NÃO O ASSUNTO (FASE 52, correção de rótulo)
+
+              Aqui havia "Página pública →" — e a três centímetros existia "Ver página
+              pública →", que abre o SITE em outra aba. Duas entradas quase idênticas
+              para coisas diferentes: esta leva ao EDITOR. Quem lia não sabia qual era
+              qual, e clicar na errada dava a impressão de que a tela tinha sumido.
+              O verbo separa as duas: uma VÊ o resultado, a outra EDITA o conteúdo.
+            */}
+            Editar página →
           </Link>
           <Link
             href={tenantPath(tenantSlug, `/administracao/eventos/${event.id}/patrocinadores`)}

@@ -133,7 +133,7 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
   }));
 
   return (
-    <div className="space-y-8" data-testid="team-page">
+    <main className="space-y-8" data-testid="team-page">
       <PageHeader
         title="Equipe e participantes"
         description="Quem responde pela instituição e quem é público dos eventos. Só a equipe consome a quota de membros do plano."
@@ -389,6 +389,6 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
           </div>
         </Card>
       </section>
-    </div>
+    </main>
   );
 }

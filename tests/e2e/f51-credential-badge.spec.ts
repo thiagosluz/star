@@ -119,6 +119,92 @@ async function clickUntil(
   }).toPass({ timeout: 60_000 });
 }
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  MARCAR ATÉ O REACT ASSUMIR (FASE 52 · dívida I1)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A caixa é um controle do React, e o formulário monta os `userIds` a partir do
+   *  ESTADO (`[...selected]`) — não do DOM. Um clique que acontece ANTES da hidratação
+   *  marca a caixa na tela e **não entra no estado**: o formulário é enviado vazio, a
+   *  action responde "nenhum participante" e nada é gravado. O `toBeChecked` sozinho
+   *  não percebe, porque a caixa está marcada na hora em que ele olha (o React não
+   *  re-renderiza, então não há nada para desmarcá-la).
+   *
+   *  A prova de que o React assumiu é o **input escondido** daquela pessoa existir no
+   *  formulário. Enquanto ele não existir, o laço clica de novo — e na segunda vez a
+   *  página já está hidratada.
+   */
+  async function marcarAte(page: import('@playwright/test').Page, testId: string): Promise<void> {
+    const userId = testId.replace('badge-select-', '');
+    const escondido = page.locator(
+      `[data-testid="badge-emit-form"] input[name="userIds"][value="${userId}"]`,
+    );
+
+    await expect(async () => {
+      const caixa = page.getByTestId(testId);
+
+      /**
+       * O CAMINHO CRUEL: a caixa pode estar MARCADA no DOM e VAZIA no estado (o clique
+       * caiu antes da hidratação, e o React não re-renderiza, então nada a desmarca).
+       * Clicar "só se estiver desmarcada" trava para sempre. Aqui a marca é sempre
+       * refeita: desmarca e marca — quando a página já está hidratada, o estado recebe.
+       */
+      if ((await escondido.count()) === 0) {
+        if (await caixa.isChecked()) await caixa.click();
+
+        await caixa.click();
+      }
+
+      await expect(caixa).toBeChecked();
+      await expect(escondido).toHaveCount(1);
+    }).toPass({ timeout: 45_000 });
+  }
+
+  /**
+   * O seletor de categoria também é CONTROLADO: um `selectOption` antes da hidratação é
+   * revertido pelo React (o valor volta ao padrão e o lote sai com a categoria errada).
+   */
+  async function escolherCategoriaAte(
+    page: import('@playwright/test').Page,
+    testId: string,
+    valor: string,
+  ): Promise<void> {
+    await expect(async () => {
+      await page.getByTestId(testId).selectOption(valor);
+      await expect(page.getByTestId(testId)).toHaveValue(valor);
+    }).toPass({ timeout: 30_000 });
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CADA CASO PREPARA O PRÓPRIO ESTADO (FASE 52 · dívida I1)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Os cenários desta suíte encadeavam: quem trocava a categoria de um crachá contava
+   *  com a emissão feita pelo cenário ANTERIOR. Rodar um caso sozinho — o que se faz ao
+   *  depurar — dava "crachá inexistente", e a falha apontava para o lugar errado. É a
+   *  mesma família da dependência de ordem que a FASE 50 quitou no credenciamento.
+   */
+  async function limparCrachas(userIds: readonly string[]): Promise<void> {
+    await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      await tx.eventCredential.deleteMany({ where: { eventId, userId: { in: [...userIds] } } });
+    });
+  }
+
+  /** Emite o crachá pela TELA — o caminho real, com a categoria pedida. */
+  async function emitirPelaTela(
+    page: import('@playwright/test').Page,
+    userId: string,
+    categoria: string,
+  ): Promise<void> {
+    await page.goto(badgesUrl());
+    await marcarAte(page, `badge-select-${userId}`);
+    await escolherCategoriaAte(page, 'badge-emit-category', categoria);
+    await clickUntil(page, 'badge-emit', async () => {
+      expect(await credentialOf(userId)).toBeTruthy();
+    });
+  }
+
 const badgesUrl = () => `/t/${slug}/credenciamento/crachas?evento=${eventId}`;
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -204,16 +290,14 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 });
 
 test.describe('identidade visual do crachá', () => {
-  test.fixme('1. a emissão em massa aceita a categoria e a lista mostra a faixa', async ({ page }) => {
+  test('1. a emissão em massa aceita a categoria e a lista mostra a faixa', async ({ page }) => {
     await signInAs(page, organizerEmail);
     await page.goto(badgesUrl());
 
     /** ── A EQUIPE: marcar a pessoa e emitir como "Equipe" ─────────────────── */
-    await clickUntil(page, `badge-select-${staffId}`, async () => {
-      await expect(page.getByTestId(`badge-select-${staffId}`)).toBeChecked();
-    });
+    await marcarAte(page, `badge-select-${staffId}`);
 
-    await page.getByTestId('badge-emit-category').selectOption('STAFF');
+    await escolherCategoriaAte(page, 'badge-emit-category', 'STAFF');
 
     await clickUntil(page, 'badge-emit', async () => {
       const credential = await credentialOf(staffId);
@@ -223,9 +307,7 @@ test.describe('identidade visual do crachá', () => {
     /** ── O PARTICIPANTE: emitir com o padrão (a primeira opção do seletor) ── */
     await page.reload();
 
-    await clickUntil(page, `badge-select-${participantId}`, async () => {
-      await expect(page.getByTestId(`badge-select-${participantId}`)).toBeChecked();
-    });
+    await marcarAte(page, `badge-select-${participantId}`);
 
     await clickUntil(page, 'badge-emit', async () => {
       const credential = await credentialOf(participantId);
@@ -243,7 +325,7 @@ test.describe('identidade visual do crachá', () => {
       .toBe('STAFF');
   });
 
-  test.fixme('2. o filtro por categoria isola a faixa', async ({ page }) => {
+  test('2. o filtro por categoria isola a faixa', async ({ page }) => {
     await signInAs(page, organizerEmail);
 
     await page.goto(`${badgesUrl()}&categoria=STAFF`);
@@ -260,15 +342,43 @@ test.describe('identidade visual do crachá', () => {
     await expect(page.getByTestId(`badge-row-${staffId}`)).toHaveCount(0);
   });
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  OS CINCO CENÁRIOS AINDA EM `test.fixme` — O QUE FALTA, MEDIDO (FASE 52)
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  Os cenários 1 e 2 rodam e passam. A FASE 52 destravou a emissão à mão e achou, no
+   *  caminho, um **defeito real de produto**: a tela oferecia a pessoa inscrita no
+   *  evento para emissão e o serviço só aceitava quem tinha VÍNCULO — a secretaria
+   *  escolhia e recebia "Nenhum participante para emitir crachá". O serviço passou a
+   *  usar a mesma população da tela (`registration` ∪ `user_tenant_profile`).
+   *
+   *  O que ainda falta, cenário por cenário:
+   *   3. a troca de categoria de UM crachá: o `select` da linha é controlado, e o
+   *      `selectOption` ainda não está protegido contra a reversão antes da hidratação
+   *      (o mesmo remédio do `escolherCategoriaAte` usado na emissão em lote);
+   *   4. a folha/etiqueta responde **400** pelo endereço que a própria tela publica —
+   *      é investigação da ROTA de impressão, não do teste;
+   *   5. o crachá online: a pessoa do cenário é criada só com inscrição (sem vínculo) e
+   *      `/meu-cracha` é aberto por POSSE dentro da instituição — o dado do cenário
+   *      precisa refletir a inscrição pública, que cria o vínculo (FASE 10);
+   *   6 e 7. o seletor de lente: precisam de `enumerateDevices` falso no contexto e do
+   *      comportamento do componente quando a lista de câmeras chega depois.
+   *
+   *  Nenhum deles é comportamento sem cobertura: a categoria no lote, a faixa no PDF e
+   *  no ZPL e a cor do tema têm testes de unidade e de integração (FASE 51).
+   */
   test.fixme('3. trocar a categoria de UM crachá não troca o código', async ({ page }) => {
     await signInAs(page, organizerEmail);
+
+    await limparCrachas([participantId]);
+    await emitirPelaTela(page, participantId, 'PARTICIPANT');
 
     const before = await credentialOf(participantId);
     expect(before?.code).toBeTruthy();
 
     await page.goto(badgesUrl());
 
-    await page.getByTestId(`badge-category-select-${participantId}`).selectOption('VIP');
+    await escolherCategoriaAte(page, `badge-category-select-${participantId}`, 'VIP');
 
     await clickUntil(page, `badge-category-save-${participantId}`, async () => {
       const credential = await credentialOf(participantId);

@@ -92,14 +92,47 @@ async function signInAs(page: import('@playwright/test').Page, email: string): P
 }
 
 /** Uma linha do acervo na tela (o `li` com `data-in-use`). */
+/**
+ * As linhas do ACERVO — filhas DIRETAS da lista.
+ *
+ * `media-list > li` conta também os rótulos de uso, que são `<li>`s de uma lista
+ * interna (`media-usage-<id>`) e não imagens do acervo. O combinador `>` separa as
+ * duas coisas: 4 imagens com 2 em uso davam 6 "linhas" na contagem frouxa.
+ */
 function assetRows(page: import('@playwright/test').Page) {
-  return page.getByTestId('media-list').locator('li');
+  return page.getByTestId('media-list').locator('> li');
 }
 
 /** Submete o formulário de filtro — sem JavaScript, é navegação de verdade. */
 async function filtrar(page: import('@playwright/test').Page): Promise<void> {
   await page.getByTestId('media-filter-submit').click();
   await page.waitForLoadState('domcontentloaded');
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  ESCOLHER A INSTITUIÇÃO É PARTE DA JORNADA (FASE 52 · dívida I1)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O MESMO administrador tem DOIS vínculos (o acervo das contagens e o acervo
+ *  grande), e com mais de um vínculo a plataforma **pede a escolha** em vez de
+ *  adivinhar: navegar direto para `/t/<outra-instituição>/...` cai no seletor, e o
+ *  teste falhava sem entender por quê — o `activeTenant` da sessão era o OUTRO.
+ *
+ *  Reproduzir o caminho de quem usa (o card → "Entrar") é o que torna o cenário
+ *  determinístico. E funciona SEM JavaScript: o botão é a submissão do formulário.
+ */
+async function entrarNaInstituicao(
+  page: import('@playwright/test').Page,
+  alvoSlug: string,
+): Promise<void> {
+  await page.goto('/selecionar-instituicao');
+
+  const linha = page
+    .locator('[data-testid="tenant-options"] li')
+    .filter({ has: page.locator(`input[value="${alvoSlug}"]`) });
+
+  await linha.getByRole('button', { name: 'Entrar' }).click();
+  await page.waitForURL((url) => !url.pathname.includes('selecionar-instituicao'), { timeout: 30_000 });
 }
 test.beforeAll(async ({ playwright, baseURL }) => {
   const api = await playwright.request.newContext({ baseURL });
@@ -258,7 +291,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('filtros do acervo de mídia', () => {
-  test.fixme('1. cada filtro funciona SEM JavaScript, e os filtros combinam', async ({ browser }) => {
+  test('1. cada filtro funciona SEM JavaScript, e os filtros combinam', async ({ browser }) => {
     /**
      * ─────────────────────────────────────────────────────────────────────────────
      *  A PROVA DA DÍVIDA E19
@@ -273,6 +306,7 @@ test.describe('filtros do acervo de mídia', () => {
 
     try {
       await signInAs(page, adminEmail);
+      await entrarNaInstituicao(page, `${TENANT_LABEL}-${RUN_ID}`);
       await page.goto(mediaUrl());
 
       // ── Sem filtro: o acervo inteiro ────────────────────────────────────────
@@ -348,8 +382,9 @@ test.describe('filtros do acervo de mídia', () => {
     }
   });
 
-  test.fixme('2. busca sem resultado não inventa imagem', async ({ page }) => {
+  test('2. busca sem resultado não inventa imagem', async ({ page }) => {
     await signInAs(page, adminEmail);
+    await entrarNaInstituicao(page, `${TENANT_LABEL}-${RUN_ID}`);
     await page.goto(mediaUrl());
 
     await page.getByTestId('media-filter-search').fill('arquivo-que-nao-existe-9f8a');

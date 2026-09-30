@@ -57,34 +57,24 @@ const IMPACTOS_REPROVADOS = ['critical', 'serious'] as const;
  * Isenções — por ELEMENTO e com o motivo medido.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- *  DÍVIDA: O TOKEN DE AVISO NÃO PASSA EM AA — E NÃO É UMA LINHA DE CORREÇÃO
+ *  A DÍVIDA DO TOKEN DE AVISO FOI PAGA (FASE 52) — E ESTA LISTA ESTÁ VAZIA
  * ─────────────────────────────────────────────────────────────────────────────
- *  Medido nesta varredura (não é estimativa):
- *   • `text-warning-strong` (`#d97706`) sobre `bg-warning-soft` (`#fff2e4`):
- *     **2,89:1** — e **2,59:1** onde um invólucro com `opacity-90` mistura o texto
- *     com o fundo. O mínimo AA para texto normal é 4,5:1;
- *   • o MESMO token sobre a superfície escura do telão (`--ef-inverse-surface`,
- *     `#2c3039`) dá **4,15:1** — o token já está no limite nos dois lados.
+ *  A varredura da FASE 50 mediu, aqui mesmo, que `text-warning-strong` (`#d97706`)
+ *  dava **2,89:1** sobre `bg-warning-soft` (`#fff2e4`) e 4,15:1 sobre a superfície
+ *  escura do telão: um valor único não serve às duas superfícies, e por isso estes
+ *  nós foram isentos enquanto o token não fosse separado.
  *
- *  Isso é decisão de PALETA, não de tela: um valor único não serve às duas
- *  superfícies, porque escurecer o suficiente para o painel claro (`#92400e` daria
- *  6,4:1) derruba o telão para **1,9:1**. A correção certa é **separar o token** em
- *  dois (`warning-on-soft` para painéis claros e `warning-on-dark` para o palco) e
- *  revisar os ~40 pontos que hoje usam o mesmo — trabalho de sistema de design, com
- *  decisão visual, e não um ajuste de tela desta dívida.
+ *  Ele foi separado — `warning-strong` (`#92400e`) para painéis claros e
+ *  `warning-strong-on-dark` (`#fcd34d`) para o telão, ambos presos por teste em
+ *  `tests/unit/f52-warning-contrast.test.ts`. **Não há mais nada isentado**: qualquer
+ *  violação de `color-contrast`, em qualquer nó, reprova o portão.
  *
- *  Por isso a isenção é pelo TOKEN, e não pela regra: qualquer outro contraste ruim
- *  (texto secundário sobre cartão, por exemplo) continua reprovando.
+ *  A lista e o teto continuam existindo porque o mecanismo é bom: isenção por NÓ (e
+ *  nunca `disableRules`, que calaria a regra inteira), com o motivo medido escrito ao
+ *  lado. Quem precisar isentar algo no futuro passa a ter onde declarar — e o teto de
+ *  duas linhas obriga a justificar.
  */
-const ISENCOES: readonly { id: string; classeAncestral: string; motivo: string }[] = [
-  {
-    id: 'color-contrast',
-    classeAncestral: 'text-warning-strong',
-    motivo:
-      'token de aviso (#d97706) sobre painel claro: 2,89:1 (e 2,59:1 sob opacity-90). ' +
-      'DÍVIDA de paleta: exige separar o token em claro/escuro — ver o comentário acima.',
-  },
-];
+const ISENCOES: readonly { id: string; classeAncestral: string; motivo: string }[] = [];
 
 /** Teto das isenções: passar disso deixou de ser exceção e virou configuração. */
 const MAX_ISENCOES = 2;

@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 51 (F15, F21–F25, F29–F51 entregues; a F52+ é a próxima)
-Testes ................. 2697 (Vitest: unit + integração) + 201 (Playwright E2E)
-ADRs ................... 288 (numeração GLOBAL e sequencial — a próxima é ADR-289)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 52 (F15, F21–F25, F29–F52 entregues; a F53+ é a próxima)
+Testes ................. 2706 (Vitest: unit + integração) + 209 (Playwright E2E)
+ADRs ................... 292 (numeração GLOBAL e sequencial — a próxima é ADR-293)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 57 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2697+ testes passando
+npm test              # esperado: 2706+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 201+ testes passando
+npm run test:e2e      # esperado: 209+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -265,55 +265,6 @@ arquivo substituído no rascunho — código `QUOTA_EXCEEDED`.
 `ADMIN` só tem `tenant:member:remove`. Trocar papéis é ato de dono; a tela esconde o que a
 action recusaria.
 
-### Palco e auditoria (FASE 29)
-
-O sorteio deixou de ser uma promessa auditável: a **lista publicada** passou a ser
-gravada e assinada, o **telão** mostra o compromisso antes da apuração e a **auditoria**
-refaz as contas no navegador de quem lê.
-
-```
-Telão ................... /t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>/palco
-Auditoria ............... /t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>/auditoria
-Ao vivo (público) ....... GET /api/t/<slug>/eventos/<eventSlug>/sorteios/<raffleId>/ao-vivo (JSON **ou** SSE)
-Link + QR do telão ...... /t/<slug>/administracao/eventos/<eventId>/sorteios → "Palco e auditoria"
-Conferir fora do site ... npx tsx prisma/scripts/audit-raffle.ts --semente <hex> --lista lista.json
-```
-
-Cinco regras que quebram fácil: **a seleção vive em `draw-selection.ts`**, sem import de
-runtime, e é a MESMA no servidor e no navegador (reimplementar no cliente faria a auditoria
-validar outra regra); **o documento canônico da lista é `[{ index, code, minutes }]`** (o
-`userId` fica fora do hash: não decide o sorteio); **o payload do resultado é versão 4 desde a
-FASE 30**, com o hash da lista e o NÚMERO DA RODADA assinados (a 3, a 2 e a 1 seguem
-verificáveis, cada uma no seu formato); **o código público (`P-…`) é derivado de (sorteio,
-participante)** e liga a linha da lista à posição do ganhador; e **a auditoria declara o que
-NÃO prova** — o compromisso amarra a semente, não a lista, porque o credenciamento continua
-até a apuração (dívida E36). O telão é público desde a criação (E37) e **não relaxa a
-privacidade**: o nome chega mascarado do servidor.
-
-### Sorteio ao vivo, em rodadas (FASE 30)
-
-O sorteio deixou de ser UM momento: cada apuração é uma **rodada**, com o próprio
-compromisso de semente, o próprio prêmio, o próprio patrocinador e o próprio resultado
-assinado. Quem ganhou uma rodada não concorre nas seguintes.
-
-```
-Painel .................. /t/<slug>/administracao/eventos/<eventId>/sorteios
-                           → "Criar para o palco" (não apura), "Preparar próxima rodada",
-                             "Sortear a rodada N" e a lista de rodadas do sorteio
-Telão ................... mesmo endereço: anuncia a rodada em cartaz, ROLA a roleta com
-                           os nomes da lista publicada e para no ganhador
-Auditoria ............... uma seção por rodada (compromisso, lista e reprodução de cada)
-```
-
-Cinco regras que quebram fácil: **cada rodada tem a PRÓPRIA semente** — revelar a da rodada
-1 entregaria os ganhadores da 2 (ADR-144); **as POSIÇÕES continuam entre as rodadas**, e a
-entrega do prêmio é por `positionId` desde a FASE 16; **o prêmio e o patrocinador são ANÚNCIO
-e ficam FORA do documento assinado** — corrigir o texto não pode invalidar resultado
-publicado (ADR-145), com teste unitário prendendo isso; **a roleta é apresentação, não
-sorteio**: ela passa os nomes REAIS da lista publicada depois de o servidor assinar
-(ADR-146), e **a lista nasce na APURAÇÃO** — o telão ESPERA a releitura em vez de revelar sem
-roleta (a rodada antiga sem lista revela direto, em vez de inventar nomes — armadilha 78); e
-**uma rodada preparada por vez**, senão o telão não sabe o que anunciar.
 
 ### Credenciamento por crachá (FASE 31)
 
@@ -491,64 +442,7 @@ RECUSADOS (a régua da armadilha 87); e **sem modelo configurado vale o desenho 
 6** — o editor é opt-in. A precedência é EVENTO+TIPO → EVENTO → INSTITUIÇÃO+TIPO → INSTITUIÇÃO
 → padrão, com UM modelo por combinação garantido por índices únicos parciais.
 
-### Página pública e patrocínio (FASE 17)
 
-A instituição monta a própria vitrine. A página (`EventPage`) **nasce como rascunho** e só
-vai ao ar quando publicada — a leitura pública já filtrava `isPublished` desde a FASE 3.
-Cada bloco (`PageBlock`) tem o conteúdo validado **por tipo** no domínio
-(`blockContentSchemas`), a ordem é **reescrita** ao mover (0, 10, 20…, para o empate não
-virar no-op) e o editor **avisa** quando o bloco está vazio ou quando o tipo não tem
-renderizador (só o `HERO`, porque o cabeçalho do evento já cumpre o papel).
-
-```
-Editor ................. /t/<slug>/administracao/eventos/<eventId>/pagina      (page:manage)
-Patrocínio ............. /t/<slug>/administracao/eventos/<eventId>/patrocinadores (sponsor:manage)
-Autoria ................ /t/<slug>/submissoes/<submissionId> → seção "Autoria"
-```
-
-Três regras que quebram fácil: **imagem é validada pela assinatura real do arquivo** (SVG é
-recusado porque pode conter script, e o tipo GRAVADO é o detectado, não o declarado);
-**`maxSponsors` é aplicado dentro da transação** (é cláusula de contrato, não layout) e
-`taxId` ausente **preserva** o documento já gravado (a tela só mostra a máscara, então
-`?? null` apagaria o CNPJ); e **autoria é substituída por inteiro** (`deleteMany` +
-`createMany`) porque o índice único `(submissionId, authorOrder)` seria violado ao trocar
-duas posições linha a linha — com o vínculo de conta preservado por e-mail.
-
-O tema é do **evento**, em um único lugar (`Event.theme`); `EventPage.theme` segue
-reservado e sem uso, para não existirem duas fontes de verdade para a mesma cor.
-
-### Portal do palestrante (FASE 25)
-
-O palestrante deixou de ser uma linha de `activity_speakers` e passou a ser uma **pessoa da
-instituição** (`speaker_profiles`): a organização cadastra o perfil, **vincula** a uma ou
-mais atividades e gera um **código de convite**; o palestrante assume o perfil, edita bio e
-foto, publica materiais e emite o próprio certificado.
-
-```
-Cadastro ............... /t/<slug>/administracao/eventos/<eventId>/palestrantes (speaker:manage)
-Convite ................ /t/<slug>/palestrante/convite?codigo=<TOKEN>  (público, autenticado)
-Portal ................. /t/<slug>/palestrante
-Vitrine ................ bloco "Palestrantes" da página pública
-Ficha .................. /t/<slug>/eventos/<eventSlug>/palestrantes/<speakerId>
-Download de material ... /api/t/<slug>/palestrantes/materiais/<materialId>/arquivo
-```
-
-Quatro regras que quebram fácil: **o convite é guardado como HASH** (`inviteTokenHash`) e
-aparece UMA vez; regerar invalida o anterior (ADR-114) — quando a busca é pelo hash e nada
-casa, a resposta é "convite não encontrado", não "código inválido"; **o aceite exige token E
-e-mail** (o token prova a posse do link, o e-mail da conta prova quem é), roda numa **página
-pública autenticada** — porque quem aceita pode ainda não ter vínculo — e o vínculo nasce
-como consequência, com `kind = PARTICIPANT` (convidado de minicurso não consome a quota de
-equipe) e papel `SPEAKER` no escopo **ACTIVITY**, um por atividade (ADR-115); **material tem
-visibilidade própria** (`PUBLIC` / `ATTENDEES_ONLY` / `PRIVATE`) decidida por VISITANTE no
-servidor, com 401 para o anônimo no material de inscritos, 403 para quem não é inscrito e
-403 até para o inscrito no rascunho (404 nunca, porque o rascunho não é informação de quem
-não organiza) — o bucket é privado e todo download passa por rota que assina URL temporária
-(ADR-116); e **a carga soma só o que foi ministrado**: atividade cancelada ou não concluída fica
-FORA, com o motivo no `workloadBreakdown`, e o certificado exige evento encerrado (ADR-117/118).
-
-O portal é aberto por `holdsPermission` ("é palestrante em algum lugar?"), porque o papel é
-concedido por ATIVIDADE; **cada escrita** reconfere a posse com o `userId` do BANCO (armadilha 42).
 
 ### Comunicação (FASE 15)
 
@@ -648,6 +542,25 @@ que já existia** (a restauração usa as permissões e a trilha da exclusão; o
 mesma validação de um código); **o que a tela esconde, ela anuncia** (arquivados com data e autor,
 "N de M" no acervo, "ninguém baixou ainda" na exportação); e **a trilha do rascunho só troca
 enquanto nada depende dela** — depois, a resposta diz que é do comitê.
+
+### Fechar o que abrimos (FASE 52)
+
+```
+Aviso .......... dois tons medidos: `warning-strong` (#92400e) no claro, `-on-dark` (#fcd34d) no telão
+Acessibilidade . npx playwright test tests/e2e/accessibility.spec.ts   (SEM isenções)
+Landmark ....... um único <main> por tela — a casca deixou de ser o landmark
+Crachá ......... /t/<slug>/credenciamento/crachas → emissão à mão aceita inscrição ∪ vínculo
+```
+
+Quatro regras: **não existe um tom de aviso que sirva às duas superfícies** (2,89:1 no painel
+claro e 4,15:1 no telão escuro com o mesmo `#d97706`) — a escolha é **medida** e presa por
+catraca que lê o CSS e calcula o contraste do WCAG; **a casca não é o landmark** (o `<main>` é o
+conteúdo da tela, e a auditoria das 82 páginas achou 16 sem nenhum — dívida I2); **a emissão à
+mão usa a população da TELA** (`registration` ∪ `user_tenant_profile`): a secretaria escolhia a
+pessoa inscrita e recebia "nenhum participante"; e **teste que interage com formulário
+controlado precisa da prova de que o React assumiu** — a caixa marcada no DOM e vazia no estado
+envia o formulário vazio (armadilha 106).
+
 
 ### Contas do seed — **não têm senha**
 
@@ -783,17 +696,21 @@ tests/{unit,integration,e2e}
 | 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de **24 h**: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no download**, com **autor e validade em CADA linha**; o download exige **sessão** e reconfere a permissão do tipo; o CSV do patrocinador passou a usar o **mesmo escape**; e `identity_audit_logs` — **sem `tenantId`, sem FK e sem privilégio para a role de runtime** — registra os **15 fatos de segurança da conta** (senha, 2FA, códigos, e-mail, sessões, redefinição) nos pontos que conhecem o ato, lidos pelo SuperAdmin em `/superadmin/auditoria` e pela pessoa em `/conta`; **+ defeito real corrigido**: o `db:rls` religava o privilégio de `two_factor` (a semente TOTP); quitou **E44/E67**, declarou **E72/E73**) | ✅ |
 | 50 | **Mutirão de dívidas II — correção, acessibilidade e alcance** (**onze dívidas** em dois blocos: **correção e confiabilidade** — `C7` sair da equipe **sem perder** a área de participante, `E59` **estorno do XP** no cancelamento (livro-razão append-only, idempotente, com reinscrição pagando de novo), `E49` prazo de confirmação com **teto no início da atividade**, `E26` **checksum do STORAGE** assinado no PUT (corpo divergente recusado pelo MinIO), `E53` congelamento da rubrica da trilha pela rubrica **efetiva** e `E71` suíte de credenciamento **sem dependência de ordem** — e **acessibilidade e operação sem JavaScript**: `H5` **portão WCAG AA** com `@axe-core/playwright` em 6 telas (isenção por nó), `E51`/`E55` **teclado** no quadro (Alt+setas) e no palco do certificado (setas de 1 mm), `E52` **janela de cartões por coluna** com aviso "N de M", e `E50` **medida** — sem JavaScript a ação em linha vira POST, com catraca no E2E; **+ cinco defeitos reais**, entre eles quem cancelava **nunca mais conseguia se inscrever**; declarou **E74/E75/E76**) | ✅ |
 | 51 | **Mutirão de dívidas III — alcance rápido e fechamento da F49** (**onze dívidas**): a **trilha do rascunho** volta a ser trocável pela tela **enquanto nada depende dela** (`canChangeSubmissionTrack`: rascunho, sem parecer, sem atribuição) e a recusa diz que é do comitê; **filtros no acervo de mídia** aplicados no banco (texto, tipo, evento, em uso × sem uso) com contagem; **arquivados do catálogo** com restauração, data e autor da exclusão; **conferência de certificados em lote** em `/validar/lote` (50 códigos, recusa total acima do teto); **ordem manual das equipes** na vitrine (por EQUIPE, líder primeiro, `0` = sem opinião); **link da carta** com prazo opcional e contador de acessos; a lista de exportações mostrando **QUEM baixou** (uma consulta para a lista, com poda de partição); **interruptor do telão** (desligado responde 200 sem prêmio nem elegíveis); **avisa e confirma** o QR repetido do patrocinador; **categoria do crachá** com cor do TEMA e faixa por categoria no PDF, no ZPL e no crachá online (mais a escolha da lente no balcão); e a **declaração de autorização da foto** guardada com texto, versão, canal e data; **+ defeito real de INTEGRIDADE**: a assinatura entrou no veredito público (`TAMPERED`) e no download — a tela de um código aprovava o que o lote reprovava; quitou **E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**, declarou **E77/I1**) | ✅ |
+| 52 | **"Fechar o que abrimos"** — a **dívida que nós criamos**: o **token de aviso** separado em claro × escuro com o contraste **medido** e preso por catraca que lê o CSS (6,44:1 / 7,09:1 no claro; 9,17:1 no telão), deixando o **portão WCAG AA sem isenções**; **um único <main> por tela** (a casca deixou de ser landmark e as 4 telas que se apoiavam nela ganharam o seu; a EventLanding passou a ter o dela, o que deu landmark à página pública); **8 dos 13 cenários E2E** de volta ao verde — e um deles achou um **DEFEITO REAL**: a emissão à mão do crachá recusava quem a tela oferecia (a régua passou a ser inscrição ∪ vínculo); **E8 riscada** (o ZIP de certificados existe desde a F36: a verificação procurou biblioteca de terceiro e não viu o escritor próprio); **B6 corrigida** para **206** console.*; declarou **E77** (o logo na etiqueta exige imagem no escritor de PDF à mão) e **I2** (16 páginas sem landmark); quitou **E74** e **E75** | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**49 itens abertos**, contados linha por
-linha; A=3, B=4, C=1, D=3, E=29, F=5, G=0, H=3, I=1 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, contados linha por
+linha; A=3, B=4, C=1, D=3, E=31, F=5, G=0, H=3, I=2 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
 Quitados: **A3, B7, E47** (F36), **E41, E48** (F37), **E35** (F44), **E44/E67** (F49) e, na
 **F50**, **C7, E26, E49, E50, E51, E52, E53, E55, E59, E71 e H5**; na **F51**, **E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**. Declarados: **E54/E55** (F40),
 **E56/E57** (F42), **E58/E59** (F43), **E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46),
 **E67/E68** (F47), **E69–E71** (F48), **E72/E73** (F49), **E74/E75/E76** (F50) e **E77/I1** (F51).
+Na **F52** foram quitadas **E74** e **E75**, e **E8 foi riscada** (o ZIP de certificados existe desde a
+F36). Seguem abertas: **E76** (ação em linha), **E77** (logo na etiqueta), **I1** (5 cenários E2E) e a
+nova **I2** (16 páginas sem landmark).
 Leia antes de propor a próxima fase.
 
 ---
@@ -802,7 +719,7 @@ Leia antes de propor a próxima fase.
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 105 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-51-mutirao-de-dividas-iii.md`; a comunicação é
+   fase entregue** (`docs/fase-52-fechar-o-que-abrimos.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

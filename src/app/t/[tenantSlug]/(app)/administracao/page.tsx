@@ -148,7 +148,7 @@ export default async function AdminHomePage({
   ].filter((area) => can(principal, area.permission, { scope: 'TENANT' }));
 
   return (
-    <div className="space-y-8">
+    <main className="space-y-8">
       <PageHeader
         title="Administração"
         description="Toda alteração feita aqui é registrada na trilha de auditoria com autor e horário."
@@ -310,6 +310,6 @@ export default async function AdminHomePage({
           </Card>
         )}
       </section>
-    </div>
+    </main>
   );
 }
