@@ -18,11 +18,9 @@ import {
   saveCallAction,
   setCallPublishedAction,
 } from '@/app/actions/call-actions';
-import { SectionHeading } from '@/components/ui';
 import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { RubricEditor } from '@/components/admin/rubric-editor';
-import { TrackSection } from '@/components/admin/track-section';
 import { rubricReviewCounts } from '@/lib/review/rubric-guard';
 
 export const metadata = { title: 'Chamadas de propostas' };
@@ -68,15 +66,6 @@ export default async function EventCallsPage({
 
   const event = await getAdminEvent(tenantId, eventId);
   if (!event) notFound();
-
-  /**
-   * Quantos pareceres cada TRILHA já recebeu — decide se a rubrica dela está congelada.
-   * A contagem das CHAMADAS já é feita logo abaixo; esta é a das trilhas, que passaram
-   * a viver nesta tela na FASE 53 (antes ficavam na tela do evento).
-   */
-  const trackReviewCounts = (
-    await rubricReviewCounts({ tenantId, trackIds: event.tracks.map((track) => track.id) })
-  ).byTrack;
 
   /**
    * O instante vem de UMA leitura e é o mesmo para todas as chamadas: o estado de
@@ -474,27 +463,6 @@ export default async function EventCallsPage({
           </ul>
         )}
       </section>
-      {/**
-       * ─────────────────────────────────────────────────────────────────────────
-       *  AS TRILHAS MORAVAM NA TELA DO EVENTO ATÉ A FASE 53
-       * ─────────────────────────────────────────────────────────────────────────
-       *  O organizador tinha DOIS lugares para o mesmo assunto: as trilhas (com as suas
-       *  rubricas) na tela do evento, e as chamadas aqui. A trilha é o eixo temático que
-       *  a CHAMADA usa para classificar a submissão — separá-las obrigava a adivinhar
-       *  onde criar cada uma. Agora as duas ficam na mesma tela, nesta ordem: primeiro
-       *  a chamada (o convite), depois a trilha (como a submissão é classificada).
-       */}
-      <SectionHeading
-        title="Trilhas do evento"
-        description="O eixo temático de cada submissão e a rubrica que o comitê usa para avaliar."
-      />
-
-      <TrackSection
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        tracks={event.tracks}
-        reviewCounts={trackReviewCounts}
-      />
     </main>
   );
 }

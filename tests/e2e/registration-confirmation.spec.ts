@@ -207,7 +207,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   }
 });
 
-const eventPanelUrl = () => `/t/${slug}/administracao/eventos/${eventId}`;
+const scheduleUrl = () => `/t/${slug}/administracao/eventos/${eventId}/programacao`;
 const confirmationsUrl = () => `/t/${slug}/administracao/eventos/${eventId}/confirmacoes`;
 const activityUrl = (activitySlug: string) =>
   `/t/${slug}/eventos/${EVENT_SLUG}/atividades/${activitySlug}`;
@@ -239,14 +239,13 @@ async function registrationOf(email: string, activitySlug: string) {
 test.describe('confirmação de vaga com prazo', () => {
   test('1. a organização cria a atividade confirmável pela tela', async ({ page }) => {
     await signInAs(page, organizerEmail);
-    await page.goto(eventPanelUrl());
+    await page.goto(scheduleUrl());
 
     /**
      * A Programação nasce recolhida, e o `summary` da SEÇÃO é o primeiro: cada
      * atividade traz o próprio `<details>` ("Editar atividade") e o próprio bloco de
      * confirmação, também com `summary`. O clique é no da seção.
      */
-    await page.getByTestId('activities-section').locator('summary').first().click();
 
     const form = page.getByTestId('create-activity');
     await form.getByLabel('Identificador').fill(ACTIVITY_SLUG);
@@ -279,13 +278,14 @@ test.describe('confirmação de vaga com prazo', () => {
     });
 
     /** O resumo da atividade na programação assume a escolha. */
-    await page.goto(eventPanelUrl());
-    await page.getByTestId('activities-section').locator('summary').first().click();
+    await page.goto(scheduleUrl());
 
     const item = page.locator('li', { hasText: ACTIVITY_TITLE }).first();
     await expect(item).toContainText(/exige confirmação/i);
     await expect(item).toContainText(/3 dia/i);
 
+    /** O atalho da fila vive na RAIZ do evento (a Programação é página própria). */
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}`);
     /** E o link da fila de confirmações passa a existir no topo do evento. */
     await expect(page.getByTestId('confirmations-link')).toBeVisible();
   });

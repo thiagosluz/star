@@ -356,12 +356,12 @@ test.describe('sorteios de ponta a ponta', () => {
   test('a seção de reconhecimento do comitê existe no evento (F1)', async ({ page }) => {
     await signInAs(page, adminEmail);
 
-    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}`);
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/reconhecimento`);
 
     const section = page.getByTestId('reviewer-award-section');
     await expect(section).toBeVisible();
 
-    await section.locator('summary').click();
+    // A seção virou PÁGINA na FASE 55: não há mais sanfona para abrir.
     // Sem pareceres concluídos e sem carta do gatilho: o painel explica, não some.
     await expect(section).toContainText(/Reconhecimento do comitê|parecer/i);
   });
@@ -629,10 +629,10 @@ test.describe('operação de palco (FASE 22)', () => {
 
     await signInAs(page, adminEmail);
 
-    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}`);
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/reconhecimento`);
 
     const section = page.getByTestId('reviewer-award-section');
-    await section.locator('summary').click();
+    // A seção virou PÁGINA na FASE 55: não há mais sanfona para abrir.
 
     await expect(page.getByTestId('reviewer-ranking').locator('li').first()).toBeVisible();
 

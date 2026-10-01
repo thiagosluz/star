@@ -190,7 +190,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   }
 });
 
-const eventPanelUrl = () => `/t/${slug}/administracao/eventos/${eventId}`;
+const scheduleUrl = () => `/t/${slug}/administracao/eventos/${eventId}/programacao`;
 const confirmationsUrl = () => `/t/${slug}/administracao/eventos/${eventId}/confirmacoes`;
 const badgesUrl = () => `/t/${slug}/credenciamento/crachas?evento=${eventId}`;
 const activityUrl = () => `/t/${slug}/eventos/${EVENT_SLUG}/atividades/${ACTIVITY_SLUG}`;
@@ -198,10 +198,9 @@ const activityUrl = () => `/t/${slug}/eventos/${EVENT_SLUG}/atividades/${ACTIVIT
 test.describe('checklist item por item e impressão de crachá', () => {
   test('1. a organização cria a atividade e diz qual exigência é OBRIGATÓRIA', async ({ page }) => {
     await signInAs(page, organizerEmail);
-    await page.goto(eventPanelUrl());
+    await page.goto(scheduleUrl());
 
     /** A Programação nasce recolhida, e o `summary` da SEÇÃO é o primeiro. */
-    await page.getByTestId('activities-section').locator('summary').first().click();
 
     const form = page.getByTestId('create-activity');
     await form.getByLabel('Identificador').fill(ACTIVITY_SLUG);

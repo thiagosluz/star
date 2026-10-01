@@ -113,7 +113,7 @@
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 3 | 0 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 2 | 0 | Baixo — resta a sigla × nome na detecção de conflito |
-| **Total** | **47** | **6** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **48** | **6** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -181,6 +181,11 @@
 > recusava quem a tela oferecia). **E77** continua aberta (exige imagem no escritor de PDF à
 > mão) e entrou **I2** (16 páginas sem landmark `<main>`). B6 ganhou o número medido: **206**
 > `console.*`, não ~66. O total **49 → 47**.
+>
+> **FASE 53 (painel de prontidão e áreas de gestão):** não quitou nem declarou item do
+> levantamento. Ela entregou a leitura que faltava na raiz do evento — **o que falta para
+> este evento ficar pronto** — e padronizou os atalhos em cartões agrupados pelo trabalho.
+> O total segue **47**.
 >
 
 ---
@@ -325,6 +330,7 @@
 |---|---|---|---|---|---|---|
 | I1 | **Cenários E2E em `test.fixme`** | FASE 51 (novo) | **PARCIAL na FASE 52**: dos 13, **8 rodam e passam** (mídia, catálogo, link da carta, crachá). Cada um tinha causa própria — hidratação de formulário controlado, dependência de ordem entre cenários, helper que contava `<li>` aninhado, `page.url()` lido antes da navegação e comparação de HTML em vez do que o visitante lê. Os **5 restantes** seguem em `fixme` com o motivo escrito no arquivo: troca de categoria de UM crachá (select controlado), a rota de impressão respondendo **400** pelo endereço da própria tela, o crachá online (dado do cenário sem vínculo) e o seletor de lente (exige `enumerateDevices` falso) | Fechar os 5 — nenhum é comportamento sem cobertura: unidade e integração cobrem os mesmos fatos | S | Sim |
 | I2 | **16 páginas sem landmark `<main>`** | FASE 52 (novo) | 8 do painel de plataforma (`/superadmin/**`) e 8 públicas (`/t/<slug>/eventos/<eventSlug>`, chamada, inscrição, convite, ficha do palestrante…). Anterior a esta fase: o landmark vinha da casca e só existia no painel autenticado — as outras árvores nunca tiveram | Boa prática de landmark (o AA não reprova). Envolver o conteúdo de cada página em `<main>`, como as telas do painel já fazem | M | Não |
+| I3 | **Interferência entre testes na suíte E2E paralela** | FASE 54 (novo) | Duas execuções completas seguidas acusaram falhas em specs **diferentes** (`demand-board` 3 casos numa; `content-and-media` 1 caso na outra), **todos passando isolados** (`7 passed` e `5 passed`). Não é regressão de produto — é dado de uma spec vazando para a execução de outra sob carga (a F50 já corrigiu uma dependência de ordem em credenciamento: E71). Falta achar a spec que POLUI (suspeita: as que criam tenant com `RUN_ID` e limpam com `cleanupRun`) e prender a ordem |
 
 ---
 

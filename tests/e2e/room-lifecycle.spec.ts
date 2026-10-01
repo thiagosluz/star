@@ -102,7 +102,7 @@ async function openEventPage(
     });
   });
 
-  await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}`);
+  await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/salas`);
   await expect(page.getByTestId('rooms-section')).toBeVisible();
 
   return { tenantId: tenant.id, eventId: event.id, eventSlug: event.slug, slug: tenant.slug };
@@ -113,8 +113,6 @@ test.describe('sala: criar, editar e excluir', () => {
   test('o ciclo inteiro pela tela, com o campo de capacidade em branco', async ({ page }) => {
     const { tenantId, eventId } = await openEventPage(page, 'salas-ciclo');
 
-    const rooms = page.getByTestId('rooms-section');
-    await rooms.locator('summary').first().click();
 
     /**
      * ── 1. Cria SEM capacidade ────────────────────────────────────────────────
@@ -170,9 +168,8 @@ test.describe('sala: criar, editar e excluir', () => {
 
   test('a lista volta ao estado de "nenhuma sala" depois de excluir a única sala', async ({ page }) => {
     const { eventId } = await openEventPage(page, 'salas-vazia');
-
     const rooms = page.getByTestId('rooms-section');
-    await rooms.locator('summary').first().click();
+
 
     const createRoom = page.getByTestId('create-room');
     await createRoom.getByLabel('Nome da sala').fill('Sala única');
@@ -197,10 +194,8 @@ test.describe('sala: criar, editar e excluir', () => {
 
 test.describe('a sala limita a atividade', () => {
   test('vagas acima da sala são recusadas, e a sala em uso não pode ser excluída', async ({ page }) => {
-    const { eventId } = await openEventPage(page, 'salas-limite');
+    const { slug, eventId } = await openEventPage(page, 'salas-limite');
 
-    const rooms = page.getByTestId('rooms-section');
-    await rooms.locator('summary').first().click();
 
     const createRoom = page.getByTestId('create-room');
     await createRoom.getByLabel('Nome da sala').fill('Sala Pequena');
@@ -216,8 +211,8 @@ test.describe('a sala limita a atividade', () => {
     });
 
     // ── 1. Atividade com MAIS vagas do que a sala ────────────────────────────
-    const activities = page.getByTestId('activities-section');
-    await activities.locator('summary').first().click();
+    /** A Programação ainda mora na RAIZ do evento (fatia 4): a tela de salas não a tem. */
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}/programacao`);
 
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill('oficina-grande');
@@ -246,8 +241,6 @@ test.describe('a sala limita a atividade', () => {
      */
     await page.reload();
 
-    const activitiesAgain = page.getByTestId('activities-section');
-    await activitiesAgain.locator('summary').first().click();
 
     const createValid = page.getByTestId('create-activity');
     await createValid.getByLabel('Identificador').fill('oficina-grande');
@@ -265,12 +258,12 @@ test.describe('a sala limita a atividade', () => {
     });
 
     /**
-     * A recarga fechou os `<details>` (a página volta do servidor sem o estado de
-     * abertura do navegador), então a seção de salas precisa ser reaberta antes de
-     * clicar em qualquer coisa dentro dela — o Playwright não clica no que não está
-     * visível.
+    /**
+     * A exclusão da sala acontece na PÁGINA de salas (FASE 55): o trecho acima
+     * precisou da raiz do evento para criar a atividade, então a jornada volta.
      */
-    await page.getByTestId('rooms-section').locator('summary').first().click();
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}/salas`);
+
 
     await page.getByTestId(`delete-room-${room.id}-open`).click();
     await page.getByTestId(`delete-room-${room.id}-confirm-confirm`).click();
@@ -284,6 +277,12 @@ test.describe('a sala limita a atividade', () => {
     await expect(page.getByTestId(`room-row-${room.id}`)).toBeVisible();
 
     // ── 3. A tela mostra as VAGAS REAIS, com a origem do número menor ────────
+    /**
+     * A linha da atividade vive na PROGRAMAÇÃO, na raiz do evento (fatia 4): a
+     * jornada volta para lá antes de conferir as vagas efetivas.
+     */
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}/programacao`);
+
     const activityRow = page.getByTestId(`activity-row-${activity.id}`);
     await expect(activityRow).toContainText('30 vaga(s)');
   });
@@ -291,7 +290,7 @@ test.describe('a sala limita a atividade', () => {
 
 test.describe('atividade aberta numa sala pequena', () => {
   test('o painel avisa que o público do evento não cabe no espaço', async ({ page }) => {
-    const { tenantId, eventId } = await openEventPage(page, 'salas-aberta');
+    const { slug, tenantId, eventId } = await openEventPage(page, 'salas-aberta');
 
     /**
      * Duas inscrições NO EVENTO (`activityId` nulo) — é o que o contador do painel
@@ -371,8 +370,8 @@ test.describe('atividade aberta numa sala pequena', () => {
 
     await page.reload();
 
-    const activities = page.getByTestId('activities-section');
-    await activities.locator('summary').first().click();
+    /** A Programação ainda mora na RAIZ do evento (fatia 4): a tela de salas não a tem. */
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}/programacao`);
 
     const warning = page.getByTestId(`activity-room-overflow-${activityId}`);
     await expect(warning).toBeVisible();

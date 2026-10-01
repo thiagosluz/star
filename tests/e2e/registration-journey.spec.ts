@@ -326,8 +326,7 @@ test.describe('inscrição no evento e atividades abertas', () => {
     await linkUser({ tenantId: tenant.id, userId: admin.id });
     await grantRole({ tenantId: tenant.id, userId: admin.id, role: 'ADMIN' });
 
-    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}`);
-    await page.getByTestId('activities-section').locator('summary').first().click();
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/programacao`);
 
     const row = page.getByTestId(`activity-row-${palestra.id}`);
     // Português, e não o enum do banco.
@@ -388,8 +387,7 @@ test.describe('inscrição no evento e atividades abertas', () => {
       data: { email: admin.email, password: PASSWORD },
     });
 
-    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}`);
-    await page.getByTestId('activities-section').locator('summary').first().click();
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/programacao`);
     await page.getByTestId(`delete-activity-${palestra.id}-open`).click();
 
     const dialog = page.getByTestId(`delete-activity-${palestra.id}-confirm`);

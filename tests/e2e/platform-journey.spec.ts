@@ -128,16 +128,24 @@ test.describe('jornada completa da plataforma', () => {
     await expect(page.getByTestId('admin-event-list')).toContainText(title);
 
     await page.getByTestId(`manage-${eventSlug}`).click();
+    await expect(page.getByTestId('event-readiness')).toBeVisible();
+
+    /**
+     * A identidade do evento virou PÁGINA própria na FASE 55: o cartão do grupo
+     * Configurar leva até o formulário, e a jornada volta para seguir no evento.
+     */
+    await page.getByTestId('event-area-dados').click();
     await expect(page.getByTestId('event-details')).toBeVisible();
+    await expect(page.getByTestId('edit-event')).toBeVisible();
+    await page.goBack();
 
     const event = await e2eDb.event.findFirstOrThrow({
       where: { tenantId: tenant.id, slug: eventSlug },
       select: { id: true },
     });
 
-    // ── 3. Cria sala ────────────────────────────────────────────────────────
-    const roomsSection = page.getByTestId('rooms-section');
-    await roomsSection.locator('summary').click();
+    // ── 3. Cria sala (a seção virou PÁGINA própria na FASE 55) ──────────────
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/salas`);
 
     const createRoom = page.getByTestId('create-room');
     await createRoom.getByLabel('Nome da sala').fill('Auditório Principal');
@@ -149,10 +157,11 @@ test.describe('jornada completa da plataforma', () => {
     });
     await expect(page.getByTestId('room-list')).toContainText('Auditório Principal');
 
+    /** As atividades viraram PÁGINA própria (fatia 4): a jornada segue para lá. */
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/programacao`);
+
     // ── 4. Cria atividade na sala ───────────────────────────────────────────
-    const activitiesSection = page.getByTestId('activities-section');
-    // `.first()`: cada atividade da lista tem o próprio `<summary>` ("Editar atividade").
-    await activitiesSection.locator('summary').first().click();
+    await expect(page.getByTestId('activities-section')).toBeVisible();
 
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill('abertura-plataforma');
@@ -192,6 +201,12 @@ test.describe('jornada completa da plataforma', () => {
     );
 
     // ── 6. Cria a trilha da chamada de trabalhos ────────────────────────────
+    /**
+     * AS TRILHAS MUDARAM DE TELA (FASE 53): a seção vive junto das CHAMADAS, que são
+     * o mesmo assunto. A jornada desce até lá, cria a trilha e volta ao painel.
+     */
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/chamadas`);
+
     const tracksSection = page.getByTestId('tracks-section');
     await tracksSection.locator('summary').click();
 
@@ -311,3 +326,4 @@ test.describe('jornada completa da plataforma', () => {
     await expect(page.getByTestId('admin-stats')).toHaveCount(0);
   });
 });
+

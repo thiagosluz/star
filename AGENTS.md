@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, 29 a 52 (F15, F21–F25, F29–F52 entregues; a F53+ é a próxima)
-Testes ................. 2706 (Vitest: unit + integração) + 209 (Playwright E2E)
-ADRs ................... 292 (numeração GLOBAL e sequencial — a próxima é ADR-293)
+Fases concluídas ........ 1 a 17, 21 a 25, 29 a 55 (a F55 fechou o padrão da raiz do evento)
+Testes ................. 2734 (Vitest: unit + integração) + 212 (Playwright E2E)
+ADRs ................... 300 (numeração GLOBAL e sequencial — a próxima é ADR-301)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 57 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2706+ testes passando
+npm test              # esperado: 2734+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 209+ testes passando
+npm run test:e2e      # esperado: 212+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -127,7 +127,7 @@ isso: (a) leia a saída completa do build, (b) confirme a data da imagem,
 
 ## 5. Armadilhas conhecidas (custaram depuração real)
 
-> **A tabela COMPLETA — 105 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
+> **A tabela COMPLETA — 104 armadilhas, cada uma com sintoma, causa raiz e correção — vive em
 > [`docs/armadilhas.md`](docs/armadilhas.md)**, e a seção 10 manda lê-la antes de mexer em
 > qualquer coisa. Os números são estáveis e citados no código e nos documentos de fase — não
 > renumere. As duas mais recentes, como amostra do que a regra protege:
@@ -562,6 +562,54 @@ controlado precisa da prova de que o React assumiu** — a caixa marcada no DOM 
 envia o formulário vazio (armadilha 106).
 
 
+### Painel de prontidão e áreas do evento (FASE 53)
+
+```
+Prontidão ..... /t/<slug>/administracao/eventos/<eventId> → o que falta para o evento ficar pronto
+Áreas ......... a mesma tela: grade de cartões em Configurar · Vitrine · Operar · Resultado
+Vitrine ....... Editar página (o editor) × Ver página pública (o site, outra aba)
+Regras ........ npx vitest run tests/unit/f53-prontidao-e-areas.test.ts
+Navegador ..... npx playwright test tests/e2e/f53-painel-e-areas.spec.ts
+```
+
+Quatro regras: **a prontidão é REGRA DE DOMÍNIO com alvo declarado** (o que falta, por que
+importa, com que gravidade e onde se resolve — provado sem navegador); **pendência que não é
+acionável não entra** (trilha só com chamada científica publicada, patrocínio nunca,
+programação e inscrição vazias só depois que o evento está no ar) — painel que acusa o que
+não importa ensina a ser ignorado; **o painel é LEITURA do que a tela já carrega** (nenhuma
+consulta nova: é impossível divergir do que está logo abaixo); e **a navegação do evento NÃO
+vira casco** — o casco lateral foi tentado nesta mesma fase, rejeitado no uso e desfeito
+(ADR-297): quem já tem sidebar não ganha um segundo.
+### Selo de contagem nos cartões (FASE 54)
+
+```
+Selo .......... /t/<slug>/administracao/eventos/<eventId> → "3 chamadas", "nenhuma vaga retida"
+Contagem ...... src/lib/events/event-area-counts.ts (uma leitura, por EVENTO, só o que vale)
+Frase ......... src/domain/events/event-areas.ts → eventAreaMetric (zero ≠ null)
+Regras ........ npx vitest run tests/unit/f54-selo-de-contagem.test.ts
+Banco ......... npx vitest run tests/integration/f54-area-counts.test.ts
+```
+
+Duas regras: **zero e `null` são coisas diferentes** — zero é "contei e não há" e aparece no selo
+("nenhuma chamada"); `null` é "não contei" e o cartão sai **sem selo**, porque afirmar um número não
+conferido é pior do que não afirmar nada; e **fato contado pela tela não é recontado pelo serviço** —
+as vagas retidas vêm do número que a página já calculou (o serviço devolve `null` ali, com teste
+prendendo), senão o selo e o painel de prontidão poderiam divergir no dia seguinte.
+### As seções da raiz viram páginas (FASE 55)
+
+```
+Reconhecimento ... /t/<slug>/administracao/eventos/<eventId>/reconhecimento   (CARD_GRANT)
+Dados do evento ... /t/<slug>/administracao/eventos/<eventId>/dados            (EVENT_UPDATE)
+Salas ............ /t/<slug>/administracao/eventos/<eventId>/salas            (EVENT_UPDATE)
+Programação ...... /t/<slug>/administracao/eventos/<eventId>/programacao    (EVENT_UPDATE)
+Cartões .......... identificador estável: `legacyTestId ?? event-area-<id>`
+Navegador ........ npx playwright test tests/e2e/f53-painel-e-areas.spec.ts
+```
+
+**Cada área da raiz é um cartão que leva a uma tela** — nada volta a ser sanfona embutida
+(ADR-301); **mover uma seção não muda o `data-testid` dela** (ADR-302) e a ordem das fatias é por
+ENTRELAÇAMENTO (ADR-303). **As quatro fatias estão entregues.**
+
 ### Contas do seed — **não têm senha**
 
 `ana@`, `bruno@`, `carla@`, `diego@example.test` existem para exercitar RBAC e tenancy;
@@ -694,23 +742,26 @@ tests/{unit,integration,e2e}
 | 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), **segundo fator** TOTP com QR no servidor, **10 códigos de recuperação** de uso único e desligamento com senha, e **dispositivos conectados**), **esqueci minha senha** (o envio existia desde a F15 e o link caía em **404**), **desafio de dois fatores no login** e o segredo do TOTP numa tabela que a role de runtime **não alcança**; achou o **código de recuperação recusado** pela normalização e o **template novo fora da lista de testes**; declarou **E67/E68**) | ✅ |
 | 48 | **Carta colecionável premium e compartilhamento** (palco **3D** — arrastar gira, brilho holográfico seguindo o ponteiro, **Virar** com o verso e **Luz e brilho** — com a geometria no DOMÍNIO e tilt leve no álbum; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e a **variante foil acende o brilho sozinha**; o verso é a **ficha da conquista**, e a mesma ficha aparece em texto (sem JavaScript nada se perde); **link público POR CARTA** com token SELADO, revogável e idempotente, mostrando **só aquela carta**; **imagem de prévia** vetorial no servidor; **+ defeito real corrigido**: a corrida do balcão criava DUAS sessões na segunda visita; declarou **E69–E71**) | ✅ |
 | 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de **24 h**: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no download**, com **autor e validade em CADA linha**; o download exige **sessão** e reconfere a permissão do tipo; o CSV do patrocinador passou a usar o **mesmo escape**; e `identity_audit_logs` — **sem `tenantId`, sem FK e sem privilégio para a role de runtime** — registra os **15 fatos de segurança da conta** (senha, 2FA, códigos, e-mail, sessões, redefinição) nos pontos que conhecem o ato, lidos pelo SuperAdmin em `/superadmin/auditoria` e pela pessoa em `/conta`; **+ defeito real corrigido**: o `db:rls` religava o privilégio de `two_factor` (a semente TOTP); quitou **E44/E67**, declarou **E72/E73**) | ✅ |
-| 50 | **Mutirão de dívidas II — correção, acessibilidade e alcance** (**onze dívidas** em dois blocos: **correção e confiabilidade** — `C7` sair da equipe **sem perder** a área de participante, `E59` **estorno do XP** no cancelamento (livro-razão append-only, idempotente, com reinscrição pagando de novo), `E49` prazo de confirmação com **teto no início da atividade**, `E26` **checksum do STORAGE** assinado no PUT (corpo divergente recusado pelo MinIO), `E53` congelamento da rubrica da trilha pela rubrica **efetiva** e `E71` suíte de credenciamento **sem dependência de ordem** — e **acessibilidade e operação sem JavaScript**: `H5` **portão WCAG AA** com `@axe-core/playwright` em 6 telas (isenção por nó), `E51`/`E55` **teclado** no quadro (Alt+setas) e no palco do certificado (setas de 1 mm), `E52` **janela de cartões por coluna** com aviso "N de M", e `E50` **medida** — sem JavaScript a ação em linha vira POST, com catraca no E2E; **+ cinco defeitos reais**, entre eles quem cancelava **nunca mais conseguia se inscrever**; declarou **E74/E75/E76**) | ✅ |
-| 51 | **Mutirão de dívidas III — alcance rápido e fechamento da F49** (**onze dívidas**): a **trilha do rascunho** volta a ser trocável pela tela **enquanto nada depende dela** (`canChangeSubmissionTrack`: rascunho, sem parecer, sem atribuição) e a recusa diz que é do comitê; **filtros no acervo de mídia** aplicados no banco (texto, tipo, evento, em uso × sem uso) com contagem; **arquivados do catálogo** com restauração, data e autor da exclusão; **conferência de certificados em lote** em `/validar/lote` (50 códigos, recusa total acima do teto); **ordem manual das equipes** na vitrine (por EQUIPE, líder primeiro, `0` = sem opinião); **link da carta** com prazo opcional e contador de acessos; a lista de exportações mostrando **QUEM baixou** (uma consulta para a lista, com poda de partição); **interruptor do telão** (desligado responde 200 sem prêmio nem elegíveis); **avisa e confirma** o QR repetido do patrocinador; **categoria do crachá** com cor do TEMA e faixa por categoria no PDF, no ZPL e no crachá online (mais a escolha da lente no balcão); e a **declaração de autorização da foto** guardada com texto, versão, canal e data; **+ defeito real de INTEGRIDADE**: a assinatura entrou no veredito público (`TAMPERED`) e no download — a tela de um código aprovava o que o lote reprovava; quitou **E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**, declarou **E77/I1**) | ✅ |
+| 50 | **Mutirão de dívidas II — correção, acessibilidade e alcance** — onze dívidas (**C7, E26, E49, E50, E51, E52, E53, E55, E59, E71 e H5**): sair da equipe sem perder a área de participante, estorno do XP no cancelamento (livro-razão append-only), checksum do STORAGE assinado no PUT, congelamento da rubrica da trilha pela rubrica efetiva, portão **WCAG AA** com axe em 6 telas, teclado no quadro e no palco, janela de cartões por coluna, ação em linha sem JavaScript; **+ cinco defeitos reais**. Detalhe em `docs/fase-50-mutirao-de-dividas-ii.md` | ✅ |
+| 51 | **Mutirão de dívidas III — alcance rápido e fechamento da F49** — onze dívidas (**E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**): trilha do rascunho trocável enquanto nada depende dela, filtros do acervo no banco, arquivados com restauração, conferência de certificados em lote, ordem manual das equipes, link da carta com prazo, quem baixou a exportação, interruptor do telão, categoria do crachá com cor do tema, declaração da foto; **+ defeito real de INTEGRIDADE** (a assinatura entrou no veredito público e no download). Detalhe em `docs/fase-51-mutirao-de-dividas-iii.md` | ✅ |
 | 52 | **"Fechar o que abrimos"** — a **dívida que nós criamos**: o **token de aviso** separado em claro × escuro com o contraste **medido** e preso por catraca que lê o CSS (6,44:1 / 7,09:1 no claro; 9,17:1 no telão), deixando o **portão WCAG AA sem isenções**; **um único <main> por tela** (a casca deixou de ser landmark e as 4 telas que se apoiavam nela ganharam o seu; a EventLanding passou a ter o dela, o que deu landmark à página pública); **8 dos 13 cenários E2E** de volta ao verde — e um deles achou um **DEFEITO REAL**: a emissão à mão do crachá recusava quem a tela oferecia (a régua passou a ser inscrição ∪ vínculo); **E8 riscada** (o ZIP de certificados existe desde a F36: a verificação procurou biblioteca de terceiro e não viu o escritor próprio); **B6 corrigida** para **206** console.*; declarou **E77** (o logo na etiqueta exige imagem no escritor de PDF à mão) e **I2** (16 páginas sem landmark); quitou **E74** e **E75** | ✅ |
+| 53 | **Painel de prontidão e áreas de gestão do evento** — a raiz do evento passou a dizer **o que falta para o evento ficar pronto** (pendências com efeito, gravidade, ordem e o caminho que resolve; e a régua do que NÃO é pendência), com o painel sabendo dizer "está tudo certo"; a faixa de links virou **grade de cartões nos quatro grupos do trabalho**, preservando todos os `data-testid`; **+ unificação das trilhas** (a seção foi para `/chamadas`, via componente `track-section.tsx`); **+ as seções dentro do grupo a que pertencem**, com o reconhecimento do comitê em **Resultado**; **+ lição de produto**: o casco com navegação lateral foi rejeitado no uso e desfeito (ADR-297). Detalhe em `docs/fase-53-painel-e-areas-do-evento.md` | ✅ |
+| 54 | **O selo de contagem nos cartões** — cada área da raiz do evento passou a dizer **quanto há lá dentro** ("3 chamadas", "nenhuma vaga retida", "publicada"), contado **por evento** e só sobre o que está valendo, em **uma leitura** na transação de tenant. A frase é **regra de domínio**: **zero aparece** ("nenhuma chamada") e **`null` é "não sei" e vira SEM SELO** (nunca zero inventado); as vagas retidas **não são contadas de novo** (a tela injeta o número que já calculou, para não haver duas verdades); a página ganha **estado** ("publicada" × "em rascunho"); e **falha de leitura não derruba a tela** | ✅ |
+| 55 | **As seções da raiz viram páginas com cartão** — as QUATRO sanfonas que sobravam na raiz do evento viraram **páginas com cartão** no grupo a que pertencem (Reconhecimento do comitê em `/reconhecimento`, Dados do evento em `/dados`, Salas em `/salas`, Programação em `/programacao`), e a raiz ficou sendo **prontidão + mapa**: **341 linhas** (eram 955) e **ZERO `<details>`** — preso no E2E. Em **4 fatias, da menos para a mais entrelaçada**. Os `data-testid` das seções foram **preservados** e os specs reapontados (7 só na Programação); as pendências do painel passaram a **linkar para o cartão** (o painel leva à página que resolve); todo cartão ganhou identificador estável (`legacyTestId ?? event-area-<id>`); e três ajudantes de apresentação saíram do arquivo para `src/lib/events/activity-presentation.ts`. Lições: bloco com `<details>` **aninhado** exige cortar pelo fechamento EXTERNO; build engolido mantém o container velho (404 na rota nova); **remover a sanfona muda o fluxo** (o clique implícito levava a tela ao alvo); e "nenhum atividade" — a frase do zero **não se deduz** da terminação do singular | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**47 itens abertos**, contados linha por
-linha; A=3, B=4, C=1, D=3, E=31, F=5, G=0, H=3, I=2 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
+**Dívidas técnicas:** o levantamento consolidado (**48 itens abertos**, contados linha por
+linha; A=3, B=4, C=1, D=3, E=31, F=5, G=0, H=3, I=3 — o tema G zerou na FASE 22) está em **`docs/dividas-tecnicas.md`**.
 Quitados: **A3, B7, E47** (F36), **E41, E48** (F37), **E35** (F44), **E44/E67** (F49) e, na
 **F50**, **C7, E26, E49, E50, E51, E52, E53, E55, E59, E71 e H5**; na **F51**, **E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**. Declarados: **E54/E55** (F40),
 **E56/E57** (F42), **E58/E59** (F43), **E60–E62** (F44), **E63/E64** (F45), **E65/E66** (F46),
 **E67/E68** (F47), **E69–E71** (F48), **E72/E73** (F49), **E74/E75/E76** (F50) e **E77/I1** (F51).
 Na **F52** foram quitadas **E74** e **E75**, e **E8 foi riscada** (o ZIP de certificados existe desde a
 F36). Seguem abertas: **E76** (ação em linha), **E77** (logo na etiqueta), **I1** (5 cenários E2E) e a
-nova **I2** (16 páginas sem landmark).
+nova **I2** (16 páginas sem landmark) e a **I3** (interferência entre testes na suíte E2E paralela, declarada na FASE 54).
 Leia antes de propor a próxima fase.
 
 ---
@@ -718,8 +769,8 @@ Leia antes de propor a próxima fase.
 ## 10. Primeira ação de uma sessão nova
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
-   `docs/armadilhas.md` (a tabela COMPLETA das 105 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-52-fechar-o-que-abrimos.md`; a comunicação é
+   `docs/armadilhas.md` (a tabela COMPLETA das 104 armadilhas) e o documento da **última
+   fase entregue** (`docs/fase-55-secoes-viram-paginas.md`; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

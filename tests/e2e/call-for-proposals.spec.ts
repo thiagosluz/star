@@ -385,8 +385,8 @@ test.describe('chamadas de propostas', () => {
       '/palestrante/convite?codigo=',
     );
 
-    // ── E a atividade aparece na programação do painel ───────────────────────
-    await page.goto(`/t/${slug}/administracao/eventos/${eventId}`);
+    // ── E a atividade aparece na PROGRAMAÇÃO (página própria desde a FASE 55) ─
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}/programacao`);
     await expect(page.getByTestId('activity-list')).toContainText(PROPOSAL_TITLE, {
       timeout: 30_000,
     });

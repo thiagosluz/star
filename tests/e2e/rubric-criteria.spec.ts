@@ -174,10 +174,17 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
 const eventPanelUrl = () => `/t/${slug}/administracao/eventos/${eventId}`;
 
+/**
+ * AS TRILHAS MUDARAM DE TELA (FASE 53): elas moram junto das chamadas, que são o
+ * mesmo assunto — a trilha é o eixo que a chamada usa para classificar a submissão.
+ * O data-testid da seção não mudou; só o endereço onde ela vive.
+ */
+const tracksUrl = () => `${eventPanelUrl()}/chamadas`;
+
 test.describe('rubrica com número livre de critérios', () => {
   test('1. a trilha nasce com CINCO critérios, e a chave vem do rótulo', async ({ page }) => {
     await signInAs(page, organizerEmail);
-    await page.goto(eventPanelUrl());
+    await page.goto(tracksUrl());
     await openTracksSection(page);
 
     const form = page.getByTestId('create-track');
@@ -236,7 +243,7 @@ test.describe('rubrica com número livre de critérios', () => {
 
     try {
       await signInAs(page, organizerEmail);
-      await page.goto(eventPanelUrl());
+      await page.goto(tracksUrl());
       await openTracksSection(page);
 
       const form = page.getByTestId('create-track');
@@ -291,7 +298,7 @@ test.describe('rubrica com número livre de critérios', () => {
 
   test('3. a trilha é EDITÁVEL e o formulário abre com a rubrica gravada', async ({ page }) => {
     await signInAs(page, organizerEmail);
-    await page.goto(eventPanelUrl());
+    await page.goto(tracksUrl());
     await openTracksSection(page);
 
     const { id } = await storedRubric(TRACK_SLUG);
@@ -361,7 +368,7 @@ test.describe('rubrica com número livre de critérios', () => {
     });
 
     await signInAs(page, organizerEmail);
-    await page.goto(eventPanelUrl());
+    await page.goto(tracksUrl());
     await openTracksSection(page);
     await page.getByTestId(`track-edit-${id}`).locator('summary').click();
 
