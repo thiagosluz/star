@@ -35,10 +35,14 @@ const STATUS_STYLE: Record<string, string> = {
 /** Lista as submissões do autor na instituição ativa. */
 export default async function MySubmissionsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>;
+  searchParams: Promise<{ pagina?: string }>;
 }) {
   const { tenantSlug } = await params;
+
+  const { pagina } = await searchParams;
 
   const context = await getRequestContext();
   if (!context) {
@@ -52,7 +56,19 @@ export default async function MySubmissionsPage({
   }
 
   const tenantId = context.activeTenant.tenantId;
-  const submissions = await listMySubmissions(tenantId, context.user.id);
+  /** O total e a fatia saem da MESMA transação: a contagem não pode divergir da lista. */
+  const page = await listMySubmissions(tenantId, context.user.id, { page: pagina });
+  const submissions = page.submissions;
+
+  /**
+   * O endereço canônico: a PRIMEIRA página não carrega `?pagina=1` — `/submissoes` e
+   * `/submissoes?pagina=1` seriam a mesma tela em dois endereços, e o "Anteriores" da
+   * página 2 tem de voltar para o endereço limpo.
+   */
+  const listHref = (target: number) =>
+    target <= 1
+      ? tenantPath(tenantSlug, '/submissoes')
+      : `${tenantPath(tenantSlug, '/submissoes')}?pagina=${target}`;
 
   /** Eventos que aceitam submissão, para o formulário de criação. */
   const openEvents = await withTenant(tenantId, (tx) =>
@@ -172,6 +188,50 @@ export default async function MySubmissionsPage({
           ))}
         </ul>
       )}
+      {/**
+        * ── A PÁGINA VIVE NA URL (FASE 56 · dívida E2) ─────────────────────────────
+        *  O endereço é compartilhável, o botão "voltar" do navegador funciona e a lista
+        *  não precisa de JavaScript para andar. Com uma página só, a barra não aparece.
+        */}
+      {page.totalPages > 1 ? (
+        <nav
+          className="flex items-center justify-between gap-4 border-t border-border pt-6 text-sm"
+          aria-label="Paginação das submissões"
+          data-testid="submissions-pagination"
+        >
+          {page.hasPrev ? (
+            <Link
+              href={listHref(page.page - 1)}
+              className="underline underline-offset-4"
+              data-testid="submissions-prev"
+            >
+              ← Anteriores
+            </Link>
+          ) : (
+            <span className="text-muted-foreground" aria-hidden>
+              ← Anteriores
+            </span>
+          )}
+
+          <span className="text-muted-foreground" data-testid="submissions-page-info">
+            página {page.page} de {page.totalPages} · {page.total} no total
+          </span>
+
+          {page.hasNext ? (
+            <Link
+              href={listHref(page.page + 1)}
+              className="underline underline-offset-4"
+              data-testid="submissions-next"
+            >
+              Próximos →
+            </Link>
+          ) : (
+            <span className="text-muted-foreground" aria-hidden>
+              Próximos →
+            </span>
+          )}
+        </nav>
+      ) : null}
     </main>
   );
 }

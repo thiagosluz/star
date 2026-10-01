@@ -546,7 +546,12 @@ describe('quem é promovido da lista de espera também recebe o checklist', () =
 
     await runConfirmationExpirySweep();
 
-    expect(await statusOf(inscricaoSegunda.registrationId)).toBe('CONFIRMED:-');
+    /**
+     * Dívida E1: a promoção RETÉM a vaga com prazo (`PENDING`) em vez de nascer
+     * confirmada. O segundo campo de `statusOf` é QUEM confirmou, e ele está vazio
+     * aqui de propósito: quem fecha esta vaga é a marcação dos itens (a equipe).
+     */
+    expect(await statusOf(inscricaoSegunda.registrationId)).toBe('PENDING:-');
 
     const items = await itemsOf(inscricaoSegunda.registrationId);
 
@@ -566,9 +571,18 @@ describe('quem é promovido da lista de espera também recebe o checklist', () =
     expect(marcado.ok, marcado.ok ? 'ok' : marcado.message).toBe(true);
     if (!marcado.ok) return;
 
-    /** A vaga já estava confirmada: a marcação registra o item e não reconfirma nada. */
-    expect(marcado.autoConfirmed).toBe(false);
-    expect(await statusOf(inscricaoSegunda.registrationId)).toBe('CONFIRMED:-');
+    /**
+     * ── A MARCAÇÃO FECHA A VAGA RETIDA (dívidas E1 e F34) ───────────────────────
+     *
+     *  Era `false`: a promoção nascia CONFIRMADA, e o checklist era só registro. Com a
+     *  vaga RETIDA (E1), resolver o último item OBRIGATÓRIO é o que a confirma — e a
+     *  auto-confirmação grava o AUTOR, que é o segundo campo de `statusOf`.
+     *
+     *  É o par do aceite da pessoa: onde a atividade não cobra nada, quem confirma é ela
+     *  (`acceptPromotion`); onde cobra, é a equipe, por este caminho.
+     */
+    expect(marcado.autoConfirmed).toBe(true);
+    expect(await statusOf(inscricaoSegunda.registrationId)).toBe(`CONFIRMED:${organizerId}`);
   });
 });
 
@@ -656,12 +670,21 @@ describe('a fila da equipe devolve o checklist', () => {
       primeira.queue.activities.map((activity) => activity.id),
     );
 
-    /** As duas atividades empatadas existem de verdade: o teste não passa por acidente. */
-    const empatadas = primeira.queue.activities.filter(
+    /**
+     * As duas atividades EMPATADAS existem de verdade: o teste não passa por acidente.
+     *
+     * Desde a dívida E1 há uma TERCEIRA atividade com pendência — a vaga retida da
+     * promoção, com prazo PRÓPRIO (48 h da promoção, que não é o fim do dia local da
+     * atividade). O empate é procurado no MENOR prazo, porque é por ele que a fila
+     * escolhe a atividade que abre.
+     */
+    const comPrazo = primeira.queue.activities.filter(
       (activity) => activity.pending > 0 && activity.earliestDueAt !== null,
     );
-    const prazos = new Set(empatadas.map((activity) => activity.earliestDueAt!.getTime()));
+    const menorPrazo = Math.min(...comPrazo.map((activity) => activity.earliestDueAt!.getTime()));
+    const empatadas = comPrazo.filter(
+      (activity) => activity.earliestDueAt!.getTime() === menorPrazo,
+    );
     expect(empatadas.length).toBeGreaterThan(1);
-    expect(prazos.size).toBe(1);
   });
 });

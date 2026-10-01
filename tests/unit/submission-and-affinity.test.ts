@@ -25,6 +25,7 @@ import {
   MIN_ABSTRACT_LENGTH,
   MIN_TITLE_LENGTH,
   canDeleteSubmission,
+  canWithdrawSubmission,
   canTransitionSubmission,
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
@@ -795,5 +796,39 @@ describe('evaluateSubmissionReadiness()', () => {
       expect(result.ready).toBe(false);
       expect(result.blockers.join(' ')).toMatch(/autor/i);
     });
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O AUTOR RETIRA O PRÓPRIO TRABALHO (FASE 56 · dívida E31)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  A régua sai da TABELA DE TRANSIÇÕES, e por isso o teste olha os dois lados: o que a
+ *  tabela permite vira permissão, e o que ela proíbe vira recusa com nome. O que não
+ *  pode acontecer — e é o que mais importa aqui — é a retirada DEPOIS da decisão: o
+ *  parecer existe, o resultado está na trilha e o programa do evento pode já contar com
+ *  o trabalho. Reescrever isso pelo botão seria apagar a história do comitê.
+ */
+describe('canWithdrawSubmission()', () => {
+  it('vale do rascunho ao trabalho em avaliação', () => {
+    /**
+     * Rascunho fica de FORA: o que nunca foi enviado se EXCLUI (e o botão de excluir já
+     * está lá). Retirar existe para o trabalho que já entrou no páreo.
+     */
+    expect(canWithdrawSubmission('DRAFT')).toBe(false);
+    expect(canWithdrawSubmission('SUBMITTED')).toBe(true);
+    expect(canWithdrawSubmission('UNDER_REVIEW')).toBe(true);
+    expect(canWithdrawSubmission('REVISION_REQUESTED')).toBe(true);
+  });
+
+  it('NÃO vale depois da decisão do comitê — nem para quem escreveu', () => {
+    expect(canWithdrawSubmission('ACCEPTED')).toBe(false);
+    expect(canWithdrawSubmission('REJECTED')).toBe(false);
+  });
+
+  it('NÃO vale duas vezes, nem em estado já encerrado', () => {
+    expect(canWithdrawSubmission('WITHDRAWN')).toBe(false);
+    expect(canWithdrawSubmission('CANCELED')).toBe(false);
   });
 });

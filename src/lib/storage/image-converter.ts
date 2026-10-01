@@ -190,3 +190,62 @@ export async function encodeAssetAsWebp(input: {
     };
   }
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A MINIATURA DO ACERVO (FASE 56 · dívida E18)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O ACERVO PRECISAVA DISTO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A galeria desenhava cada imagem INTEIRA dentro de um quadrado de ~200 px: abrir o
+ *  acervo com vinte fotos de 3 MB baixava dezenas de megabytes para mostrar vinte
+ *  quadrados. O peso não estava na tela — estava em não existir uma versão pequena
+ *  para pedir.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A MINIATURA É DERIVADA, E NUNCA SUBSTITUI O ORIGINAL
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O recorte é `cover` (a galeria quer o quadrado cheio, sem faixa), a qualidade é
+ *  mais baixa (70) e o teto é 320 px — o suficiente para um cartão em tela retina e
+ *  umas cem vezes menor que a foto. O ORIGINAL continua no bucket: é ele que a página
+ *  pública renderiza.
+ *
+ *  O `rotate()` respeita a orientação do EXIF (mesma régua do WebP da FASE 46): sem
+ *  ele, a mesma foto sairia deitada na galeria e em pé na página.
+ *
+ *  Imagem pequena é AMPLIADA de propósito: o cartão precisa do quadrado cheio, e uma
+ *  miniatura de 80 px com tarja branca ficaria pior do que a mesma imagem esticada.
+ */
+export const THUMBNAIL_MAX_SIZE_PX = 320;
+export const THUMBNAIL_QUALITY = 70;
+
+export async function encodeThumbnailAsWebp(input: {
+  bytes: Buffer;
+  maxSizePx?: number;
+}): Promise<
+  { ok: true; bytes: Buffer; widthPx: number; heightPx: number } | { ok: false; message: string }
+> {
+  const maxSizePx = input.maxSizePx ?? THUMBNAIL_MAX_SIZE_PX;
+
+  try {
+    const encoded = await sharp(input.bytes, {
+      limitInputPixels: MAX_SOURCE_PIXELS,
+      failOn: 'error',
+    })
+      .rotate()
+      .resize({ width: maxSizePx, height: maxSizePx, fit: 'cover' })
+      .webp({ quality: THUMBNAIL_QUALITY })
+      .toBuffer({ resolveWithObject: true });
+
+    return {
+      ok: true,
+      bytes: encoded.data,
+      widthPx: encoded.info.width ?? maxSizePx,
+      heightPx: encoded.info.height ?? maxSizePx,
+    };
+  } catch {
+    return { ok: false, message: 'Não foi possível gerar a miniatura desta imagem.' };
+  }
+}

@@ -31,6 +31,7 @@ import {
   confirmUpload,
   createSubmission,
   deleteSubmission,
+  withdrawSubmission,
   requestUpload,
   submitSubmission,
   updateSubmissionDraft,
@@ -377,6 +378,74 @@ export async function deleteDraftSubmissionAction(
    * página que aponta para ele (a submissão não existe mais e a tela daria 404).
    */
   redirect(listPath);
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Retirada da submissão pelo autor (FASE 56 · dívida E31)
+// ───────────────────────────────────────────────────────────────────────────────
+const withdrawSubmissionSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  submissionId: z.string().uuid(),
+  reason: z.string().trim().max(500).optional(),
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RETIRAR A PRÓPRIA SUBMISSÃO (FASE 56 · dívida E31)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  A permissão é `submission:update:own` com posse obrigatória (`requiresOwnership`): o
+ *  `ownerId` é o da SESSÃO, nunca o do formulário — sem ele, `can()` NEGA por desenho
+ *  (fail-closed). O serviço ainda confere `submittedById` no `where`, então há duas
+ *  linhas de defesa e a segunda é a que vale se alguém chamar o serviço por outro
+ *  caminho.
+ *
+ *  A diferença em relação a EXCLUIR o rascunho está no destino: aqui a submissão
+ *  CONTINUA existindo (`WITHDRAWN`), e a pessoa fica na própria página vendo o novo
+ *  estado — mandá-la para a lista esconderia o resultado do que ela acabou de fazer.
+ */
+export async function withdrawSubmissionAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = withdrawSubmissionSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    submissionId: formData.get('submissionId'),
+    reason: (formData.get('reason') as string) || undefined,
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const context = await guard({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
+    requiresOwnership: true,
+  });
+
+  if (!context.ok) return context.state;
+
+  const result = await withdrawSubmission({
+    tenantId: context.tenantId,
+    submissionId: parsed.data.submissionId,
+    userId: context.userId,
+    reason: parsed.data.reason ?? null,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  const detailPath = tenantPath(parsed.data.tenantSlug, `/submissoes/${parsed.data.submissionId}`);
+  revalidatePath(detailPath);
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/submissoes'));
+
+  return {
+    ok: true,
+    code: 'WITHDRAWN',
+    message: `Submissão ${result.protocol} retirada. Ela sai do páreo e o protocolo continua registrado — para voltar atrás, fale com a comissão.`,
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

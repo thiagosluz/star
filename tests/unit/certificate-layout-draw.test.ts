@@ -577,6 +577,13 @@ describe('conteúdo congelado das variáveis', () => {
       'instituicao',
       'codigo_validacao',
       'url_validacao',
+      /**
+       * CPF e título da apresentação entraram na FASE 56 (dívida E54) — e na ORDEM DO
+       * CATÁLOGO, que é o contrato de serialização: é a ordem que faz dois documentos
+       * iguais gerarem o mesmo hash.
+       */
+      'cpf',
+      'titulo_apresentacao',
     ]);
 
     // Auditoria NÃO entra: o hash não pode depender de si mesmo.

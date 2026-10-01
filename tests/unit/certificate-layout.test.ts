@@ -158,15 +158,38 @@ describe('catálogo de variáveis', () => {
     }
   });
 
-  it('não oferece CPF nem título da apresentação — não há fonte para eles', () => {
+  it('OFERECE CPF e título da apresentação, com a FONTE declarada (FASE 56 · dívida E54)', () => {
     const keys = CERTIFICATE_VARIABLES.map((variable) => variable.key);
-    expect(keys).not.toContain('cpf');
-    expect(keys).not.toContain('titulo_apresentacao');
+
+    expect(keys).toContain('cpf');
+    expect(keys).toContain('titulo_apresentacao');
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A DÍVIDA E54 ERA ESTE TESTE, INVERTIDO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Ele dizia "não oferece CPF nem título da apresentação — não há fonte para
+     *  eles", e era verdade: o editor não tinha o que oferecer. A FASE 56 deu as duas
+     *  fontes (o campo do formulário de INSCRIÇÃO e o trabalho enviado pela pessoa), e
+     *  a catraca passou a prender o outro lado: as variáveis existem, cada uma DIZ de
+     *  onde vem, e as duas podem ficar vazias — `source` é o que impede a variável
+     *  órfã, que ninguém sabe preencher.
+     */
+    const cpf = CERTIFICATE_VARIABLES.find((variable) => variable.key === 'cpf');
+    const apresentacao = CERTIFICATE_VARIABLES.find(
+      (variable) => variable.key === 'titulo_apresentacao',
+    );
+
+    expect(cpf?.source).toMatch(/inscrição/i);
+    expect(cpf?.canBeEmpty).toBe(true);
+    expect(apresentacao?.source).toMatch(/trabalho|enviou/i);
+    expect(apresentacao?.canBeEmpty).toBe(true);
   });
 
   it('reconhece chave conhecida e recusa a desconhecida', () => {
     expect(isCertificateVariableKey('nome')).toBe(true);
-    expect(isCertificateVariableKey('cpf')).toBe(false);
+    expect(isCertificateVariableKey('cpf')).toBe(true);
+    expect(isCertificateVariableKey('nao_existe')).toBe(false);
   });
 
   it('resolve todas as chaves do catálogo', () => {
@@ -466,8 +489,16 @@ describe('montagem a partir das linhas do formulário (envio sem JavaScript)', (
   });
 
   it('variável desconhecida não vira elemento (é descartada antes de gravar)', () => {
-    const layout = buildLayoutFromRows(rows({ variables: ['cpf', 'url_validacao', ''] }));
-    expect(layout.elements.map((item) => item.variable)).not.toContain('cpf');
+    /**
+     * `cpf` saiu desta lista na FASE 56 (dívida E54): deixou de ser desconhecida quando
+     * ganhou fonte. O que o teste prende continua o mesmo — chave que o catálogo não
+     * conhece é descartada ANTES de virar elemento —, agora com uma que não existe.
+     */
+    const layout = buildLayoutFromRows(rows({ variables: ['nao_existe', 'url_validacao', ''] }));
+    expect(layout.elements.map((item) => item.variable)).not.toContain('nao_existe');
+    /** E a que EXISTE continua entrando: a régua não ficou mais frouxa. */
+    const comCpf = buildLayoutFromRows(rows({ variables: ['cpf', ''] }));
+    expect(comCpf.elements.map((item) => item.variable)).toContain('cpf');
   });
 
   it('o layout montado a partir das linhas passa na validação', () => {

@@ -31,7 +31,11 @@ import { z } from 'zod';
 import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { markMessageRead, sendParticipantMessage } from '@/lib/participants/message-service';
+import {
+  markMessageRead,
+  replyToParticipantMessage,
+  sendParticipantMessage,
+} from '@/lib/participants/message-service';
 
 export type ParticipantActionState = ActionGuardState;
 
@@ -169,5 +173,71 @@ export async function markMessageReadAction(
   return {
     ok: true,
     message: result.marked ? 'Mensagem marcada como lida.' : 'Esta mensagem não é sua (ou já estava lida).',
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  A RESPOSTA DA PESSOA AO RECADO (FASE 56 · dívida E45)
+// ───────────────────────────────────────────────────────────────────────────────
+const replySchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  messageId: z.string().uuid(),
+  body: z.string().trim().min(1).max(2000),
+});
+
+/**
+ * A pessoa responde o recado que RECEBEU.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A PERMISSÃO É A MESMA DE LER A PRÓPRIA INSCRIÇÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Não há permissão de "responder recado": responder é ato de POSSE, e a posse vem da
+ *  SESSÃO (`auth.userId`), conferida de novo no `where` do serviço. A permissão aqui é
+ *  só a porta de entrada da área do participante — a mesma que a caixa de entrada já
+ *  exige para ser lida. Inventar `participant:reply` criaria um papel que ninguém
+ *  precisa ter para ler o que já é seu.
+ */
+export async function replyToParticipantMessageAction(
+  _prev: ParticipantActionState | null,
+  formData: FormData,
+): Promise<ParticipantActionState> {
+  const parsed = replySchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    messageId: formData.get('messageId'),
+    body: formData.get('body'),
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Escreva a sua resposta (até 2000 caracteres).',
+    };
+  }
+
+  const auth = await guardAction({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_READ_OWN,
+  });
+
+  if (!auth.ok) return auth.state;
+
+  const result = await replyToParticipantMessage({
+    tenantId: auth.tenantId,
+    userId: auth.userId,
+    messageId: parsed.data.messageId,
+    body: parsed.data.body,
+    ipAddress: (await headers()).get('x-forwarded-for'),
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/minhas-mensagens'));
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  return {
+    ok: true,
+    message: 'Resposta enviada. A instituição recebe na ficha desta conversa.',
   };
 }

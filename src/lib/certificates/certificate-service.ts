@@ -84,6 +84,7 @@ export type CertificateResult<T> =
   | { ok: false; code: CertificateErrorCode; message: string; details?: readonly string[] };
 
 import { publicBaseUrl } from '@/lib/public-url';
+import { cpfFromFormResponses } from '@/domain/events/registration-form-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Configuração de exibição
@@ -412,6 +413,13 @@ export async function requestCertificate(
               contentHash: '',
               signature: '',
               keyId: '',
+              /**
+               * CPF e título da apresentação (FASE 56 · dívida E54) entram CONGELADOS
+               * como os demais: o campo do formulário pode ser corrigido depois e o
+               * trabalho pode ser renomeado — o documento emitido fica como estava.
+               */
+              cpf: context.cpf,
+              presentationTitle: context.presentationTitle,
             }),
           )
         : null;
@@ -561,13 +569,20 @@ interface CertificateContext {
   eventEndsAt: Date | null;
   activityTitle: string | null;
   timeZone: string;
+  /**
+   * CPF em DÍGITOS, lido do formulário de inscrição no evento (dívida E54) — `null`
+   * quando a pessoa não informou ou o número não confere.
+   */
+  cpf: string | null;
+  /** Título do trabalho que a pessoa enviou neste evento — `null` para quem não submeteu. */
+  presentationTitle: string | null;
 }
 
 async function loadCertificateContext(
   tx: TxClient,
   input: { tenantId: string; eventId: string; userId: string; activityId: string | null },
 ): Promise<CertificateContext | null> {
-  const [user, tenant, event, activity] = await Promise.all([
+  const [user, tenant, event, activity, registration, submission] = await Promise.all([
     tx.user.findUnique({ where: { id: input.userId }, select: { name: true } }),
     tx.tenant.findUnique({ where: { id: input.tenantId }, select: { name: true, timezone: true } }),
     tx.event.findFirst({
@@ -577,6 +592,41 @@ async function loadCertificateContext(
     input.activityId
       ? tx.activity.findFirst({ where: { id: input.activityId }, select: { title: true } })
       : Promise.resolve(null),
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O CPF VEM DA INSCRIÇÃO NO EVENTO (dívida E54)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A inscrição do EVENTO é a de `activityId: null` — é nela que o formulário é
+     *  preenchido (as inscrições em atividade herdam a pessoa, não o formulário). A
+     *  leitura é a mais recente: quem se inscreveu, cancelou e voltou tem duas linhas.
+     */
+    tx.registration.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        userId: input.userId,
+        activityId: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { formResponses: true },
+    }),
+    /**
+     * O TÍTULO DA APRESENTAÇÃO é o do trabalho que a pessoa enviou neste evento.
+     *
+     * Rascunho, retirada e cancelamento ficam FORA: não são apresentação — quem
+     * escreveu e desistiu antes de enviar não tem título para constar em documento.
+     */
+    tx.submission.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        submittedById: input.userId,
+        deletedAt: null,
+        status: { notIn: ['DRAFT', 'WITHDRAWN', 'CANCELED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { title: true },
+    }),
   ]);
 
   if (!user || !tenant || !event) return null;
@@ -589,6 +639,8 @@ async function loadCertificateContext(
     eventEndsAt: event.endsAt,
     activityTitle: activity?.title ?? null,
     timeZone: tenant.timezone ?? 'UTC',
+    cpf: cpfFromFormResponses(registration?.formResponses ?? null),
+    presentationTitle: submission?.title ?? null,
   };
 }
 

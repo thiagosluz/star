@@ -307,6 +307,31 @@ export default async function ParticipantProfilePage({
                     {row.sentAt.toLocaleString('pt-BR')}
                     {row.sentByName ? ` · ${row.sentByName}` : ''} ·{' '}
                     {row.readAt ? `lido em ${row.readAt.toLocaleDateString('pt-BR')}` : 'não lido'}
+                  {/**
+                    * ───────────────────────────────────────────────────────────────
+                    *  RESPONDEU — OU NÃO (FASE 56 · dívida E45)
+                    * ───────────────────────────────────────────────────────────────
+                    *  "Não lido" não é "não recebido", e nenhum dos dois diz se a pessoa
+                    *  respondeu. Sem este indicador, a instituição falava e não sabia se tinha
+                    *  sido ouvida — e a dúvida virava ligação para a secretaria, fora do registro.
+                    */}
+                  <p
+                    className="mt-1 text-xs"
+                    data-testid={`profile-message-reply-${row.id}`}
+                    data-replied={row.replyCount > 0 ? '1' : '0'}
+                  >
+                    {row.replyCount > 0 ? (
+                      <span className="text-success-strong">
+                        respondeu
+                        {row.lastReplyAt
+                          ? ` em ${row.lastReplyAt.toLocaleDateString('pt-BR')}`
+                          : ''}
+                        {row.replyCount > 1 ? ` · ${row.replyCount} respostas` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">ainda não respondeu</span>
+                    )}
+                  </p>
                   </p>
                 </li>
               ))}

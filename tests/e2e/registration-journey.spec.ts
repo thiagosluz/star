@@ -840,7 +840,12 @@ test.describe('cancelamento e promoção', () => {
         await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
         const rows = await tx.registration.findMany({
           where: { activityId: activity.id },
-          select: { userId: true, status: true, waitlistPosition: true },
+          select: {
+            userId: true,
+            status: true,
+            waitlistPosition: true,
+            confirmationDueAt: true,
+          },
         });
         const counters = await tx.activity.findUniqueOrThrow({
           where: { id: activity.id },
@@ -853,14 +858,33 @@ test.describe('cancelamento e promoção', () => {
       const secondRow = state.rows.find((r) => r.userId === second.id);
 
       expect(firstRow?.status).toBe('CANCELED');
-      expect(secondRow?.status).toBe('CONFIRMED');
+      /**
+       * ── DÍVIDA E1: A PROMOÇÃO RETÉM A VAGA, COM PRAZO ──────────────────────────
+       *  Era `CONFIRMED` no mesmo instante. Agora quem é chamado da fila passa a
+       *  `PENDING` com vencimento em 48 h — a vaga é dele, mas vence se ele não aceitar.
+       *  O aceite é ato da PESSOA, e é o que o passo seguinte exercita pela tela.
+       */
+      expect(secondRow?.status).toBe('PENDING');
+      expect(secondRow?.confirmationDueAt).not.toBeNull();
       expect(secondRow?.waitlistPosition).toBeNull();
 
       // Contadores consistentes após a promoção.
       expect(state.counters.confirmedCount).toBe(1);
       expect(state.counters.waitlistCount).toBe(0);
 
-      // ── O promovido vê a confirmação na própria página ─────────────────
+      // ── O promovido ACEITA a vaga ofertada, e ela passa a ser dele ──────
+      /**
+       * O caminho novo da dívida E1, pela tela: a oferta aparece em "Minhas inscrições"
+       * com o prazo, e é a PESSOA que a aceita — sem isso a vaga venceria em 48 h e
+       * rodaria para o próximo, para sempre.
+       */
+      await secondPage.goto(`/t/${tenant.slug}/minhas-inscricoes`);
+      const oferta = secondPage.getByTestId('accept-promotion');
+      await expect(oferta).toBeVisible({ timeout: 30_000 });
+      await expect(secondPage.getByText(/Sua até/i)).toBeVisible();
+      await oferta.click();
+      await expect(secondPage.getByTestId('accept-promotion')).toHaveCount(0, { timeout: 30_000 });
+
       await secondPage.goto(activityPath);
       await expect(secondPage.getByTestId('registration-status')).toContainText(
         /inscrição confirmada/i,

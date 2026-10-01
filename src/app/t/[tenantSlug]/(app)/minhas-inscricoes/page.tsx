@@ -6,6 +6,7 @@ import { getRequestContext } from '@/lib/auth/session';
 import { listMyRegistrations } from '@/lib/events/registration-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CancelRegistrationButton } from '@/components/events/cancel-registration-button';
+import { AcceptPromotionButton } from '@/components/events/accept-promotion-button';
 
 export const metadata = { title: 'Minhas inscrições' };
 export const dynamic = 'force-dynamic';
@@ -285,6 +286,21 @@ export default async function MyRegistrationsPage({
                     Ver atividade
                   </Link>
                 )}
+
+                  {/**
+                   * ── A VAGA OFERTADA É DECISÃO DA PESSOA (dívida E1) ────────────────────
+                   *  Quem foi chamado da fila decide: o aceite é o que confirma a vaga. Onde a
+                   *  atividade exige conferência da equipe a oferta não aparece — o serviço
+                   *  devolve `promotion: null`, e quem fala é o aviso da F34, com o checklist.
+                   */}
+                  {registration.promotion ? (
+                    <AcceptPromotionButton
+                      tenantSlug={tenantSlug}
+                      eventSlug={registration.eventSlug}
+                      registrationId={registration.id}
+                      deadlineLabel={registration.promotion.deadlineLabel}
+                    />
+                  ) : null}
 
                 {/**
                   * Desistir também vale para quem está com a vaga RETIDA: se a pessoa

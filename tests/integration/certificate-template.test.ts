@@ -33,6 +33,10 @@ import { contentValuesFrom, serializeContentValues, serializeLayout } from '../.
 
 const RUN = randomUUID().slice(0, 8);
 
+/** O CPF como a pessoa digita no formulário (com máscara) — e o título do trabalho. */
+const CPF_DO_FORMULARIO = '529.982.247-25';
+const TITULO_DA_APRESENTACAO = 'Aprendizado de máquina na vigilância epidemiológica';
+
 let tenantId: string;
 let otherTenantId: string;
 let eventId: string;
@@ -263,6 +267,41 @@ beforeAll(async () => {
         checkedInAt: startsAt,
         checkedOutAt: new Date(startsAt.getTime() + 240 * 60_000),
         minutesAttended: 240,
+      },
+    });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  AS DUAS FONTES DAS VARIÁVEIS NOVAS (FASE 56 · dívida E54)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O CPF vive na inscrição do EVENTO (`activityId: null`): a inscrição de atividade
+     *  é a vaga na sessão, e não o formulário. O título da apresentação vem do trabalho
+     *  ENVIADO — os dois entram congelados no documento.
+     */
+    await tx.registration.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        eventId,
+        activityId: null,
+        userId: participantId,
+        status: 'CONFIRMED',
+        consentData: true,
+        formResponses: { cpf: CPF_DO_FORMULARIO },
+      },
+    });
+
+    await tx.submission.create({
+      data: {
+        id: randomUUID(),
+        tenantId,
+        eventId,
+        submittedById: participantId,
+        protocol: `E54${RUN.slice(0, 4).toUpperCase()}`,
+        title: TITULO_DA_APRESENTACAO,
+        abstract: 'Trabalho enviado para provar que o título entra no certificado congelado.',
+        status: 'ACCEPTED',
+        submittedAt: startsAt,
       },
     });
   });
@@ -570,6 +609,46 @@ describe('emissão com modelo visual', () => {
     expect(values.atividade).toBe('Minicurso com Modelo Visual');
     expect(values.carga_horaria).toContain('4');
     expect(values.hash).toBeUndefined();
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────
+     *  AS DUAS VARIÁVEIS DA DÍVIDA E54
+     * ─────────────────────────────────────────────────────────────────────────
+     *  O CPF sai FORMATADO no documento (a pessoa digita com máscara e o banco guarda
+     *  dígitos — a formatação é da impressão), e o título vem do trabalho enviado.
+     */
+    expect(values.cpf).toBe(CPF_DO_FORMULARIO);
+    expect(values.titulo_apresentacao).toBe(TITULO_DA_APRESENTACAO);
+  });
+
+  it('corrigir o formulário depois NÃO reescreve o documento emitido', async () => {
+    /** Outro CPF válido — é o que a pessoa informaria numa segunda inscrição. */
+    const outroCpf = '11144477735';
+
+    await withTenant(tenantId, (tx) =>
+      tx.registration.updateMany({
+        where: { tenantId, eventId, userId: participantId, activityId: null },
+        data: { formResponses: { cpf: outroCpf } },
+      }),
+    );
+
+    const row = await withTenant(tenantId, (tx) =>
+      tx.certificate.findUniqueOrThrow({
+        where: { id: certificateId },
+        select: { variableSnapshot: true },
+      }),
+    );
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  CONGELAR É O QUE DÁ VALOR AO HASH
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O documento emitido já foi assinado com aquele CPF. Se a leitura fosse refeita na
+     *  renderização, o MESMO hash passaria a imprimir outro número — e a validação
+     *  pública estaria conferindo um conteúdo diferente do que está no papel.
+     */
+    const values = row.variableSnapshot as Record<string, string>;
+    expect(values.cpf).toBe(CPF_DO_FORMULARIO);
   });
 
   it('o hash cobre o layout e o conteúdo congelados (versão 2 do documento)', async () => {

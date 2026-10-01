@@ -471,7 +471,15 @@ test.describe('confirmação de vaga com prazo', () => {
     expect(liberada.cancelReason).toBe('Prazo de confirmação vencido');
 
     const promovida = await registrationOf(esperaEmail, RELEASE_SLUG);
-    expect(promovida.status).toBe('CONFIRMED');
+    /**
+     * ── DÍVIDA E1: A PROMOÇÃO RETÉM A VAGA, COM PRAZO ──────────────────────────
+     *  Era `CONFIRMED` no mesmo instante. Agora quem é chamado da fila passa a
+     *  `PENDING` com vencimento em 48 h: a vaga é dele, mas vence se ele não aceitar —
+     *  e aceitar é ato da PESSOA (`acceptPromotion`, em "Minhas inscrições"), que foi o
+     *  que a dívida E1 precisou acrescentar para a vaga não rodar em círculos.
+     */
+    expect(promovida.status).toBe('PENDING');
+    expect(promovida.confirmationDueAt).not.toBeNull();
 
     /** A vaga não sumiu: passou de mão, e o contador continua em 1. */
     const contador = await e2eDb.activity.findUniqueOrThrow({
@@ -504,12 +512,23 @@ test.describe('confirmação de vaga com prazo', () => {
       timeout: 30_000,
     });
 
-    /** Quem foi promovido vê a vaga CONFIRMADA — sem ter feito nada. */
+    /**
+     * ── DÍVIDA E1: A VAGA ESTÁ RETIDA, E O QUE A ATIVIDADE COBRA CONTINUA VALENDO ──
+     *
+     *  Antes, quem era promovido numa atividade com exigências nascia CONFIRMADO — e a
+     *  taxa podia nunca ser cobrada, porque o portão da FASE 34 era pulado justamente
+     *  por quem entrou pela fila. Agora a promoção RETÉM a vaga com prazo (48 h) e o
+     *  checklist nasce junto: a equipe confirma quando o obrigatório é resolvido, pelo
+     *  mesmo caminho de sempre. Numa atividade SEM exigências, quem confirma é a própria
+     *  pessoa — o aceite em "Minhas inscrições" (`event-waitlist.spec.ts` prova os dois).
+     */
     await page.goto(`/t/${slug}/minhas-inscricoes`);
     await expect(page.getByTestId('registration-confirmation')).toHaveAttribute(
       'data-confirmation-state',
-      'CONFIRMED',
+      'PENDING',
     );
+    /** E a pessoa vê o que a atividade pede, sem precisar procurar. */
+    await expect(page.getByTestId('registration-confirmation-items')).toBeVisible();
 
     /**
      * E quem PERDEU o prazo não vê mais aquela atividade na lista: o cancelamento é
@@ -531,7 +550,17 @@ test.describe('confirmação de vaga com prazo', () => {
 
     const liberada = await registrationOf(pendenteEmail, RELEASE_SLUG);
 
-    const futuro = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    /**
+     * ── O INSTANTE DA SEGUNDA VARREDURA MUDOU COM A DÍVIDA E1 ────────────────────
+     *
+     *  A varredura era rodada a +10 dias, e nada mais acontecia porque tudo o que podia
+     *  vencer já tinha vencido. Agora a PROMOÇÃO tem janela própria de 48 h: a +10 dias
+     *  ela teria vencido de verdade, e a vaga seria devolvida — o que não é uma segunda
+     *  liberação, é a próxima. Para provar IDEMPOTÊNCIA (rodar de novo não devolve uma
+     *  segunda vaga), a segunda varredura precisa cair DENTRO da janela da promoção: a
+     *  +1 dia nada vence, e o contador tem de ficar exatamente onde está.
+     */
+    const futuro = new Date(Date.now() + 86_400_000).toISOString();
 
     const saida = runExpiryCli(futuro);
 

@@ -305,23 +305,136 @@ describe('inscrição no evento — materializa as atividades abertas', () => {
     expect(individual.ok, individual.ok ? 'ok' : individual.message).toBe(true);
   }, 60_000);
 
-  it('o evento respeita a própria lotação', async () => {
-    // Evento com 2 vagas: a terceira pessoa é recusada mesmo sem atividade envolvida.
+  it('o evento respeita a própria lotação, põe quem não coube na FILA e promove com prazo', async () => {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  DÍVIDAS E33 e E1 — A VAGA QUE NÃO EXISTE ESPERA, E A QUE VOLTA TEM PRAZO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Este teste provava a RECUSA: a terceira pessoa num evento de 2 vagas recebia
+     *  `FULL` e desaparecia. Agora ele prova o caminho inteiro — recusa não é mais o
+     *  fim da linha:
+     *
+     *    1. as duas primeiras ocupam a vaga; a terceira entra na FILA (posição 1) e NÃO
+     *       é inscrita na atividade aberta (quem espera não tem lugar);
+     *    2. a primeira desiste: a vaga vai para quem esperava, que passa a `PENDING`
+     *       com prazo de 48 h (a vaga está RETIDA com ele, e vence se ele não responder);
+     *    3. a promoção inscreve quem esperava nas atividades abertas — é o que a fila
+     *       adiava;
+     *    4. o contador do evento continua 2: a vaga MUDOU de dono, não se multiplicou.
+     */
     const first = await createUser('lotacao-0');
     const second = await createUser('lotacao-1');
     const third = await createUser('lotacao-2');
+
+    const openInSmall = await saveActivity({
+      tenantId,
+      actorId: organizerId,
+      eventId: smallEventId,
+      slug: activitySlugFor('aberta-pequeno'),
+      title: `Atividade aberta do evento pequeno ${RUN}`,
+      type: 'LECTURE',
+      status: 'SCHEDULED',
+      modality: 'IN_PERSON',
+      startsAt: daysFromNow(30),
+      endsAt: new Date(daysFromNow(30).getTime() + 3_600_000),
+      workloadMinutes: 60,
+      capacity: null,
+      waitlistEnabled: false,
+      requiresRegistration: false,
+    });
+    if (!openInSmall.ok) throw new Error(`Falha ao criar a atividade aberta: ${openInSmall.message}`);
 
     const outcomes = [];
     for (const userId of [first, second, third]) {
       outcomes.push(await registerForEvent({ tenantId, eventSlug: smallEventSlug, userId, consentData: true }));
     }
 
-    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(2);
+    /** Duas ocupam vaga; ninguém é recusado. */
+    expect(outcomes.filter((outcome) => outcome.ok && !outcome.waitlisted)).toHaveLength(2);
 
-    const refused = outcomes.find((outcome) => !outcome.ok);
-    expect(refused).toBeTruthy();
-    if (refused && !refused.ok) expect(refused.code).toBe('FULL');
-  }, 90_000);
+    const queued = outcomes.find((outcome) => outcome.ok && outcome.waitlisted);
+    expect(queued).toBeTruthy();
+    if (!queued || !queued.ok) return;
+    expect(queued.waitlistPosition).toBe(1);
+    /** Quem espera NÃO ocupa vaga e por isso não recebe as inscrições automáticas. */
+    expect(queued.enrolledActivities).toBe(0);
+
+    const counters = await withTenant(tenantId, (tx) =>
+      tx.event.findUniqueOrThrow({ where: { id: smallEventId }, select: { confirmedCount: true } }),
+    );
+    expect(counters.confirmedCount).toBe(2);
+
+    const waitingRow = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirstOrThrow({
+        where: { eventId: smallEventId, activityId: null, userId: third, deletedAt: null },
+        select: { status: true, waitlistPosition: true },
+      }),
+    );
+    expect(waitingRow.status).toBe('WAITLISTED');
+    expect(waitingRow.waitlistPosition).toBe(1);
+
+    const autoBefore = await withTenant(tenantId, (tx) =>
+      tx.registration.count({ where: { eventId: smallEventId, userId: third, origin: 'EVENT_AUTO' } }),
+    );
+    expect(autoBefore).toBe(0);
+
+    // ── A primeira desiste: a vaga vai para quem espera, COM PRAZO ─────────────
+    const firstRegistration = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirstOrThrow({
+        where: { eventId: smallEventId, activityId: null, userId: first, deletedAt: null },
+        select: { id: true },
+      }),
+    );
+
+    const cancelled = await cancelRegistration({
+      tenantId,
+      registrationId: firstRegistration.id,
+      userId: first,
+      reason: 'desistiu',
+    });
+    expect(cancelled.ok, cancelled.ok ? 'ok' : cancelled.message).toBe(true);
+    if (!cancelled.ok) return;
+    expect(cancelled.promoted).toHaveLength(1);
+
+    const promoted = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirstOrThrow({
+        where: { id: cancelled.promoted[0]!.registrationId },
+        select: { status: true, waitlistPosition: true, confirmationDueAt: true, userId: true },
+      }),
+    );
+    expect(promoted.userId).toBe(third);
+    expect(promoted.status).toBe('PENDING');
+    expect(promoted.waitlistPosition).toBeNull();
+
+    /**
+     * O prazo é 48 h — e o teste confere a JANELA, não o instante: medir milissegundos
+     * exatos tornaria o teste dependente do tempo de execução (armadilha clássica de
+     * teste com data), e o que importa é que a data está lá e vale ~48 h.
+     */
+    const horasAteVencer = (promoted.confirmationDueAt!.getTime() - Date.now()) / 3_600_000;
+    expect(horasAteVencer).toBeGreaterThan(47);
+    expect(horasAteVencer).toBeLessThan(49);
+
+    /** A promoção inscreve quem esperava nas atividades ABERTAS. */
+    const autoAfter = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirst({
+        where: {
+          eventId: smallEventId,
+          userId: third,
+          activityId: openInSmall.activityId,
+          origin: 'EVENT_AUTO',
+        },
+        select: { id: true },
+      }),
+    );
+    expect(autoAfter).not.toBeNull();
+
+    /** O contador do evento não cresceu: a vaga mudou de dono. */
+    const after = await withTenant(tenantId, (tx) =>
+      tx.event.findUniqueOrThrow({ where: { id: smallEventId }, select: { confirmedCount: true } }),
+    );
+    expect(after.confirmedCount).toBe(2);
+  }, 120_000);
 });
 
 describe('cancelamento da inscrição no evento', () => {

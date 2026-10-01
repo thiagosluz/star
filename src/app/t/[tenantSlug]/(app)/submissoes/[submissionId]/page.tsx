@@ -11,10 +11,12 @@ import {
 } from '@/lib/review/submission-service';
 import { getSubmissionAuthors } from '@/lib/review/author-service';
 import { isEditableByAuthor, canDeleteSubmission, type SubmissionStatus } from '@/domain/review/submission-rules';
+import { canWithdrawSubmission } from '@/domain/review/submission-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   confirmUploadAction,
   deleteDraftSubmissionAction,
+  withdrawSubmissionAction,
   requestUploadAction,
   saveSubmissionAuthorsAction,
   submitSubmissionAction,
@@ -24,6 +26,7 @@ import { SubmissionUploader, type UploadKind } from '@/components/review/submiss
 import { SubmitSubmissionButton } from '@/components/review/submit-submission-button';
 import { AuthorEditor } from '@/components/review/author-editor';
 import { DeleteDraftButton } from '@/components/review/delete-draft-button';
+import { WithdrawSubmissionButton } from '@/components/review/withdraw-submission-button';
 import { SubmissionDraftForm } from '@/components/review/submission-draft-form';
 
 export const dynamic = 'force-dynamic';
@@ -83,6 +86,13 @@ export default async function SubmissionDetailPage({
    * depois do envio, a submissão é registro do que foi avaliado.
    */
   const deletable = canDeleteSubmission(submission.status as SubmissionStatus);
+
+  /**
+   * RETIRAR é diferente de EXCLUIR (FASE 56 · dívida E31): o trabalho sai do páreo e o
+   * registro FICA. Vale enquanto o resultado não foi decidido — depois disso, quem
+   * conversa com a comissão é a pessoa, e o botão nem aparece.
+   */
+  const withdrawable = canWithdrawSubmission(submission.status as SubmissionStatus);
 
   /**
    * Autoria (FASE 17, item E6).
@@ -160,6 +170,16 @@ export default async function SubmissionDetailPage({
           </div>
 
           {/* Excluir é ação sem volta, e só o rascunho a oferece. */}
+          {/* Excluir é para o RASCUNHO; retirar é para o trabalho já enviado. */}
+          {withdrawable ? (
+            <WithdrawSubmissionButton
+              tenantSlug={tenantSlug}
+              submissionId={submissionId}
+              title={submission.title}
+              action={withdrawSubmissionAction}
+            />
+          ) : null}
+
           {deletable ? (
             <DeleteDraftButton
               tenantSlug={tenantSlug}

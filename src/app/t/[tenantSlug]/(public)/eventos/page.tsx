@@ -22,31 +22,51 @@ const STATUS_LABEL: Partial<Record<EventStatus, string>> = {
 
 /** Lista pública de eventos da instituição. */
 export default async function PublicEventsPage({
+  searchParams,
   params,
 }: {
   params: Promise<{ tenantSlug: string }>;
+  searchParams: Promise<{ pagina?: string }>;
 }) {
   const { tenantSlug } = await params;
+
+  const { pagina } = await searchParams;
 
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) notFound();
 
-  const events = (await listPublicEvents(tenant.tenantId)).filter((event) =>
-    isPubliclyVisible(event.status),
-  );
+  /**
+   * A página vem da URL e o banco devolve só a fatia dela (FASE 56 · dívida E2).
+   * O filtro de visibilidade continua aqui como conferência — é o MESMO conjunto de
+   * status que o repositório usa no `where`, então não esconde o que foi contado.
+   */
+  const page = await listPublicEvents(tenant.tenantId, { page: pagina });
+  const events = page.events.filter((event) => isPubliclyVisible(event.status));
+
+  /**
+   * O endereço canônico da lista: a PRIMEIRA página não carrega `?pagina=1`.
+   *
+   * `/eventos` e `/eventos?pagina=1` seriam dois endereços para a mesma tela — e o link
+   * "Anteriores" da página 2 tem de voltar para o endereço limpo, que é o que a pessoa
+   * compartilha. É a mesma régua do diretório de instituições (`directoryHref`).
+   */
+  const listHref = (target: number) =>
+    target <= 1
+      ? tenantPath(tenantSlug, '/eventos')
+      : `${tenantPath(tenantSlug, '/eventos')}?pagina=${target}`;
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">Eventos</h1>
         <p className="text-muted-foreground">
-          {events.length === 0
+          {page.total === 0
             ? 'Nenhum evento publicado no momento.'
-            : `${events.length} ${events.length === 1 ? 'evento disponível' : 'eventos disponíveis'} em ${tenant.name}.`}
+            : `${page.total} ${page.total === 1 ? 'evento disponível' : 'eventos disponíveis'} em ${tenant.name}.`}
         </p>
       </header>
 
-      {events.length === 0 ? (
+        {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
           Assim que a instituição publicar um evento, ele aparecerá aqui.
         </p>
@@ -140,6 +160,52 @@ export default async function PublicEventsPage({
           ))}
         </ul>
       )}
+      {/**
+        * ── A PAGINAÇÃO É LINK, NÃO ESTADO (FASE 56 · dívida E2) ───────────────────
+        *  A página vive na URL (`?pagina=2`): o endereço é compartilhável, o botão
+        *  "voltar" do navegador funciona, e a lista não precisa de JavaScript para
+        *  andar. Quando só há uma página, a barra inteira não aparece — não se anuncia
+        *  "página 1 de 1".
+        */}
+      {page.totalPages > 1 ? (
+        <nav
+          className="flex items-center justify-between gap-4 border-t border-border pt-6 text-sm"
+          aria-label="Paginação dos eventos"
+          data-testid="events-pagination"
+        >
+          {page.hasPrev ? (
+            <Link
+              href={listHref(page.page - 1)}
+              className="underline underline-offset-4"
+              data-testid="events-prev"
+            >
+              ← Anteriores
+            </Link>
+          ) : (
+            <span className="text-muted-foreground" aria-hidden>
+              ← Anteriores
+            </span>
+          )}
+
+          <span className="text-muted-foreground" data-testid="events-page-info">
+            página {page.page} de {page.totalPages}
+          </span>
+
+          {page.hasNext ? (
+            <Link
+              href={listHref(page.page + 1)}
+              className="underline underline-offset-4"
+              data-testid="events-next"
+            >
+              Próximos →
+            </Link>
+          ) : (
+            <span className="text-muted-foreground" aria-hidden>
+              Próximos →
+            </span>
+          )}
+        </nav>
+      ) : null}
     </main>
   );
 }

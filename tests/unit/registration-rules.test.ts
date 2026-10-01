@@ -17,10 +17,13 @@ import {
   cancelAffectsWaitlist,
   cancelReleasesSeat,
   decideRegistration,
+  eventHasWaitlist,
   hasAvailableSeat,
   isUnlimitedCapacity,
   nextWaitlistPromotion,
   occupancyRatio,
+  PROMOTION_WINDOW_HOURS,
+  promotionDeadline,
   remainingSeats,
   type RegistrationDecisionInput,
   type RegistrationStatus,
@@ -293,5 +296,32 @@ describe('transições de status da inscrição', () => {
     expect(cancelAffectsWaitlist('WAITLISTED')).toBe(true);
     expect(cancelAffectsWaitlist('CONFIRMED')).toBe(false);
     expect(cancelAffectsWaitlist('CANCELED')).toBe(false);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A FILA DO EVENTO E O PRAZO DE QUEM É PROMOVIDO (dívidas E33 e E1)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  Estas duas funções são a única parte da fila do evento que se prova SEM banco: se
+ *  `eventHasWaitlist` disser que um evento ilimitado tem fila, alguém fica esperando
+ *  por uma vaga que nunca faltou; se o prazo não for 48 h, a promessa escrita na tela
+ *  e no aviso deixa de valer — e o teste é o que prende as duas.
+ */
+describe('a fila do EVENTO e o prazo da promoção (dívidas E33 e E1)', () => {
+  it('evento COM lotação tem fila; sem lotação não há vaga contada para faltar', () => {
+    expect(eventHasWaitlist(2)).toBe(true);
+    /** Capacidade 0 é "esgotada" (e não "ilimitada"): a fila é o caminho. */
+    expect(eventHasWaitlist(0)).toBe(true);
+    expect(eventHasWaitlist(null)).toBe(false);
+    expect(eventHasWaitlist(undefined)).toBe(false);
+  });
+
+  it('o prazo do promovido é 48 h a partir de agora', () => {
+    const agora = new Date('2027-03-01T10:00:00.000Z');
+
+    expect(PROMOTION_WINDOW_HOURS).toBe(48);
+    expect(promotionDeadline(agora).toISOString()).toBe('2027-03-03T10:00:00.000Z');
   });
 });

@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listConfirmationQueue } from '@/lib/events/confirmation-service';
+import { listEventWaitlist } from '@/lib/events/registration-service';
 import { confirmRegistrationAction, resolveConfirmationItemAction } from '@/app/actions/admin-actions';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { CONFIRMATION_ITEM_STATUS_LABELS } from '@/domain/events/confirmation-item-rules';
@@ -66,6 +67,17 @@ export default async function EventConfirmationsPage({
   if (!result.ok) notFound();
 
   const { queue } = result;
+
+  /**
+   * A fila do EVENTO (dívida E33). O fuso vem do evento quando a fila da atividade
+   * foi carregada; sem ele, o `Intl` usa o fuso do servidor — e a data de entrada na
+   * fila é informação de contexto, não um prazo que alguém vá perder por fuso.
+   */
+  const waitlist = await listEventWaitlist({ tenantId, eventId });
+  const waitingFormatter = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    ...(queue?.eventTimeZone ? { timeZone: queue.eventTimeZone } : {}),
+  });
   const basePath = `/administracao/eventos/${eventId}/confirmacoes`;
 
   const deadlineTone = (state: string): string =>
@@ -423,6 +435,56 @@ export default async function EventConfirmationsPage({
           ) : null}
         </>
       )}
+        {/**
+          * ── A FILA DO EVENTO (dívida E33) ──────────────────────────────────────────
+          *
+          *  Vem DEPOIS das atividades de propósito: a fila do evento só existe quando a
+          *  lotação TOTAL acabou, e quem organiza chega nesta tela por atividade. Ler a
+          *  fila aqui é o que transforma "evento lotado" em "N pessoas esperando" — e dá
+          *  à instituição o número que ela antes descobria por telefone.
+          */}
+        <section className="space-y-3" data-testid="event-waitlist">
+          <h2 className="flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            <Clock className="size-4" aria-hidden />
+            Fila do evento ({waitlist.length})
+          </h2>
+
+          <p className="text-xs text-muted-foreground">
+            Quem tentou se inscrever depois de a lotação total acabar. A promoção é
+            automática quando uma vaga é devolvida, e quem for chamado tem{' '}
+            <strong>48 h</strong> para confirmar — passado o prazo, a vaga vai para o
+            próximo da fila.
+          </p>
+
+          {waitlist.length === 0 ? (
+            <p
+              className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
+              data-testid="event-waitlist-empty"
+            >
+              Ninguém na fila do evento.
+            </p>
+          ) : (
+            <ul
+              className="divide-y divide-border rounded-lg border border-border"
+              data-testid="event-waitlist-list"
+            >
+              {waitlist.map((entry) => (
+                <li
+                  key={entry.registrationId}
+                  className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
+                  data-testid={`event-waitlist-row-${entry.position}`}
+                >
+                  <p className="font-medium">
+                    {entry.position}º · {entry.personName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    esperando desde {waitingFormatter.format(entry.waitingSince)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
     </main>
   );
 }

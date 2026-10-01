@@ -27,10 +27,13 @@ import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import {
   type RegistrationStatus,
   canTransitionRegistration,
+  canAcceptPromotion,
   registrationIsLive,
   cancelAffectsWaitlist,
   cancelReleasesSeat,
   decideRegistration,
+  eventHasWaitlist,
+  promotionDeadline,
   remainingSeats,
   RESERVE_ACTIVITY_SEAT_SQL,
   RESERVE_EVENT_SEAT_SQL,
@@ -997,6 +1000,85 @@ async function reserveEventSeat(tx: TxClient, eventId: string): Promise<boolean>
   return affected === 1;
 }
 
+/**
+ * Põe a inscrição do evento na FILA (dívida E33), com a posição do fim.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A POSIÇÃO É UMA CORRIDA, E O BANCO É QUEM DECIDE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Duas pessoas entrando na fila ao mesmo tempo leem o MESMO máximo e tentam gravar a
+ *  MESMA posição. O índice único parcial de posição recusa a segunda — e é isso que
+ *  queremos: um `SAVEPOINT` desfaz só a tentativa perdedora (sem derrubar a transação,
+ *  que já leu o evento, decidiu o vínculo de participante e escreveu auditoria) e o
+ *  laço relê o máximo e tenta de novo. É o mesmo desenho da fila da ATIVIDADE: mudar o
+ *  escopo da fila não muda a natureza da corrida.
+ */
+async function enqueueEventRegistration(
+  tx: TxClient,
+  input: {
+    tenantId: string;
+    eventId: string;
+    userId: string;
+    consentImage: boolean;
+    consentData: boolean;
+    accessibilityNotes: string | null;
+    formResponses: object;
+  },
+): Promise<{ id: string; position: number }> {
+  const MAX_POSITION_ATTEMPTS = 3;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < MAX_POSITION_ATTEMPTS; attempt += 1) {
+    await tx.$executeRawUnsafe('SAVEPOINT event_waitlist_pos');
+
+    try {
+      /**
+       * O escopo é `activityId: null` — é o que separa a fila do EVENTO da fila de uma
+       * atividade. Sem esse filtro, a posição sairia do máximo das duas filas juntas.
+       */
+      const currentMax = await tx.registration.aggregate({
+        where: { eventId: input.eventId, activityId: null, status: 'WAITLISTED' },
+        _max: { waitlistPosition: true },
+      });
+
+      const position = (currentMax._max.waitlistPosition ?? 0) + 1;
+
+      const queued = await tx.registration.create({
+        data: {
+          tenantId: input.tenantId,
+          eventId: input.eventId,
+          activityId: null,
+          userId: input.userId,
+          origin: 'INDIVIDUAL',
+          status: 'WAITLISTED',
+          waitlistPosition: position,
+          consentImage: input.consentImage,
+          consentData: input.consentData,
+          consentAt: new Date(),
+          accessibilityNotes: input.accessibilityNotes,
+          formResponses: input.formResponses,
+        },
+        select: { id: true, waitlistPosition: true },
+      });
+
+      await tx.$executeRawUnsafe('RELEASE SAVEPOINT event_waitlist_pos');
+
+      return { id: queued.id, position: queued.waitlistPosition ?? position };
+    } catch (error) {
+      await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT event_waitlist_pos');
+      lastError = error;
+      if (classifyUniqueConflict(error) !== 'retry-position') break;
+    }
+  }
+
+  logUnexpected('enqueueEventRegistration', lastError);
+
+  throw new RegistrationError(
+    'INTERNAL',
+    'Não foi possível entrar na fila do evento agora. Tente novamente.',
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Inscrição no EVENTO (revisão da FASE 3)
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1016,6 +1098,14 @@ export type RegisterForEventOutcome =
   | {
       ok: true;
       registrationId: string;
+      /**
+       * `true` quando o evento estava lotado e a pessoa entrou na FILA (E33): ela não
+       * ocupa vaga, não foi inscrita nas atividades abertas e será promovida — com
+       * prazo para confirmar (E1) — quando uma vaga for devolvida.
+       */
+      waitlisted: boolean;
+      /** Posição na fila do evento, quando `waitlisted`. */
+      waitlistPosition: number | null;
       /** Quantas atividades abertas receberam a inscrição automaticamente. */
       enrolledActivities: number;
       titles: readonly string[];
@@ -1160,8 +1250,66 @@ async function attemptEventRegistration(
 
         const reserved = await reserveEventSeat(tx, event.id);
 
-        if (!reserved) {
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  SEM VAGA NO EVENTO: A PESSOA ENTRA NA FILA (dívida E33)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  A reserva é o `UPDATE` condicional, e ele continua sendo quem decide — esta
+         *  leitura só escolhe entre ENFILEIRAR e RECUSAR. Com lotação, a fila é o
+         *  caminho: a pessoa existe no evento (a linha nasce `WAITLISTED`, com posição),
+         *  a instituição sabe quem espera e a vaga de quem desistir tem para onde ir.
+         *
+         *  O que a fila NÃO faz, e é deliberado: inscrever nas atividades abertas. Quem
+         *  espera não tem lugar no evento, e criar as linhas `EVENT_AUTO` daria presença
+         *  a quem não entrou — a promoção é que as cria, no mesmo passo em que reserva a
+         *  vaga (`promoteNextFromEventWaitlist`).
+         */
+        if (!reserved && !eventHasWaitlist(event.capacity)) {
           throw new RegistrationError('FULL', 'A lotação total do evento foi atingida.');
+        }
+
+        if (!reserved) {
+          const queued = await enqueueEventRegistration(tx, {
+            tenantId,
+            eventId: event.id,
+            userId,
+            consentImage: input.consentImage ?? false,
+            consentData: input.consentData ?? false,
+            accessibilityNotes: input.accessibilityNotes ?? null,
+            formResponses: (input.formResponses ?? {}) as object,
+          });
+
+          const linkedAsParticipant = await applyParticipantLink(tx, {
+            tenantId,
+            userId,
+            decision: linkDecision,
+          });
+
+          await recordAudit(
+            {
+              tenantId,
+              userId,
+              action: 'CREATE',
+              entityType: 'registration',
+              entityId: queued.id,
+              changes: {
+                evento: { from: null, to: event.title },
+                tipo: { from: null, to: 'fila do evento' },
+                posicao: { from: null, to: queued.position },
+              },
+            },
+            tx,
+          );
+
+          return {
+            ok: true as const,
+            waitlisted: true,
+            waitlistPosition: queued.position,
+            registrationId: queued.id,
+            enrolledActivities: 0,
+            titles: [],
+            linkedAsParticipant,
+          };
         }
 
         const registration = await tx.registration.create({
@@ -1218,6 +1366,8 @@ async function attemptEventRegistration(
 
         return {
           ok: true as const,
+          waitlisted: false,
+          waitlistPosition: null,
           registrationId: registration.id,
           enrolledActivities: enrolled.titles.length,
           titles: enrolled.titles,
@@ -1447,8 +1597,14 @@ export interface CancelInput {
 export type CancelOutcome =
   | {
       ok: true;
-      /** Alguém da lista de espera foi promovido? */
-      promoted: { registrationId: string } | null;
+      /**
+       * Quem foi chamado da fila nesta operação — a da ATIVIDADE liberada e/ou a do
+       * EVENTO. É LISTA, e não um único: cancelar a inscrição do evento devolve o lugar
+       * no evento E a vaga de cada atividade aberta que ela criou, e cada vaga devolvida
+       * tem a sua fila (dívida E33). Um campo singular obrigaria a escolher qual fila
+       * atender — e a outra ficaria com vaga livre e gente esperando.
+       */
+      promoted: { registrationId: string }[];
     }
   | { ok: false; code: RegistrationErrorCode; message: string };
 
@@ -1522,20 +1678,31 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
 
         // Cancelou uma posição da lista de espera: só reindexa as posições.
         if (cancelAffectsWaitlist(from)) {
-          await tx.$executeRaw`
-            UPDATE activities
-               SET "waitlistCount" = GREATEST("waitlistCount" - 1, 0)
-             WHERE id = ${registration.activityId}::uuid
-          `;
-          await reindexWaitlist(tx, registration.activityId);
-          return { ok: true as const, promoted: null };
+          /**
+           * A fila do EVENTO não tem contador próprio (`waitlistCount` é da atividade):
+           * o que existe é a posição de cada linha. O `if` não é estilo — `"activityId"
+           * = NULL` no SQL não casa com nada, então decrementar a atividade aqui seria
+           * uma escrita que não escreve, e a fila do evento ficaria sem reindexação.
+           */
+          if (registration.activityId) {
+            await tx.$executeRaw`
+              UPDATE activities
+                 SET "waitlistCount" = GREATEST("waitlistCount" - 1, 0)
+               WHERE id = ${registration.activityId}::uuid
+            `;
+            await reindexWaitlist(tx, { activityId: registration.activityId });
+          } else {
+            await reindexWaitlist(tx, { eventId: registration.eventId });
+          }
+
+          return { ok: true as const, promoted: [] };
         }
 
         if (!registration.activityId) {
           /**
            * ─────────────────────────────────────────────────────────────────────
            *  CANCELAR A INSCRIÇÃO DO EVENTO LEVA JUNTO O QUE ELA CRIOU
-           *  ─────────────────────────────────────────────────────────────────────
+           * ─────────────────────────────────────────────────────────────────────
            *  As linhas `EVENT_AUTO` existem PORQUE a inscrição do evento existe.
            *  Mantê-las depois do cancelamento deixaria a pessoa inscrita em
            *  atividades que ela só conhecia pela inscrição do evento — e o
@@ -1545,7 +1712,20 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
            *  (`INDIVIDUAL`), inclusive num minicurso. Desfazer escolha alheia a
            *  partir de outro pedido seria o tipo de efeito colateral que assusta
            *  quem usa.
+           *
+           *  ─────────────────────────────────────────────────────────────────────
+           *  E AS VAGAS QUE O CANCELAMENTO DEVOLVE SÃO OFERECIDAS (dívida E33)
+           * ─────────────────────────────────────────────────────────────────────
+           *  Cada linha `EVENT_AUTO` cancelada devolve a vaga da SUA atividade, e a
+           *  inscrição do evento devolve o lugar no evento. Devolver sem oferecer é a
+           *  mesma perda de antes, um nível abaixo: a fila existe e ninguém a chama.
+           *  A promoção de atividade reserva lugar no evento também (é o que
+           *  `promoteNextFromWaitlist` faz), então é a vaga recém-liberada que ela
+           *  consome — e quando não houver mais lugar no evento, as tentativas
+           *  seguintes devolvem `null` em vez de estourar a lotação.
            */
+          const promoted: { registrationId: string }[] = [];
+
           const automatic = await tx.registration.findMany({
             where: {
               eventId: registration.eventId,
@@ -1573,9 +1753,17 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
                  SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
                WHERE id = ${row.activityId}::uuid
             `;
+
+            if (row.activityId) {
+              const nextInActivity = await promoteNextFromWaitlist(tx, row.activityId);
+              if (nextInActivity) promoted.push(nextInActivity);
+            }
           }
 
-          return { ok: true as const, promoted: null };
+          const nextInEvent = await promoteNextFromEventWaitlist(tx, registration.eventId);
+          if (nextInEvent) promoted.push(nextInEvent);
+
+          return { ok: true as const, promoted };
         }
 
         // ── Liberou vaga na atividade + promove o próximo ───────────────────
@@ -1585,8 +1773,23 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
            WHERE id = ${registration.activityId}::uuid
         `;
 
-        const promoted = await promoteNextFromWaitlist(tx, registration.activityId);
-        return { ok: true as const, promoted };
+        const promotedNext = await promoteNextFromWaitlist(tx, registration.activityId);
+
+        /**
+         * A inscrição de atividade também ocupava lugar no EVENTO (é o que a reserva
+         * faz), e esse lugar acabou de ser devolvido. Se a promoção da atividade não o
+         * consumiu — porque não havia fila na atividade —, quem espera pelo EVENTO é
+         * chamado: sem esta linha, a vaga do evento ficaria livre com gente na fila.
+         */
+        const promotedFromEvent = await promoteNextFromEventWaitlist(tx, registration.eventId);
+
+        return {
+          ok: true as const,
+          promoted: [
+            ...(promotedNext ? [promotedNext] : []),
+            ...(promotedFromEvent ? [promotedFromEvent] : []),
+          ],
+        };
       },
       { timeout: 15_000 },
     );
@@ -1617,26 +1820,30 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
       });
     }
 
-    if (outcome.ok && outcome.promoted) {
-      const notice = await notifyWaitlistPromoted({
-        tenantId,
-        registrationId: outcome.promoted.registrationId,
-      });
+    if (outcome.ok && outcome.promoted.length > 0) {
+      for (const promotion of outcome.promoted) {
+        const notice = await notifyWaitlistPromoted({
+          tenantId,
+          registrationId: promotion.registrationId,
+        });
 
-      if (!notice.ok) {
-        console.error(`[inscricoes] aviso de promoção não saiu: ${notice.message ?? 'motivo desconhecido'}`);
+        if (!notice.ok) {
+          console.error(`[inscricoes] aviso de promoção não saiu: ${notice.message ?? 'motivo desconhecido'}`);
+        }
+
+        /**
+         * Quem sai da espera e retém a vaga recebe o crédito de "inscrição confirmada"
+         * (FASE 43) — ele pediu a vaga antes, e a hora é agora. Com o prazo da dívida E1
+         * a promoção nasce `PENDING`, e o crédito só se efetiva quando a vaga vira
+         * `CONFIRMED` (o gancho relê o estado no banco): quem for promovido e não
+         * confirmar não ganha XP por uma vaga que não chegou a ter. A chave é a
+         * inscrição, então não existe crédito duplo.
+         */
+        await rewardRegistrationConfirmedById({
+          tenantId,
+          registrationId: promotion.registrationId,
+        });
       }
-
-      /**
-       * Quem sai da espera e ocupa a vaga recebe o crédito de "inscrição confirmada"
-       * (FASE 43) — ele pediu a vaga antes, e a confirmação é agora. A chave é a
-       * inscrição, então quem já tiver sido creditado (impossível aqui, mas possível
-       * num caminho futuro) não recebe duas vezes.
-       */
-      await rewardRegistrationConfirmedById({
-        tenantId,
-        registrationId: outcome.promoted.registrationId,
-      });
     }
 
     return outcome;
@@ -1705,9 +1912,23 @@ export async function promoteNextFromWaitlist(
     return null;
   }
 
+  /**
+   * ── A PROMOÇÃO RETÉM A VAGA COM PRAZO (dívida E1) ──────────────────────────
+   *
+   *  Antes daqui a vaga virava `CONFIRMED` no mesmo instante. Quem era chamado e não
+   *  respondia (ou já não queria) ficava com ela — e a fila inteira atrás dele esperava
+   *  por quem não vinha. Agora a promoção grava `PENDING` com `confirmationDueAt` em
+   *  `PROMOTION_WINDOW_HOURS`: a vaga CONTINUA retida (é o que `PENDING` significa desde
+   *  a FASE 34, ADR-171), mas vence sozinha — e a varredura que já existe libera a vaga
+   *  e chama esta função de novo para o próximo da fila (ADR-175/178).
+   */
   await tx.registration.update({
     where: { id: next.id },
-    data: { status: 'CONFIRMED', waitlistPosition: null },
+    data: {
+      status: 'PENDING',
+      waitlistPosition: null,
+      confirmationDueAt: promotionDeadline(new Date()),
+    },
   });
 
   await tx.$executeRaw`
@@ -1719,14 +1940,15 @@ export async function promoteNextFromWaitlist(
   /**
    * ── QUEM É PROMOVIDO TAMBÉM RECEBE O CHECKLIST (FASE 37) ───────────────────
    *
-   *  A vaga já está confirmada (decisão da promoção, FASE 34) — mas o que a atividade
+   *  A vaga está RETIDA por ele (é o que `PENDING` significa) — e o que a atividade
    *  cobra continua sendo cobrado. Sem o snapshot aqui, o balcão não teria onde marcar
    *  "recebeu a doação" para quem entrou pela lista de espera: a única pessoa do evento
    *  sem checklist seria justamente a última a ser chamada (armadilha 65 — todo caminho
    *  que cria inscrição tem de criar o checklist).
    *
-   *  A confirmação automática não se aplica: a vaga já está confirmada, e marcar o último
-   *  item devolve `ALREADY_CONFIRMED`, que o serviço do item absorve.
+   *  A confirmação automática não se aplica: quem foi PROMOVIDO precisa confirmar por
+   *  escolha (tem `PROMOTION_WINDOW_HOURS` para isso) — marcar o último item de um
+   *  checklist de exigências não é o mesmo ato, e a FASE 34 já trata os dois separados.
    *
    *  `skipDuplicates` porque o índice único `(registrationId, position)` é a garantia: uma
    *  promoção que rodar duas vezes (varredura e botão do painel) não duplica o checklist.
@@ -1751,20 +1973,104 @@ export async function promoteNextFromWaitlist(
     });
   }
 
-  await reindexWaitlist(tx, activityId);
+  await reindexWaitlist(tx, { activityId });
 
   return { registrationId: next.id };
 }
 
-/** Reindexa as posições da lista de espera para 1..n, sem buracos. */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  PROMOVE O PRÓXIMO DA FILA DO **EVENTO** (dívida E33)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  Irmã de `promoteNextFromWaitlist`, e a diferença está no que ela precisa fazer a
+ *  mais: quem esperava vaga no EVENTO **não tinha lugar nenhum** — nem no evento, nem
+ *  nas atividades abertas. Então a promoção faz três coisas, nesta ordem:
+ *
+ *    1. reserva o lugar no evento (o `UPDATE` condicional decide; sem vaga, ninguém é
+ *       promovido e nada foi tocado);
+ *    2. vira a linha para `PENDING` com o prazo de `PROMOTION_WINDOW_HOURS` (E1) — a
+ *       vaga fica RETIDA com quem foi chamado, e vence sozinha se ele não responder;
+ *    3. inscreve a pessoa nas atividades ABERTAS, que é o que a inscrição no evento
+ *       faria — quem esperava não recebeu essas linhas no ato (de propósito).
+ *
+ *  A ordem importa: as atividades abertas usam `RESERVE_OPEN_ACTIVITY_SEAT_SQL` (não há
+ *  predicado de vaga ali — a atividade aberta não recusa), então nada depois do passo 1
+ *  pode falhar por lotação e deixar o lugar do evento consumido.
+ */
+export async function promoteNextFromEventWaitlist(
+  tx: TxClient,
+  eventId: string,
+): Promise<{ registrationId: string } | null> {
+  const next = await tx.registration.findFirst({
+    where: { eventId, activityId: null, status: 'WAITLISTED', deletedAt: null },
+    orderBy: [{ waitlistPosition: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, userId: true, tenantId: true, consentImage: true, consentData: true, accessibilityNotes: true },
+  });
+
+  if (!next) return null;
+
+  const reserved = await reserveEventSeat(tx, eventId);
+
+  if (!reserved) return null;
+
+  await tx.registration.update({
+    where: { id: next.id },
+    data: {
+      status: 'PENDING',
+      waitlistPosition: null,
+      confirmationDueAt: promotionDeadline(new Date()),
+    },
+  });
+
+  await enrollEventRegistrationInOpenActivities(tx, {
+    tenantId: next.tenantId,
+    eventId,
+    userId: next.userId,
+    registrationId: next.id,
+    consentImage: next.consentImage,
+    consentData: next.consentData,
+    accessibilityNotes: next.accessibilityNotes,
+  });
+
+  await reindexWaitlist(tx, { eventId });
+
+  return { registrationId: next.id };
+}
+
+/**
+ * Reindexa as posições da lista de espera para 1..n, sem buracos.
+ *
+ * Duas filas usam isto: a da ATIVIDADE (escopo por `activityId`) e a do EVENTO (escopo
+ * por `eventId` + `activityId IS NULL`). O escopo é um PARÂMETRO, e não um `if` sobre o
+ * nulo: a assinatura antiga recebia `string | null` e voltava cedo no nulo, de modo que
+ * a fila do evento ficaria sem reindexação em silêncio — posições com buracos na tela.
+ */
 async function reindexWaitlist(
   tx: TxClient,
-  activityId: string | null,
+  scope: { activityId: string } | { eventId: string },
 ): Promise<void> {
-  if (!activityId) return;
-
   // `ROW_NUMBER()` em um UPDATE mantém as posições contíguas após promoções —
   // sem isso, a posição exibida ao participante ficaria cheia de buracos.
+  if ('activityId' in scope) {
+    await tx.$executeRaw`
+      UPDATE registrations r
+         SET "waitlistPosition" = ordered.new_position
+        FROM (
+          SELECT id, ROW_NUMBER() OVER (
+                   ORDER BY "waitlistPosition" ASC NULLS LAST, "createdAt" ASC
+                 ) AS new_position
+            FROM registrations
+           WHERE "activityId" = ${scope.activityId}::uuid
+             AND status = 'WAITLISTED'
+             AND "deletedAt" IS NULL
+        ) AS ordered
+       WHERE r.id = ordered.id
+    `;
+
+    return;
+  }
+
   await tx.$executeRaw`
     UPDATE registrations r
        SET "waitlistPosition" = ordered.new_position
@@ -1773,7 +2079,8 @@ async function reindexWaitlist(
                  ORDER BY "waitlistPosition" ASC NULLS LAST, "createdAt" ASC
                ) AS new_position
           FROM registrations
-         WHERE "activityId" = ${activityId}::uuid
+         WHERE "eventId" = ${scope.eventId}::uuid
+           AND "activityId" IS NULL
            AND status = 'WAITLISTED'
            AND "deletedAt" IS NULL
       ) AS ordered
@@ -1817,6 +2124,18 @@ export interface MyRegistration {
   isEventRegistration: boolean;
   /** `true` = criada pela inscrição no evento (atividade aberta). */
   isAutomatic: boolean;
+  /**
+   * ─── A VAGA OFERTADA PELA FILA (dívida E1) ──────────────────────────────────
+   * Existe quando a pessoa foi CHAMADA da lista de espera e a decisão é DELA: a vaga
+   * está retida em nome dela até `dueAt`, e o botão de aceitar vive na tela.
+   *
+   * `null` quando não há oferta a aceitar — inclusive quando a atividade exige
+   * conferência da equipe: aí quem confirma é o time, pela fila de confirmações, e
+   * quem fala disso é o campo `confirmation` (FASE 34). Os dois campos são coisas
+   * diferentes de propósito: um é a decisão da PESSOA, o outro é a conferência da
+   * EQUIPE, e misturá-los faria a tela pedir a quem não pode decidir.
+   */
+  promotion: { dueAt: Date; deadlineLabel: string } | null;
   /**
    * ─── Confirmação de vaga (FASE 34) ──────────────────────────────────────────
    * O que a pessoa precisa saber na lista: se a vaga está RETIDA devendo
@@ -1927,6 +2246,26 @@ export async function listMyRegistrations(
      * "previsto para 23:59" numa atividade que não confirma seria inventar uma
      * obrigação que ninguém pediu.
      */
+    /**
+     * A oferta da fila (dívida E1) — a régua do aceite é do DOMÍNIO, e não um `if` da
+     * tela: quem pode aceitar, quando o prazo venceu e onde quem confirma é a equipe
+     * estão em `canAcceptPromotion`, testado sem banco nem navegador.
+     */
+    promotion: canAcceptPromotion({
+      status: row.status as RegistrationStatus,
+      dueAt: row.confirmationDueAt,
+      policy: (row.activity?.confirmationPolicy as 'AUTOMATIC' | 'REQUIRED' | undefined) ?? null,
+      now,
+    }).ok
+      ? {
+          dueAt: row.confirmationDueAt as Date,
+          /** "25/09/2026, 23:59" no fuso do evento — a MESMA régua do prazo da F34. */
+          deadlineLabel: confirmationDeadlineLabel(
+            row.confirmationDueAt as Date,
+            row.event.timezone,
+          ),
+        }
+      : null,
     confirmation: row.activity
       ? (() => {
           const policy = row.activity.confirmationPolicy as ConfirmationPolicy;
@@ -1981,16 +2320,25 @@ export async function findMyEventRegistration(
   tenantId: string,
   userId: string,
   eventId: string,
-): Promise<{ id: string; status: RegistrationStatus } | null> {
+): Promise<{ id: string; status: RegistrationStatus; waitlistPosition: number | null } | null> {
   const row = await withTenant(tenantId, (tx) =>
     tx.registration.findFirst({
       where: { userId, eventId, activityId: null, deletedAt: null },
-      select: { id: true, status: true },
+      select: { id: true, status: true, waitlistPosition: true },
     }),
   );
 
   if (!row) return null;
-  return { id: row.id, status: row.status as RegistrationStatus };
+  return {
+    id: row.id,
+    status: row.status as RegistrationStatus,
+    /**
+     * A posição na FILA DO EVENTO (dívida E33): a tela pública precisa dela para dizer
+     * onde a pessoa está — sem o número, "você está na lista de espera" não responde a
+     * única pergunta que a pessoa tem.
+     */
+    waitlistPosition: row.waitlistPosition,
+  };
 }
 
 /** Inscrição do usuário em UMA atividade, se existir. */
@@ -2154,6 +2502,164 @@ export async function readActivityCounters(
     declaredCapacity: row.capacity,
     roomCapacity: row.room?.capacity ?? null,
   };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  QUEM ESPERA VAGA NO EVENTO (dívida E33)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  A fila existe no banco desde que a reserva falha — mas dívida que não se vê não
+ *  existe para quem organiza: antes desta leitura, a instituição só descobria a
+ *  procura por fora (telefone, e-mail) e refazia à mão o que o sistema já sabia.
+ *
+ *  A lista sai na ORDEM DA FILA (`waitlistPosition`), que é a ordem em que as
+ *  promoções acontecem. Ordenar por data de entrada daria uma fila bonita e uma
+ *  posição mentirosa, porque quem entrou depois de uma reindexação tem data maior e
+ *  posição menor.
+ */
+export interface AcceptPromotionInput {
+  tenantId: string;
+  registrationId: string;
+  userId: string;
+}
+
+export type AcceptPromotionOutcome =
+  | { ok: true; registrationId: string }
+  | { ok: false; code: 'NOT_FOUND' | 'NOT_REQUIRED' | 'EXPIRED' | 'ALREADY_SETTLED' | 'INTERNAL'; message: string };
+
+/**
+ * Aceita a vaga ofertada pela fila (dívida E1).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A POSSE É DO DONO DA INSCRIÇÃO, E A ESCRITA É CONDICIONAL
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `userId` entra no `where` do `updateMany`: aceitar a vaga de outra pessoa não é uma
+ *  permissão que se confere antes — é uma linha que não existe (invariante 4). E o
+ *  `status: 'PENDING'` no mesmo `where` é o que faz dois cliques (ou o clique que
+ *  chega depois de a vaga vencer) produzirem UM efeito: o segundo afeta 0 linhas.
+ *
+ *  O prazo é conferido no DOMÍNIO antes (mensagem boa) e na ESCRITA depois (verdade):
+ *  a varredura pode ter liberado a vaga entre a leitura e o clique.
+ */
+export async function acceptPromotion(
+  input: AcceptPromotionInput,
+): Promise<AcceptPromotionOutcome> {
+  const outcome = await withTenant(input.tenantId, async (tx) => {
+    const row = await tx.registration.findFirst({
+      where: { id: input.registrationId, userId: input.userId, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        confirmationDueAt: true,
+        activity: { select: { confirmationPolicy: true } },
+      },
+    });
+
+    if (!row) {
+      return {
+        ok: false as const,
+        code: 'NOT_FOUND' as const,
+        message: 'Inscrição não encontrada.',
+      };
+    }
+
+    const check = canAcceptPromotion({
+      status: row.status as RegistrationStatus,
+      dueAt: row.confirmationDueAt,
+      policy: (row.activity?.confirmationPolicy as 'AUTOMATIC' | 'REQUIRED' | undefined) ?? null,
+      now: new Date(),
+    });
+
+    if (!check.ok) {
+      const code =
+        check.reason === 'EXPIRED'
+          ? ('EXPIRED' as const)
+          : check.reason === 'ALREADY_SETTLED'
+            ? ('ALREADY_SETTLED' as const)
+            : ('NOT_REQUIRED' as const);
+
+      return { ok: false as const, code, message: check.message };
+    }
+
+    const claimed = await tx.registration.updateMany({
+      where: { id: row.id, userId: input.userId, status: 'PENDING' },
+      data: { status: 'CONFIRMED', confirmedAt: new Date(), confirmationDueAt: null },
+    });
+
+    if (claimed.count === 0) {
+      return {
+        ok: false as const,
+        code: 'ALREADY_SETTLED' as const,
+        message: 'Esta vaga já foi resolvida — não há oferta a aceitar.',
+      };
+    }
+
+    await recordAudit(
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        action: 'UPDATE',
+        entityType: 'registration',
+        entityId: row.id,
+        changes: { vaga: { from: 'oferta da fila (48 h)', to: 'aceita pelo participante' } },
+      },
+      tx,
+    );
+
+    return { ok: true as const, registrationId: row.id };
+  });
+
+  if (outcome.ok) {
+    /**
+     * O crédito de "inscrição confirmada" (FASE 43) é consequência, não condição: o
+     * gancho relê o estado no banco e só credita `CONFIRMED` — que é o estado agora.
+     * Falhar aqui não desfaz o aceite (invariante 8).
+     */
+    await rewardRegistrationConfirmedById({
+      tenantId: input.tenantId,
+      registrationId: outcome.registrationId,
+    });
+  }
+
+  return outcome;
+}
+
+export interface EventWaitlistEntry {
+  registrationId: string;
+  position: number;
+  personName: string;
+  waitingSince: Date;
+}
+
+export async function listEventWaitlist(input: {
+  tenantId: string;
+  eventId: string;
+}): Promise<EventWaitlistEntry[]> {
+  return withTenant(input.tenantId, async (tx) => {
+    const rows = await tx.registration.findMany({
+      where: {
+        eventId: input.eventId,
+        activityId: null,
+        status: 'WAITLISTED',
+        deletedAt: null,
+      },
+      orderBy: [{ waitlistPosition: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        waitlistPosition: true,
+        createdAt: true,
+        user: { select: { name: true } },
+      },
+    });
+
+    return rows.map((row, index) => ({
+      registrationId: row.id,
+      position: row.waitlistPosition ?? index + 1,
+      personName: row.user.name,
+      waitingSince: row.createdAt,
+    }));
+  });
 }
 
 export { invalidateTenantCache, type RegistrationDecision };

@@ -25,6 +25,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
+import { paginationWindow } from '@/domain/platform/pagination-rules';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
 import { isScanningEnabled } from '@/lib/storage/scan-service';
@@ -43,6 +44,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   canChangeSubmissionTrack,
   canDeleteSubmission,
+  canWithdrawSubmission,
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
   isEditableByAuthor,
@@ -1167,6 +1169,115 @@ export async function deleteSubmission(
   }
 }
 
+export interface WithdrawSubmissionInput {
+  tenantId: string;
+  submissionId: string;
+  userId: string;
+  /** Por que o autor está retirando. Vai para a TRILHA, não para a tela do comitê. */
+  reason?: string | null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RETIRAR A PRÓPRIA SUBMISSÃO (FASE 56 · dívida E31)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO NÃO É EXCLUSÃO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Excluir só existe no RASCUNHO: depois do envio há pareceres e atribuições apontando
+ *  para a submissão, e apagar destruiria o registro da avaliação. RETIRAR muda o ESTADO
+ *  — a linha fica, com o motivo, e o trabalho sai do páreo (o limite por trilha já
+ *  ignorava `WITHDRAWN` na contagem desde a FASE 4).
+ *
+ *  A máquina de estados previa `WITHDRAWN` desde então e não havia CAMINHO: só a
+ *  comissão conseguia cancelar, e quem enviou por engano dependia de um pedido manual
+ *  enquanto o trabalho seguia na fila dos revisores. Este é o caminho que faltava.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A ESCRITA É CONDICIONAL PELO ESTADO QUE A TELA VIU
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Entre a leitura e a escrita, o comitê pode ter ATRIBUÍDO um revisor ou DECIDIDO o
+ *  trabalho — e retirar depois disso não é o ato que o autor pediu. O `updateMany` com
+ *  `status` no `where` decide no banco (invariante 5): 0 linhas é "o estado mudou", e a
+ *  resposta é essa, em vez de uma retirada que passou por cima de uma decisão.
+ */
+export async function withdrawSubmission(
+  input: WithdrawSubmissionInput,
+): Promise<Result<{ protocol: string; status: SubmissionStatus }>> {
+  try {
+    const withdrawn = await withTenant(input.tenantId, async (tx) => {
+      const submission = await tx.submission.findFirst({
+        where: { id: input.submissionId, deletedAt: null },
+        select: { id: true, protocol: true, title: true, status: true, submittedById: true },
+      });
+
+      if (!submission) {
+        throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
+      }
+
+      /**
+       * A posse é do AUTOR — e a mensagem diz isso em vez de fingir que a submissão não
+       * existe: quem chegou aqui está autenticado no tenant, e "não é sua" é a
+       * informação útil (mesma régua do `deleteSubmission`).
+       */
+      if (submission.submittedById !== input.userId) {
+        throw new SubmissionError(
+          'FORBIDDEN',
+          'Apenas o autor correspondente pode retirar esta submissão.',
+        );
+      }
+
+      if (!canWithdrawSubmission(submission.status as SubmissionStatus)) {
+        throw new SubmissionError(
+          'INVALID_TRANSITION',
+          submission.status === 'ACCEPTED' || submission.status === 'REJECTED'
+            ? 'O resultado desta submissão já foi decidido pelo comitê — fale com a comissão do evento.'
+            : 'Esta submissão não pode mais ser retirada.',
+        );
+      }
+
+      const claimed = await tx.submission.updateMany({
+        where: {
+          id: submission.id,
+          submittedById: input.userId,
+          status: submission.status,
+        },
+        data: { status: 'WITHDRAWN' },
+      });
+
+      if (claimed.count === 0) {
+        throw new SubmissionError(
+          'INVALID_TRANSITION',
+          'O estado desta submissão mudou enquanto você decidia — recarregue a página.',
+        );
+      }
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          action: 'UPDATE',
+          entityType: 'submission',
+          entityId: submission.id,
+          changes: {
+            protocolo: { from: submission.protocol, to: submission.protocol },
+            estado: { from: submission.status, to: 'WITHDRAWN' },
+            motivo: { from: null, to: input.reason?.trim() || 'retirada pelo autor' },
+          },
+        },
+        tx,
+      );
+
+      return { protocol: submission.protocol, status: 'WITHDRAWN' as SubmissionStatus };
+    });
+
+    return { ok: true as const, ...withdrawn };
+  } catch (error) {
+    return toFailure('withdrawSubmission', error);
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1411,24 +1522,57 @@ export async function getSubmission(
 }
 
 /** Submissões do autor autenticado nesta instituição. */
+export interface MySubmissionSummary {
+  id: string;
+  protocol: string;
+  title: string;
+  status: SubmissionStatus;
+  submittedAt: Date | null;
+  trackName: string | null;
+  eventTitle: string;
+}
+
+export interface MySubmissionsPage {
+  submissions: MySubmissionSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  AS MINHAS SUBMISSÕES, EM PÁGINA (FASE 56 · dívida E2)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  Era a lista SEM TETO do autor: quem submetia em vários eventos e chamadas recebia
+ *  todas as linhas de uma vez, para ver as mais recentes. A fatia vem do banco
+ *  (`skip`/`take`) e o total sai na MESMA transação — a tela diz quantas são e mostra
+ *  uma página, sem que os dois números possam discordar.
+ */
 export async function listMySubmissions(
   tenantId: string,
   userId: string,
-): Promise<
-  {
-    id: string;
-    protocol: string;
-    title: string;
-    status: SubmissionStatus;
-    submittedAt: Date | null;
-    trackName: string | null;
-    eventTitle: string;
-  }[]
-> {
-  const rows = await withTenant(tenantId, (tx) =>
-    tx.submission.findMany({
-      where: { submittedById: userId, deletedAt: null },
+  options: { page?: unknown; pageSize?: unknown } = {},
+): Promise<MySubmissionsPage> {
+  const result = await withTenant(tenantId, async (tx) => {
+    const where = { submittedById: userId, deletedAt: null };
+
+    const total = await tx.submission.count({ where });
+
+    const window = paginationWindow({
+      page: options.page,
+      pageSize: options.pageSize,
+      total,
+    });
+
+    const rows = await tx.submission.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
+      skip: window.skip,
+      take: window.take,
       select: {
         id: true,
         protocol: true,
@@ -1438,18 +1582,28 @@ export async function listMySubmissions(
         track: { select: { name: true } },
         event: { select: { title: true } },
       },
-    }),
-  );
+    });
 
-  return rows.map((row) => ({
-    id: row.id,
-    protocol: row.protocol,
-    title: row.title,
-    status: row.status as SubmissionStatus,
-    submittedAt: row.submittedAt,
-    trackName: row.track?.name ?? null,
-    eventTitle: row.event.title,
-  }));
+    return { rows, window };
+  });
+
+  return {
+    submissions: result.rows.map((row) => ({
+      id: row.id,
+      protocol: row.protocol,
+      title: row.title,
+      status: row.status as SubmissionStatus,
+      submittedAt: row.submittedAt,
+      trackName: row.track?.name ?? null,
+      eventTitle: row.event.title,
+    })),
+    total: result.window.total,
+    page: result.window.page,
+    pageSize: result.window.pageSize,
+    totalPages: result.window.totalPages,
+    hasPrev: result.window.hasPrev,
+    hasNext: result.window.hasNext,
+  };
 }
 
 /** URL assinada de download de um artefato. Validade curta. */

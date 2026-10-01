@@ -44,6 +44,13 @@ import {
   messageDedupeKey,
   validateMessage,
 } from '@/domain/participants/participant-rules';
+import {
+  MAX_MESSAGE_BODY_LENGTH,
+  lastParticipantReplyAt,
+  replyBodyProblem,
+  replySubjectFor,
+  threadRootFor,
+} from '@/domain/communication/message-thread-rules';
 import type { ParticipantResult } from '@/lib/participants/participant-service';
 
 /** A união que define quem é participante da instituição (mesma do diretório). */
@@ -272,6 +279,14 @@ export async function sendParticipantMessage(input: {
 // ───────────────────────────────────────────────────────────────────────────────
 //  A caixa de entrada do participante
 // ───────────────────────────────────────────────────────────────────────────────
+export interface InboxReply {
+  id: string;
+  body: string;
+  sentAt: Date;
+  /** Nome de quem respondeu — a própria pessoa, no caso da caixa de entrada. */
+  authorName: string;
+}
+
 export interface InboxMessage {
   id: string;
   subject: string;
@@ -280,6 +295,11 @@ export interface InboxMessage {
   readAt: Date | null;
   eventTitle: string | null;
   sentByName: string | null;
+  /**
+   * As RESPOSTAS da pessoa (FASE 56 · dívida E45), em ordem. É o que torna a caixa de
+   * entrada uma conversa: sem elas, quem respondeu não vê o que escreveu.
+   */
+  replies: InboxReply[];
 }
 
 /**
@@ -298,7 +318,12 @@ export async function listOwnMessages(input: {
     return await withTenant(input.tenantId, async (tx) => {
       const [rows, unread] = await Promise.all([
         tx.participantMessage.findMany({
-          where: { tenantId: input.tenantId, userId: input.userId },
+          /**
+           * Só os RECADOS na lista principal: as respostas da própria pessoa aparecem
+           * DENTRO da conversa (`replies`). Sem o `parentId: null`, a resposta recém
+           * escrita viraria uma segunda linha na caixa de entrada, com o mesmo assunto.
+           */
+          where: { tenantId: input.tenantId, userId: input.userId, parentId: null },
           orderBy: [{ sentAt: 'desc' }],
           take: Math.min(Math.max(1, input.limit ?? 50), 100),
           select: {
@@ -309,10 +334,25 @@ export async function listOwnMessages(input: {
             readAt: true,
             event: { select: { title: true } },
             sentBy: { select: { name: true } },
+            replies: {
+              where: { tenantId: input.tenantId, userId: input.userId, direction: 'INBOUND' },
+              orderBy: { sentAt: 'asc' },
+              select: { id: true, body: true, sentAt: true, sentBy: { select: { name: true } } },
+            },
           },
         }),
+        /**
+         * O NÃO LIDO conta só o que a instituição mandou: a resposta da pessoa nasce com
+         * `readAt` nulo (é a EQUIPE que ainda não leu), e contá-la aqui faria o próprio
+         * autor da resposta ver "1 não lida" na sua caixa de entrada.
+         */
         tx.participantMessage.count({
-          where: { tenantId: input.tenantId, userId: input.userId, readAt: null },
+          where: {
+            tenantId: input.tenantId,
+            userId: input.userId,
+            parentId: null,
+            readAt: null,
+          },
         }),
       ]);
 
@@ -326,6 +366,12 @@ export async function listOwnMessages(input: {
           readAt: row.readAt,
           eventTitle: row.event?.title ?? null,
           sentByName: row.sentBy?.name ?? null,
+          replies: row.replies.map((reply) => ({
+            id: reply.id,
+            body: reply.body,
+            sentAt: reply.sentAt,
+            authorName: reply.sentBy?.name ?? 'Você',
+          })),
         })),
         unread,
       };
@@ -362,5 +408,176 @@ export async function markMessageRead(input: {
     console.error(`[participants] falha ao marcar a mensagem como lida: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível marcar a mensagem como lida.' };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  A RESPOSTA DA PESSOA (FASE 56 · dívida E45)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface ConversationSummary {
+  messageId: string;
+  subject: string;
+  sentAt: Date;
+  sentByName: string | null;
+  /** Quantas vezes a pessoa respondeu. Zero = a instituição falou e não ouviu. */
+  replyCount: number;
+  lastReplyAt: Date | null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A PESSOA RESPONDE O RECADO (FASE 56 · dívida E45)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE NÃO HÁ PERMISSÃO NOVA AQUI
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Responder é ato de POSSE, e só: o `userId` vem da sessão e a consulta é por ele. A
+ *  pessoa responde o que RECEBEU — não há permissão de RBAC que faça sentido conceder
+ *  ("responder os próprios recados" é o que qualquer conta pode fazer na própria caixa
+ *  de entrada). É a mesma régua do `markMessageRead`.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A RESPOSTA APONTA PARA A RAIZ, E O ASSUNTO GANHA `Re:` UMA VEZ
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  `threadRootFor` decide o pai (a raiz, mesmo respondendo a uma resposta) e
+ *  `replySubjectFor` cuida do prefixo. As duas regras são do DOMÍNIO porque a ficha da
+ *  instituição lê a mesma conversa por outro caminho.
+ *
+ *  O `dedupeKey` carrega a raiz E um id novo: repetir o clique cria OUTRA resposta
+ *  (dois fatos), e o mesmo `POST` reenviado pelo navegador não vira duas — o índice
+ *  único da coluna é quem decide.
+ */
+export async function replyToParticipantMessage(input: {
+  tenantId: string;
+  userId: string;
+  messageId: string;
+  body: string;
+  ipAddress?: string | null;
+}): Promise<ParticipantResult<{ replyId: string; sentAt: Date }>> {
+  const problem = replyBodyProblem(input.body);
+
+  if (problem) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message:
+        problem === 'EMPTY'
+          ? 'Escreva a sua resposta antes de enviar.'
+          : `A resposta passa do limite de ${MAX_MESSAGE_BODY_LENGTH} caracteres.`,
+    };
+  }
+
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const message = await tx.participantMessage.findFirst({
+        where: { id: input.messageId, tenantId: input.tenantId, userId: input.userId },
+        select: { id: true, parentId: true, subject: true, eventId: true },
+      });
+
+      /** Não é da caixa de entrada desta pessoa (ou não existe) — a resposta é a mesma. */
+      if (!message) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND',
+          message: 'Recado não encontrado na sua caixa de entrada.',
+        };
+      }
+
+      const rootId = threadRootFor(message);
+
+      const reply = await tx.participantMessage.create({
+        data: {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          eventId: message.eventId,
+          subject: replySubjectFor(message.subject),
+          body: input.body.trim(),
+          direction: 'INBOUND',
+          parentId: rootId,
+          /** Quem escreveu é a própria pessoa — a equipe lê `sentBy` para saber quem falou. */
+          sentById: input.userId,
+          dedupeKey: `reply:${rootId}:${randomUUID()}`,
+        },
+        select: { id: true, sentAt: true },
+      });
+
+      await recordAudit({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        action: 'CREATE',
+        entityType: 'participant_message',
+        entityId: reply.id,
+        changes: {
+          direcao: { from: null, to: 'INBOUND' },
+          conversa: { from: null, to: rootId },
+        },
+        ipAddress: input.ipAddress ?? null,
+      });
+
+      return { ok: true as const, replyId: reply.id, sentAt: reply.sentAt };
+    });
+  } catch (error) {
+    console.error(`[participants] falha ao responder o recado: ${errorMessage(error)}`);
+
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível enviar a sua resposta. Tente de novo em instantes.',
+    };
+  }
+}
+
+/**
+ * As conversas de UMA pessoa, com o indicador de resposta — a leitura da FICHA (E45).
+ *
+ * A permissão de quem organiza é conferida na PÁGINA (`participant:message`), como em
+ * todo o resto: aqui a consulta é do vínculo, e a RLS garante que ela não atravessa a
+ * instituição.
+ */
+export async function listParticipantConversations(input: {
+  tenantId: string;
+  userId: string;
+  limit?: number;
+}): Promise<ParticipantResult<{ conversations: ConversationSummary[] }>> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const rows = await tx.participantMessage.findMany({
+        where: { tenantId: input.tenantId, userId: input.userId, parentId: null },
+        orderBy: { sentAt: 'desc' },
+        take: Math.min(Math.max(1, input.limit ?? 20), 50),
+        select: {
+          id: true,
+          subject: true,
+          sentAt: true,
+          sentBy: { select: { name: true } },
+          replies: {
+            where: { direction: 'INBOUND' },
+            orderBy: { sentAt: 'asc' },
+            select: { id: true, direction: true, parentId: true, sentAt: true },
+          },
+        },
+      });
+
+      return {
+        ok: true as const,
+        conversations: rows.map((row) => ({
+          messageId: row.id,
+          subject: row.subject,
+          sentAt: row.sentAt,
+          sentByName: row.sentBy?.name ?? null,
+          replyCount: row.replies.length,
+          lastReplyAt: lastParticipantReplyAt(row.replies),
+        })),
+      };
+    });
+  } catch (error) {
+    console.error(`[participants] falha ao carregar as conversas: ${errorMessage(error)}`);
+
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível carregar as conversas desta pessoa.',
+    };
   }
 }

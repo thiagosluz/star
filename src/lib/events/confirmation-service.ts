@@ -43,7 +43,10 @@ import {
   type ConfirmationPolicy,
   type ConfirmationState,
 } from '@/domain/events/confirmation-rules';
-import { promoteNextFromWaitlist } from '@/lib/events/registration-service';
+import {
+  promoteNextFromEventWaitlist,
+  promoteNextFromWaitlist,
+} from '@/lib/events/registration-service';
 import {
   canAutoConfirm,
   itemsProgress,
@@ -911,16 +914,26 @@ export async function runConfirmationExpirySweep(
 
           released.push(row.id);
 
-          if (!row.activityId) continue;
-
           await releaseSeatForExpiry(tx, {
             tenantId: tenant.id,
             eventId: row.eventId,
             activityId: row.activityId,
           });
 
-          const next = await promoteNextFromWaitlist(tx, row.activityId);
-          if (next) promoted.push(next.registrationId);
+          if (row.activityId) {
+            const next = await promoteNextFromWaitlist(tx, row.activityId);
+            if (next) promoted.push(next.registrationId);
+          }
+
+          /**
+           * A vaga devolvida pode ser do PRÓPRIO evento (linha promovida da fila do
+           * evento) ou de uma atividade, que também ocupava lugar no evento. Nos dois
+           * casos quem espera pelo evento é chamado — e a função devolve `null` quando
+           * não há lugar ou não há fila, sem efeito colateral.
+           */
+          const nextInEvent = await promoteNextFromEventWaitlist(tx, row.eventId);
+          if (nextInEvent) promoted.push(nextInEvent.registrationId);
+
         }
 
         return { released, promoted };
@@ -964,13 +977,27 @@ export async function runConfirmationExpirySweep(
  */
 async function releaseSeatForExpiry(
   tx: TxClient,
-  input: { tenantId: string; eventId: string; activityId: string },
+  input: { tenantId: string; eventId: string; activityId: string | null },
 ): Promise<void> {
   await tx.$executeRaw`
     UPDATE events
        SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
      WHERE id = ${input.eventId}::uuid
   `;
+
+  /**
+   * A inscrição do EVENTO não ocupa vaga de atividade nenhuma (`activityId` nulo):
+   * só o lugar no evento é devolvido. Sem o `if`, o `${null}::uuid` do SQL casaria
+   * com zero linhas — inofensivo, mas mentiria sobre o que a função faz.
+   */
+  if (input.activityId === null) return;
+
+  /**
+   * A inscrição do EVENTO não ocupa vaga de atividade nenhuma (`activityId` nulo):
+   * devolve-se só o lugar no evento. Sem o guarda, o UPDATE com `null::uuid` casaria
+   * com zero linhas — inofensivo, mas mentiria sobre o que a função faz.
+   */
+  if (input.activityId === null) return;
 
   await tx.$executeRaw`
     UPDATE activities
@@ -1025,7 +1052,14 @@ export async function runConfirmationReminderScan(
             status: 'PENDING',
             deletedAt: null,
             confirmationDueAt: { not: null, gt: now },
-            activity: { status: { not: 'CANCELED' } },
+            /**
+             * A inscrição do EVENTO não tem atividade (`activityId` nulo), e um filtro
+             * de relação no Prisma vira JUNÇÃO — que descarta o nulo. Sem o `OR`, a
+             * linha promovida da fila do evento nunca venceria: a vaga ficaria retida
+             * para sempre com quem não confirmou (dívida E1). Atividade cancelada
+             * continua fora: não há vaga a liberar.
+             */
+            OR: [{ activityId: null }, { activity: { status: { not: 'CANCELED' } } }],
           },
           orderBy: { confirmationDueAt: 'asc' },
           take: EXPIRY_BATCH,

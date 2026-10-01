@@ -640,7 +640,12 @@ describe('a varredura libera o que venceu', () => {
 
     expect(primeira.status).toBe('CANCELED');
     expect(primeira.cancelReason).toBe(EXPIRY_CANCEL_REASON);
-    expect(segunda.status).toBe('CONFIRMED');
+    /**
+     * Dívida E1: a promoção da fila nasce `PENDING` com prazo — a vaga está retida com
+     * quem foi chamado, e vence sozinha se ele não confirmar.
+     */
+    expect(segunda.status).toBe('PENDING');
+    expect(segunda.confirmationDueAt).not.toBeNull();
 
     /** A vaga não sumiu: passou para quem esperava. */
     expect((await counters(activityId)).activity).toBe(1);

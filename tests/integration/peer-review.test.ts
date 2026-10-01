@@ -34,6 +34,8 @@ import {
   getFileDownloadUrl,
   submitSubmission,
   updateSubmissionDraft,
+  withdrawSubmission,
+  listMySubmissions,
 } from '../../src/lib/review/submission-service';
 import {
   assignReviewer,
@@ -550,6 +552,7 @@ describe('conflito de interesse na ATRIBUIÇÃO', () => {
 
   it('RESPEITA conflito declarado pelo próprio revisor', async () => {
     const submissionId = await createDraft();
+
     await uploadBlindPdf(submissionId);
     await submitSubmission({ tenantId, submissionId, userId: authorId });
 
@@ -1303,4 +1306,132 @@ describe('integridade do upload: o checksum é do STORAGE (FASE 50 · dívida E2
     const stored = await inspectObject(bucket, objectKey);
     expect(stored.exists).toBe(false);
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  RETIRADA PELO AUTOR E PAGINAÇÃO (FASE 56 · dívidas E31 e E2)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('retirada da submissão pelo autor', () => {
+  it('o autor retira o próprio trabalho: sai do páreo e o registro FICA', async () => {
+    const submissionId = await createDraft();
+
+    /**
+     * O trabalho já foi ENVIADO (o estado é forjado aqui: o envio exige arquivo e tem
+     * testes próprios). Retirar vale para o que entrou no páreo — rascunho se exclui.
+     */
+    await withTenant(tenantId, (tx) =>
+      tx.submission.update({ where: { id: submissionId }, data: { status: 'SUBMITTED' } }),
+    );
+
+    const result = await withdrawSubmission({
+      tenantId,
+      submissionId,
+      userId: authorId,
+      reason: 'enviado na chamada errada',
+    });
+
+    expect(result.ok, result.ok ? 'ok' : result.message).toBe(true);
+
+    const row = await withTenant(tenantId, (tx) =>
+      tx.submission.findUniqueOrThrow({
+        where: { id: submissionId },
+        select: { status: true, submittedById: true },
+      }),
+    );
+
+    /** O trabalho continua existindo — retirar não é excluir. */
+    expect(row.status).toBe('WITHDRAWN');
+    expect(row.submittedById).toBe(authorId);
+
+    /** E o motivo está na trilha, com o estado de origem. */
+    const trilha = await withTenant(tenantId, (tx) =>
+      tx.auditLog.findMany({
+        where: { entityType: 'submission', entityId: submissionId, action: 'UPDATE' },
+        select: { changes: true },
+      }),
+    );
+
+    expect(trilha).toHaveLength(1);
+    expect(JSON.stringify(trilha[0]?.changes)).toContain('enviado na chamada errada');
+  }, 60_000);
+
+  it('retirar o trabalho de OUTRA pessoa é recusado — a posse é conferida no serviço', async () => {
+    const submissionId = await createDraft();
+
+    const result = await withdrawSubmission({
+      tenantId,
+      submissionId,
+      userId: cleanReviewerId,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('FORBIDDEN');
+
+    const row = await withTenant(tenantId, (tx) =>
+      tx.submission.findUniqueOrThrow({ where: { id: submissionId }, select: { status: true } }),
+    );
+
+    /** A recusa não pode ter efeito: o trabalho segue como estava. */
+    expect(row.status).toBe('DRAFT');
+  }, 60_000);
+
+  it('decidido o resultado, o autor não retira mais — a decisão do comitê não se reescreve', async () => {
+    const submissionId = await createDraft();
+
+    /**
+     * O estado é forjado direto no banco: o que este teste mede é a RÉGUA da retirada,
+     * e não o caminho que leva a `ACCEPTED` (esse tem testes próprios, com pareceres).
+     */
+    await withTenant(tenantId, (tx) =>
+      tx.submission.update({ where: { id: submissionId }, data: { status: 'ACCEPTED' } }),
+    );
+
+    const result = await withdrawSubmission({ tenantId, submissionId, userId: authorId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('INVALID_TRANSITION');
+    expect(result.message).toMatch(/decidido/i);
+
+    const row = await withTenant(tenantId, (tx) =>
+      tx.submission.findUniqueOrThrow({ where: { id: submissionId }, select: { status: true } }),
+    );
+    expect(row.status).toBe('ACCEPTED');
+  }, 60_000);
+});
+
+describe('as listas do autor vêm em página (dívida E2)', () => {
+  it('o total e a fatia saem da mesma leitura, e a segunda página traz o resto', async () => {
+    /**
+     * TRÊS submissões criadas AQUI: o teste não depende de os outros describes terem
+     * rodado (com `-t` eles são pulados, e a contagem seria outra).
+     */
+    await createDraft();
+    await createDraft();
+    await createDraft();
+
+    const primeira = await listMySubmissions(tenantId, authorId, { page: 1, pageSize: 2 });
+
+    expect(primeira.total).toBeGreaterThanOrEqual(3);
+    expect(primeira.submissions).toHaveLength(2);
+    expect(primeira.hasPrev).toBe(false);
+    expect(primeira.hasNext).toBe(true);
+    expect(primeira.page).toBe(1);
+
+    const segunda = await listMySubmissions(tenantId, authorId, { page: 2, pageSize: 2 });
+
+    expect(segunda.page).toBe(2);
+    expect(segunda.hasPrev).toBe(true);
+    /** Nenhuma submissão aparece nas duas páginas — o `skip` está certo. */
+    const idsPrimeira = new Set(primeira.submissions.map((s) => s.id));
+    for (const submission of segunda.submissions) {
+      expect(idsPrimeira.has(submission.id)).toBe(false);
+    }
+
+    /** Página além do fim cai na última, em vez de devolver lista vazia. */
+    const exagerada = await listMySubmissions(tenantId, authorId, { page: 99, pageSize: 2 });
+    expect(exagerada.page).toBe(exagerada.totalPages);
+    expect(exagerada.hasNext).toBe(false);
+  }, 60_000);
 });

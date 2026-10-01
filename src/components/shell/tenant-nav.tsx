@@ -10,6 +10,7 @@ import {
   Compass,
   FileText,
   Fingerprint,
+  Flag,
   Gauge,
   Globe,
   GraduationCap,
@@ -399,6 +400,16 @@ export function buildPlatformNav(): ShellNavGroup[] {
           href: '/superadmin/rotinas',
           label: 'Rotinas',
           icon: <Timer className="size-4" aria-hidden />,
+        },
+        {
+          /**
+           * Denúncias de perfil (FASE 56 · E62): a fila de moderação. É item de
+           * PLATAFORMA porque o `@handle` é global — a denúncia nasce na casa em que
+           * a pessoa viu o perfil, mas a decisão vale para todas as instituições.
+           */
+          href: '/superadmin/denuncias',
+          label: 'Denúncias',
+          icon: <Flag className="size-4" aria-hidden />,
         },
         {
           /**

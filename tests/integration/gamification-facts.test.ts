@@ -26,6 +26,7 @@ import {
   registerForEvent,
 } from '../../src/lib/events/registration-service';
 import { confirmRegistration } from '../../src/lib/events/confirmation-service';
+import { acceptPromotion } from '../../src/lib/events/registration-service';
 import {
   generateCertificate,
   requestCertificate,
@@ -384,13 +385,41 @@ describe('inscrição confirmada', () => {
     expect(naEspera.status).toBe('WAITLISTED');
     expect(await xpRows(espera, 'REGISTRATION_CONFIRMED')).toHaveLength(0);
 
-    /** Ao cancelar, o próximo é promovido e SÓ ENTÃO o fato acontece para ele. */
+    /**
+     * ── AO CANCELAR, O PRÓXIMO É PROMOVIDO — E A VAGA FICA RETIDA (dívida E1) ──
+     *
+     *  A promoção deixou de ser um ato definitivo: quem é chamado passa a `PENDING`
+     *  com prazo de 48 h, e o crédito de "inscrição confirmada" continua esperando o
+     *  mesmo fato de sempre — a vaga CONFIRMADA. O teste passou a medir os dois
+     *  passos: nada no cancelamento, o crédito na confirmação do balcão.
+     */
     await cancelRegistration({
       tenantId,
       registrationId: confirmada.registrationId,
       userId: dono,
       reason: 'desisti da vaga',
     });
+
+    const apos = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirstOrThrow({
+        where: { userId: espera, status: 'PENDING', deletedAt: null },
+        select: { id: true, status: true },
+      }),
+    );
+    expect(apos.status).toBe('PENDING');
+    expect(await xpRows(espera, 'REGISTRATION_CONFIRMED')).toHaveLength(0);
+
+    /**
+     * O ACEITE É DA PESSOA (dívida E1): a equipe confere o que a atividade COBRA, e a
+     * pessoa decide se ainda quer a vaga. Numa atividade sem exigências, é este o
+     * único ato que falta — sem ele a vaga venceria e rodaria para o próximo.
+     */
+    const aceite = await acceptPromotion({
+      tenantId,
+      registrationId: apos.id,
+      userId: espera,
+    });
+    expect(aceite.ok, aceite.ok ? 'ok' : aceite.message).toBe(true);
 
     const promovido = await xpRows(espera, 'REGISTRATION_CONFIRMED');
     expect(promovido).toHaveLength(1);

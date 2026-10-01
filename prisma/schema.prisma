@@ -262,6 +262,44 @@ model EventCredential {
   @@map("event_credentials")
 }
 
+/// Sentido do recado (FASE 56 · dívida E45): a instituição fala e a pessoa RESPONDE.
+///
+/// Sem esta coluna, "quem enviou" era dedutível apenas por `sentById` nulo ou não — e o
+/// `sentById` é nulo também em dado semeado. A direção é DADO, não inferência.
+enum MessageDirection {
+  /// Da instituição para a pessoa (o recado original).
+  OUTBOUND
+  /// Da pessoa para a instituição (a resposta, dentro da mesma conversa).
+  INBOUND
+}
+
+/// Categoria da denúncia de perfil público (FASE 56 · dívida E62).
+///
+/// O catálogo é FECHADO e vive aqui, e não em texto livre: a fila de moderação precisa
+/// ser triável, e "o que estão denunciando" é a primeira pergunta de quem decide.
+enum ProfileReportCategory {
+  /// Dado falso ou identidade que não é de quem diz ser.
+  FALSE_IDENTITY
+  /// Ofensa, discurso de ódio ou assédio.
+  OFFENSIVE_CONTENT
+  /// Divulgação de dado pessoal de terceiro sem consentimento.
+  PRIVACY
+  /// Spam, propaganda ou uso comercial não autorizado.
+  SPAM
+  /// Outro motivo — o campo de detalhes é obrigatório.
+  OTHER
+}
+
+/// Onde a denúncia parou (FASE 56 · dívida E62).
+enum ProfileReportStatus {
+  /// Aguardando decisão da plataforma.
+  OPEN
+  /// Analisada e sem ação (com a justificativa registrada).
+  DISMISSED
+  /// Analisada COM ação: o perfil público foi ocultado.
+  ACTIONED
+}
+
 /// Recado da instituição para um participante (FASE 32): o que aparece na caixa de
 /// entrada dele e o que sai por e-mail.
 ///
@@ -297,6 +335,22 @@ model ParticipantMessage {
   /// comunicação chegou a ser LIDA — e não apenas enviada.
   readAt DateTime? @db.Timestamptz(6)
 
+  /**
+   * ─── A CONVERSA DE MÃO DUPLA (FASE 56 · dívida E45) ────────────────────────────
+   *
+   *  Até aqui o recado era mão única: a instituição falava e a pessoa só podia ler.
+   *  Dúvida sobre credenciamento virava ligação para a secretaria — fora do registro.
+   *  A resposta entra na MESMA conversa (`parentId` aponta para o recado original) e a
+   *  direção diz quem falou.
+   *
+   *  `parentId` é do RECADO RAIZ, e não da última resposta (ver `threadRootFor`): é o
+   *  que mantém uma conversa com uma linha por mensagem, em vez de uma árvore que a
+   *  caixa de entrada teria de percorrer.
+   */
+  direction MessageDirection @default(OUTBOUND)
+  /// NULO no recado original; aponta para o recado raiz nas respostas.
+  parentId  String?          @db.Uuid
+
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -304,12 +358,63 @@ model ParticipantMessage {
   event  Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
   sentBy User?  @relation("ParticipantMessageSentBy", fields: [sentById], references: [id], onDelete: SetNull)
 
+  parent  ParticipantMessage?  @relation("ParticipantMessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ParticipantMessage[] @relation("ParticipantMessageThread")
+
   /// A CAIXA DE ENTRADA: as mensagens de uma pessoa, da mais nova para a mais antiga.
   @@index([tenantId, userId, sentAt])
   /// O HISTÓRICO da instituição: o que ela mandou, em ordem.
   @@index([tenantId, sentAt])
   @@index([tenantId, batchId])
+  /// As respostas de uma conversa (a ficha e a caixa de saída leem por aqui).
+  @@index([tenantId, parentId])
   @@map("participant_messages")
+}
+
+/// Denúncia de perfil público (FASE 56 · dívida E62).
+///
+/// ───────────────────────────────────────────────────────────────────────────────
+/// POR QUE A DENÚNCIA É DA INSTITUIÇÃO E A DECISÃO É DA PLATAFORMA
+/// ───────────────────────────────────────────────────────────────────────────────
+/// O `@handle` é GLOBAL (ADR-002): o mesmo perfil aparece em todas as casas. Se cada
+/// instituição pudesse decidir, o mesmo conteúdo seria julgado de formas diferentes — e
+/// quem foi ocultado numa casa continuaria publicado na vizinha, sem que ninguém
+/// enxergasse o conjunto.
+///
+/// Então a denúncia NASCE com o contexto de quem denunciou (a instituição em que a
+/// pessoa estava quando viu o perfil, com RLS e trilha) e a fila é lida pela PLATAFORMA
+/// (`src/lib/platform/**`), que decide uma vez para todas as casas.
+model ProfileReport {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+
+  /// Perfil denunciado (o `User` é global; a denúncia tem casa).
+  reportedUserId String @db.Uuid
+  /// Quem denunciou. NUNCA é o dono do perfil — a regra de domínio recusa o auto-relato.
+  reporterUserId String @db.Uuid
+
+  category ProfileReportCategory
+  /// O detalhe de quem denunciou. Obrigatório em `OTHER`, opcional nos demais.
+  details  String                @db.VarChar(2000)
+
+  status ProfileReportStatus @default(OPEN)
+  /// Quem decidiu, quando e por quê — a trilha da moderação.
+  decidedById   String?   @db.Uuid
+  decidedAt     DateTime? @db.Timestamptz(6)
+  decisionNote  String?   @db.VarChar(1000)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reportedUser User   @relation("ProfileReportReported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reporterUser User   @relation("ProfileReportReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  decidedBy    User?  @relation("ProfileReportDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  /// A FILA: o que está aberto, do mais antigo para o mais novo.
+  @@index([status, createdAt])
+  @@index([tenantId, status])
+  @@index([reportedUserId])
+  @@map("profile_reports")
 }
 
 enum AttendanceStatus {
@@ -902,6 +1007,8 @@ model Tenant {
   eventCredentials     EventCredential[]
   /// Recados enviados no contexto deste evento — FASE 32.
   participantMessages  ParticipantMessage[]
+  /// Denúncias de perfil público nascidas nesta casa — FASE 56 (E62).
+  profileReports       ProfileReport[]
   cardTemplates        CardTemplate[]
   userCards            UserCard[]
   xpProfiles           UserXpProfile[]
@@ -975,6 +1082,22 @@ model User {
   country      String? @db.VarChar(2)
   orcidId      String? @db.VarChar(19)
   lattesId     String? @db.VarChar(32)
+
+  /**
+   * ─── MODERAÇÃO DO PERFIL PÚBLICO (FASE 56 · dívida E62) ──────────────────────
+   *
+   *  O perfil público é a primeira superfície em que o CONTEÚDO é da pessoa e o
+   *  ENDEREÇO é da instituição — e é por isso que a moderação tem de existir e ter
+   *  dono. A decisão é da PLATAFORMA (o `@handle` é global): ocultar vale para todas
+   *  as casas, de uma vez.
+   *
+   *  As duas colunas são o EFEITO da decisão, e ficam separadas do `publicHandle`
+   *  porque ocultar NÃO é apagar: o handle continua reservado (ninguém toma o nome de
+   *  quem foi ocultado), a pessoa vê o motivo na tela do perfil, e desfazer é limpar as
+   *  duas colunas — sem perder a história, que vive em `profile_reports`.
+   */
+  publicProfileHiddenAt     DateTime? @db.Timestamptz(6)
+  publicProfileHiddenReason String?   @db.VarChar(500)
 
   /**
    * ─── PERFIL PÚBLICO DO PARTICIPANTE (FASE 44) ───────────────────────────────
@@ -1082,6 +1205,12 @@ model User {
   participantMessages     ParticipantMessage[] @relation("ParticipantMessageRecipient")
   /// Recados que esta pessoa enviou como organização — FASE 32.
   participantMessagesSent ParticipantMessage[] @relation("ParticipantMessageSentBy")
+  /// Denúncias que esta pessoa RECEBEU sobre o próprio perfil público — FASE 56 (E62).
+  profileReportsAgainst   ProfileReport[]      @relation("ProfileReportReported")
+  /// Denúncias que esta pessoa FEZ sobre o perfil de outra — FASE 56 (E62).
+  profileReportsFiled     ProfileReport[]      @relation("ProfileReportReporter")
+  /// Denúncias que esta pessoa DECIDIU na plataforma — FASE 56 (E62).
+  profileReportsDecided   ProfileReport[]      @relation("ProfileReportDecidedBy")
   /// Prêmios de sorteio que esta pessoa ENTREGOU — FASE 16.
   rafflePrizesDelivered   RaffleWinner[]       @relation("RafflePrizeDeliveredBy")
   /// Versões de página pública que esta pessoa gravou — FASE 23.

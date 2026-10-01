@@ -82,6 +82,61 @@ export function occupancyRatio(
   return Math.min(1, confirmedCount / cap);
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A FILA DO EVENTO E O PRAZO DE QUEM É PROMOVIDO (dívidas E33 e E1)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O EVENTO LOTADO ENFILEIRA EM VEZ DE RECUSAR (E33)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A fila existia só por ATIVIDADE. Quando a lotação do EVENTO acabava, a inscrição
+ *  era RECUSADA — e o interessado simplesmente desaparecia: não havia onde guardá-lo,
+ *  nem como saber quem esperava, nem a quem entregar a vaga de quem desistisse. A
+ *  instituição descobria a demanda por fora (telefone, e-mail) e refazia à mão o
+ *  trabalho que o sistema já sabia fazer na atividade.
+ *
+ *  A régua é a mesma da atividade, e por isso ela mora aqui: **a vaga que não existe
+ *  não se perde — ela espera**. `eventHasWaitlist` responde a única pergunta que o
+ *  serviço precisa fazer antes de enfileirar: este evento TEM lotação? Evento sem
+ *  lotação não tem fila (não há vaga contada para faltar).
+ *
+ *  A decisão NÃO é um `if` sobre o contador: quem decide se há vaga continua sendo o
+ *  `UPDATE` condicional (`RESERVE_EVENT_SEAT_SQL`), no banco. Esta função só diz se,
+ *  falhando a reserva, o caminho é a FILA ou a recusa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O PROMOVIDO TEM PRAZO, E POR QUE 48 HORAS (E1)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A promoção era silenciosa e definitiva: quem era chamado da fila virava
+ *  `CONFIRMED` no mesmo instante. Se não quisesse mais a vaga — ou não visse o aviso —
+ *  ela ficava PRESA com quem não respondeu, e a fila inteira atrás dele esperava por
+ *  alguém que não vinha. A vaga que não se perde no fim da fila se perdia no começo.
+ *
+ *  O prazo é FIXO em 48 h, e isso é decisão: o prazo da FILA não pode ser o mesmo
+ *  campo da política de confirmação de vaga (FASE 34), que é sobre o que a atividade
+ *  COBRA (taxa, doação, item). Amarrar os dois faria a política de cobrança governar a
+ *  fila em silêncio — quem cobrasse 30 dias daria 30 dias de fila parada, e quem não
+ *  cobrasse nada faria a fila vencer por um prazo que ninguém configurou. A promoção
+ *  entra como `PENDING` com `confirmationDueAt`, que é o estado que a FASE 34 já sabe
+ *  liberar e promover de novo (ADR-175/178) — a máquina já existia; faltava quem a
+ *  acionasse pela fila.
+ */
+export const PROMOTION_WINDOW_HOURS = 48;
+
+/** Quando vence a vaga de quem foi promovido da fila: agora + `PROMOTION_WINDOW_HOURS`. */
+export function promotionDeadline(now: Date): Date {
+  return new Date(now.getTime() + PROMOTION_WINDOW_HOURS * 3_600_000);
+}
+
+/**
+ * Um evento COM lotação tem fila. Sem lotação não há vaga contada para faltar — e
+ * enfileirar quem nunca seria recusado seria inventar espera.
+ */
+export function eventHasWaitlist(capacity: number | null | undefined): boolean {
+  return !isUnlimitedCapacity(capacity);
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Decisão de inscrição
 // ───────────────────────────────────────────────────────────────────────────────
@@ -407,3 +462,71 @@ export const RESERVE_EVENT_SEAT_SQL = `
    WHERE id = $1::uuid
      AND ${SEAT_AVAILABLE_PREDICATE}
 `;
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O ACEITE DA VAGA OFERTADA É ATO DA PESSOA (dívida E1)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O DEFEITO QUE ISTO CONSERTA (encontrado pelas catracas da F43, na hora)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A promoção passou a nascer `PENDING` com prazo — mas quem confirma `PENDING` é a
+ *  EQUIPE, e `canConfirmRegistration` recusa quando a atividade não exige confirmação
+ *  ("esta atividade confirma a vaga automaticamente"), e recusa também a inscrição do
+ *  evento. Resultado: numa atividade gratuita (ou no evento), a vaga ofertada não tinha
+ *  QUEM a confirmasse — vencia em 48 h, ia para o próximo, vencia de novo. A fila
+ *  giraria para sempre e ninguém entraria.
+ *
+ *  A distinção é a mesma da FASE 34, um nível acima: **a equipe confere o que a
+ *  atividade COBRA (taxa, doação, item); a pessoa decide se ainda QUER a vaga.** Onde
+ *  a atividade exige conferência da equipe, o aceite não é o portão — o time confirma
+ *  depois das exigências, e o prazo da fila continua valendo como pressão de tempo.
+ *
+ *  Onde não há nada a conferir, o aceite da pessoa é o único ato que falta — e é ele
+ *  que impede a vaga de rodar em círculos.
+ */
+export type PromotionAcceptance =
+  | { ok: true }
+  | { ok: false; reason: 'NOT_OFFERED' | 'ALREADY_SETTLED' | 'EXPIRED' | 'TEAM_CONFIRMS'; message: string };
+
+export function canAcceptPromotion(input: {
+  status: RegistrationStatus;
+  dueAt: Date | null;
+  policy: 'AUTOMATIC' | 'REQUIRED' | null;
+  now: Date;
+}): PromotionAcceptance {
+  if (input.status !== 'PENDING') {
+    return {
+      ok: false,
+      reason: 'ALREADY_SETTLED',
+      message: 'Esta vaga já está resolvida — não há oferta a aceitar.',
+    };
+  }
+
+  if (input.dueAt === null) {
+    return {
+      ok: false,
+      reason: 'NOT_OFFERED',
+      message: 'Não há vaga ofertada esperando resposta sua.',
+    };
+  }
+
+  if (input.dueAt.getTime() <= input.now.getTime()) {
+    return {
+      ok: false,
+      reason: 'EXPIRED',
+      message: 'O prazo para aceitar esta vaga venceu — ela foi oferecida a outra pessoa.',
+    };
+  }
+
+  if (input.policy === 'REQUIRED') {
+    return {
+      ok: false,
+      reason: 'TEAM_CONFIRMS',
+      message:
+        'Esta vaga depende da conferência da organização (o que a atividade pede). A equipe confirma assim que estiver tudo certo.',
+    };
+  }
+
+  return { ok: true };
+}

@@ -19,6 +19,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
+import { cpfDigits, isValidCpf } from '@/domain/events/registration-form-rules';
+
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { guardSelfServiceAction } from '@/lib/auth/guard-action';
 import { adminPrisma } from '@/lib/db/admin-client';
@@ -26,6 +28,7 @@ import {
   cancelRegistration,
   registerForActivity,
   registerForEvent,
+  acceptPromotion,
   type RegistrationOutcome,
 } from '@/lib/events/registration-service';
 import { can, type Principal } from '@/domain/rbac/authorization';
@@ -38,6 +41,17 @@ export interface RegistrationActionState {
   message?: string;
   /** Posição na lista de espera, quando o desfecho foi WAITLISTED. */
   waitlistPosition?: number | null;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O QUE A PESSOA DIGITOU VOLTA PARA A TELA (FASE 56 · fatia 3)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O React 19 ZERA os campos de um formulário depois que a Server Action responde —
+   *  e o formulário de inscrição é grande (CPF, necessidades de acessibilidade,
+   *  consentimentos). Sem devolver os valores, a mensagem "confira os números do CPF"
+   *  chegava com o campo VAZIO: a pessoa tinha de redigitar tudo para corrigir um
+   *  dígito. O E2E da dívida E54 foi quem pegou isso.
+   */
+  values?: { cpf?: string; accessibilityNotes?: string };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -227,6 +241,12 @@ const registerForEventSchema = z.object({
   consentImage: z.coerce.boolean().optional().default(false),
   consentData: z.coerce.boolean().optional().default(false),
   accessibilityNotes: z.string().trim().max(600).optional(),
+  /**
+   * CPF do formulário (FASE 56 · dívida E54). A validação de verdade é a do DOMÍNIO
+   * (`isValidCpf`, com os dígitos verificadores) e roda logo abaixo: aqui só se recusa
+   * o que nem chega a ser candidato a documento.
+   */
+  cpf: z.string().trim().max(20).optional(),
 });
 
 /**
@@ -247,6 +267,7 @@ export async function registerForEventAction(
     consentImage: formData.get('consentImage') === 'on',
     consentData: formData.get('consentData') === 'on',
     accessibilityNotes: (formData.get('accessibilityNotes') as string) || undefined,
+    cpf: (formData.get('cpf') as string) || undefined,
   });
 
   if (!parsed.success) {
@@ -292,6 +313,26 @@ export async function registerForEventAction(
     };
   }
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CPF ERRADO É RECUSADO AQUI, COM A PESSOA NA TELA (dívida E54)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O CPF entra em DOCUMENTO (certificado, ata, lista de presença). Aceitar onze
+   *  dígitos sem conferir os verificadores emitiria documento errado — e a única hora
+   *  em que há alguém para corrigir é esta. O campo é OPCIONAL: quem não informa não
+   *  é impedido de se inscrever, apenas não tem o CPF no certificado.
+   */
+  const cpf = data.cpf ? cpfDigits(data.cpf) : null;
+
+  if (cpf && !isValidCpf(cpf)) {
+    return {
+      ok: false,
+      code: 'INVALID_CPF',
+      message: 'O CPF informado não confere. Confira os números e tente de novo.',
+      values: { cpf: data.cpf, accessibilityNotes: data.accessibilityNotes },
+    };
+  }
+
   const outcome = await registerForEvent({
     tenantId: context.tenantId,
     eventSlug: data.eventSlug,
@@ -299,6 +340,8 @@ export async function registerForEventAction(
     consentImage: data.consentImage,
     consentData: data.consentData,
     accessibilityNotes: data.accessibilityNotes ?? null,
+    /** O CPF vive nas respostas do formulário — é o que o certificado lê depois (E54). */
+    formResponses: cpf ? { cpf } : {},
   });
 
   if (!outcome.ok) {
@@ -309,6 +352,25 @@ export async function registerForEventAction(
   // passam a ter a inscrição dela, e a página do evento mostra o crachá.
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
   revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
+
+  /**
+   * ── EVENTO LOTADO NÃO É RECUSA: É FILA (dívida E33) ─────────────────────────
+   *
+   *  A mensagem é o único lugar em que a pessoa descobre que está esperando — e ela diz
+   *  POSIÇÃO e PRAZO, porque as duas coisas mudam o que a pessoa faz: a posição diz se
+   *  vale esperar, e o prazo é o que ela terá para responder quando for chamada (E1).
+   *  Sem o prazo na mensagem, o aviso de promoção chegaria como surpresa com data de
+   *  validade escondida.
+   */
+  if (outcome.waitlisted) {
+    return {
+      ok: true,
+      code: 'WAITLISTED',
+      message: `O evento está com a lotação completa — você entrou na lista de espera, na posição ${outcome.waitlistPosition ?? 1}. Assim que uma vaga for liberada, você é chamado por e-mail e tem 48 h para confirmar.${
+        outcome.linkedAsParticipant ? ' Sua conta passou a ser participante desta instituição.' : ''
+      }`,
+    };
+  }
 
   const automatic =
     outcome.enrolledActivities > 0
@@ -405,8 +467,92 @@ export async function cancelRegistrationAction(
   return {
     ok: true,
     code: 'CANCELED',
-    message: outcome.promoted
-      ? 'Inscrição cancelada. A próxima pessoa da lista de espera foi confirmada.'
-      : 'Inscrição cancelada.',
+    /**
+     * A mensagem fala no SINGULAR e no PLURAL porque o cancelamento pode oferecer
+     * mais de uma vaga (dívida E33): a inscrição do evento devolve o lugar no evento e
+     * a vaga de cada atividade aberta que ela criou, e cada uma tem a sua fila.
+     */
+    message:
+      outcome.promoted.length === 0
+        ? 'Inscrição cancelada.'
+        : outcome.promoted.length === 1
+          ? 'Inscrição cancelada. A próxima pessoa da lista de espera foi chamada — ela tem 48 h para confirmar.'
+          : `Inscrição cancelada. ${outcome.promoted.length} pessoas da lista de espera foram chamadas — cada uma tem 48 h para confirmar.`,
+  };
+}
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ACEITAR A VAGA OFERTADA (dívida E1)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  A permissão é `registration:create` com POSSE explícita — aceitar a vaga é o ato de
+ *  completar a própria inscrição, e a posse é o que impede o cliente de declarar dono
+ *  (o `userId` vem da sessão, nunca do formulário; sem `ownership`, `can()` nega por
+ *  desenho — a armadilha que fez o cancelamento falhar sempre).
+ *
+ *  A autorização é conferida AQUI e o serviço ainda filtra por `userId` no `where`:
+ *  duas linhas de defesa, e a segunda é a que vale se alguém chamar o serviço por outro
+ *  caminho.
+ */
+const acceptPromotionSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  eventSlug: z.string().trim().min(1).max(120),
+  registrationId: z.string().uuid('Inscrição inválida.'),
+});
+
+export async function acceptPromotionAction(
+  _prev: RegistrationActionState | null,
+  formData: FormData,
+): Promise<RegistrationActionState> {
+  const parsed = acceptPromotionSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    eventSlug: formData.get('eventSlug'),
+    registrationId: formData.get('registrationId'),
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const data = parsed.data;
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(data.tenantSlug, '/minhas-inscricoes'),
+      )}`,
+    );
+  }
+
+  const context = await guard(data.tenantSlug, PERMISSIONS.REGISTRATION_CREATE, {
+    ownership: { ownerId: user.id },
+  });
+
+  if (!context) {
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(data.tenantSlug, '/minhas-inscricoes'),
+      )}`,
+    );
+  }
+
+  const outcome = await acceptPromotion({
+    tenantId: context.tenantId,
+    registrationId: data.registrationId,
+    userId: context.userId,
+  });
+
+  if (!outcome.ok) {
+    return { ok: false, code: outcome.code, message: outcome.message };
+  }
+
+  revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
+  revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
+
+  return {
+    ok: true,
+    code: 'CONFIRMED',
+    message: 'Vaga confirmada! Ela agora é sua — o que a atividade pedir continua valendo.',
   };
 }

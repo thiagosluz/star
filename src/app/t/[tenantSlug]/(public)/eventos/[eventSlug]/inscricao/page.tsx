@@ -68,6 +68,8 @@ export default async function EventRegistrationPage({
   let membershipStatus: string | null = null;
   let canRegister = false;
   let alreadyRegistered: string | null = null;
+  /** A posição na FILA do evento, quando é isso que a pessoa tem (dívida E33). */
+  let myWaitlistPosition: number | null = null;
 
   if (user) {
     const membership = await adminPrisma.userTenantProfile.findFirst({
@@ -81,7 +83,10 @@ export default async function EventRegistrationPage({
       canRegister = can(principal, PERMISSIONS.REGISTRATION_CREATE, { scope: 'TENANT' });
 
       const mine = await findMyEventRegistration(tenant.tenantId, user.id, event.id);
-      if (mine && mine.status !== 'CANCELED') alreadyRegistered = mine.status;
+      if (mine && mine.status !== 'CANCELED') {
+        alreadyRegistered = mine.status;
+        myWaitlistPosition = mine.waitlistPosition;
+      }
     } else {
       canRegister = membershipStatus !== 'SUSPENDED' && membershipStatus !== 'REMOVED';
     }
@@ -227,19 +232,41 @@ export default async function EventRegistrationPage({
                * que a pessoa confere em que foi inscrita automaticamente.
                */
               <div className="ef-card space-y-3 p-5" data-testid="event-registration-status">
-                <p className="font-medium">Sua inscrição no evento está ativa</p>
-                <p className="text-sm opacity-70">
-                  Você já pode participar das atividades abertas. Os minicursos continuam
-                  exigindo inscrição própria, na página de cada um.
-                </p>
+                {alreadyRegistered === 'WAITLISTED' ? (
+                  /**
+                   * ── QUEM ESTÁ NA FILA NÃO ESTÁ DENTRO (dívida E33) ───────────────────
+                   *  A tela dizia "sua inscrição no evento está ativa" para quem apenas
+                   *  ESPERA — e a pessoa sairia dali achando que tinha vaga. O achado foi
+                   *  do E2E da fila, no primeiro minuto: a tela era a única peça do
+                   *  caminho que ainda tratava fila como inscrição confirmada.
+                   */
+                  <>
+                    <p className="font-medium" data-testid="event-waitlist-status">
+                      Você está na lista de espera do evento
+                    </p>
+                    <p className="text-sm opacity-70">
+                      {myWaitlistPosition ? `Sua posição é a ${myWaitlistPosition}ª. ` : ''}
+                      Assim que uma vaga for liberada, você é chamado por e-mail e tem{' '}
+                      <strong>48 h</strong> para aceitar. Não é preciso se inscrever de novo.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">Sua inscrição no evento está ativa</p>
+                    <p className="text-sm opacity-70">
+                      Você já pode participar das atividades abertas. Os minicursos continuam
+                      exigindo inscrição própria, na página de cada um.
+                    </p>
 
-                {openActivities.length > 0 ? (
-                  <ul className="space-y-1 text-sm opacity-80" data-testid="enrolled-open-activities">
-                    {openActivities.map((activity) => (
-                      <li key={activity.id}>· {activity.title}</li>
-                    ))}
-                  </ul>
-                ) : null}
+                    {openActivities.length > 0 ? (
+                      <ul className="space-y-1 text-sm opacity-80" data-testid="enrolled-open-activities">
+                        {openActivities.map((activity) => (
+                          <li key={activity.id}>· {activity.title}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </>
+                )}
 
                 <Link href={tenantPath(tenantSlug, '/minhas-inscricoes')} className="ef-button-outline w-full">
                   Ver minhas inscrições

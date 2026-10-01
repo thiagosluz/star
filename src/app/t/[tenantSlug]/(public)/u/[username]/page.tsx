@@ -3,10 +3,13 @@ import { notFound } from 'next/navigation';
 import {
   Award,
   Eye,
+  EyeOff,
   ExternalLink,
+  Flag,
   Flame,
   GraduationCap,
   Handshake,
+  Hourglass,
   Lock,
   Mail,
   Sparkles,
@@ -25,6 +28,7 @@ import {
 import { type CardRarity } from '@/domain/gamification/types';
 import { getPublicProfile } from '@/lib/profile/public-profile-service';
 import { Avatar, Badge, Card, CardContent, SectionHeading } from '@/components/ui';
+import { ProfileReportForm } from '@/components/profile/profile-report-form';
 import { CardVisual } from '@/components/gamification/card-visual';
 import { resolveArt, resolvePalette } from '@/domain/gamification/card-rules';
 
@@ -69,6 +73,15 @@ export async function generateMetadata({
     return { title: 'Perfil não encontrado', robots: { index: false, follow: false } };
   }
 
+  /**
+   * O perfil oculto pela moderação não anuncia NOME nem título: a página de aviso não
+   * pode continuar publicando a identidade que a decisão tirou do ar (nem para o robô
+   * de busca, nem para a prévia do link).
+   */
+  if (result.page.hiddenReason) {
+    return { title: 'Perfil oculto', robots: { index: false, follow: false } };
+  }
+
   const name = result.page.profile.displayName ?? `@${result.page.username}`;
 
   return {
@@ -105,8 +118,61 @@ export default async function PublicProfilePage({
   const { page } = result;
   const profile = page.profile;
 
+  /**
+   * ─── O PERFIL OCULTO NÃO RENDERIZA CONTEÚDO (FASE 56 · E62) ─────────────────
+   *
+   *  A decisão da moderação tirou a vitrine do ar, e o pacote que o serviço devolve
+   *  veio vazio de propósito (só o `@handle`, que é o endereço). A página, fiel à sua
+   *  regra de não decidir nada, para AQUI: nenhuma seção é montada, nenhum dado é
+   *  desenhado. O aviso diz o fato e o motivo — e o motivo é o que a pessoa precisa
+   *  ler para entender o que aconteceu com o perfil dela.
+   *
+   *  O 404 continua sendo a resposta do handle INEXISTENTE (e do perfil privado que
+   *  não existe para este visitante): oculto é um estado da página, não um atalho
+   *  para existir sem respeitar a visibilidade.
+   */
+  if (page.hiddenReason) {
+    return (
+      <main className="mx-auto max-w-3xl space-y-6 px-4 py-10" data-testid="public-profile">
+        <div
+          className="space-y-3 rounded-xl border border-border bg-card p-6"
+          data-testid="profile-hidden"
+          data-reason={page.hiddenReason}
+        >
+          <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <EyeOff className="size-3.5 shrink-0" aria-hidden />
+            {page.tenantName}
+          </p>
+
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Este perfil está oculto por decisão da moderação
+          </h1>
+
+          <p className="text-sm text-muted-foreground" data-testid="profile-hidden-reason">
+            Motivo registrado: {page.hiddenReason}
+          </p>
+
+          <p className="text-sm text-muted-foreground">
+            O conteúdo deste perfil deixou de aparecer publicamente em todas as instituições. A conta e o
+            @{page.username} continuam existindo — ocultar não apaga nada.
+          </p>
+
+          {page.isOwner ? (
+            <p className="text-sm" data-testid="profile-hidden-owner">
+              Você está vendo o seu próprio perfil. A decisão fica registrada na trilha de auditoria da
+              plataforma; se você acredita que houve engano, procure o suporte.
+            </p>
+          ) : null}
+        </div>
+      </main>
+    );
+  }
+
   const orcid = orcidUrl(profile.orcidId);
   const lattes = lattesUrl(profile.lattesId);
+
+  /** Denunciar exige SESSÃO (a denúncia é um ato atribuível); o dono não denuncia a si. */
+  const canReport = Boolean(context?.user) && !page.isOwner;
 
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10" data-testid="public-profile">
@@ -408,6 +474,49 @@ export default async function PublicProfilePage({
           </Link>
         </section>
       ) : null}
+
+      {/**
+       * ─── DENÚNCIA (FASE 56 · E62) ──────────────────────────────────────────────
+       *
+       *  Visível só para quem está AUTENTICADO e não é o dono do perfil: denunciar é
+       *  um ato atribuível, e a pessoa não denuncia a si mesma (o serviço recusa de
+       *  qualquer forma — a tela não oferece o que seria negado).
+       *
+       *  Quem já tem denúncia ABERTA contra este perfil vê o estado, e não o botão:
+       *  `page.alreadyReported` vem do serviço, que é quem conhece o histórico.
+       */}
+      {page.alreadyReported ? (
+        <p
+          className="flex items-start gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
+          data-testid="profile-report-pending"
+        >
+          <Hourglass className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          Você denunciou este perfil e a análise está em andamento pela moderação da plataforma.
+        </p>
+      ) : canReport ? (
+        <ProfileReportForm
+          tenantSlug={tenantSlug}
+          username={page.username}
+          displayName={profile.displayName ?? `@${page.username}`}
+        />
+      ) : context?.user ? null : (
+        <p
+          className="flex items-start gap-2 rounded-lg border border-dashed border-border-strong/60 bg-surface-low/60 p-4 text-xs text-muted-foreground"
+          data-testid="profile-report-anonymous"
+        >
+          <Flag className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>
+            Viu algo errado neste perfil?{' '}
+            <Link
+              href={`/login?redirectTo=${encodeURIComponent(tenantPath(tenantSlug, `/u/${page.username}`))}`}
+              className="underline underline-offset-4"
+            >
+              Entre na sua conta
+            </Link>{' '}
+            para denunciar — a moderação da plataforma analisa o relato.
+          </span>
+        </p>
+      )}
 
       <footer className="flex items-start gap-2 border-t border-border pt-4 text-xs text-muted-foreground">
         <Handshake className="mt-0.5 size-3.5 shrink-0" aria-hidden />

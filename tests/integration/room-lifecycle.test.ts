@@ -429,7 +429,9 @@ describe('a inscrição PARA na capacidade da sala', () => {
         select: { status: true },
       }),
     );
-    expect(promoted?.status).toBe('CONFIRMED');
+        /** Dívida E1: quem é promovido RETÉM a vaga, com prazo para confirmar. */
+    expect(promoted?.status).toBe('PENDING');
+        expect(promoted?.confirmationDueAt).not.toBeNull();
   });
 });
 

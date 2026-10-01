@@ -35,6 +35,7 @@
     "db:setup:dev": "npm run db:setup && npm run db:seed:dev",
     "raffle:audit": "tsx prisma/scripts/audit-raffle.ts",
     "registrations:expire": "tsx prisma/scripts/expire-registrations.ts",
+    "media:reprocess": "tsx prisma/scripts/reprocess-media.ts",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:reset": "docker compose down -v",

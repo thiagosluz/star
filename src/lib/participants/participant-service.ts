@@ -581,6 +581,12 @@ export interface ParticipantProfile {
     readAt: Date | null;
     eventTitle: string | null;
     sentByName: string | null;
+    /**
+     * A RESPOSTA DA PESSOA (FASE 56 · dívida E45): `replyCount = 0` é "a instituição
+     * falou e não ouviu" — e é essa a informação que a ficha precisa dar.
+     */
+    replyCount: number;
+    lastReplyAt: Date | null;
   }[];
   emails: readonly {
     id: string;
@@ -716,7 +722,12 @@ export async function getParticipantProfile(input: {
           select: { id: true, amount: true, source: true, reason: true, createdAt: true },
         }),
         tx.participantMessage.findMany({
-          where: { tenantId: input.tenantId, userId: input.userId },
+          /**
+           * Só os RECADOS (as respostas vivem dentro da conversa) — e cada um traz a
+           * contagem de respostas da pessoa, que é o indicador "respondeu" da ficha
+           * (FASE 56 · dívida E45).
+           */
+          where: { tenantId: input.tenantId, userId: input.userId, parentId: null },
           orderBy: [{ sentAt: 'desc' }],
           take: 50,
           select: {
@@ -727,6 +738,11 @@ export async function getParticipantProfile(input: {
             readAt: true,
             event: { select: { title: true } },
             sentBy: { select: { name: true } },
+            replies: {
+              where: { direction: 'INBOUND' },
+              orderBy: { sentAt: 'desc' },
+              select: { sentAt: true },
+            },
           },
         }),
         tx.emailMessage.findMany({
@@ -881,6 +897,9 @@ export async function getParticipantProfile(input: {
             readAt: row.readAt,
             eventTitle: row.event?.title ?? null,
             sentByName: row.sentBy?.name ?? null,
+            /** Já vêm em ordem decrescente: a primeira é a resposta mais recente. */
+            replyCount: row.replies.length,
+            lastReplyAt: row.replies[0]?.sentAt ?? null,
           })),
           emails: emails.map((row) => ({
             id: row.id,

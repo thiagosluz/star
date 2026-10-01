@@ -405,7 +405,7 @@ export async function listMediaLibrary(
  * profundidade (galeria, imagem de fundo de bloco), e procurar campo a campo
  * exigiria conhecer todos os schemas aqui — a fonte da verdade deles é o domínio.
  */
-async function collectUsages(tx: TxClient, tenantId: string): Promise<Map<string, AssetUsage[]>> {
+export async function collectUsages(tx: TxClient, tenantId: string): Promise<Map<string, AssetUsage[]>> {
   const [events, sponsors, pages, speakers] = await Promise.all([
     tx.event.findMany({
       where: { tenantId, deletedAt: null },

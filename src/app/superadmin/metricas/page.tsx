@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarDays,
   FileStack,
+  Flag,
   ShieldAlert,
   Users,
   Zap,
@@ -12,6 +13,7 @@ import {
 
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { getPlatformMetrics, listPlatformAudit } from '@/lib/platform/global-repository';
+import { countOpenReports } from '@/lib/platform/profile-moderation';
 import { Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from '@/components/ui';
 
 /**
@@ -34,9 +36,10 @@ import { Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from '@
 export default async function PlatformOverviewPage() {
   await requirePlatformPermission();
 
-  const [metrics, audit] = await Promise.all([
+  const [metrics, audit, openReports] = await Promise.all([
     getPlatformMetrics(),
     listPlatformAudit({ limit: 10 }),
+    countOpenReports(),
   ]);
 
   return (
@@ -125,8 +128,48 @@ export default async function PlatformOverviewPage() {
         />
       </section>
 
-      <section className="space-y-4" data-testid="platform-audit">
-        <SectionHeading
+      {/**
+       * ─── O ATALHO DA MODERAÇÃO (FASE 56 · E62) ─────────────────────────────────
+       *
+       *  Denúncia aberta é conteúdo possivelmente ofensivo que continua no ar: é
+       *  trabalho que não pode esperar, e por isso a entrada da fila fica na VISÃO
+       *  GERAL, e não escondida em um menu.
+       *
+       *  A contagem é a de `countOpenReports`, e `null` (não consegui contar) sai SEM
+       *  número — afirmar zero sem ter contado é pior do que não afirmar nada (a
+       *  régua da FASE 54: zero é uma contagem, `null` é a ausência dela).
+       */}
+      <section
+        className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card p-5"
+        data-testid="platform-moderation-shortcut"
+        data-open={openReports === null ? 'unknown' : String(openReports)}
+      >
+        <div className="flex items-start gap-3">
+          <Flag className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="space-y-1">
+            <h2 className="font-display text-title text-foreground">Denúncias de perfil</h2>
+            <p className="text-sm text-muted-foreground">
+              {openReports === null
+                ? 'Fila de moderação dos perfis públicos.'
+                : openReports === 0
+                  ? 'Nenhuma denúncia aguardando decisão.'
+                  : openReports === 1
+                    ? '1 denúncia aguardando decisão.'
+                    : `${openReports} denúncias aguardando decisão.`}
+            </p>
+          </div>
+        </div>
+
+        <Link
+          href="/superadmin/denuncias"
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+          data-testid="platform-moderation-link"
+        >
+          Abrir a fila
+        </Link>
+      </section>
+
+      <section className="space-y-4" data-testid="platform-audit">        <SectionHeading
           title="Últimas ações de plataforma"
           description="Provisionamentos, suspensões e mudanças de perfil, com autor e horário."
           actions={

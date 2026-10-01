@@ -26,6 +26,7 @@
  */
 import { safeUrlSchema } from '@/domain/events/landing-page';
 import { formatBytes } from '@/domain/events/image-rules';
+import { normalizePageSize } from '@/domain/platform/pagination-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Status e planos
@@ -844,10 +845,10 @@ export function buildDirectory(
   pageSize: number;
   totalPages: number;
 } {
-  const pageSize = Math.min(
-    Math.max(1, Math.floor(options.pageSize ?? DEFAULT_DIRECTORY_PAGE_SIZE)),
-    MAX_DIRECTORY_PAGE_SIZE,
-  );
+  const pageSize = normalizePageSize(options.pageSize, {
+    fallback: DEFAULT_DIRECTORY_PAGE_SIZE,
+    max: MAX_DIRECTORY_PAGE_SIZE,
+  });
 
   const term = options.query ? normalizeForSearch(options.query.trim()) : '';
 

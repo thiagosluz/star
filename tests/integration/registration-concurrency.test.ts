@@ -108,11 +108,20 @@ async function readState(activityId: string) {
     const confirmedRows = await tx.registration.count({
       where: { activityId, status: 'CONFIRMED' },
     });
+    /**
+     * Quem OCUPA VAGA: `PENDING` retém vaga desde a FASE 34, e desde a dívida E1
+     * a promoção da fila nasce assim — contar só `CONFIRMED` deixaria de fora
+     * exatamente a vaga recém-promovida, e a conferência passaria a mentir.
+     */
+    const seatedRows = await tx.registration.count({
+      where: { activityId, status: { in: ['PENDING', 'CONFIRMED', 'ATTENDED'] } },
+    });
+
     const waitlistedRows = await tx.registration.count({
       where: { activityId, status: 'WAITLISTED' },
     });
 
-    return { activity, confirmedRows, waitlistedRows };
+    return { activity, confirmedRows, waitlistedRows, seatedRows };
   });
 }
 
@@ -204,6 +213,7 @@ describe('lotação sob concorrência', () => {
     // ── Consistência com o banco ───────────────────────────────────────────
     const state = await readState(activityId);
 
+    expect(state.confirmedRows).toBe(CAPACITY);
     expect(state.confirmedRows).toBe(CAPACITY);
     expect(state.activity.confirmedCount).toBe(CAPACITY);
     // O contador denormalizado NUNCA pode passar da capacidade.
@@ -412,23 +422,39 @@ describe('cancelamento e promoção da lista de espera', () => {
 
     expect(cancelResult.ok).toBe(true);
     if (cancelResult.ok) {
-      expect(cancelResult.promoted).not.toBeNull();
-      expect(cancelResult.promoted?.registrationId).toBe(firstInLine.id);
+          /**
+           * `promoted` virou LISTA na dívida E33: cancelar pode devolver mais de uma
+           * vaga (o lugar no evento e a vaga de cada atividade aberta que a inscrição
+           * criou), e cada vaga devolvida tem a sua fila.
+           */
+          expect(cancelResult.promoted).toHaveLength(1);
+      expect(cancelResult.promoted[0]?.registrationId).toBe(firstInLine.id);
     }
 
     // ── O primeiro da fila foi promovido ───────────────────────────────────
     const promoted = await withTenant(tenantId, (tx) =>
       tx.registration.findUniqueOrThrow({
         where: { id: firstInLine.id },
-        select: { status: true, waitlistPosition: true },
+        select: { status: true, waitlistPosition: true, confirmationDueAt: true },
       }),
     );
-    expect(promoted.status).toBe('CONFIRMED');
+    expect(promoted.status).toBe('PENDING');
     expect(promoted.waitlistPosition).toBeNull();
+        /**
+         * ── A PROMOÇÃO RETÉM A VAGA COM PRAZO (dívida E1) ────────────────────────
+         *
+         *  Era `CONFIRMED` no mesmo instante. Agora é `PENDING` com vencimento: a vaga
+         *  continua sendo dele (é o que `PENDING` significa desde a FASE 34), mas vence
+         *  sozinha se ele não responder — e a varredura já promove o próximo. A data é
+         *  o que prende a promessa: sem ela, `PENDING` seria vaga parada.
+         */
+        expect(promoted.confirmationDueAt).not.toBeNull();
 
     // ── Contadores permanecem consistentes ─────────────────────────────────
     const state = await readState(activityId);
-    expect(state.confirmedRows).toBe(CAPACITY);
+    /** Dívida E1: a vaga promovida é segurada como `PENDING`, não como `CONFIRMED`. */
+    expect(state.seatedRows).toBe(CAPACITY);
+    expect(state.confirmedRows).toBe(CAPACITY - 1);
     expect(state.activity.confirmedCount).toBe(CAPACITY);
     expect(state.waitlistedRows).toBe(1);
     expect(state.activity.waitlistCount).toBe(1);

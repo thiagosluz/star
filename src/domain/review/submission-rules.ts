@@ -111,6 +111,48 @@ export function canDeleteSubmission(status: SubmissionStatus): boolean {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O AUTOR PODE RETIRAR O PRÓPRIO TRABALHO (FASE 56 · dívida E31)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO NÃO É `canDeleteSubmission`
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Excluir só vale no RASCUNHO, porque depois do envio existem pareceres e atribuições
+ *  apontando para a submissão: apagar destruiria o registro da avaliação. RETIRAR é
+ *  outra coisa — o trabalho sai do páreo e o registro FICA, com o estado explícito.
+ *
+ *  A máquina de estados já previa `WITHDRAWN` desde a revisão da FASE 4, e o limite de
+ *  propostas por trilha já a ignorava na contagem; o que não existia era CAMINHO: só a
+ *  comissão conseguia cancelar. Quem enviava por engano ficava esperando um pedido
+ *  manual, e o trabalho seguia no páreo até alguém agir.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE O AUTOR NÃO PODE RETIRAR — E POR QUÊ
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Decidido o resultado (`ACCEPTED`/`REJECTED`), a retirada reescreveria a história do
+ *  comitê: o parecer existe, a decisão está na trilha, e o programa do evento pode já
+ *  contar com o trabalho. Depois disso, quem conversa com a comissão é a pessoa, não o
+ *  botão. `CANCELED` e `WITHDRAWN` são terminais, e rascunho retirado também sai do
+ *  páreo — não há o que retirar duas vezes.
+ *
+ *  A lista de permitidos sai da TABELA DE TRANSIÇÕES (fonte única): se um estado novo
+ *  ganhar caminho para `WITHDRAWN`, ele passa a valer aqui sem ninguém lembrar de vir
+ *  mexer nesta função.
+ */
+export function canWithdrawSubmission(status: SubmissionStatus): boolean {
+  /**
+   * RASCUNHO NÃO SE RETIRA, SE EXCLUI. Os dois caminhos levam ao mesmo lugar — o
+   * trabalho sai do páreo —, mas o rascunho nunca foi enviado: não há parecer, não há
+   * atribuição e não há protocolo a preservar. Oferecer os dois botões na mesma tela
+   * faria a pessoa escolher entre duas ações que parecem a mesma coisa e não são.
+   */
+  if (status === 'DRAFT') return false;
+
+  return ALLOWED_TRANSITIONS[status].includes('WITHDRAWN');
+}
+
+/**
  * ───────────────────────────────────────────────────────────────────────────────
  *  Trocar a TRILHA do rascunho (FASE 51 · dívida E32)
  * ───────────────────────────────────────────────────────────────────────────────

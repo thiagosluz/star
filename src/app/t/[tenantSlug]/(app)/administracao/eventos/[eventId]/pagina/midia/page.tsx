@@ -288,8 +288,19 @@ export default async function EventMediaLibraryPage({
                 className="flex flex-wrap items-start gap-4 rounded-lg border border-border p-3"
               >
                 <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-surface-low">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={asset.url} alt={asset.fileName} className="size-full object-cover" />
+                    {/**
+                      * A MINIATURA, E NÃO A FOTO (FASE 56 · dívida E18): o cartão tem 80
+                      * px, e pedir o original aqui baixava megabytes por imagem. A rota deriva
+                      * a miniatura na primeira visita e a guarda no mesmo bucket — o
+                      * ORIGINAL segue sendo o que a página pública renderiza.
+                      */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/t/${tenantSlug}/midia/${asset.id}/miniatura`}
+                      alt={asset.fileName}
+                      loading="lazy"
+                      className="size-full object-cover"
+                    />
                 </div>
 
                 <div className="min-w-0 flex-1 space-y-1">

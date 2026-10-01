@@ -25,10 +25,12 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { getTenantContext } from '@/lib/events/event-repository';
+import { listOwnFiledReports } from '@/lib/profile/profile-report-service';
 import { levelTitle } from '@/domain/gamification/xp-rules';
 import { resolveArt } from '@/domain/gamification/card-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { publicBaseUrl } from '@/lib/public-url';
+import { HIDDEN_REASON_FALLBACK } from '@/domain/profile/profile-moderation-rules';
 import {
   readPublicContacts,
   sanitizePublicContacts,
@@ -475,6 +477,15 @@ export interface PublicProfilePage {
   moreForAttendees: boolean;
   indexable: boolean;
   isOwner: boolean;
+  /**
+   * Preenchido quando a moderação da plataforma ocultou este perfil (FASE 56 · E62).
+   *
+   * A página mostra o aviso e NÃO renderiza o conteúdo — o `@handle` e a conta
+   * continuam existindo, mas a vitrine sai do ar em todas as instituições.
+   */
+  hiddenReason: string | null;
+  /** Quem está olhando já tem uma denúncia ABERTA contra este perfil. */
+  alreadyReported: boolean;
 }
 
 /**
@@ -527,6 +538,9 @@ export async function getPublicProfile(input: {
           publicSocialLinks: true,
           profileAudiences: true,
           profileIndexable: true,
+          /** O EFEITO da moderação (FASE 56 · E62): ocultar não apaga o handle. */
+          publicProfileHiddenAt: true,
+          publicProfileHiddenReason: true,
         },
       });
 
@@ -610,6 +624,47 @@ export async function getPublicProfile(input: {
       hasUsername: true,
       belongsToInstitution: data.belongsToInstitution ?? false,
     });
+
+    /**
+     * ─── O PERFIL OCULTO (FASE 56 · E62) ────────────────────────────────────────
+     *
+     *  A moderação da plataforma não apaga nada: grava `publicProfileHiddenAt` e o
+     *  motivo. Aqui o pacote sai VAZIO — só o `@handle`, que é o endereço da página —
+     *  e a tela mostra o aviso. Nenhuma seção é montada, nenhuma consulta de XP,
+     *  carta ou certificado é feita: conteúdo oculto não é lido nem por acidente.
+     *
+     *  ─── A ORDEM IMPORTA: A EXISTÊNCIA DA PÁGINA VEM ANTES ─────────────────────
+     *  O aviso só aparece para quem a página JÁ existiria (ou para o dono). Num perfil
+     *  todo privado, responder "oculto por decisão da moderação" a um visitante
+     *  anônimo revelaria a existência de um `@handle` que a pessoa decidiu não
+     *  revelar — a mesma razão do 404 da régua acima. Ocultar é um estado DA página,
+     *  não um atalho para existir sem respeitar a visibilidade.
+     *
+     *  A busca em buscadores fica DESLIGADA: indexar uma página oculta continuaria
+     *  publicando o endereço (e o motivo) para quem nunca deveria vê-lo.
+     */
+    const hiddenReason = person.publicProfileHiddenAt
+      ? (person.publicProfileHiddenReason ?? HIDDEN_REASON_FALLBACK)
+      : null;
+
+    if (hiddenReason && ((data.isOwner ?? false) || evaluation.pageVisible)) {
+      return {
+        ok: true as const,
+        page: {
+          tenantName: tenant.name,
+          tenantSlug: tenant.slug,
+          username: handle,
+          viewer,
+          profile: { username: handle },
+          visibleFields: [],
+          moreForAttendees: false,
+          indexable: false,
+          isOwner: data.isOwner ?? false,
+          hiddenReason,
+          alreadyReported: false,
+        },
+      };
+    }
 
     if (!evaluation.pageVisible) {
       return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Perfil não encontrado.' };
@@ -808,6 +863,24 @@ export async function getPublicProfile(input: {
       ).catch(() => undefined);
     }
 
+    /**
+     * A página diz se QUEM OLHA já tem denúncia aberta contra este perfil.
+     *
+     * A régua é a do serviço (`listOwnFiledReports`), e não uma consulta própria:
+     * duas implementações da mesma pergunta divergiriam na primeira manutenção. A
+     * recusa de verdade continua na Server Action — isto aqui é só para não oferecer
+     * duas vezes o mesmo botão a quem já denunciou.
+     */
+    const alreadyReported =
+      input.viewerUserId && !(data.isOwner ?? false)
+        ? (
+            await listOwnFiledReports({
+              tenantId: tenant.tenantId,
+              reporterUserId: input.viewerUserId,
+            })
+          ).some((report) => report.reportedUserId === person.id && report.status === 'OPEN')
+        : false;
+
     return {
       ok: true as const,
       page: {
@@ -820,6 +893,8 @@ export async function getPublicProfile(input: {
         moreForAttendees: evaluation.moreForAttendees,
         indexable: person.profileIndexable,
         isOwner: data.isOwner ?? false,
+        hiddenReason: null,
+        alreadyReported,
       },
     };
   } catch (error) {
@@ -834,6 +909,11 @@ export async function getPublicProfile(input: {
  * Depende de DUAS autorizações: existir a página (ao menos um campo visível para
  * visitante anônimo ou para a casa) e a pessoa ter ligado o diretório. Ordena por
  * nível, porque é um diretório de participação — e não um ranking de XP.
+ *
+ * O perfil OCULTO pela moderação (FASE 56 · E62) sai daqui também: se ele deixa de
+ * aparecer, a listagem que existe para exibi-lo não pode continuar exibindo — o
+ * diretório é uma vitrine, e vitrine que ignora a decisão de moderação é uma segunda
+ * régua de visibilidade.
  */
 export async function listDirectoryProfiles(input: {
   tenantId: string;
@@ -854,6 +934,8 @@ export async function listDirectoryProfiles(input: {
             headline: true,
             deletedAt: true,
             profileAudiences: true,
+            /** O diretório lista perfis PÚBLICOS: o oculto pela moderação sai dele também. */
+            publicProfileHiddenAt: true,
           },
         },
       },
@@ -881,7 +963,9 @@ export async function listDirectoryProfiles(input: {
         headline: row.user!.headline,
         level: levelByUser.get(row.user!.id) ?? 1,
         /** A página existe para quem é da casa se QUALQUER campo não for privado. */
-        visible: PUBLIC_PROFILE_FIELDS.some((field) => audiences[field] !== 'PRIVATE'),
+        visible:
+          row.user!.publicProfileHiddenAt === null &&
+          PUBLIC_PROFILE_FIELDS.some((field) => audiences[field] !== 'PRIVATE'),
       };
     })
     .filter((row) => row.visible)

@@ -6,7 +6,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { listOwnMessages } from '@/lib/participants/message-service';
 import { OwnInbox, type InboxEntry } from '@/components/participants/own-inbox';
-import { markMessageReadAction } from '@/app/actions/participant-actions';
+import { markMessageReadAction, replyToParticipantMessageAction } from '@/app/actions/participant-actions';
 
 export const metadata = { title: 'Minhas mensagens' };
 export const dynamic = 'force-dynamic';
@@ -55,6 +55,12 @@ export default async function MyMessagesPage({
           readAtLabel: row.readAt ? row.readAt.toLocaleDateString('pt-BR') : null,
           eventTitle: row.eventTitle,
           sentByName: row.sentByName,
+            replies: row.replies.map((reply) => ({
+              id: reply.id,
+              body: reply.body,
+              sentAtLabel: reply.sentAt.toLocaleString('pt-BR'),
+              authorName: reply.authorName,
+            })),
         }))
       : [];
 
@@ -96,7 +102,12 @@ export default async function MyMessagesPage({
             {result.entries.length} mensagem(ns) · {result.unread} não lida(s)
           </p>
 
-          <OwnInbox entries={entries} tenantSlug={tenantSlug} action={markMessageReadAction} />
+        <OwnInbox
+          entries={entries}
+          tenantSlug={tenantSlug}
+          action={markMessageReadAction}
+          replyAction={replyToParticipantMessageAction}
+        />
         </>
       )}
     </main>

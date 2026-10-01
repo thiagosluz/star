@@ -45,6 +45,12 @@
  */
 import { createHash } from 'node:crypto';
 
+/**
+ * A régua do CPF mora no domínio de INSCRIÇÃO (é lá que o campo existe), e o layout
+ * a importa para não ter uma segunda validação de documento — duas divergiriam.
+ */
+import { formatCpf, isValidCpf } from '@/domain/events/registration-form-rules';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Formato da página
 // ───────────────────────────────────────────────────────────────────────────────
@@ -306,6 +312,25 @@ export const CERTIFICATE_VARIABLES = [
     sample: 'Ana Souza',
   },
   {
+    key: 'cpf',
+    label: 'CPF do participante',
+    source: 'campo CPF do formulário de inscrição no evento (opcional)',
+    /**
+     * PODE ficar vazio: o CPF é opcional na inscrição — a LGPD manda recolher o
+     * mínimo para a finalidade —, e o modelo não é obrigado a ter o elemento.
+     */
+    canBeEmpty: true,
+    sample: '123.456.789-09',
+  },
+  {
+    key: 'titulo_apresentacao',
+    label: 'Título da apresentação',
+    source: 'título do trabalho que a pessoa enviou neste evento',
+    /** Vazio para quem não submeteu trabalho — e aí o elemento não sai. */
+    canBeEmpty: true,
+    sample: 'Aprendizado de máquina aplicado à vigilância epidemiológica',
+  },
+  {
     key: 'titulo',
     label: 'Título do certificado',
     source: 'tipo do certificado (ex.: Certificado de conclusão de minicurso)',
@@ -453,6 +478,13 @@ export const CONTENT_VARIABLE_KEYS: readonly CertificateVariableKey[] = [
   'instituicao',
   'codigo_validacao',
   'url_validacao',
+  /**
+   * CPF e título da apresentação (FASE 56 · dívida E54) são CONTEÚDO: vêm do formulário
+   * de inscrição e do trabalho enviado, e uma correção posterior não pode reescrever o
+   * documento já emitido. É a mesma razão das outras — congelar é o que dá valor ao hash.
+   */
+  'cpf',
+  'titulo_apresentacao',
 ] as const;
 
 /**
@@ -534,10 +566,15 @@ export function resolveCertificateVariables(document: {
   validationUrl: string;
   contentHash: string;
   signature: string;
+  /** Só dígitos; a formatação para impressão acontece aqui. */
+  cpf: string | null;
+  presentationTitle: string | null;
   keyId: string;
 }): CertificateVariableValues {
   return {
     nome: document.recipientName,
+    cpf: document.cpf && isValidCpf(document.cpf) ? formatCpf(document.cpf) ?? '' : '',
+    titulo_apresentacao: document.presentationTitle ?? '',
     titulo: document.title,
     corpo: document.bodyText,
     evento: document.eventTitle,

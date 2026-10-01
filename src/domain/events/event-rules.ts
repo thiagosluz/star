@@ -40,13 +40,26 @@ export type ActivityStatus =
   | 'CANCELED';
 
 /** Status em que o evento é publicamente visível. */
-const PUBLICLY_VISIBLE: ReadonlySet<EventStatus> = new Set<EventStatus>([
+/**
+ * Os status em que um evento é PÚBLICO.
+ *
+ * É uma LISTA exportada, e não só um conjunto privado, porque a leitura que PAGINA
+ * precisa dela no `where` do SQL (FASE 56 · dívida E2) — e a tela filtra pelo conjunto.
+ * Exportar a lista e derivar o conjunto dela garante que os dois leiam a MESMA fonte:
+ * eram duas listas idênticas em arquivos diferentes, e duas listas para a mesma ideia
+ * divergem no dia em que alguém acrescentar um status a apenas uma delas.
+ */
+export const PUBLICLY_VISIBLE_EVENT_STATUSES = [
   'PUBLISHED',
   'REGISTRATION_OPEN',
   'REGISTRATION_CLOSED',
   'IN_PROGRESS',
   'FINISHED',
-]);
+] as const satisfies readonly EventStatus[];
+
+const PUBLICLY_VISIBLE: ReadonlySet<EventStatus> = new Set<EventStatus>(
+  PUBLICLY_VISIBLE_EVENT_STATUSES,
+);
 
 /** Status em que o evento aceita novas inscrições no nível do evento. */
 const EVENT_ACCEPTS_REGISTRATION: ReadonlySet<EventStatus> = new Set<EventStatus>([

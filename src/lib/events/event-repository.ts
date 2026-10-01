@@ -13,8 +13,10 @@
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant } from '@/lib/db/tenant-client';
 import { resolveTheme, type ResolvedEventTheme } from '@/domain/events/landing-page';
+import { paginationWindow } from '@/domain/platform/pagination-rules';
 import {
   deriveEventStatus,
+  PUBLICLY_VISIBLE_EVENT_STATUSES,
   effectiveActivityCapacity,
   type ActivityStatus,
   type EventStatus,
@@ -77,13 +79,14 @@ export async function getTenantContext(
 //  Eventos públicos
 // ───────────────────────────────────────────────────────────────────────────────
 /** Status visíveis publicamente. Rascunho e arquivado não aparecem. */
-const PUBLIC_EVENT_STATUSES = [
-  'PUBLISHED',
-  'REGISTRATION_OPEN',
-  'REGISTRATION_CLOSED',
-  'IN_PROGRESS',
-  'FINISHED',
-] as const;
+/**
+ * Os status em que um evento aparece publicamente — a lista do DOMÍNIO, importada.
+ *
+ * Era uma cópia idêntica da lista do domínio, e a tela ainda filtrava pela do domínio
+ * DEPOIS de o banco filtrar por esta: as duas concordavam por sorte de manutenção. Com a
+ * paginação no SQL (FASE 56 · dívida E2), uma divergência passaria a mentir na contagem.
+ */
+const PUBLIC_EVENT_STATUSES = PUBLICLY_VISIBLE_EVENT_STATUSES;
 
 export interface PublicEventSummary {
   id: string;
@@ -111,16 +114,60 @@ export interface PublicEventSummary {
 }
 
 /** Lista os eventos publicamente visíveis da instituição. */
+export interface PublicEventsPage {
+  events: PublicEventSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  OS EVENTOS PÚBLICOS, EM PÁGINA (FASE 56 · dívida E2)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A PÁGINA VEM DO BANCO, E NÃO DE UM `filter` NA TELA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A tela listava TUDO e desenhava uma dúzia: com mil eventos publicados, cada visita
+ *  lia mil linhas — cada uma com a contagem de atividades por evento — para mostrar
+ *  doze. Paginar depois de ler não resolve: o custo está na LEITURA.
+ *
+ *  Aqui o `skip`/`take` vão para o SQL, e a contagem sai na MESMA transação: o total que
+ *  a tela anuncia e a página que ela desenha não podem divergir por causa de uma
+ *  inscrição que entrou no meio.
+ *
+ *  O filtro de visibilidade é o do DOMÍNIO (`PUBLICLY_VISIBLE_EVENT_STATUSES`) — o
+ *  mesmo que `isPubliclyVisible` consulta. Enquanto eram duas listas, a tela escondia
+ *  depois o que o banco já tinha contado; com paginação, isso viraria página pela
+ *  metade.
+ */
 export async function listPublicEvents(
   tenantId: string,
-): Promise<PublicEventSummary[]> {
-  const events = await withTenant(tenantId, (tx) =>
-    tx.event.findMany({
-      where: {
-        status: { in: [...PUBLIC_EVENT_STATUSES] },
-        deletedAt: null,
-      },
+  options: { page?: unknown; pageSize?: unknown } = {},
+): Promise<PublicEventsPage> {
+  const result = await withTenant(tenantId, async (tx) => {
+    const where = {
+      status: { in: [...PUBLIC_EVENT_STATUSES] },
+      deletedAt: null,
+    };
+
+    const total = await tx.event.count({ where });
+
+    const window = paginationWindow({
+      page: options.page,
+      pageSize: options.pageSize,
+      total,
+    });
+
+    const events = await tx.event.findMany({
+      where,
       orderBy: { startsAt: 'asc' },
+      skip: window.skip,
+      take: window.take,
       select: {
         id: true,
         slug: true,
@@ -143,32 +190,42 @@ export async function listPublicEvents(
         confirmedCount: true,
         _count: { select: { activities: true } },
       },
-    }),
-  );
+    });
 
-  return events.map((event) => ({
-    id: event.id,
-    slug: event.slug,
-    title: event.title,
-    subtitle: event.subtitle,
-    summary: event.summary,
-    status: event.status as EventStatus,
-    modality: event.modality,
-    startsAt: event.startsAt,
-    endsAt: event.endsAt,
-    timezone: event.timezone,
-    city: event.city,
-    state: event.state,
-    venueName: event.venueName,
-    coverImageUrl: event.coverImageUrl,
-    primaryColor: event.primaryColor,
-    registrationOpensAt: event.registrationOpensAt,
-    registrationClosesAt: event.registrationClosesAt,
-    capacity: event.capacity,
-    confirmedCount: event.confirmedCount,
-    remainingSeats: remainingSeats(event.capacity, event.confirmedCount),
-    activityCount: event._count.activities,
-  }));
+    return { events, window };
+  });
+
+  return {
+    events: result.events.map((event) => ({
+      id: event.id,
+      slug: event.slug,
+      title: event.title,
+      subtitle: event.subtitle,
+      summary: event.summary,
+      status: event.status as EventStatus,
+      modality: event.modality,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
+      timezone: event.timezone,
+      city: event.city,
+      state: event.state,
+      venueName: event.venueName,
+      coverImageUrl: event.coverImageUrl,
+      primaryColor: event.primaryColor,
+      registrationOpensAt: event.registrationOpensAt,
+      registrationClosesAt: event.registrationClosesAt,
+      capacity: event.capacity,
+      confirmedCount: event.confirmedCount,
+      remainingSeats: remainingSeats(event.capacity, event.confirmedCount),
+      activityCount: event._count.activities,
+    })),
+    total: result.window.total,
+    page: result.window.page,
+    pageSize: result.window.pageSize,
+    totalPages: result.window.totalPages,
+    hasPrev: result.window.hasPrev,
+    hasNext: result.window.hasNext,
+  };
 }
 
 export interface PublicActivitySummary {

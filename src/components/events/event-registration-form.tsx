@@ -104,6 +104,41 @@ export function EventRegistrationForm({
         </div>
       ) : null}
 
+      {/**
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  O CPF É OPCIONAL, E A TELA DIZ PARA QUE ELE SERVE (dívida E54)
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  Ele entra no CERTIFICADO. Pedir documento sem dizer a finalidade é o que a
+        *  LGPD chama de coleta sem propósito — e quem não informa continua se
+        *  inscrevendo normalmente: o certificado sai sem a linha do CPF.
+        */}
+      <div className="space-y-1.5">
+        <label htmlFor="cpf" className="text-sm font-medium">
+          CPF <span className="font-normal opacity-60">(opcional — sai no certificado)</span>
+        </label>
+        <input
+          id="cpf"
+          name="cpf"
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={20}
+          className="w-full px-3 py-2 text-sm sm:max-w-xs"
+          style={{
+            borderRadius: 'var(--ef-radius)',
+            border: '1px solid color-mix(in oklab, var(--ef-text) 20%, transparent)',
+            backgroundColor: 'transparent',
+          }}
+          /* O que voltou da action: corrigir um dígito não custa redigitar o resto. */
+          defaultValue={state?.values?.cpf ?? ''}
+          placeholder="000.000.000-00"
+          data-testid="event-registration-cpf"
+        />
+        <p className="text-xs opacity-60">
+          Usado apenas para emitir o seu certificado. Sem ele, o certificado é emitido do
+          mesmo jeito.
+        </p>
+      </div>
+
       <div className="space-y-1.5">
         <label htmlFor="accessibilityNotes" className="text-sm font-medium">
           Necessidades de acessibilidade ou restrições alimentares{' '}
@@ -120,6 +155,7 @@ export function EventRegistrationForm({
             border: '1px solid color-mix(in oklab, var(--ef-text) 20%, transparent)',
             backgroundColor: 'transparent',
           }}
+          defaultValue={state?.values?.accessibilityNotes ?? ''}
           placeholder="Ex.: intérprete de Libras, rampa de acesso, opção vegana"
         />
       </div>

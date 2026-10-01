@@ -65,6 +65,7 @@ export const TENANT_SCOPED_TABLES = [
   'review_assignments',
   'reviews',
   'review_conflicts',
+  'profile_reports',
   'card_templates',
   'user_cards',
   'user_xp_profiles',

@@ -23,6 +23,13 @@ import { z } from 'zod';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { adminPrisma } from '@/lib/db/admin-client';
+import { requirePlatformPermission } from '@/lib/platform/guard';
+import { decideReport } from '@/lib/platform/profile-moderation';
+import {
+  DECISION_NOTE_MAX_LENGTH,
+  PROFILE_MODERATION_ACTIONS,
+  decisionNoteProblemMessage,
+} from '@/domain/profile/profile-moderation-rules';
 import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -1149,3 +1156,93 @@ export async function checkInByBadgeAction(
  *  quando o build falha, o efeito visível foi um 404 na rota nova — com o processo
  *  parecendo saudável. Toda função utilitária deste arquivo precisa ser `async`.
  */
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Moderação da denúncia de perfil (FASE 56 · dívida E62)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * ─── UMA AÇÃO DE PLATAFORMA NUM ARQUIVO DE PAINEL DE INSTITUIÇÃO ───────────────
+ *
+ *  A guarda aqui NÃO é a `guard(...)` do resto do arquivo: é
+ *  `requirePlatformPermission`, a mesma de `/superadmin`. E tem de ser, porque a
+ *  denúncia tem casa mas a MEDIDA é global — o `@handle` é o mesmo em todas as
+ *  instituições, e deixar cada casa decidir faria o mesmo conteúdo ser julgado de
+ *  formas diferentes.
+ *
+ *  Ela vive neste arquivo porque a fila de denúncias é a única tela de moderação, e
+ *  este é o ponto de entrada das ações administrativas — o mesmo motivo pelo qual a
+ *  guarda é declarada DENTRO de cada ação: é ela que separa os dois mundos, e não o
+ *  arquivo em que a função mora.
+ */
+export async function decideProfileReportAction(
+  _prev: AdminActionState | null,
+  formData: FormData,
+): Promise<AdminActionState> {
+  const operator = await requirePlatformPermission();
+
+  const parsed = z
+    .object({
+      reportId: z.string().uuid(),
+      /**
+       * Os dois botões do formulário mandam o MESMO campo (`action`): o valor vem do
+       * botão que foi clicado, e é isso que faz a tela funcionar sem JavaScript.
+       */
+      action: z.enum(PROFILE_MODERATION_ACTIONS),
+      note: z
+        .string()
+        .min(1, 'Escreva a justificativa da decisão.')
+        /** O teto aqui é o dobro da coluna: quem explica o limite é `decisionNoteProblem`. */
+        .max(DECISION_NOTE_MAX_LENGTH * 2, decisionNoteProblemMessage('TOO_LONG')),
+    })
+    .safeParse({
+      reportId: formData.get('reportId'),
+      action: formData.get('action'),
+      note: formData.get('note'),
+    });
+
+  if (!parsed.success) {
+    const sentNote = formData.get('note');
+
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Revise a decisão.',
+      details: parsed.error.issues.map((issue) => issue.message),
+      /** O texto digitado volta (armadilha 5): a recusa não apaga a justificativa. */
+      data: { note: typeof sentNote === 'string' ? sentNote : '' },
+    };
+  }
+
+  const result = await decideReport({
+    reportId: parsed.data.reportId,
+    action: parsed.data.action,
+    note: parsed.data.note,
+    actorId: operator.userId,
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: result.code,
+      message: result.message,
+      details: result.details,
+      data: { note: parsed.data.note },
+    };
+  }
+
+  revalidatePath('/superadmin/denuncias');
+
+  return {
+    ok: true,
+    message:
+      result.status === 'ACTIONED'
+        ? `Perfil ocultado. ${result.effect}`
+        : `Denúncia dispensada. ${result.effect}`,
+    data: {
+      reportId: result.reportId,
+      status: result.status,
+      hiddenProfile: result.hiddenProfile,
+      effect: result.effect,
+    },
+  };
+}
