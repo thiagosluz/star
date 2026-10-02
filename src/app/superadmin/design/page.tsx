@@ -65,6 +65,12 @@ const SURFACES = [
   ['surface-high', '#e5e8f4', 'Hover/realce'],
   ['surface-highest', '#dfe2ee', 'Separador forte'],
   ['card', '#ffffff', 'Cartão elevado (nível 2)'],
+  /**
+   * O `popover` no CLARO é o mesmo branco do cartão (aqui quem eleva é a sombra);
+   * no escuro ele é o degrau acima do cartão — a FASE 62 · E81 decidiu que a
+   * elevação do modo escuro é por TOM, e este é o token que a carrega.
+   */
+  ['popover', '#ffffff', 'Superfície flutuante (nível 3)'],
 ] as const;
 
 const BRAND = [
@@ -182,9 +188,9 @@ export default async function DesignCatalogPage() {
             <p className="label-caps">Nível 2</p>
             <p className="mt-1 text-sm">Cartão elevado (padrão)</p>
           </div>
-          <div className="rounded-lg border border-border bg-card p-5 shadow-modal">
+          <div className="rounded-lg border border-border bg-popover p-5 shadow-modal">
             <p className="label-caps">Nível 3</p>
-            <p className="mt-1 text-sm">Modal, gaveta</p>
+            <p className="mt-1 text-sm">Modal, gaveta (superfície flutuante)</p>
           </div>
         </div>
       </Section>

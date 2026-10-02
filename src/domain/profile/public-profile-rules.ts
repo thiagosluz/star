@@ -109,6 +109,40 @@ export function isPersonPubliclyVisible(person: { publicProfileHiddenAt: Date | 
   return person.publicProfileHiddenAt === null;
 }
 
+/**
+ * O nome ABREVIADO de quem não pode ser identificado: `Ana Souza` → `Ana S.`.
+ *
+ * ─── POR QUE ELE MORA AQUI, E NÃO NO SORTEIO ONDE NASCEU (FASE 62 · dívida E80) ─
+ *
+ *  A abreviação nasceu na FASE 16 para o resultado do sorteio e viveu em
+ *  `raffle-rules.ts` — mas ela nunca foi uma regra do sorteio: é a resposta para
+ *  *como citar uma pessoa sem identificá-la*, que serve a qualquer superfície com
+ *  restrição de identidade. A dívida **E80** fez o ranking de conquistas precisar
+ *  dela, e a lição da **E79** é exatamente esta: régua copiada é régua que diverge
+ *  (a segunda cópia nasce sem a checagem, ou com outra). Por isso a implementação
+ *  fica ao lado de `isPersonPubliclyVisible` — a mesma família de pergunta, "esta
+ *  pessoa pode ser citada, e como" — e o sorteio passa a IMPORTAR daqui, mantendo
+ *  o nome `maskName` como apelido do vocabulário dele (F16).
+ *
+ *  Nome de uma palavra só é preservado (`Ana` → `Ana`): abreviar viraria `A.`, que
+ *  não identifica nem para quem estava no palco — e o ponto da máscara é continuar
+ *  reconhecível para quem já conhece a pessoa, e não identificável para quem só
+ *  navega.
+ */
+export function maskPersonName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length <= 1) return parts[0] ?? '';
+
+  const [first, ...rest] = parts;
+  const initials = rest
+    .filter((part) => part.length > 2)
+    .map((part) => `${part[0]!.toUpperCase()}.`)
+    .join(' ');
+
+  return initials ? `${first} ${initials}` : first!;
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Os campos do perfil
 // ───────────────────────────────────────────────────────────────────────────────

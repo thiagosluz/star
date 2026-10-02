@@ -31,6 +31,48 @@
  *  IDs de `linkUser` e pela janela. Nada de varredura sem índice pela tabela
  *  inteira, e nada que possa alcançar um arquivo que ainda esteja rodando.
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A REGRA: O QUE FAZ UMA SPEC SER INDEPENDENTE (FASE 62 · dívida I3)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A casa pagou esta conta DUAS vezes — o **E71** (FASE 50: a suíte de credenciamento
+ *  só passava na ordem em que foi escrita) e o **I3** (FASE 60/61: um caso lia o cartão
+ *  do caso anterior, e um tropeço virava três vermelhos). As cinco regras abaixo são o
+ *  que sobrou dessas duas contas. Elas valem para TODA spec nova:
+ *
+ *  1. CADA CASO CRIA O PRÓPRIO DADO, pelo caminho da tela, e espera pelo que ELE criou.
+ *     Nada de `demands[0]`, `list.length`, "o primeiro da lista" ou qualquer coisa que
+ *     outro caso tenha deixado. Contagem global não é âncora: `expect(total).toBe(2)`
+ *     só vale enquanto o caso for o segundo a rodar.
+ *
+ *  2. A ESPERA É O FATO, NUNCA O GESTO. Espere o que o SERVIDOR gravou (um poll no
+ *     banco) ou o que a tela passou a mostrar por causa disso — não o clique, nem o
+ *     `press`, nem "deu tempo". Um `expect` de texto logo depois de uma Server Action
+ *     pode não ter espera suficiente; e um gesto que só existe no cliente (o
+ *     `onKeyDown`, o `input.click()`) pode ser ENGOLIDO antes da hidratação — nesse
+ *     caso, repita o gesto ATÉ O FATO (ver `teclarAte` em `demand-board.spec.ts`, e o
+ *     `dragAte`/`clickUntil` do resto da suíte). Aumentar timeout não conserta isso:
+ *     o POST que não aconteceu não acontece porque se esperou mais.
+ *
+ *  3. NEGATIVA SÓ DEPOIS DA POSITIVA. "Isto não acontece" é uma prova fraca enquanto
+ *     não se sabe que o mecanismo está vivo: um handler ausente e um handler que
+ *     recusou a ação são indistinguíveis pelo silêncio. Prove primeiro que o caminho
+ *     funciona (com outra tecla, outro clique) e só então afirme que ele não reagiu.
+ *
+ *  4. A ORDEM ENTRE ARQUIVOS É PROIBIDA COMO SOLUÇÃO. `RUN_ID` é por PROCESSO (e o
+ *     Playwright reaproveita o registro de módulos entre arquivos com `workers: 1`),
+ *     então dois arquivos compartilham o sufixo: prender ordem não isola nada — só
+ *     esconde de quem lê. Se duas specs dependem uma da outra, o defeito é das duas.
+ *
+ *  5. A LIMPEZA É DO ARQUIVO (`cleanupRun` no `afterAll`), nunca da execução. Execução
+ *     interrompida não roda `afterAll` e deixa sobra no banco: para isso existe
+ *     `npm run e2e:clean` (simulação por padrão; apaga só com `--confirmar`).
+ *
+ *  O jeito de conferir se a spec é independente é rodá-la SOZINHA, caso a caso:
+ *
+ *      npx playwright test tests/e2e/<spec>.spec.ts --grep "<um caso só>"
+ *
+ *  Passar no arquivo inteiro e falhar sozinha é a assinatura do E71/I3.
  */
 import { randomUUID } from 'node:crypto';
 import { test } from '@playwright/test';

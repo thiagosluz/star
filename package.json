@@ -47,7 +47,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "e2e:clean": "tsx prisma/scripts/limpar-e2e.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1142.0",

@@ -131,7 +131,18 @@ export function Modal({
       role={tone === 'danger' ? 'alertdialog' : 'dialog'}
       data-testid={testId}
       className={cn(
-        'm-auto w-[calc(100%-2rem)] rounded-lg border border-border bg-card p-0 text-foreground shadow-card',
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O MODAL FLUTUA NO TOM, E NÃO SÓ NA SOMBRA (FASE 62 · dívida E81)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O painel é `bg-popover` desde a FASE 62, e não `bg-card`: no modo claro
+         *  os dois resolvem no mesmo `#ffffff` (nenhum pixel muda — lá quem eleva é
+         *  a sombra), e no modo escuro o `popover` é um degrau ACIMA do cartão, que
+         *  é o que faz o modal continuar sendo uma camada sobre a página quando a
+         *  sombra preta desaparece sobre superfície escura. Ver o bloco de decisão
+         *  em `globals.css`.
+         */
+        'm-auto w-[calc(100%-2rem)] rounded-lg border border-border bg-popover p-0 text-foreground shadow-card',
         /**
          * ─────────────────────────────────────────────────────────────────────────
          *  O VÉU DO MODAL NÃO PODE SER O `foreground` (FASE 61 · dívida H3)

@@ -15,6 +15,7 @@ import {
   type XpProgress,
 } from '@/domain/gamification/xp-rules';
 import type { TaskProgressStatus, XpSourceKind } from '@/domain/gamification/types';
+import { leaderboardIdentity } from '@/domain/gamification/leaderboard-rules';
 import { awardForEvent, rewardKeys, type RewardOutcome } from '@/lib/gamification/reward-engine';
 
 export type XpErrorCode = 'NOT_FOUND' | 'INTERNAL';
@@ -201,6 +202,21 @@ export interface LeaderboardEntry {
  * contato. O ranking é visível a membros da instituição justamente porque é
  * feito de informação que a pessoa já publica no próprio perfil; usar dado
  * privado aqui seria vazamento com aparência de funcionalidade.
+ *
+ * ─── A PESSOA OCULTADA PERMANECE, SEM IDENTIDADE (FASE 62 · dívida E80) ────────
+ *
+ *  A moderação da plataforma (FASE 56) oculta o perfil da PESSOA, e a FASE 60 fez
+ *  essa decisão valer em toda superfície que a cita. O ranking ficou de fora porque
+ *  não consultava a fonte única. Aqui ele passa a consultar: a identidade de cada
+ *  linha sai de `leaderboardIdentity`, no domínio, e o campo
+ *  `publicProfileHiddenAt` é pedido no `select` de propósito (o `tsc` acusa quem o
+ *  remover, e o `undefined` que escapasse do tipo vira "oculto", não "visível").
+ *
+ *  A régua é MASCARAR, e não remover: posição e contagem são o conteúdo de um
+ *  ranking, e a lista não pode encolher — o "top N" do cabeçalho é contado sobre
+ *  todos os perfis com XP por `getXpProfile`, e as duas contagens divergiriam. A
+ *  decisão inteira, com as alternativas descartadas, está em
+ *  `src/domain/gamification/leaderboard-rules.ts`.
  */
 export async function getLeaderboard(
   tenantId: string,
@@ -220,26 +236,50 @@ export async function getLeaderboard(
           level: true,
           prestigeLevel: true,
           cardsCollected: true,
-          user: { select: { name: true, publicHandle: true, image: true } },
+          user: {
+            select: {
+              name: true,
+              publicHandle: true,
+              image: true,
+              /** O efeito da moderação (F56 · E62) — ver o bloco acima. */
+              publicProfileHiddenAt: true,
+            },
+          },
         },
       }),
     );
 
     return {
       ok: true as const,
-      entries: rows.map((row, index) => ({
-        position: index + 1,
-        userId: row.userId,
-        name: row.user?.name ?? 'Participante',
-        publicHandle: row.user?.publicHandle ?? null,
-        image: row.user?.image ?? null,
-        totalXp: row.totalXp,
-        level: row.level,
-        prestigeLevel: row.prestigeLevel,
-        title: resolveXpProgress(row.totalXp).title,
-        cardsCollected: row.cardsCollected,
-        isCurrentUser: row.userId === options.currentUserId,
-      })),
+      entries: rows.map((row, index) => {
+        const person = row.user;
+
+        /**
+         * Sem `?? null` no campo da ocultação: transformar `undefined` em `null`
+         * seria tratar um `select` esquecido como "pessoa visível" — o oposto da
+         * régua fail-closed que a F60 fixou.
+         */
+        const identity = leaderboardIdentity({
+          name: person.name,
+          publicHandle: person.publicHandle,
+          image: person.image,
+          publicProfileHiddenAt: person.publicProfileHiddenAt,
+        });
+
+        return {
+          position: index + 1,
+          userId: row.userId,
+          name: identity.name,
+          publicHandle: identity.publicHandle,
+          image: identity.image,
+          totalXp: row.totalXp,
+          level: row.level,
+          prestigeLevel: row.prestigeLevel,
+          title: resolveXpProgress(row.totalXp).title,
+          cardsCollected: row.cardsCollected,
+          isCurrentUser: row.userId === options.currentUserId,
+        };
+      }),
     };
   } catch (error) {
     console.error(`[gamification] falha ao ler ranking: ${errorMessage(error)}`);

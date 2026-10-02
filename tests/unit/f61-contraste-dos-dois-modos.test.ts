@@ -38,6 +38,18 @@
  *  `#83808f` — a mudança é VISÍVEL no modo claro, e é o preço de o contraste
  *  medido vencer o valor documentado. NÃO existe lista de exceção neste arquivo:
  *  os pares dos dois modos passam.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE A FASE 62 ACRESCENTOU (dívida E81) — e por que dois números mudaram
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A elevação do modo escuro passou a ser por TOM, e a superfície FLUTUANTE
+ *  (menu, gaveta, modal) ganhou tom próprio, mais claro que o cartão. Medir a
+ *  consequência achou o que a decisão não podia deixar passar: a hairline do
+ *  escuro (`#6b7280`) media **2,64:1** sobre esse tom — abaixo dos 3:1 do AA
+ *  non-text. O `outline-variant` do escuro subiu para `#7a7f8d` (3,20:1 sobre o
+ *  flutuante, 4,43:1 sobre o canvas e 3,82:1 sobre o cartão) e três pares novos
+ *  entraram para a superfície que passou a existir. Nenhum critério foi afrouxado:
+ *  o mínimo continua 4,5:1 para texto e 3:1 para borda, contorno e anel.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { readFileSync } from 'node:fs';
@@ -182,11 +194,18 @@ const PARES_ESCUROS: Par[] = [
   { onde: 'corpo de texto sobre o cartão', frente: escuro('ef-on-surface'), fundo: escuro('ef-surface-lowest') },
   { onde: 'corpo de texto sobre a superfície elevada', frente: escuro('ef-on-surface'), fundo: escuro('ef-surface-high') },
   { onde: 'corpo de texto sobre o topo da escada', frente: escuro('ef-on-surface'), fundo: escuro('ef-surface-highest') },
+  /**
+   * A superfície FLUTUANTE (menu, gaveta, modal) — FASE 62 · dívida E81. Ela passou
+   * a ter tom próprio no escuro (a elevação de lá é por TOM), e por isso entra na
+   * régua: um painel que flutua carrega texto, texto esmaecido e a própria hairline.
+   */
+  { onde: 'corpo de texto sobre a superfície flutuante', frente: escuro('ef-on-surface'), fundo: escuro('ef-surface-popover') },
   { onde: 'texto esmaecido sobre a página', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface') },
   { onde: 'texto esmaecido sobre agrupamento', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-low') },
   { onde: 'texto esmaecido sobre o cartão', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-lowest') },
   { onde: 'texto esmaecido sobre o realce (hover)', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-high') },
   { onde: 'texto esmaecido sobre o separador forte', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-highest') },
+  { onde: 'texto esmaecido sobre a superfície flutuante', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-popover') },
   { onde: 'link e item ativo de navegação', frente: escuro('ef-primary'), fundo: escuro('ef-surface') },
   { onde: 'link sobre o cartão', frente: escuro('ef-primary'), fundo: escuro('ef-surface-lowest') },
   { onde: 'link sobre o fundo suave de marca', frente: escuro('ef-primary'), fundo: '#2b2a60' /* primary-soft 12% */ },
@@ -220,6 +239,13 @@ const PARES_ESCUROS: Par[] = [
   { onde: 'texto do TELÃO sobre o telão', frente: escuro('ef-inverse-on-surface'), fundo: escuro('ef-inverse-surface') },
   { onde: 'borda de campo e cartão', frente: escuro('ef-outline-variant'), fundo: escuro('ef-surface'), minimo: MINIMO_INTERFACE },
   { onde: 'borda sobre o cartão', frente: escuro('ef-outline-variant'), fundo: escuro('ef-surface-lowest'), minimo: MINIMO_INTERFACE },
+  /**
+   * A hairline do painel que FLUTUA (FASE 62 · E81): é o par que obrigou o
+   * `outline-variant` do escuro a subir de `#6b7280` — sobre o tom flutuante, que é
+   * mais claro que o cartão, o contorno antigo media 2,64:1.
+   */
+  { onde: 'borda da superfície flutuante', frente: escuro('ef-outline-variant'), fundo: escuro('ef-surface-popover'), minimo: MINIMO_INTERFACE },
+  { onde: 'contorno de ênfase sobre a superfície flutuante', frente: escuro('ef-outline'), fundo: escuro('ef-surface-popover'), minimo: MINIMO_INTERFACE },
   { onde: 'contorno de ênfase', frente: escuro('ef-outline'), fundo: escuro('ef-surface'), minimo: MINIMO_INTERFACE },
   { onde: 'contorno de ênfase sobre o cartão', frente: escuro('ef-outline'), fundo: escuro('ef-surface-lowest'), minimo: MINIMO_INTERFACE },
   { onde: 'anel de foco sobre a página', frente: escuro('ef-primary'), fundo: escuro('ef-surface'), minimo: MINIMO_INTERFACE },
@@ -236,11 +262,13 @@ const MEDIDOS_NO_ESCURO: Record<string, number> = {
   'corpo de texto sobre o cartão': 11.86,
   'corpo de texto sobre a superfície elevada': 10.79,
   'corpo de texto sobre o topo da escada': 9.75,
+  'corpo de texto sobre a superfície flutuante': 9.92,
   'texto esmaecido sobre a página': 10.43,
   'texto esmaecido sobre agrupamento': 9.69,
   'texto esmaecido sobre o cartão': 9,
   'texto esmaecido sobre o realce (hover)': 8.19,
   'texto esmaecido sobre o separador forte': 7.4,
+  'texto esmaecido sobre a superfície flutuante': 7.53,
   'link e item ativo de navegação': 8.88,
   'link sobre o cartão': 7.67,
   'link sobre o fundo suave de marca': 6.57,
@@ -266,8 +294,10 @@ const MEDIDOS_NO_ESCURO: Record<string, number> = {
   'rótulo do botão de perigo cheio': 9.35,
   'aviso do TELÃO sobre o telão': 9.17,
   'texto do TELÃO sobre o telão': 11.65,
-  'borda de campo e cartão': 3.66,
-  'borda sobre o cartão': 3.16,
+  'borda de campo e cartão': 4.43,
+  'borda sobre o cartão': 3.82,
+  'borda da superfície flutuante': 3.2,
+  'contorno de ênfase sobre a superfície flutuante': 4.02,
   'contorno de ênfase': 5.57,
   'contorno de ênfase sobre o cartão': 4.8,
   'anel de foco sobre a página': 8.88,

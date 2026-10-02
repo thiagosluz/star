@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 61** (**F56 a F61 entregues**)
-Testes ................. 2956 (Vitest: unit + integração) + 269 (Playwright E2E)
-ADRs ................... 325 (numeração GLOBAL e sequencial — a próxima é ADR-326)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 62** (**F56 a F62 entregues**)
+Testes ................. 2972 (Vitest: unit + integração) + 289 (Playwright E2E)
+ADRs ................... 329 (numeração GLOBAL e sequencial — a próxima é ADR-330)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 58 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -754,13 +754,14 @@ tests/{unit,integration,e2e}
 | 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (permissão do pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie lido no servidor**, botão que funciona sem JavaScript e a trilha de ícones com nome acessível. ADR-319/320 | ✅ |
 | 60 | **O que se oculta fica oculto · todo tela tem landmark · a suíte E2E para de mentir** — **E79**: a ocultação de perfil passou a valer em toda superfície que cita a pessoa (bloco Equipe do evento, link selado da carta **e** o vazamento achado na auditoria: o **sorteio público** publicava o nome inteiro), por **fonte única** no domínio; **I2**: as 14 telas sem `<main>` ganharam o seu (a lista da F52 dizia 16 — 2 eram herança/redirect), com catraca provada por mutação; **I3**: a spec que "poluía" era ela mesma (casos lendo o dado do caso 1), corrigida na raiz; **I1**: os 5 `fixme` fecharam. ADR-321/322 | ✅ |
 | 61 | **Modo noturno (dívida H3)** — a escala escura redefinindo **só a camada de tokens** (nenhum componente aprendeu o que é "modo"), com **três estados** de escolha (**Claro · Escuro · Sistema**), a preferência do sistema valendo sem cookie e sem JavaScript, a escolha explícita de Claro **vencendo o sistema operacional escuro**, o estado no `<html>` da **primeira resposta** (sem piscar) e o controle no menu de conta e em `/conta`. Contraste **medido nos dois modos** (35 pares no claro, 42 no escuro) e o painel **em modo escuro entrando no portão WCAG AA** — no caminho, **6 pares do modo claro reprovavam o AA desde antes** (3 tokens corrigidos) e a página do organizador deixou de herdar o modo da plataforma. Telão e impressos ficaram de fora por desenho. ADR-323/324/325 | ✅ |
+| 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido** — o padrão 0,2 era cego à troca de token do escuro); **I3**: a espera do `Alt+↑` passou a **repetir o gesto** até a ordem mudar no banco, `workers: 1` mantido **com número** (o 2 foi 8,9% melhor no relógio e 70% pior por cenário) e `npm run e2e:clean` (dry run, preservação nominal da demonstração e do seed); **E80**: o ranking mascara quem foi ocultado **sem tirar a posição** (ADR-328); **E81**: elevação do escuro por **TOM** (ADR-329). **A catraca nova achou um defeito grave**: a gaveta de navegação do celular estava presa dentro do cabeçalho (64 px — `backdrop-filter` cria containing block para `position: fixed`) e passou por F52/F58/F59/F61 porque nenhuma dessas fases **media a TELA**; corrigida por portal + `min-h-0`, com asserção de geometria. ADR-326/327 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**41 itens abertos**; A=3, B=4, C=1, D=3, E=22, F=5, H=2, I=1) está em **`docs/dividas-tecnicas.md`**.
-Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**) e **F61** (**H3**).
-Seguem abertas: **E76, E77, E78, E80, E81** e **I3** (reaberta na F61: a execução completa volta a acusar 1 vermelho que passa isolado — leia antes de tratar vermelho como regressão).
+**Dívidas técnicas:** o levantamento consolidado (**39 itens abertos**; A=3, B=4, C=1, D=3, E=22, F=5, H=1, I=0) está em **`docs/dividas-tecnicas.md`**.
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**) e **F62** (**H6, I3, E80, E81**).
+Seguem abertas: **E76, E77, E78, E82, E83**.
 
 ---
 
@@ -768,7 +769,7 @@ Seguem abertas: **E76, E77, E78, E80, E81** e **I3** (reaberta na F61: a execuç
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-61-modo-noturno.md`; antes, F60 e F59; a comunicação é
+   fase entregue** (`docs/fase-62-tela-medida-suites-e-fechamentos.md`; antes, F61 e F60; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

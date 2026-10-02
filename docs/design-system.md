@@ -38,6 +38,7 @@ Os valores abaixo são os do `DESIGN.md` e estão em `:root` no `globals.css`. U
 | `bg-surface` | `#f9f9ff` | Canvas da página (nível 0) |
 | `bg-surface-low` | `#f1f3ff` | Agrupamento estático, cabeçalho de tabela (nível 1) |
 | `bg-card` | `#ffffff` | Cartão elevado (nível 2) — **o padrão** |
+| `bg-popover` | `#ffffff` | Superfície FLUTUANTE (nível 3): menu, gaveta, modal. No claro é o branco do cartão e quem eleva é a sombra; no escuro é um degrau de tom acima dele |
 | `bg-surface-high` | `#e5e8f4` | Hover, realce, fundo de chip neutro |
 | `bg-surface-highest` | `#dfe2ee` | Separador forte |
 | `text-foreground` / `text-on-surface` | `#181c24` | Texto principal |
@@ -92,12 +93,14 @@ virar uma segunda interface que envelhece separada da primeira.
 | `bg-surface` (canvas) | `#f9f9ff` | `#17181e` |
 | `bg-surface-low` (agrupamento) | `#f1f3ff` | `#1d1f26` |
 | `bg-card` (cartão, o padrão) | `#ffffff` | `#23252d` |
+| `bg-popover` (superfície flutuante: menu, gaveta, modal) | `#ffffff` | `#2f323c` |
+| `bg-surface-container` (bloco intermediário) | `#ebedfa` | `#262831` |
 | `bg-surface-high` (hover, realce) | `#e5e8f4` | `#2a2c35` |
 | `bg-surface-highest` (separador forte) | `#dfe2ee` | `#31333d` |
 | `bg-surface-dim` (superfície que recua) | `#d7dae5` | `#121319` |
 | `text-foreground` | `#181c24` | `#e1e2ec` |
 | `text-muted-foreground` | `#464555` | `#c5c6d0` |
-| `border-border` (hairline e borda de campo) | `#83808f` | `#6b7280` |
+| `border-border` (hairline e borda de campo) | `#83808f` | `#7a7f8d` |
 | `border-border-strong` | `#777587` | `#8b90a1` |
 | `bg-primary` (ação) | `#4f46e5` | `#2b1fa8` |
 | `text-primary-foreground` | `#ffffff` | `#ffffff` |
@@ -110,11 +113,30 @@ virar uma segunda interface que envelhece separada da primeira.
 | `bg-warning` / `text-warning-strong` | `#f59e0b` / `#92400e` | `#fbbf24` / `#fcd34d` |
 | `bg-destructive` / `text-destructive` | `#b91c1c` | `#93000a` / `#fca5a5` |
 | `--ring` (anel de foco) | `#4f46e5` | `#a5b4fc` |
-| `--shadow-card` | preto a 5% | preto a 50% (sombra sobre escuro precisa de densidade) |
+| `--shadow-card` | preto a 5% (é ele que ELEVA) | preto a 50% (reforço: no escuro quem eleva é o tom) |
 
 **Os mesmos papéis, as mesmas relações.** No claro o texto é o tom mais escuro e o
 fundo o mais claro; no escuro isso se inverte, e a escada continua ascendente — o
 cartão é sempre um degrau acima do canvas. O que muda é o valor, nunca o contrato.
+
+### A elevação muda de natureza entre os modos (FASE 62 · dívida E81)
+
+No **claro** quem levanta uma superfície é a **sombra**: o popover é o mesmo branco
+do cartão e o que diz "isto flutua" é `shadow-modal`. No **escuro** a sombra preta
+não desenha degrau nenhum sobre fundo escuro, então quem eleva é o **TOM** — cada
+nível sobe um degrau de cor (`#17181e` fundo → `#23252d` cartão → `#2f323c`
+flutuante) e a sombra fica como reforço do que passa por cima de conteúdo. É
+`bg-popover` que carrega esse degrau, e por isso ele existe como token: no claro ele
+resolve no branco do cartão (nenhum pixel muda), no escuro resolve um degrau acima.
+
+Medir a decisão achou a consequência que ela não podia deixar passar: com a
+superfície flutuante mais clara que o cartão, a **hairline** do escuro media
+**2,64:1** sobre ela — abaixo dos 3:1 do AA non-text. O `--ef-outline-variant` do
+escuro subiu de `#6b7280` para `#7a7f8d`, e agora mede 3,20:1 sobre o flutuante,
+3,82:1 sobre o cartão e 4,43:1 sobre o canvas. A ordem da escada e os dois saltos de
+elevação (1,16:1 e 1,20:1) são catraca em
+`tests/unit/f62-elevacao-do-escuro.test.ts`; os pares de texto e as hairlines dos
+dois modos seguem presos em `tests/unit/f61-contraste-dos-dois-modos.test.ts`.
 
 **Os tokens que NÃO mudam têm motivo escrito** (`DESIGN.md`, seção de cores): o
 `inverse-surface` é a superfície que já é escura por definição — o **telão do
@@ -184,6 +206,7 @@ import {
 | `PageHeader` | **Toda** tela começa por ele | Título, descrição, trilha e ações no mesmo lugar sempre |
 | `Breadcrumbs` | Páginas com hierarquia (detalhe dentro de lista) | Último item não é link |
 | `Card` + partes | Agrupar conteúdo | Nível 2; cartão dentro de cartão usa `elevated={false}` |
+| Diálogo, menu, gaveta | Sobreposição sobre o conteúdo | Nível 3: `bg-popover` + `shadow-modal` — no escuro o tom do popover é o degrau |
 | `SectionHeading` | Seção dentro de uma página | Substitui `<h2>` com classes escolhidas a esmo |
 | `Button` / `buttonClasses` | Ações e links que parecem ação | Um primário por tela; destrutivo é contorno |
 | `Badge` | Estado ao lado de um dado | Sempre com rótulo escrito; `withDot` para estado |
@@ -328,6 +351,16 @@ AA. A mudança é VISÍVEL no modo claro (verde e vermelho um tom mais escuros, 
 mais firme) — e é a segunda vez que a paleta muda por medição, como o aviso mudou
 na FASE 52.
 
+**Contraste do modo escuro (FASE 62 · dívida E81).** A elevação do escuro passou a
+ser por TOM (ver a seção 3), e a superfície flutuante que nasceu disso é mais clara
+que o cartão (`#2f323c` contra `#23252d`). Medir os pares dela achou o que a decisão
+não podia deixar passar: a hairline do escuro media **2,64:1** sobre esse tom,
+abaixo dos 3:1 do AA non-text de borda e contorno. O `--ef-outline-variant` do escuro
+subiu de `#6b7280` para `#7a7f8d` — 3,20:1 sobre o flutuante, 3,82:1 sobre o cartão
+e 4,43:1 sobre o canvas. Quatro pares novos (texto, texto esmaecido, hairline e
+contorno de ênfase da superfície flutuante) entraram na catraca dos dois modos,
+e nenhum critério foi afrouxado.
+
 **Escolha explícita de CLARO (FASE 61).** A media query do sistema é
 `:root:not([data-tema='claro'])`: sem essa guarda, `:root` e `:root` têm a mesma
 especificidade e a media query vence por vir depois — num sistema operacional
@@ -370,3 +403,40 @@ O que cada catraca prende:
 
 Nenhum par entra na escala por olhômetro: o teste lê o `globals.css`, calcula a razão
 do WCAG e reprova dizendo o número.
+
+---
+
+## 10. Regressão visual (FASE 62 · dívida H6)
+
+O sistema media contraste, contraste escuro, landmark e `axe` — e **não media a TELA**.
+A catraca que fecha isso é `tests/e2e/f62-regressao-visual.spec.ts`: **doze snapshots**
+com `toHaveScreenshot` cobrindo o **rodapé da barra lateral** (barra inteira, recolhida
+no claro e no escuro, e a gaveta do celular), o **painel** e o **diretório de
+participantes** — cada tela nos dois modos e nos dois tamanhos. Não é varredura: é o
+conjunto pequeno onde o desenho quebra (o rodapé de conta junta truncamento de texto,
+dois botões de tamanho fixo e um `<details>` na MESMA linha; a tabela de participantes
+é a tela mais densa do produto). Nada dinâmico entra na imagem: o e-mail de quem está
+logado e a URL canônica (que carrega o slug da instituição) são **mascarados** — o
+magenta é proposital —, animação e cursor ficam congelados e a espera é determinística.
+A tolerância é medida, não escolhida no olho: `threshold: 0.04` (é o valor que reprova
+a troca do token de borda do escuro, que o padrão 0,2 deixa passar em silêncio) e
+`maxDiffPixelRatio: 0`, porque três execuções deram **zero** pixel de diferença.
+
+Atualizar a linha de base é ato consciente, e vem com a obrigação de OLHAR a imagem
+nova antes de commitar (as imagens vivem em
+`tests/e2e/f62-regressao-visual.spec.ts-snapshots/` e são versionadas):
+
+```bash
+npx playwright test tests/e2e/f62-regressao-visual.spec.ts --update-snapshots
+```
+
+**Limite declarado:** a linha de base vale para **este ambiente** — o Chromium deste
+host servindo o código do projeto. Outra máquina ou outro sistema operacional muda o
+nome do arquivo (o sufixo de plataforma do Playwright) e exige o `--update-snapshots`
+consciente; a falha ali é a mensagem certa, não um defeito. E a primeira execução desta
+catraca achou um defeito real que passou por F52/F58/F59/F61 porque **nenhuma dessas
+fases media a tela**: a gaveta do celular tinha **64 px de altura** (presa dentro do
+cabeçalho — `backdrop-filter` cria containing block para `position: fixed`) e o rodapé
+de conta ficava fora dela. A correção (portal para `document.body` e `min-h-0` no meio
+da coluna) está em `mobile-nav.tsx`, e a régua que a prende é de geometria: a gaveta
+aberta tem de ocupar a altura da viewport e o botão de sair tem de ficar dentro dela.

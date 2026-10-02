@@ -24,7 +24,35 @@
  */
 import { createHash, createHmac } from 'node:crypto';
 
-import { isPersonPubliclyVisible } from '@/domain/profile/public-profile-rules';
+import {
+  isPersonPubliclyVisible,
+  maskPersonName,
+} from '@/domain/profile/public-profile-rules';
+
+/**
+ * O apelido do SORTEIO para a abreviação de nome — `Ana Souza` → `Ana S.`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE MASCARAR POR PADRÃO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Ganhar um sorteio é um fato da pessoa, e publicar "Fulano de Tal ganhou o
+ *  notebook" na internet é exposição que ninguém consentiu ao se credenciar. Quem
+ *  estava no palco reconhece; quem só navega não identifica. Quem optou por ter
+ *  perfil público (`User.isPublicProfile`) tem o nome completo publicado —
+ *  consentimento explícito e verificável —, salvo se a moderação da plataforma
+ *  ocultou o perfil (FASE 60 · E79): aí a máscara volta, e a decisão de quem fica
+ *  com o nome inteiro é a de `publicWinnerEntry`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A IMPLEMENTAÇÃO MUDOU DE CASA (FASE 62 · dívida E80)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  `maskPersonName` passou a viver na fonte única do domínio de perfil, ao lado de
+ *  `isPersonPubliclyVisible`, porque a pergunta "como citar alguém sem identificá-lo"
+ *  deixou de ser do sorteio: o ranking de conquistas também precisa dela. O nome
+ *  `maskName` fica — é o vocabulário que a FASE 16 deixou no sorteio, nas telas e nos
+ *  testes dele, e renomeá-lo não mudaria fato nenhum, só espalharia churn.
+ */
+export const maskName = maskPersonName;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Tipos
@@ -467,37 +495,6 @@ export function verifySeed(seed: string, commitment: string): boolean {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Exibição pública do nome (item G5)
 // ───────────────────────────────────────────────────────────────────────────────
-/**
- * Mascara o nome para exibição pública.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE MASCARAR POR PADRÃO
- *  ─────────────────────────────────────────────────────────────────────────────
- *  Ganhar um sorteio é um fato da pessoa, e publicar "Fulano de Tal ganhou o
- *  notebook" na internet é exposição que ninguém consentiu ao se credenciar. O
- *  padrão é `Ana Souza` → `Ana S.`: quem estava no palco reconhece, quem só navega
- *  não identifica. Quem optou por ter perfil público (`User.isPublicProfile`) tem o
- *  nome completo publicado — consentimento explícito e verificável —, salvo se a
- *  moderação da plataforma ocultou o perfil (FASE 60 · E79): aí a máscara volta, e a
- *  decisão de quem fica com o nome inteiro é a de `publicWinnerEntry`.
- *
- *  Nome de uma palavra só é preservado (`Ana` → `Ana`): mascarar viraria `A.`, que
- *  não identifica nem para quem estava lá.
- */
-export function maskName(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-
-  if (parts.length <= 1) return parts[0] ?? '';
-
-  const [first, ...rest] = parts;
-  const initials = rest
-    .filter((part) => part.length > 2)
-    .map((part) => `${part[0]!.toUpperCase()}.`)
-    .join(' ');
-
-  return initials ? `${first} ${initials}` : first!;
-}
-
 /**
  * O que o sorteio publica sobre UMA pessoa que concorreu ou ganhou.
  *

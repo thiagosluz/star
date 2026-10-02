@@ -19,6 +19,10 @@ colors:
   surface-low: "#f1f3ff"
   surface-container: "#ebedfa"
   surface-high: "#e5e8f4"
+  # ─── A superfície FLUTUANTE (menu, gaveta, modal) — FASE 62 · dívida E81 ─────
+  # No CLARO ela é o mesmo branco do cartão (lá quem eleva é a sombra); no ESCURO
+  # ela é o degrau acima do cartão, porque no escuro quem eleva é o TOM.
+  surface-popover: "#ffffff"
   surface-highest: "#dfe2ee"
   surface-variant: "#dfe2ee"
   on-surface: "#181c24"
@@ -83,14 +87,15 @@ colors:
   dark-surface-bright: "#23252d"
   dark-surface-lowest: "#23252d"
   dark-surface-low: "#1d1f26"
-  dark-surface-container: "#23252d"
+  dark-surface-container: "#262831"
   dark-surface-high: "#2a2c35"
+  dark-surface-popover: "#2f323c"
   dark-surface-highest: "#31333d"
   dark-surface-variant: "#3a3d47"
   dark-on-surface: "#e1e2ec"
   dark-on-surface-variant: "#c5c6d0"
   dark-outline: "#8b90a1"
-  dark-outline-variant: "#6b7280"
+  dark-outline-variant: "#7a7f8d"
   dark-primary: "#a5b4fc"
   dark-on-primary: "#ffffff"
   dark-primary-container: "#2b1fa8"
@@ -209,6 +214,13 @@ components:
     backgroundColor: "{colors.surface-lowest}"
     textColor: "{colors.on-surface}"
     rounded: "{rounded.md}"
+  # A superfície que FLUTUA (menu, gaveta, modal) — FASE 62 · dívida E81. No claro
+  # resolve no branco do cartão (a sombra eleva); no escuro, num degrau de tom acima.
+  floating-surface:
+    backgroundColor: "{colors.surface-popover}"
+    textColor: "{colors.on-surface}"
+    rounded: "{rounded.md}"
+    border: "{colors.outline-variant}"
   input:
     backgroundColor: "{colors.surface-lowest}"
     textColor: "{colors.on-surface}"
@@ -294,17 +306,30 @@ barra de rolagem e o fundo do autofill continuam claros dentro da tela escura.
 | Canvas da página (nível 0) | `#f9f9ff` | `#17181e` |
 | Agrupamento, cabeçalho de tabela | `#f1f3ff` | `#1d1f26` |
 | **Cartão** (nível 2, o padrão) | `#ffffff` | `#23252d` |
+| **Superfície flutuante** (popover, menu, gaveta, modal) | `#ffffff` | `#2f323c` |
 | Hover, realce, chip neutro | `#e5e8f4` | `#2a2c35` |
 | Separador forte | `#dfe2ee` | `#31333d` |
 | Superfície que RECUA | `#d7dae5` | `#121319` |
 | Texto principal | `#181c24` | `#e1e2ec` |
 | Texto secundário | `#464555` | `#c5c6d0` |
-| Hairline estrutural e borda de campo | `#83808f` | `#6b7280` |
+| Hairline estrutural e borda de campo | `#83808f` | `#7a7f8d` |
 | Contorno de ênfase | `#777587` | `#8b90a1` |
 
 **A escada é ascendente nos dois modos**: o cartão é mais claro que o canvas tanto
 no claro quanto no escuro. No escuro, "mais claro" quer dizer *um degrau acima do
 fundo*, não "uma cor clara" — é o que preserva a leitura de profundidade.
+
+**A elevação do escuro é por TOM, e a do claro é por SOMBRA** (FASE 62 · dívida
+E81). No claro a superfície flutuante é o mesmo branco do cartão e quem a levanta é
+a sombra; no escuro a sombra preta não desenha degrau nenhum sobre superfície já
+escura, então cada nível sobe um degrau de tom — `#17181e` (fundo) → `#23252d`
+(cartão) → `#2f323c` (flutuante). A sombra continua no escuro como **reforço** do
+que flutua sobre conteúdo. Medir essa decisão teve uma consequência: com a
+superfície flutuante mais clara que o cartão, a **hairline** do escuro media 2,64:1
+sobre ela (abaixo dos 3:1 do AA non-text) e subiu de `#6b7280` para `#7a7f8d` —
+3,20:1 sobre o flutuante, 4,43:1 sobre o canvas e 3,82:1 sobre o cartão. A ordem da
+escada e os dois saltos de elevação (1,16:1 e 1,20:1) são catraca em
+`tests/unit/f62-elevacao-do-escuro.test.ts`.
 
 ### Marca e ações
 
@@ -384,17 +409,25 @@ fechada: tamanho de fonte arbitrário (`text-[13px]`) reprova na catraca.
 
 ## Elevation & Depth
 
-| Nível | Como | Onde |
-|---|---|---|
-| 0 | canvas (`#f9f9ff` / `#17181e`) | fundo da página |
-| 1 | `surface-low` | agrupamento, cabeçalho de tabela |
-| 2 | `surface-lowest` + `shadow-card` | cartão — **o padrão** |
-| 3 | `surface-high` | hover, dropdown, popover |
+| Nível | No claro | No escuro | Onde |
+|---|---|---|---|
+| 0 | canvas (`#f9f9ff`) | canvas (`#17181e`) | fundo da página |
+| 1 | `surface-low` | `surface-low` | agrupamento, cabeçalho de tabela |
+| 2 | `surface-lowest` + `shadow-card` | `surface-lowest` (o TOM eleva) | cartão — **o padrão** |
+| 3 | `surface-lowest` + `shadow-modal` | `surface-popover` (o TOM eleva) | popover, menu, gaveta, modal |
+| — | `surface-high` | `surface-high` | hover e realce DENTRO de um cartão |
 
-A sombra é discreta no claro (`0 4px 6px -1px rgb(0 0 0 / 0.05)`) e **mais densa
-no escuro** (`0 4px 6px -1px rgb(0 0 0 / 0.5)`): sobre fundo escuro, sombra preta
-de baixa opacidade simplesmente não aparece, e o cartão perderia o degrau que o
-separa da tela.
+**Quem eleva muda de modo, e isso é decisão, não descuido** (FASE 62 · dívida
+E81). No claro, `--shadow-card` (`0 4px 6px -1px rgb(0 0 0 / 0.05)`) e
+`--shadow-modal` (`0 20px 25px -5px rgb(0 0 0 / 0.1)`) são quem levanta a
+superfície, e o branco do cartão é o mesmo branco do popover. No escuro a sombra
+preta não desenha degrau sobre fundo escuro: a elevação é o **TOM**, um degrau por
+nível (`#23252d` do cartão → `#2f323c` do que flutua), e a sombra fica como
+**reforço** do que flutua sobre conteúdo — o que continua se enxergando, porque
+escurece o que está atrás. Os dois saltos de elevação do escuro (fundo→cartão
+1,16:1 e cartão→flutuante 1,20:1) e a ordem inteira da escada são catraca em
+`tests/unit/f62-elevacao-do-escuro.test.ts`; os pares de texto e a hairline da
+superfície flutuante são medidos pelo portão dos dois modos.
 
 ## Shapes
 
@@ -408,6 +441,7 @@ palco). A forma é contida: nada de cápsula fora de `Badge` e avatar.
 |---|---|
 | `Button` | Um primário por tela; o destrutivo é contorno e só preenche no hover; `danger` existe para confirmação sem volta |
 | `Card` | Nível 2; cartão dentro de cartão usa `elevated={false}` |
+| Diálogo, menu, gaveta | Nível 3: `bg-popover` + `shadow-modal` — no claro o popover é o branco do cartão e a sombra eleva; no escuro o tom dele é o degrau |
 | `Badge` | Estado ao lado de um dado, sempre com rótulo escrito; `tone="event"` usa a cor do evento |
 | `Alert` | O que a pessoa precisa saber agora; ícone + título, `role="alert"` no perigo |
 | `Field`/`Input` | 44px, rótulo e erro amarrados por `name` |
@@ -428,5 +462,8 @@ palco). A forma é contida: nada de cápsula fora de `Badge` e avatar.
   pares estão presos por teste, com o número escrito ao lado.
 - **Do** manter a página pública do evento com o tema do organizador; **don't**
   inverter as cores que ele escolheu nem fazer o PDF impresso ler token de tema.
+- **Do** dar `bg-popover` ao que FLUTUA sobre conteúdo (menu, gaveta, modal);
+  **don't** desenhar sobreposição com `bg-card` — no modo escuro ela perde o degrau,
+  porque lá quem eleva é o tom e não a sombra (dívida E81).
 - **Don't** usar gradiente fora de conquista: a fronteira entre "estado do
   sistema" e "mérito do participante" é parte do produto.

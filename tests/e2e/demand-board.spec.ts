@@ -204,6 +204,46 @@ async function dragAte(
 }
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A TECLA ATÉ A ORDEM MUDAR NO BANCO (FASE 62 · dívida I3)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O clique de um `<form>` vira POST nativo (é o aperfeiçoamento progressivo do React
+ *  19, medido na FASE 60), mas o `Alt + ↑` NÃO tem rede de segurança: o `onKeyDown`
+ *  vive no bundle, e a tecla que cai ANTES da hidratação não grava — nem avisa.
+ *  Medido com o bundle atrasado de propósito (`page.route` + `waitUntil: 'commit'`,
+ *  o HTML do servidor no DOM em 203 ms e o React assumindo em 9.290 ms):
+ *
+ *      1º Alt+↑ sem o bundle ...... índice 2 na coluna (nenhum POST, ordem intacta)
+ *      2º Alt+↑ com o bundle ...... índice 1 ✓
+ *
+ *  Era esse o vermelho: a espera do cenário era um poll do BANCO, que mede a
+ *  CONSEQUÊNCIA do gesto; se a tecla se perde antes do React, nenhum poll — por maior
+ *  que seja — faz o cartão mudar. Aqui o gesto é REFEITO enquanto o fato não acontece.
+ *
+ *  Repetir é seguro, e a razão é medida: o alvo da tecla é função do
+ *  `data-demand-index` que ela LÊ do DOM. Com o DOM velho, a segunda tecla envia o
+ *  MESMO índice de destino — repetir não anda duas casas.
+ */
+async function teclarAte(
+  page: import('@playwright/test').Page,
+  cartao: import('@playwright/test').Locator,
+  posicaoGravada: () => Promise<number>,
+  destino: number,
+): Promise<void> {
+  await expect(async () => {
+    const noDom = Number(await cartao.getAttribute('data-demand-index'));
+
+    /** Só tecla se a tela ainda mostra o cartão abaixo do destino. */
+    if (noDom > destino) {
+      await cartao.focus();
+      await page.keyboard.press('Alt+ArrowUp');
+    }
+
+    await expect.poll(posicaoGravada, { timeout: 5_000 }).toBe(destino);
+  }).toPass({ timeout: 45_000 });
+}
+
+/**
  * Abre o formulário de criação SÓ se ele estiver fechado.
  *
  * O estado do `<details>` é do DOM e sobrevive à regravação da página: depois de criar
@@ -642,20 +682,14 @@ test.describe('quadro de demandas internas', () => {
     await card.focus();
     await expect(card).toBeFocused();
 
-    /** A seta SOZINHA não reordena: sem o `Alt` o navegador rola a página. */
-    await page.keyboard.press('ArrowUp');
-
-    await expect.poll(async () => (await columnOrder(column.id)).indexOf(ultimo), { timeout: 10_000 }).toBe(
-      ordem.length - 1,
-    );
-
-    await page.keyboard.press('Alt+ArrowUp');
-
+    const posicaoGravada = async () => (await columnOrder(column.id)).indexOf(ultimo);
     const posicaoEsperada = ordem.length - 2;
 
-    await expect
-      .poll(async () => (await columnOrder(column.id)).indexOf(ultimo), { timeout: 30_000 })
-      .toBe(posicaoEsperada);
+    /**
+     * A tecla é repetida até a ORDEM MUDAR NO BANCO (dívida I3): o gesto é do cliente e
+     * a espera é do fato gravado. Ver `teclarAte`.
+     */
+    await teclarAte(page, card, posicaoGravada, posicaoEsperada);
 
     /** A tela mostra a ordem nova, e o anúncio diz QUAL posição o cartão passou a ter. */
     await expect(card).toHaveAttribute('data-demand-index', String(posicaoEsperada));
@@ -667,22 +701,42 @@ test.describe('quadro de demandas internas', () => {
     await expect(card).toBeFocused();
 
     /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A SETA SOZINHA SÓ PROVA ALGO DEPOIS DA PROVA DE QUE O REACT OUVE (dívida I3)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Antes esta conferência vinha primeiro, e o silêncio dela podia ser o silêncio de
+     *  uma página que ainda não tinha hidratado — mediria a ausência do handler, não a
+     *  regra. Aqui o cartão ACABOU de se mover pelo teclado: o React está comprovadamente
+     *  ouvindo, então "a seta sozinha não move" passa a ser sobre a regra do acorde.
+     */
+    await card.focus();
+    await page.keyboard.press('ArrowUp');
+
+    await expect.poll(posicaoGravada, { timeout: 10_000 }).toBe(posicaoEsperada);
+
+    /**
      * A trilha guarda o fato como qualquer outro movimento — o teclado não é um caminho
      * paralelo de escrita.
      */
     const kinds = (await tableOf(ultimo)).map((entry) => entry.kind);
     expect(kinds[kinds.length - 1]).toBe('MOVED');
 
-    /** Na ponta, o anúncio é honesto: "já é a primeira", e nada é escrito. */
-    const movimentosAntes = (await tableOf(ultimo)).length;
+    /**
+     * Na ponta, o anúncio é honesto: "já é a primeira", e nada é escrito.
+     *
+     * A trilha conferida é a do cartão que RECEBEU a tecla (`primeiro`) — antes era a do
+     * `ultimo`, que não estava em jogo: uma escrita indevida no primeiro cartão passaria
+     * despercebida. Aqui o fato medido é o que o cenário afirma.
+     */
     const primeiro = (await columnOrder(column.id))[0]!;
+    const eventosDoPrimeiro = (await tableOf(primeiro)).length;
 
     await page.getByTestId(`demand-card-${primeiro}`).focus();
     await page.keyboard.press('Alt+ArrowUp');
 
     await expect(page.getByTestId('demand-board-announce')).toContainText('já é a primeira da coluna');
     await expect.poll(async () => (await columnOrder(column.id))[0], { timeout: 10_000 }).toBe(primeiro);
-    expect((await tableOf(ultimo)).length).toBe(movimentosAntes);
+    expect((await tableOf(primeiro)).length).toBe(eventosDoPrimeiro);
   });
   /**
    * ─────────────────────────────────────────────────────────────────────────────

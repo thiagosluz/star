@@ -54,6 +54,16 @@
   --ef-surface-low: #f1f3ff;
   --ef-surface-container: #ebedfa;
   --ef-surface-high: #e5e8f4;
+  /**
+   * A superfície FLUTUANTE (popover, menu, gaveta, modal) — FASE 62 · dívida E81.
+   *
+   * No CLARO ela é o mesmo branco do cartão de propósito: aqui a elevação é a
+   * SOMBRA, e o `--popover` valia `#ffffff` desde a FASE 11A. O token existe para o
+   * ESCURO, onde a sombra não desenha degrau e quem eleva é o tom — mantê-lo no
+   * branco do claro é o que faz a fase inteira não mexer um pixel do modo claro
+   * (a prova está em `tests/unit/f62-elevacao-do-escuro.test.ts`).
+   */
+  --ef-surface-popover: #ffffff;
   --ef-surface-highest: #dfe2ee;
   --ef-surface-variant: #dfe2ee;
 
@@ -198,7 +208,10 @@
 
   --card: var(--ef-surface-lowest);
   --card-foreground: var(--ef-on-surface);
-  --popover: var(--ef-surface-lowest);
+  /* O que FLUTUA sobre conteúdo (menu, gaveta, modal) tem token próprio desde a
+     FASE 62: no claro ele resolve no mesmo branco do cartão (a sombra é quem
+     eleva), e no escuro resolve num degrau ACIMA do cartão (o tom é quem eleva). */
+  --popover: var(--ef-surface-popover);
   --popover-foreground: var(--ef-on-surface);
   --muted: var(--ef-surface-low);
   --muted-foreground: var(--ef-on-surface-variant);
@@ -539,15 +552,33 @@
 .dark {
   color-scheme: dark;
 
-  /* Superfícies: canvas → cartão → camadas de apoio. A escada é ascendente (o
-     cartão é mais claro que o fundo); `surface-dim` é o degrau que RECUA. */
+  /* ── A ELEVAÇÃO DO ESCURO É POR TOM (FASE 62 · dívida E81) ───────────────────
+     `--shadow-card` e `--shadow-modal` são PRETO em alfa: sobre uma superfície
+     que já é escura, sombra preta não desenha degrau nenhum. O cartão do escuro
+     se distinguia do fundo pelo TOM (#23252d sobre #17181e) e mais nada separava
+     o cartão do que FLUTUA sobre ele — popover, menu, gaveta e modal eram o
+     MESMO #23252d do cartão. Esta fase assume o que o modo escuro já fazia pela
+     metade: **a elevação do escuro é o TOM**, com um degrau por nível, e a
+     sombra passa a ser REFORÇO do que flutua sobre conteúdo — nunca o degrau que
+     separa o cartão da tela. É o inverso do claro, onde a sombra é quem eleva.
+
+     O degrau que faltava ganhou nome: `--ef-surface-popover` é a superfície
+     FLUTUANTE (o `--popover` que os menus já leem). No CLARO ela vale #ffffff —
+     exatamente o que `--popover` valia antes —, então o modo claro não muda um
+     pixel: lá quem eleva continua sendo a sombra.
+
+     A ordem inteira é catraca em `tests/unit/f62-elevacao-do-escuro.test.ts`:
+     fundo < cartão < flutuante, cada degrau acima do anterior, e os dois saltos
+     de elevação (fundo→cartão e cartão→flutuante) medidos — degrau que não se
+     enxerga não é degrau. */
   --ef-surface: #17181e;
   --ef-surface-dim: #121319;
   --ef-surface-bright: #23252d;
   --ef-surface-lowest: #23252d;
   --ef-surface-low: #1d1f26;
-  --ef-surface-container: #23252d;
+  --ef-surface-container: #262831;
   --ef-surface-high: #2a2c35;
+  --ef-surface-popover: #2f323c;
   --ef-surface-highest: #31333d;
   --ef-surface-variant: #3a3d47;
 
@@ -559,10 +590,15 @@
   --ef-inverse-surface: #2c3039;
   --ef-inverse-on-surface: #eef0fc;
 
-  /* Contornos: `outline-variant` é a hairline estrutural e consegue 3,66:1 sobre
-     o canvas escuro (o mínimo de 3:1 para elemento de interface). */
+  /* Contornos: `outline-variant` é a hairline estrutural. Ele SUBIU de `#6b7280`
+     para `#7a7f8d` na FASE 62 (dívida E81), e foi medindo: com a elevação por TOM,
+     a superfície flutuante (`--ef-surface-popover`, `#2f323c`) é mais clara que o
+     cartão, e a hairline do menu/modal media 2,64:1 sobre ela — abaixo dos 3:1 do
+     AA non-text. Agora mede 3,20:1 sobre o flutuante, 4,43:1 sobre o canvas e
+     3,82:1 sobre o cartão: o contraste medido vence o valor documentado, e os três
+     pares ficam presos por teste. */
   --ef-outline: #8b90a1;
-  --ef-outline-variant: #6b7280;
+  --ef-outline-variant: #7a7f8d;
 
   /* Marca. `primary` é o indigo CLARO porque o papel mais crítico dele é ser
      TEXTO (link, item ativo) e anel de foco sobre fundo escuro; o botão cheio
@@ -650,8 +686,11 @@
   --warning-soft: color-mix(in oklab, var(--ef-warning) 14%, var(--ef-surface-lowest));
   --destructive-soft: color-mix(in oklab, var(--ef-danger) 12%, var(--ef-surface-lowest));
 
-  /* Elevação: sobre fundo escuro a sombra preta quase não aparece, então ela
-     ganha opacidade — sem isso o cartão perde o degrau que o separa da tela. */
+  /* Elevação: aqui ela é TOM (ver o bloco da escada de superfícies acima) — a
+     sombra sobrevive como reforço do que flutua sobre CONTEÚDO (menu, gaveta,
+     modal), onde escurecer o que está atrás ainda se enxerga. Ela não é o degrau
+     que separa o cartão da tela; quem faz isso no escuro é
+     `--ef-surface-lowest` contra `--ef-surface`. */
   --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -1px rgb(0 0 0 / 0.35);
   --shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.4);
 }
@@ -688,13 +727,16 @@
   :root:not([data-tema='claro']) {
     color-scheme: dark;
 
+    /* A escada de superfícies — a MESMA do `.dark`, valor a valor (a elevação do
+       escuro é por TOM: ver o bloco de decisão no `.dark`). */
     --ef-surface: #17181e;
     --ef-surface-dim: #121319;
     --ef-surface-bright: #23252d;
     --ef-surface-lowest: #23252d;
     --ef-surface-low: #1d1f26;
-    --ef-surface-container: #23252d;
+    --ef-surface-container: #262831;
     --ef-surface-high: #2a2c35;
+    --ef-surface-popover: #2f323c;
     --ef-surface-highest: #31333d;
     --ef-surface-variant: #3a3d47;
 
@@ -704,7 +746,7 @@
     --ef-inverse-on-surface: #eef0fc;
 
     --ef-outline: #8b90a1;
-    --ef-outline-variant: #6b7280;
+    --ef-outline-variant: #7a7f8d;
 
     --ef-primary: #a5b4fc;
     --ef-on-primary: #ffffff;
