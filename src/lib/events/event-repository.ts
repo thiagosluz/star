@@ -710,6 +710,16 @@ async function loadEventDetail(
                     publicSocialLinks: true,
                     deletedAt: true,
                     /**
+                     * O EFEITO da moderação da plataforma (FASE 56 · E62 → FASE 60 · E79).
+                     *
+                     *  É lido aqui, com o resto dos dados da pessoa, e entregue à regra pura
+                     *  (`buildPublicTeam`), que é quem decide o que vira cartão. A vitrine do
+                     *  evento passou a respeitar a ocultação pela MESMA fonte do perfil
+                     *  público — sem isso, quem a moderação tirou do ar continuava nomeado
+                     *  como equipe do evento (a dívida E79).
+                     */
+                    publicProfileHiddenAt: true,
+                    /**
                      * O vínculo ativo com ESTA instituição.
                      *
                      *  É a guarda que a vitrine precisa e o quadro de demandas não: quem
@@ -906,6 +916,11 @@ async function loadEventDetail(
    *  o nome dela não é informação do evento. O mesmo vale para quem perdeu o vínculo
    *  ATIVO com a instituição: a linha da equipe fica (o histórico do quadro depende
    *  dela), mas a vitrine pública não mostra quem saiu.
+   *
+   *  Quem a moderação da plataforma OCULTOU (FASE 56 · E62 → FASE 60 · E79) sai pela
+   *  fonte única, dentro de `buildPublicTeam`: aqui o fato é só ENTREGUE, como a matriz
+   *  de visibilidade. Escrever o `if` neste mapper criaria uma segunda régua — que é
+   *  exatamente o defeito que a dívida E79 descreve.
    */
   const isShowable = (member: (typeof event.eventTeams)[number]['members'][number]) =>
     member.user !== null &&
@@ -928,6 +943,8 @@ async function loadEventDetail(
           email: null as string | null,
           links: readPublicContacts(member.user!.publicSocialLinks),
         },
+        /** O fato bruto da moderação; quem decide se ele vira cartão é o DOMÍNIO. */
+        publicProfileHiddenAt: member.user!.publicProfileHiddenAt,
       })),
   }));
 

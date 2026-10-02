@@ -113,6 +113,14 @@ export interface DemandCard {
   dueAt: Date | null;
   dueLabel: string | null;
   completedAt: Date | null;
+  /**
+   * Quando o cartão nasceu.
+   *
+   * O Kanban nunca precisou dele, mas o Gantt precisa: sem `startAt` declarado, a barra
+   * começa na CRIAÇÃO (FASE 57). Deixar o Gantt buscar a data por conta própria abriria
+   * uma segunda leitura do mesmo dado — e as duas vistas poderiam discordar.
+   */
+  createdAt: Date;
   teamId: string | null;
   teamName: string | null;
   assignees: { id: string; name: string }[];
@@ -352,6 +360,7 @@ export async function loadDemandBoard(input: {
           startAt: true,
           dueAt: true,
           completedAt: true,
+          createdAt: true,
           teamId: true,
           team: { select: { name: true } },
           assignees: { select: { user: { select: { id: true, name: true } } } },
@@ -375,6 +384,7 @@ export async function loadDemandBoard(input: {
           dueAt: demand.dueAt,
           dueLabel: dueStatusLabel(demand, now, event.timezone),
           completedAt: demand.completedAt,
+          createdAt: demand.createdAt,
           teamId: demand.teamId,
           teamName: demand.team?.name ?? null,
           assignees: demand.assignees.map((assignee) => assignee.user),
@@ -549,6 +559,7 @@ export async function loadDemandDetail(input: {
         dueAt: demand.dueAt,
         dueLabel: dueStatusLabel(demand, now, demand.event.timezone),
         completedAt: demand.completedAt,
+        createdAt: demand.createdAt,
         teamId: demand.teamId,
         teamName: demand.team?.name ?? null,
         assignees: demand.assignees.map((assignee) => assignee.user),

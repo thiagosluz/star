@@ -170,6 +170,40 @@ async function dragCardToColumn(
 }
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  ARRASTA ATÉ O SERVIDOR CONFIRMAR (FASE 60 · dívida I3)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O arrastar atravessa o ESTADO do React (o cartão sai no `dragstart` e o `drop`
+ *  lê o que estiver guardado). Se o primeiro `dragstart` cair antes de o bundle
+ *  assumir a página, o `drop` não encontra nada e o quadro fica parado — sem erro
+ *  e sem POST. Repetir o gesto até a COLUNA MUDAR NO BANCO é a mesma defesa que o
+ *  resto da suíte usa para ação em linha (F52 · armadilha 106): a prova é o efeito,
+ *  não o clique.
+ */
+async function dragAte(
+  page: import('@playwright/test').Page,
+  demandId: string,
+  columnId: string,
+): Promise<void> {
+  await expect(async () => {
+    await dragCardToColumn(page, demandId, columnId);
+
+    await expect
+      .poll(
+        async () =>
+          (
+            await e2eDb.demand.findUniqueOrThrow({
+              where: { id: demandId },
+              select: { columnId: true },
+            })
+          ).columnId,
+        { timeout: 5_000 },
+      )
+      .toBe(columnId);
+  }).toPass({ timeout: 45_000 });
+}
+
+/**
  * Abre o formulário de criação SÓ se ele estiver fechado.
  *
  * O estado do `<details>` é do DOM e sobrevive à regravação da página: depois de criar
@@ -181,6 +215,56 @@ async function openCreateForm(page: import('@playwright/test').Page): Promise<vo
   const aberto = await details.evaluate((element) => (element as HTMLDetailsElement).open);
 
   if (!aberto) await details.locator('summary').click();
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CADA CASO PREPARA O PRÓPRIO CARTÃO (FASE 60 · dívida I3) — O QUE VAZAVA
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  Os casos 2, 3, 4 e 5 liam `boardState().demands[0]` (ou `demands.length`) — o
+ *  cartão que o caso 1 cria pela tela. Medido, rodando UM caso por vez:
+ *
+ *      npx playwright test demand-board.spec.ts --grep "2. SEM JavaScript"
+ *        ✘ TypeError: Cannot read properties of undefined (reading 'id')
+ *      npx playwright test demand-board.spec.ts --grep "3. arrastar"
+ *        ✘ TypeError: Cannot read properties of undefined (reading 'columnId')
+ *
+ *  Rodando o arquivo inteiro passa (7 passed); rodando um caso só, não existe
+ *  cartão nenhum. É a mesma família da dívida **E71** (a suíte de credenciamento
+ *  dependia da ordem) — e o efeito num relatório é o pior possível: **um** tropeço
+ *  do caso 1 (rede, banco, bundle) vira **três** casos vermelhos, porque 2 e 3
+ *  morrem no mesmo `undefined`. Foi esse o "demand-board com 3 casos" medido na
+ *  dívida I3, e é isso que este bloco fecha.
+ *
+ *  A fixture abaixo cria o cartão pelo MESMO caminho da tela (a criação tem
+ *  cenário próprio no caso 1; aqui ela é preparação). O caso 7 já fazia isso com a
+ *  coluna — "depender do que os casos anteriores deixaram faria o teste passar ou
+ *  falhar conforme a ordem"—, e agora os quatro fazem igual.
+ */
+async function criarCartao(
+  page: import('@playwright/test').Page,
+  titulo: string,
+  dueAt?: string,
+): Promise<{ id: string; columnId: string }> {
+  await page.goto(boardUrl());
+  await openCreateForm(page);
+
+  const form = page.getByTestId('demand-create-form');
+  await form.getByTestId('demand-title').fill(titulo);
+
+  if (dueAt) await form.getByTestId('demand-due').fill(dueAt);
+
+  await form.getByTestId('inline-submit').click();
+
+  await expect
+    .poll(async () => (await boardState()).demands.some((demand) => demand.title === titulo), {
+      timeout: 30_000,
+    })
+    .toBe(true);
+
+  const cartao = (await boardState()).demands.find((demand) => demand.title === titulo)!;
+
+  return { id: cartao.id, columnId: cartao.columnId };
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -273,8 +357,10 @@ test.describe('quadro de demandas internas', () => {
     await page.goto(boardUrl());
     await page.getByTestId('demand-create').locator('summary').click();
 
+    const titulo = 'Montar os crachás do credenciamento';
+
     const form = page.getByTestId('demand-create-form');
-    await form.getByTestId('demand-title').fill('Montar os crachás do credenciamento');
+    await form.getByTestId('demand-title').fill(titulo);
     await form.getByTestId('demand-description').fill('Conferir as etiquetas e a impressora térmica.');
     await form.getByTestId('demand-priority').selectOption('URGENT');
     await form.getByTestId('demand-team').selectOption({ label: `Logística ${RUN_ID}` });
@@ -283,12 +369,19 @@ test.describe('quadro de demandas internas', () => {
 
     await form.getByTestId('inline-submit').click();
 
+    /**
+     * A espera é o cartão DESTE caso, pelo título — não o total de demandas do
+     * quadro (era `.toBe(1)`), que só valia enquanto este caso fosse o primeiro a
+     * rodar (FASE 60 · dívida I3).
+     */
     await expect
-      .poll(async () => (await boardState()).demands.length, { timeout: 30_000 })
-      .toBe(1);
+      .poll(async () => (await boardState()).demands.some((demand) => demand.title === titulo), {
+        timeout: 30_000,
+      })
+      .toBe(true);
 
     const state = await boardState();
-    const card = state.demands[0]!;
+    const card = state.demands.find((demand) => demand.title === titulo)!;
 
     /** Nasceu na PRIMEIRA coluna (a de menor posição) e com a equipe e a pessoa. */
     expect(card.columnId).toBe(state.columns[0]!.id);
@@ -336,22 +429,21 @@ test.describe('quadro de demandas internas', () => {
     try {
       await signInAs(page, organizerEmail);
 
-      const state = await boardState();
-      const card = state.demands[0]!;
-      const target = state.columns[1]!; // "Em andamento"
+      /** O cartão deste caso — criado aqui, sem depender do caso 1. */
+      const cartao = await criarCartao(page, `Organizar a recepção ${RUN_ID}`);
 
-      await page.goto(boardUrl());
+      const target = (await boardState()).columns[1]!; // "Em andamento"
 
-      const moveForm = page.getByTestId(`demand-move-select-${card.id}`).locator('..');
-      await moveForm.getByTestId(`demand-move-select-${card.id}`).selectOption(target.id);
-      await moveForm.getByTestId(`demand-move-submit-${card.id}`).click();
+      const moveForm = page.getByTestId(`demand-move-select-${cartao.id}`).locator('..');
+      await moveForm.getByTestId(`demand-move-select-${cartao.id}`).selectOption(target.id);
+      await moveForm.getByTestId(`demand-move-submit-${cartao.id}`).click();
 
       await expect
         .poll(
           async () =>
             (
               await e2eDb.demand.findUniqueOrThrow({
-                where: { id: card.id },
+                where: { id: cartao.id },
                 select: { columnId: true },
               })
             ).columnId,
@@ -359,8 +451,8 @@ test.describe('quadro de demandas internas', () => {
         )
         .toBe(target.id);
 
-      await expect.poll(async () => (await tableOf(card.id)).length, { timeout: 30_000 }).toBe(2);
-      expect((await tableOf(card.id))[1]).toMatchObject({ kind: 'MOVED' });
+      await expect.poll(async () => (await tableOf(cartao.id)).length, { timeout: 30_000 }).toBe(2);
+      expect((await tableOf(cartao.id))[1]).toMatchObject({ kind: 'MOVED' });
     } finally {
       await context.close();
     }
@@ -370,41 +462,27 @@ test.describe('quadro de demandas internas', () => {
     page,
   }) => {
     await signInAs(page, organizerEmail);
-    await page.goto(boardUrl());
 
+    /** O cartão deste caso nasce na PRIMEIRA coluna — o cenário mede o ARRASTAR. */
+    const cartao = await criarCartao(page, `Fechar o áudio do palco ${RUN_ID}`);
     const state = await boardState();
-    const card = state.demands[0]!;
-    const doing = state.columns[1]!;
+    const review = state.columns[2]!;
     const done = state.columns[4]!;
 
-    expect(card.columnId).toBe(doing.id);
+    expect(cartao.columnId).toBe(state.columns[0]!.id);
 
     /** Arrasta para "Em revisão". */
-    const review = state.columns[2]!;
-    await dragCardToColumn(page, card.id, review.id);
-
-    await expect
-      .poll(
-        async () =>
-          (
-            await e2eDb.demand.findUniqueOrThrow({
-              where: { id: card.id },
-              select: { columnId: true },
-            })
-          ).columnId,
-        { timeout: 30_000 },
-      )
-      .toBe(review.id);
+    await dragAte(page, cartao.id, review.id);
 
     /** E depois para "Concluído": a data de conclusão é gravada pelo SERVIDOR. */
-    await dragCardToColumn(page, card.id, done.id);
+    await dragAte(page, cartao.id, done.id);
 
     await expect
       .poll(
         async () =>
           (
             await e2eDb.demand.findUniqueOrThrow({
-              where: { id: card.id },
+              where: { id: cartao.id },
               select: { completedAt: true },
             })
           ).completedAt,
@@ -412,21 +490,21 @@ test.describe('quadro de demandas internas', () => {
       )
       .not.toBeNull();
 
-    const kinds = (await tableOf(card.id)).map((entry) => entry.kind);
-    expect(kinds).toEqual(['CREATED', 'MOVED', 'MOVED', 'COMPLETED']);
+    const kinds = (await tableOf(cartao.id)).map((entry) => entry.kind);
+    expect(kinds).toEqual(['CREATED', 'MOVED', 'COMPLETED']);
 
     await page.reload();
-    await expect(page.getByTestId('demand-card-situation-' + card.id)).toContainText('Concluída');
+    await expect(page.getByTestId('demand-card-situation-' + cartao.id)).toContainText('Concluída');
     await expect(page.getByTestId('demand-summary-done')).toContainText('1');
   });
 
   test('4. comentar com menção registra a conversa e avisa quem foi mencionado', async ({ page }) => {
     await signInAs(page, organizerEmail);
 
-    const state = await boardState();
-    const card = state.demands[0]!;
+    /** O cartão deste caso — a conversa não depende do que outro caso deixou. */
+    const cartao = await criarCartao(page, `Confirmar a impressora ${RUN_ID}`);
 
-    await page.goto(`${boardUrl()}/${card.id}`);
+    await page.goto(`${boardUrl()}/${cartao.id}`);
 
     const form = page.getByTestId('demand-comment-form');
     await form
@@ -437,13 +515,13 @@ test.describe('quadro de demandas internas', () => {
 
     await expect
       .poll(
-        async () => e2eDb.demandComment.count({ where: { demandId: card.id } }),
+        async () => e2eDb.demandComment.count({ where: { demandId: cartao.id } }),
         { timeout: 30_000 },
       )
       .toBe(1);
 
     const comment = await e2eDb.demandComment.findFirstOrThrow({
-      where: { demandId: card.id },
+      where: { demandId: cartao.id },
       select: { id: true, body: true, mentions: { select: { userId: true, notifiedAt: true } } },
     });
 
@@ -472,23 +550,23 @@ test.describe('quadro de demandas internas', () => {
     page,
   }) => {
     await signInAs(page, organizerEmail);
+
+    const titulo = `Fechar o contrato do som ${RUN_ID}`;
+
+    /**
+     * O cartão nasce com o prazo de ONTEM, pelo mesmo formulário da tela — e a
+     * espera é a existência DELE, não o total de demandas do quadro. Contar o total
+     * amarravia este caso ao número de cartões que os outros deixaram (era
+     * `.toBe(2)`): a mesma dependência de ordem que os casos 2, 3 e 4 acabaram de
+     * perder (dívida I3).
+     */
+    const cartao = await criarCartao(page, titulo, dayInput(-1));
+
+    const late = (await boardState()).demands.find((demand) => demand.title === titulo)!;
+
+    expect(late.id).toBe(cartao.id);
+
     await page.goto(boardUrl());
-
-    await page.getByTestId('demand-create').locator('summary').click();
-
-    const form = page.getByTestId('demand-create-form');
-    await form.getByTestId('demand-title').fill('Fechar o contrato do som');
-    /** Ontem: o prazo é o FIM daquele dia, e já passou. */
-    await form.getByTestId('demand-due').fill(dayInput(-1));
-    await form.getByTestId('inline-submit').click();
-
-    await expect
-      .poll(async () => (await boardState()).demands.length, { timeout: 30_000 })
-      .toBe(2);
-
-    const late = (await boardState()).demands.find((demand) => demand.title.includes('contrato'))!;
-
-    await page.reload();
     await expect(page.getByTestId(`demand-card-situation-${late.id}`)).toContainText('Atrasada');
     await expect(page.getByTestId('demand-summary-overdue')).toContainText('1');
 

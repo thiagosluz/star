@@ -49,7 +49,7 @@ export default async function PlatformTenantDetailPage({
   const publicPath = tenantPath(tenant.slug, '/eventos');
 
   return (
-    <div className="space-y-8" data-testid="platform-tenant-detail" data-tenant-slug={tenant.slug}>
+    <main className="space-y-8" data-testid="platform-tenant-detail" data-tenant-slug={tenant.slug}>
       <header className="space-y-4">
         <Link
           href="/superadmin/tenants"
@@ -235,6 +235,6 @@ export default async function PlatformTenantDetailPage({
           {tenant.createdAt.toISOString().slice(0, 10)}
         </p>
       </section>
-    </div>
+    </main>
   );
 }

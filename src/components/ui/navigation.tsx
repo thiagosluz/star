@@ -120,6 +120,20 @@ export function NavLink({
   exact = false,
   className,
   onNavigate,
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  SÓ O ÍCONE — SEM PERDER O NOME (FASE 59)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Na barra recolhida o rótulo não cabe, e ESCONDÊ-LO com `hidden` deixaria o
+   *  link sem nome acessível: o portão WCAG reprova em `link-name`, e quem usa
+   *  leitor de tela ouviria "link" e mais nada. O rótulo vira `sr-only` — some da
+   *  tela, permanece na árvore — e o `title` dá o mesmo nome a quem usa o
+   *  ponteiro e para no ícone.
+   *
+   *  O conteúdo do `title` é a mesma string do rótulo, e não uma descrição nova:
+   *  duas fontes para o nome do mesmo destino é como menu e tela divergem.
+   */
+  collapsed = false,
 }: {
   href: string;
   icon?: ReactNode;
@@ -128,6 +142,7 @@ export function NavLink({
   className?: string;
   /** Fechar a gaveta no mobile depois de navegar. */
   onNavigate?: () => void;
+  collapsed?: boolean;
 }) {
   const pathname = usePathname();
   const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -137,8 +152,10 @@ export function NavLink({
       href={href}
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
+      title={collapsed ? label : undefined}
       className={cn(
         'group flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors',
+        collapsed && 'justify-center px-2',
         active
           ? 'bg-primary-soft font-medium text-brand'
           : 'text-muted-foreground hover:bg-surface-low hover:text-foreground',
@@ -150,7 +167,17 @@ export function NavLink({
           {icon}
         </span>
       ) : null}
-      <span className="truncate">{label}</span>
+      <span
+        /**
+         * O `data-testid` existe para o E2E da barra recolhida medir o RÓTULO, e
+         * não o link: é a largura desenhada dele que diz se o texto sumiu da tela
+         * ou apenas mudou de lugar na árvore de acessibilidade.
+         */
+        data-testid="nav-link-label"
+        className={cn('truncate', collapsed && 'sr-only')}
+      >
+        {label}
+      </span>
     </Link>
   );
 }

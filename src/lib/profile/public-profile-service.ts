@@ -44,6 +44,7 @@ import {
   PUBLIC_PROFILE_FIELDS,
   buildPublicProfile,
   evaluatePublicProfile,
+  isPersonPubliclyVisible,
   normalizeInterests,
   normalizeLattesId,
   normalizeOrcidId,
@@ -642,10 +643,14 @@ export async function getPublicProfile(input: {
      *
      *  A busca em buscadores fica DESLIGADA: indexar uma página oculta continuaria
      *  publicando o endereço (e o motivo) para quem nunca deveria vê-lo.
+     *
+     *  Quem responde "esta pessoa está oculta?" é a FONTE ÚNICA (`isPersonPubliclyVisible`,
+     *  FASE 60 · E79) — a mesma que a vitrine da equipe e o link da carta chamam. Aqui
+     *  não há um `if` sobre a coluna: a régua da ocultação é uma só, em todo o sistema.
      */
-    const hiddenReason = person.publicProfileHiddenAt
-      ? (person.publicProfileHiddenReason ?? HIDDEN_REASON_FALLBACK)
-      : null;
+    const hiddenReason = isPersonPubliclyVisible(person)
+      ? null
+      : (person.publicProfileHiddenReason ?? HIDDEN_REASON_FALLBACK);
 
     if (hiddenReason && ((data.isOwner ?? false) || evaluation.pageVisible)) {
       return {
@@ -913,7 +918,8 @@ export async function getPublicProfile(input: {
  * O perfil OCULTO pela moderação (FASE 56 · E62) sai daqui também: se ele deixa de
  * aparecer, a listagem que existe para exibi-lo não pode continuar exibindo — o
  * diretório é uma vitrine, e vitrine que ignora a decisão de moderação é uma segunda
- * régua de visibilidade.
+ * régua de visibilidade. A pergunta vem da FONTE ÚNICA (`isPersonPubliclyVisible`,
+ * FASE 60 · E79), a mesma que a vitrine da equipe e o link da carta usam.
  */
 export async function listDirectoryProfiles(input: {
   tenantId: string;
@@ -964,7 +970,7 @@ export async function listDirectoryProfiles(input: {
         level: levelByUser.get(row.user!.id) ?? 1,
         /** A página existe para quem é da casa se QUALQUER campo não for privado. */
         visible:
-          row.user!.publicProfileHiddenAt === null &&
+          isPersonPubliclyVisible(row.user!) &&
           PUBLIC_PROFILE_FIELDS.some((field) => audiences[field] !== 'PRIVATE'),
       };
     })

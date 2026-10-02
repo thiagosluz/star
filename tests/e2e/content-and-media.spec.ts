@@ -417,21 +417,39 @@ test.describe('conteúdo e mídia', () => {
      *  o ÍNDICE da linha e abre o seletor. Definir o arquivo direto no input pula o
      *  clique, o índice nunca é preenchido e o envio não acontece — sem erro visível,
      *  porque nada foi enviado.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  E É O ÚNICO PONTO DESTA SPEC QUE PRECISA DO REACT (FASE 60 · dívida I3)
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  Medido com o bundle barrado de propósito: os formulários de AÇÃO DE SERVIDOR
+     *  desta tela funcionam SEM JavaScript nenhum (o `create-page`, o `add-block` e o
+     *  `admin-submit` do bloco gravaram com o bundle abortado). O botão da galeria
+     *  não: ele é `type="button"` com `onClick` → `inputRef.current?.click()`, e sem
+     *  hidratação **nada acontece** — nenhum `filechooser` é disparado, e a espera
+     *  morre no tempo limite do teste (era este o "1 caso" do content-and-media na
+     *  dívida I3, num arquivo de 5 cenários que passa inteiro isolado).
+     *
+     *  A defesa é a mesma da suíte inteira para ação que depende do React (F52 ·
+     *  armadilha 106): a prova é o EFEITO — o seletor abriu, o arquivo foi aceito e a
+     *  tela confirmou. Enquanto isso não acontecer, o gesto é repetido, porque um
+     *  clique perdido não deixou nada para trás.
      */
-    const [chooser] = await Promise.all([
-      page.waitForEvent('filechooser'),
-      block.getByTestId('gallery-upload-0').click(),
-    ]);
+    await expect(async () => {
+      const [chooser] = await Promise.all([
+        page.waitForEvent('filechooser', { timeout: 10_000 }),
+        block.getByTestId('gallery-upload-0').click(),
+      ]);
 
-    await chooser.setFiles({
-      name: 'foto-e2e.png',
-      mimeType: 'image/png',
-      buffer: PNG_1X1,
-    });
+      await chooser.setFiles({
+        name: 'foto-e2e.png',
+        mimeType: 'image/png',
+        buffer: PNG_1X1,
+      });
 
-    await expect(block.getByTestId('gallery-upload-status')).toContainText(/Imagem enviada/i, {
-      timeout: 30_000,
-    });
+      await expect(block.getByTestId('gallery-upload-status')).toContainText(/Imagem enviada/i, {
+        timeout: 20_000,
+      });
+    }).toPass({ timeout: 90_000 });
 
     // A URL do bucket foi preenchida na linha da galeria.
     const urlField = block.getByLabel('URL da imagem 1');

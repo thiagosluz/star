@@ -207,6 +207,53 @@ async function clickUntil(
 
 const badgesUrl = () => `/t/${slug}/credenciamento/crachas?evento=${eventId}`;
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  LENTES FALSAS, SEM CÂMERA DE VERDADE (FASE 60 · dívida I1)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O seletor de lente do balcão só existe quando `enumerateDevices` devolve mais de
+ *  uma câmera — e a máquina que roda a suíte (ou a que roda em CI) pode ter zero,
+ *  uma ou três. Depender do hardware faria o cenário medir o computador, não o
+ *  produto.
+ *
+ *  Aqui a lista é INJETADA no documento antes de qualquer script da página:
+ *
+ *    • `enumerateDevices` mente a lista pedida (com rótulo, como depois da permissão);
+ *    • `getUserMedia` devolve um `MediaStream` DE VERDADE, capturado de um `<canvas>`
+ *      — o `video` do componente toca, `readyState` sobe e a leitura começa. As
+ *      restrições (deviceId/facingMode) são ignoradas de propósito: quem decide a
+ *      lente é a lista, que é o que o produto lê.
+ *
+ *  É a mesma técnica que o próprio Playwright recomenda, e nenhuma câmera real é
+ *  aberta — o que, num notebook com webcam, seria efeito colateral do teste.
+ */
+async function comLentesFalsas(
+  context: import('@playwright/test').BrowserContext,
+  lentes: readonly string[],
+): Promise<void> {
+  await context.addInitScript((ids: string[]) => {
+    const media = navigator.mediaDevices;
+
+    media.enumerateDevices = async () =>
+      ids.map((deviceId, index) => ({
+        deviceId,
+        groupId: 'grupo-e2e',
+        kind: 'videoinput',
+        label: `Lente falsa ${index + 1}`,
+        toJSON: () => ({}),
+      })) as unknown as MediaDeviceInfo[];
+
+    media.getUserMedia = async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 240;
+      canvas.getContext('2d')?.fillRect(0, 0, canvas.width, canvas.height);
+
+      return canvas.captureStream(5);
+    };
+  }, [...lentes]);
+}
+
 test.beforeAll(async ({ playwright, baseURL }) => {
   const api = await playwright.request.newContext({ baseURL });
 
@@ -266,6 +313,22 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     staffName = `Equipe da Identidade ${RUN_ID}`;
     const staff = await signUpVia(api, staffName);
     staffId = staff.id;
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O VÍNCULO (E O PAPEL) DO PARTICIPANTE, COMO NA INSCRIÇÃO PÚBLICA (F60 · I1)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Quem se inscreve por fora vira PARTICIPANTE da instituição — e `applyParticipantLink`
+     *  (FASE 10/14) grava as DUAS coisas: o vínculo `kind = PARTICIPANT` **e** a
+     *  concessão do papel `PARTICIPANT`, que é de onde saem as permissões pessoais
+     *  (`registration:read:own` está em `PARTICIPANT_PERMISSIONS`).
+     *
+     *  A fixture antiga criava a pessoa com a inscrição e nada disso, e o cenário 5
+     *  caía no painel: "Permissões efetivas: 0". O dado do cenário não era o dado da
+     *  vida real.
+     */
+    await linkUser({ tenantId, userId: participantId, kind: 'PARTICIPANT' });
+    await grantRole({ tenantId, userId: participantId, role: 'PARTICIPANT' });
 
     /** As duas inscrições no EVENTO (o crachá é da pessoa no evento). */
     await e2eDb.$transaction(async (tx) => {
@@ -344,30 +407,36 @@ test.describe('identidade visual do crachá', () => {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
-   *  OS CINCO CENÁRIOS AINDA EM `test.fixme` — O QUE FALTA, MEDIDO (FASE 52)
+   *  OS CINCO CENÁRIOS QUE A FASE 52 DEIXOU EM `test.fixme` — FECHADOS (FASE 60 · I1)
    * ═══════════════════════════════════════════════════════════════════════════════
-   *  Os cenários 1 e 2 rodam e passam. A FASE 52 destravou a emissão à mão e achou, no
-   *  caminho, um **defeito real de produto**: a tela oferecia a pessoa inscrita no
-   *  evento para emissão e o serviço só aceitava quem tinha VÍNCULO — a secretaria
-   *  escolhia e recebia "Nenhum participante para emitir crachá". O serviço passou a
-   *  usar a mesma população da tela (`registration` ∪ `user_tenant_profile`).
+   *  Cada um tinha uma causa PRÓPRIA, e três delas não eram o que o bilhete dizia:
    *
-   *  O que ainda falta, cenário por cenário:
-   *   3. a troca de categoria de UM crachá: o `select` da linha é controlado, e o
-   *      `selectOption` ainda não está protegido contra a reversão antes da hidratação
-   *      (o mesmo remédio do `escolherCategoriaAte` usado na emissão em lote);
-   *   4. a folha/etiqueta responde **400** pelo endereço que a própria tela publica —
-   *      é investigação da ROTA de impressão, não do teste;
-   *   5. o crachá online: a pessoa do cenário é criada só com inscrição (sem vínculo) e
-   *      `/meu-cracha` é aberto por POSSE dentro da instituição — o dado do cenário
-   *      precisa refletir a inscrição pública, que cria o vínculo (FASE 10);
-   *   6 e 7. o seletor de lente: precisam de `enumerateDevices` falso no contexto e do
-   *      comportamento do componente quando a lista de câmeras chega depois.
+   *   3. **a troca de categoria de UM crachá já funcionava.** O bilhete dizia que o
+   *      `select` da linha era controlado e que o `selectOption` seria revertido antes
+   *      da hidratação — mas ele nasce com `defaultValue` (não controlado), e o
+   *      `clickUntil` já repetia o clique até o banco mudar. Rodou e passou: a linha
+   *      saiu do `fixme` sem uma linha de código.
+   *   4. **o 400 era do TESTE, não da rota.** O cenário lia o `href` da própria tela
+   *      sem ter emitido crachá nenhum quando rodava sozinho: o lote chegava vazio e a
+   *      rota respondia, honestamente, `NO_ELIGIBLE` → 400. No arquivo inteiro ele
+   *      passava dessa linha e morria adiante, em `sheetText.subarray` — `toString()`
+   *      devolve STRING, e string não tem `subarray` (era `Buffer`). Duas causas
+   *      empilhadas: o `slice` correto e o LOTE DO PRÓPRIO CENÁRIO, emitido aqui.
+   *   5. **o crachá online precisava do VÍNCULO.** A pessoa do cenário existia só com
+   *      inscrição, e `/meu-cracha` é aberto por posse DENTRO da instituição
+   *      (`REGISTRATION_READ_OWN` sobre o vínculo). A inscrição pública da FASE 10 cria
+   *      esse vínculo; a fixture passou a fazer o mesmo (`kind: 'PARTICIPANT'`).
+   *   6 e 7. **o seletor de lente nunca teve lente nenhuma.** `browser.newContext({
+   *      args })` é argumento de LANÇAMENTO do navegador e ali era ignorado: sem
+   *      `--use-fake-device-for-media-stream`, `getUserMedia` não abria nada e o
+   *      cenário morria em `data-active=false`. As lentes agora são falsas por
+   *      `addInitScript` — `enumerateDevices` mente a lista e `getUserMedia` devolve um
+   *      fluxo real de um `<canvas>`, sem tocar em câmera de verdade.
    *
-   *  Nenhum deles é comportamento sem cobertura: a categoria no lote, a faixa no PDF e
-   *  no ZPL e a cor do tema têm testes de unidade e de integração (FASE 51).
+   *  Nenhuma asserção foi afrouxada e nenhum tempo limite foi inflado: onde o cenário
+   *  precisava de dado, o dado passou a nascer dentro dele.
    */
-  test.fixme('3. trocar a categoria de UM crachá não troca o código', async ({ page }) => {
+  test('3. trocar a categoria de UM crachá não troca o código', async ({ page }) => {
     await signInAs(page, organizerEmail);
 
     await limparCrachas([participantId]);
@@ -394,16 +463,29 @@ test.describe('identidade visual do crachá', () => {
     await expect(page.getByTestId(`badge-category-${participantId}`)).toContainText('Autoridade');
   });
 
-  test.fixme('4. o papel obedece: a cor do TEMA e a faixa de CADA categoria', async ({ page }) => {
+  test('4. o papel obedece: a cor do TEMA e a faixa de CADA categoria', async ({ page }) => {
     /**
-     * O crachá de "Autoridade" foi trocado no cenário 3, e a equipe continua STAFF —
-     * o lote tem DUAS categorias e o evento tem tema. É o caso misto, que é o do
-     * evento de verdade.
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O LOTE MISTO NASCE AQUI (FASE 60 · dívida I1 — a lição da E71)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Este cenário lia o `href` da tela confiando nos crachás que os cenários 1 e 3
+     *  tinham emitido. Rodando sozinho — o que se faz ao depurar — o lote chegava
+     *  VAZIO e a rota respondia `NO_ELIGIBLE` (400), que foi lido como defeito da rota
+     *  de impressão. Não era: era o cenário consumindo o dado do vizinho.
+     *
+     *  Agora ele emite o próprio lote: a equipe como STAFF e a autoridade como VIP. A
+     *  primeira coluna da asserção é o PARTICIPANTE **não** aparecer — nenhum dos dois
+     *  é participante, e é isso que prova que a faixa é POR CRACHÁ, e não do lote.
      */
     await signInAs(page, organizerEmail);
+
+    await limparCrachas([staffId, participantId]);
+    await emitirPelaTela(page, staffId, 'STAFF');
+    await emitirPelaTela(page, participantId, 'VIP');
+
     await page.goto(badgesUrl());
 
-    await expect(page.getByTestId('badge-print-options')).toBeVisible();
+    await expect(page.getByTestId('badge-print-options')).toBeVisible({ timeout: 30_000 });
 
     // ── A folha A4 ───────────────────────────────────────────────────────────
     const sheetHref = await page.getByTestId('badge-print').getAttribute('href');
@@ -413,8 +495,9 @@ test.describe('identidade visual do crachá', () => {
     expect(sheet.status()).toBe(200);
     expect(sheet.headers()['content-type']).toContain('application/pdf');
 
+    /** `toString()` devolve STRING: conferir o cabeçalho é `slice`, não `subarray`. */
     const sheetText = (await sheet.body()).toString('latin1');
-    expect(sheetText.subarray(0, 5)).toBe('%PDF-');
+    expect(sheetText.slice(0, 5)).toBe('%PDF-');
 
     /** A COR DO EVENTO no código do crachá. */
     expect(sheetText).toContain(pdfFillOperator(EVENT_PRIMARY));
@@ -446,7 +529,16 @@ test.describe('identidade visual do crachá', () => {
     expect(zplText).toContain('^XA');
   });
 
-  test.fixme('5. o crachá online do participante mostra a categoria e a cor do evento', async ({ page }) => {
+  test('5. o crachá online do participante mostra a categoria e a cor do evento', async ({ page }) => {
+    /**
+     * O crachá deste cenário é emitido AQUI, como "Autoridade" — a tela é aberta por
+     * posse e precisa que exista algo para mostrar. Depender da troca feita no cenário
+     * 3 faria o caso passar ou falhar conforme a ordem (a lição da dívida E71).
+     */
+    await signInAs(page, organizerEmail);
+    await limparCrachas([participantId]);
+    await emitirPelaTela(page, participantId, 'VIP');
+
     await signInAs(page, participantEmail);
     await page.goto(`/t/${slug}/meu-cracha?evento=${eventId}`);
 
@@ -459,29 +551,29 @@ test.describe('identidade visual do crachá', () => {
     await expect(page.getByTestId('own-badge-code')).toContainText(credential!.code);
   });
 
-  test.fixme('6. a lente escolhida no balcão persiste, e o seletor só aparece com duas câmeras', async ({
+  test('6. a lente escolhida no balcão persiste, e o seletor só aparece com duas câmeras', async ({
     browser,
   }) => {
     /**
      * ─────────────────────────────────────────────────────────────────────────────
-     *  POR QUE ESTE CENÁRIO PRECISA DE UM CONTEXTO PRÓPRIO
+     *  POR QUE ESTE CENÁRIO PRECISA DE UM CONTEXTO PRÓPRIO (FASE 60 · dívida I1)
      * ─────────────────────────────────────────────────────────────────────────────
      *  O leitor usa `enumerateDevices`/`getUserMedia`, que são APIs do NAVEGADOR — não
      *  há teste de unidade possível sem `jsdom` (ver o comentário do componente). Aqui
-     *  o Chromium é aberto com DUAS lentes falsas e permissão de câmera concedida, que
-     *  é o único jeito de exercitar a escolha de verdade.
+     *  o contexto é aberto com DUAS lentes FALSAS e permissão de câmera concedida.
+     *
+     *  A primeira versão deste cenário passava `args:
+     *  ['--use-fake-device-for-media-stream', …]` para o `browser.newContext` — e ali
+     *  eles são IGNORADOS, porque argumento de linha de comando é do LANÇAMENTO do
+     *  navegador. Sem a mídia falsa, `getUserMedia` não abria nada: o cenário morria em
+     *  `data-active=false`, 30 s por tentativa. A lente falsa passou a ser injetada no
+     *  documento (`addInitScript`), que é onde o produto a consulta.
      *
      *  A persistência é lida pelo `localStorage`: a escolha vive por EVENTO, e é o que
      *  impede o operador de reescolher a cada leitura.
      */
-    const context = await browser.newContext({
-      permissions: ['camera'],
-      args: [
-        '--use-fake-device-for-media-stream',
-        '--use-fake-ui-for-media-stream',
-        '--allow-file-access-from-files',
-      ],
-    });
+    const context = await browser.newContext({ permissions: ['camera'] });
+    await comLentesFalsas(context, ['lente-frontal', 'lente-traseira']);
 
     const page = await context.newPage();
 
@@ -504,11 +596,11 @@ test.describe('identidade visual do crachá', () => {
       await expect(select).toBeVisible();
 
       const options = await select.locator('option').all();
-      expect(options.length).toBeGreaterThan(1);
+      expect(options.length).toBe(3);
 
       /** A segunda opção é uma lente concreta (a primeira é "padrão do navegador"). */
       const deviceId = await options[1]!.getAttribute('value');
-      expect(deviceId).toBeTruthy();
+      expect(deviceId).toBe('lente-frontal');
 
       await select.selectOption(deviceId!);
 
@@ -534,16 +626,16 @@ test.describe('identidade visual do crachá', () => {
     }
   });
 
-  test.fixme('7. com UMA câmera, o seletor de lente NÃO aparece', async ({ browser }) => {
+  test('7. com UMA câmera, o seletor de lente NÃO aparece', async ({ browser }) => {
     /**
      * Opção inútil polui: num dispositivo com uma lente só, o `select` de uma opção é
-     * um toque a mais no meio da fila que não muda nada. O contexto aqui NÃO recebe o
-     * segundo dispositivo falso — e o padrão do Chromium é uma câmera.
+     * um toque a mais no meio da fila que não muda nada. O contexto aqui recebe UMA
+     * lente falsa — a lista é conhecida, então a asserção é direta (antes ela era um
+     * `if` sobre o que o navegador da máquina tivesse plugado, que passava nos dois
+     * lados sem provar nada).
      */
-    const context = await browser.newContext({
-      permissions: ['camera'],
-      args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
-    });
+    const context = await browser.newContext({ permissions: ['camera'] });
+    await comLentesFalsas(context, ['unica-lente']);
 
     const page = await context.newPage();
 
@@ -557,21 +649,8 @@ test.describe('identidade visual do crachá', () => {
         timeout: 30_000,
       });
 
-      /**
-       * A asserção só vale quando o navegador realmente expõe UMA lente — com duas, o
-       * seletor DEVE aparecer, e o cenário 6 já cobre esse lado. A checagem do número
-       * de dispositivos é do navegador, não do produto.
-       */
-      const cameras = await page.evaluate(async () => {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        return devices.filter((device) => device.kind === 'videoinput').length;
-      });
-
-      if (cameras <= 1) {
-        await expect(page.getByTestId('qr-camera-device')).toHaveCount(0);
-      } else {
-        await expect(page.getByTestId('qr-camera-device')).toBeVisible();
-      }
+      await expect(page.getByTestId('qr-camera-device')).toHaveCount(0);
+      await expect(page.getByTestId('qr-camera-error')).toHaveCount(0);
     } finally {
       await context.close();
     }

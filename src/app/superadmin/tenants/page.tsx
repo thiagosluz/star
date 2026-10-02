@@ -63,7 +63,7 @@ export default async function PlatformTenantsPage({
   ];
 
   return (
-    <div className="space-y-8" data-testid="platform-tenants">
+    <main className="space-y-8" data-testid="platform-tenants">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Instituições</h1>
@@ -193,6 +193,6 @@ export default async function PlatformTenantsPage({
           </div>
         )}
       </section>
-    </div>
+    </main>
   );
 }

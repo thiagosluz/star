@@ -46,7 +46,14 @@ function team(input: {
   id: string;
   name: string;
   isActive?: boolean;
-  members: { userId: string; name: string; isLead?: boolean; avatarUrl?: string | null }[];
+  members: {
+    userId: string;
+    name: string;
+    isLead?: boolean;
+    avatarUrl?: string | null;
+    /** Data = a moderação ocultou o perfil (F56 · E62). Ausente = visível. */
+    publicProfileHiddenAt?: Date | null;
+  }[];
 }): PublicTeamSource {
   return {
     id: input.id,
@@ -58,6 +65,7 @@ function team(input: {
       isLead: member.isLead ?? false,
       avatarUrl: member.avatarUrl ?? null,
       contacts: { email: null, links: {} },
+      publicProfileHiddenAt: member.publicProfileHiddenAt ?? null,
     })),
   };
 }

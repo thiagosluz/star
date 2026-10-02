@@ -6,8 +6,34 @@
  *  porque a plataforma ainda não expõe UI de provisionamento — isso chega na
  *  FASE 7. Os testes E2E focam no que o usuário faz no navegador.
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O SUFIXO É DA EXECUÇÃO; A LIMPEZA PASSOU A SER DO ARQUIVO (FASE 60 · I3)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  `RUN_ID` nasce uma vez por PROCESSO — e o Playwright roda a suíte inteira no
+ *  MESMO processo (`workers: 1` e o registro de módulos do Node é reaproveitado
+ *  entre arquivos). Medido com dois specs de diagnóstico na mesma execução:
+ *
+ *      [DIAG-A] RUN_ID=02ff3015
+ *      [DIAG-B] RUN_ID=02ff3015
+ *
+ *  Ou seja: o sufixo identifica a EXECUÇÃO, não o arquivo. A limpeza por
+ *  `slug contains RUN_ID` / `email contains RUN_ID` era, portanto, uma varredura
+ *  DA EXECUÇÃO INTEIRA (~50 arquivos, uma vez por spec, sem índice), disparada pelo
+ *  `afterAll` de cada arquivo — o que o nome promete é outra coisa: cada spec
+ *  limpando o que criou. Medido também no banco: 350 instituições e 2.128 contas
+ *  acumuladas de execuções anteriores, porque a limpeza depende de um `afterAll`
+ *  que nem sempre roda (execução interrompida) e nada recolhe o que ficou.
+ *
+ *  A limpeza agora apaga **só o que ESTE arquivo criou** — e o que um arquivo
+ *  anterior deixou para trás sem limpar (a janela é "desde a última limpeza"): as
+ *  instituições saem pelos IDs anotados aqui e pela janela, as pessoas saem pelos
+ *  IDs de `linkUser` e pela janela. Nada de varredura sem índice pela tabela
+ *  inteira, e nada que possa alcançar um arquivo que ainda esteja rodando.
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from 'node:crypto';
+import { test } from '@playwright/test';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../src/generated/prisma/client.ts';
 
@@ -19,6 +45,72 @@ export const e2eDb = new PrismaClient({ adapter: new PrismaPg(connectionString) 
 
 /** Sufixo único por execução, para que os testes não colidam entre si. */
 export const RUN_ID = randomUUID().slice(0, 8);
+
+/**
+ * O que ESTE arquivo de teste criou — a chave é o caminho do arquivo de spec.
+ *
+ * `test.info().file` só existe dentro de teste ou de hook, que é exatamente de
+ * onde as fixtures e o `cleanupRun` são chamados.
+ */
+interface EscopoDoArquivo {
+  /** Quando este arquivo começou a montar fixture: a janela das pessoas criadas. */
+  desde: Date;
+  /** Instituições criadas por `createTenant` neste arquivo. */
+  tenants: Set<string>;
+  /** Pessoas que este arquivo vinculou (`linkUser`). */
+  usuarios: Set<string>;
+}
+
+const escopos = new Map<string, EscopoDoArquivo>();
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O RELÓGIO DA LIMPEZA (FASE 60 · dívida I3)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `desde` sozinho não basta: há specs que **nunca chamam um helper** antes de criar
+ *  as contas (a de rotinas automáticas monta as duas pessoas no `beforeAll` e só
+ *  chama `cleanupRun` no fim). Para elas a janela começaria no `afterAll` e as contas
+ *  ficariam para trás — medido: 2 usuários `f36.*` sobrevivendo à execução.
+ *
+ *  O relógio resolve isso sem afrouxar o isolamento: a janela de um arquivo é
+ *  **desde a limpeza anterior** (ou desde a carga deste módulo, no primeiro arquivo).
+ *  Como os arquivos rodam um depois do outro, o que cai na janela é sempre dado do
+ *  arquivo ANTERIOR — que já terminou — ou deste; nunca de um arquivo em execução.
+ */
+let ultimaLimpeza = new Date();
+
+/** O caminho do arquivo de spec em execução — a chave do escopo. */
+function chaveAtual(): string {
+  try {
+    return test.info().file;
+  } catch {
+    // Fora de teste/hook (script, `--list`): cai num escopo só, que é o de antes.
+    return 'sem-arquivo';
+  }
+}
+
+function escopoAtual(): EscopoDoArquivo {
+  const arquivo = chaveAtual();
+
+  const existente = escopos.get(arquivo);
+  if (existente) return existente;
+
+  const novo: EscopoDoArquivo = { desde: new Date(), tenants: new Set(), usuarios: new Set() };
+  escopos.set(arquivo, novo);
+
+  return novo;
+}
+
+/**
+ * Anota uma pessoa criada PELO ARQUIVO (fora dos helpers) para a limpeza levar.
+ *
+ * A maioria das specs cria contas pela API (`POST /api/auth/sign-up/email`) e
+ * nunca passa por `linkUser`; a janela de tempo do escopo já as alcança, e esta
+ * função existe para quem monta fixture antes da janela começar.
+ */
+export function trackTestUser(userId: string): void {
+  escopoAtual().usuarios.add(userId);
+}
 
 export function uniqueEmail(prefix: string): string {
   return `${prefix}.${RUN_ID}.${randomUUID().slice(0, 6)}@example.test`;
@@ -45,6 +137,8 @@ export async function createTenant(options: {
     },
   });
 
+  escopoAtual().tenants.add(tenant.id);
+
   return tenant;
 }
 
@@ -60,7 +154,7 @@ export async function linkUser(options: {
    */
   kind?: 'MEMBER' | 'PARTICIPANT';
 }) {
-  return e2eDb.userTenantProfile.create({
+  const profile = await e2eDb.userTenantProfile.create({
     data: {
       id: randomUUID(),
       tenantId: options.tenantId,
@@ -70,6 +164,10 @@ export async function linkUser(options: {
       joinedAt: options.status === 'INVITED' ? null : new Date(),
     },
   });
+
+  escopoAtual().usuarios.add(options.userId);
+
+  return profile;
 }
 
 /** Concede um papel. */
@@ -242,10 +340,60 @@ export async function createRoom(options: {
   });
 }
 
-/** Remove todos os dados criados por esta execução. */
+/**
+ * Remove todos os dados criados POR ESTE ARQUIVO de teste.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A JANELA DE TEMPO, E NÃO SÓ OS IDs (FASE 60 · dívida I3)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Instituições toda spec cria por `createTenant`, então o ID basta. As PESSOAS
+ *  não: a maioria nasce de um `POST /api/auth/sign-up/email` dentro da própria
+ *  spec, sem passar por aqui. Por isso elas saem pela JANELA — e a janela também
+ *  vale para as instituições, porque um arquivo que não chama `cleanupRun` deixaria
+ *  a sua para trás. A margem de 1 s cobre a diferença entre o relógio do Node e o
+ *  `now()` do Postgres, que é quem grava `createdAt`.
+ *
+ *  A ordem importa: primeiro a instituição (a cascata leva eventos, inscrições,
+ *  crachás, mídia), depois as pessoas — apagar a pessoa antes deixaria as duas
+ *  tabelas pela metade.
+ */
 export async function cleanupRun(): Promise<void> {
-  await e2eDb.tenant.deleteMany({ where: { slug: { contains: RUN_ID } } });
-  await e2eDb.user.deleteMany({ where: { email: { contains: RUN_ID } } });
+  const escopo = escopoAtual();
+  const janela = new Date(Math.min(escopo.desde.getTime(), ultimaLimpeza.getTime()) - 1_000);
+
+  const tenants = await e2eDb.tenant.findMany({
+    where: {
+      OR: [
+        { id: { in: [...escopo.tenants] } },
+        { slug: { contains: RUN_ID }, createdAt: { gte: janela } },
+      ],
+    },
+    select: { id: true },
+  });
+
+  const pessoas = await e2eDb.user.findMany({
+    where: {
+      OR: [
+        { id: { in: [...escopo.usuarios] } },
+        { email: { contains: RUN_ID }, createdAt: { gte: janela } },
+      ],
+    },
+    select: { id: true },
+  });
+
+  const tenantIds = tenants.map((row) => row.id);
+  const userIds = pessoas.map((row) => row.id);
+
+  if (tenantIds.length > 0) {
+    await e2eDb.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+  }
+
+  if (userIds.length > 0) {
+    await e2eDb.user.deleteMany({ where: { id: { in: userIds } } });
+  }
+
+  ultimaLimpeza = new Date();
+  escopos.delete(chaveAtual());
 }
 
 /**

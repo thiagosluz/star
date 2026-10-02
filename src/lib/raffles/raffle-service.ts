@@ -44,7 +44,7 @@ import {
   evaluateEligibility,
   evaluateReadiness,
   hashResult,
-  publicWinnerName,
+  publicWinnerEntry,
   resolveRafflePage,
   seedCommitment,
   selectWeightedWinners,
@@ -2245,6 +2245,65 @@ export async function setBigscreenVisibility(input: {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura pública (item G5)
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Os campos de `user` que a régua do nome público precisa — e nada além deles.
+ *
+ * ─── POR QUE A OCULTAÇÃO DA MODERAÇÃO ENTROU AQUI (FASE 60 · dívida E79) ────────
+ *
+ *  Quatro leituras desta camada publicam nome de quem concorreu ou ganhou — e as
+ *  duas primeiras servem mais de uma superfície: a seção de resultados do evento (e a
+ *  prévia da página, que usa a MESMA leitura), a página do sorteio
+ *  (`getPublicRaffleResult`), o telão (`getRaffleStageView`) e a auditoria
+ *  (`getRaffleAudit`). Todas liam `name` e `isPublicProfile` AO VIVO e resolviam o
+ *  nome pelo consentimento antigo — então quem a moderação da plataforma ocultou
+ *  (F56 · E62) e tinha aquele consentimento ligado continuava com o nome COMPLETO
+ *  numa página aberta a qualquer visitante. A coluna passou a ser lida por todas
+ *  elas, e a decisão é a da fonte única (`publicWinnerEntry`, no domínio): a
+ *  ocultação vence o consentimento.
+ *
+ *  A MÁSCARA é a decisão, e não a remoção da linha: o resultado é um artefato
+ *  público já publicado (lista assinada, posição, prêmio e contagem), e a auditoria
+ *  precisa continuar conferindo a apuração — o conteúdo assinado é
+ *  `{ index, code, minutes }` e não carrega nome, então abreviar o texto não
+ *  invalida hash nenhum. O rótulo é o NEUTRO do próprio sorteio (`Ana S.`, o mesmo
+ *  de quem nunca autorizou o nome): anunciar "oculto pela moderação" contaria a
+ *  decisão da plataforma a estranhos.
+ */
+const PUBLIC_WINNER_NAME_SELECT = {
+  name: true,
+  isPublicProfile: true,
+  /** O efeito da moderação da plataforma (F56 · E62) — ver o bloco acima. */
+  publicProfileHiddenAt: true,
+} as const;
+
+/** Quem pode ser citado: os três campos que a régua do nome consome. */
+interface PublicWinnerPerson {
+  name: string;
+  isPublicProfile: boolean;
+  publicProfileHiddenAt: Date | null;
+}
+
+/**
+ * O nome público de UMA linha (ganhador, suplente ou concorrente da lista), já com
+ * a marca de máscara que a tela publica em `data-masked`.
+ *
+ * Nome e máscara saem JUNTOS de propósito: são a mesma pergunta, e responder as duas
+ * em lugares diferentes foi o que permitiu `masked: false` conviver com um nome
+ * abreviado (ou o contrário). Pessoa ausente do banco cai no rótulo genérico já
+ * usado antes — `Participante` —, nunca no nome de outra pessoa.
+ */
+function publicWinnerRow(
+  person: PublicWinnerPerson | null | undefined,
+): { name: string; masked: boolean } {
+  if (!person) return { name: 'Participante', masked: true };
+
+  return publicWinnerEntry({
+    name: person.name,
+    publicProfile: person.isPublicProfile,
+    publicProfileHiddenAt: person.publicProfileHiddenAt,
+  });
+}
+
 export interface PublicRaffleResult {
   id: string;
   title: string;
@@ -2302,25 +2361,17 @@ function mapPublicRound(input: {
     position: number;
     kind: string;
     roundNumber: number;
-    user: { name: string; isPublicProfile: boolean } | null;
+    user: PublicWinnerPerson | null;
   }[];
   createdAt: Date;
 }): PublicRaffleRound {
   const mapped = input.winners
     .filter((winner) => winner.roundNumber === input.round.roundNumber)
-    .map((winner) => {
-      const publicProfile = winner.user?.isPublicProfile ?? false;
-
-      return {
-        position: winner.position,
-        kind: winner.kind,
-        name: publicWinnerName({
-          name: winner.user?.name ?? 'Participante',
-          publicProfile,
-        }),
-        masked: !publicProfile,
-      };
-    });
+    .map((winner) => ({
+      position: winner.position,
+      kind: winner.kind,
+      ...publicWinnerRow(winner.user),
+    }));
 
   return {
     roundNumber: input.round.roundNumber,
@@ -2346,9 +2397,11 @@ function mapPublicRound(input: {
 /**
  * Resultados publicados de um evento — para a página pública, sem login.
  *
- * O nome sai MASCARADO por padrão (`publicWinnerName`): quem se credenciou não
- * consentiu em ter o nome publicado na internet. Quem tem perfil público
- * (`User.isPublicProfile`) aparece com o nome completo — consentimento explícito.
+ * O nome sai MASCARADO por padrão: quem se credenciou não consentiu em ter o nome
+ * publicado na internet. Quem tem perfil público (`User.isPublicProfile`) aparece com
+ * o nome completo — consentimento explícito —, e quem a moderação da plataforma
+ * ocultou (F56 · E62 → F60 · E79) recebe a MESMA máscara de quem não autoriza, sem
+ * perder a posição nem o prêmio (`publicWinnerRow`).
  *
  * O hash e a semente revelada vão junto de propósito: publicar só o nome transforma
  * o sorteio em promessa. Publicando a prova, qualquer pessoa confere — e desde a
@@ -2396,7 +2449,7 @@ export async function listPublicRaffleResults(
               position: true,
               kind: true,
               roundNumber: true,
-              user: { select: { name: true, isPublicProfile: true } },
+              user: { select: PUBLIC_WINNER_NAME_SELECT },
             },
           },
         },
@@ -2461,8 +2514,9 @@ export async function listPublicRaffleResults(
  *  informação de quem não organiza; aqui, porque o resultado não é).
  *
  *  A leitura traz os TITULARES e os SUPLENTES separados, com o nome mascarado por
- *  padrão (`publicWinnerName`) — quem se credenciou não consentiu em ter o nome
- *  publicado, e quem tem perfil público aparece inteiro.
+ *  padrão — quem se credenciou não consentiu em ter o nome publicado, quem tem
+ *  perfil público aparece inteiro e quem a moderação da plataforma ocultou
+ *  (F56 · E62 → F60 · E79) fica com o nome abreviado, sem sair da lista.
  */
 export async function getPublicRaffleResult(
   tenantId: string,
@@ -2501,7 +2555,7 @@ export async function getPublicRaffleResult(
               position: true,
               kind: true,
               roundNumber: true,
-              user: { select: { name: true, isPublicProfile: true } },
+              user: { select: PUBLIC_WINNER_NAME_SELECT },
             },
           },
         },
@@ -3014,7 +3068,7 @@ export async function getRaffleStageView(input: {
               position: true,
               kind: true,
               roundNumber: true,
-              user: { select: { name: true, isPublicProfile: true } },
+              user: { select: PUBLIC_WINNER_NAME_SELECT },
             },
           },
         },
@@ -3039,7 +3093,7 @@ export async function getRaffleStageView(input: {
 
       const people = await tx.user.findMany({
         where: { id: { in: poolUserIds } },
-        select: { id: true, name: true, isPublicProfile: true },
+        select: { id: true, ...PUBLIC_WINNER_NAME_SELECT },
       });
 
       return {
@@ -3071,38 +3125,21 @@ export async function getRaffleStageView(input: {
             ? 'REVELADO'
             : 'AGUARDANDO';
 
-    const displayName = (userId: string | undefined): { name: string; masked: boolean } => {
-      const person = userId ? byId.get(userId) : undefined;
-      const publicProfile = person?.isPublicProfile ?? false;
-
-      return {
-        name: publicWinnerName({
-          name: person?.name ?? 'Participante',
-          publicProfile,
-        }),
-        masked: !publicProfile,
-      };
-    };
+    const displayName = (userId: string | undefined): { name: string; masked: boolean } =>
+      publicWinnerRow(userId ? byId.get(userId) : undefined);
 
     /**
      * ── O NOME DOS GANHADORES VEM DO BANCO, NÃO DA LISTA ────────────────────────
      * A lista publicada guarda CÓDIGO (não identidade), então os nomes dos ganhadores
-     * são resolvidos pela relação `user` — a mesma regra de consentimento de sempre.
+     * são resolvidos pela relação `user` — a mesma régua de sempre, com a ocultação da
+     * moderação já aplicada por `publicWinnerRow`.
      */
-    const mapped = row.winners.map((winner) => {
-      const publicProfile = winner.user?.isPublicProfile ?? false;
-
-      return {
-        position: winner.position,
-        roundNumber: winner.roundNumber,
-        kind: winner.kind,
-        name: publicWinnerName({
-          name: winner.user?.name ?? 'Participante',
-          publicProfile,
-        }),
-        masked: !publicProfile,
-      };
-    });
+    const mapped = row.winners.map((winner) => ({
+      position: winner.position,
+      roundNumber: winner.roundNumber,
+      kind: winner.kind,
+      ...publicWinnerRow(winner.user),
+    }));
 
     const roundView = (round: (typeof row.rounds)[number]): RaffleStageRound => {
       const stored = (round.poolSnapshot as unknown as { code: string; userId?: string }[] | null) ?? [];
@@ -3320,9 +3357,11 @@ export interface RaffleAudit {
  *  2 no lugar da 1 passaria como íntegro. Aqui cada rodada tem a sua seção, com o
  *  seu compromisso e a sua reprodução.
  *
- *  O nome vem pela mesma regra de consentimento dos ganhadores
- *  (`publicWinnerName`): a lista pública não pode expor mais do que o resultado já
- *  expõe.
+ *  O nome vem pela mesma régua de consentimento dos ganhadores
+ *  (`publicWinnerEntry`): a lista pública não pode expor mais do que o resultado já
+ *  expõe. Quem a moderação da plataforma ocultou (F56 · E62 → F60 · E79) aparece
+ *  abreviado TAMBÉM aqui — a conferência continua inteira, porque a conta é feita
+ *  sobre `{ index, code, minutes }` e o nome nunca entrou em hash nenhum.
  */
 export async function getRaffleAudit(input: {
   tenantId: string;
@@ -3382,7 +3421,7 @@ export async function getRaffleAudit(input: {
               roundNumber: true,
               attendanceMinutes: true,
               userId: true,
-              user: { select: { name: true, isPublicProfile: true } },
+              user: { select: PUBLIC_WINNER_NAME_SELECT },
             },
           },
         },
@@ -3425,23 +3464,13 @@ export async function getRaffleAudit(input: {
 
       const people = await tx.user.findMany({
         where: { id: { in: [...new Set([...userIds, ...winnerIds])] } },
-        select: { id: true, name: true, isPublicProfile: true },
+        select: { id: true, ...PUBLIC_WINNER_NAME_SELECT },
       });
 
       const byId = new Map(people.map((person) => [person.id, person]));
 
-      const displayName = (userId: string | undefined | null): { name: string; masked: boolean } => {
-        const person = userId ? byId.get(userId) : undefined;
-        const publicProfile = person?.isPublicProfile ?? false;
-
-        return {
-          name: publicWinnerName({
-            name: person?.name ?? 'Participante',
-            publicProfile,
-          }),
-          masked: !publicProfile,
-        };
-      };
+      const displayName = (userId: string | undefined | null): { name: string; masked: boolean } =>
+        publicWinnerRow(userId ? byId.get(userId) : undefined);
 
       return { raffle, creations, displayName };
     });

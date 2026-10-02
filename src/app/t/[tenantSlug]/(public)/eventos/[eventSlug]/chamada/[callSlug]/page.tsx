@@ -154,151 +154,153 @@ export default async function PublicCallPage({
 
   return (
     <ThemeScope theme={event.theme}>
-      <Section>
-        <nav className="mb-6">
-          <Link
-            href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
-            className="text-xs opacity-60 underline underline-offset-4"
-          >
-            ← {event.title}
-          </Link>
-        </nav>
+      <main>
+        <Section>
+          <nav className="mb-6">
+            <Link
+              href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
+              className="text-xs opacity-60 underline underline-offset-4"
+            >
+              ← {event.title}
+            </Link>
+          </nav>
 
-        <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
-          <div className="space-y-5">
-            <header className="space-y-2">
-              <p className="text-xs uppercase tracking-wide opacity-60">
-                {PROPOSAL_KIND_LABELS[call.kind]}
-              </p>
-              <h1
-                className="text-balance text-3xl font-semibold tracking-tight"
-                data-testid="call-title"
-              >
-                {call.title}
-              </h1>
-              {call.summary ? (
-                <p className="text-pretty text-sm opacity-80">{call.summary}</p>
+          <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
+            <div className="space-y-5">
+              <header className="space-y-2">
+                <p className="text-xs uppercase tracking-wide opacity-60">
+                  {PROPOSAL_KIND_LABELS[call.kind]}
+                </p>
+                <h1
+                  className="text-balance text-3xl font-semibold tracking-tight"
+                  data-testid="call-title"
+                >
+                  {call.title}
+                </h1>
+                {call.summary ? (
+                  <p className="text-pretty text-sm opacity-80">{call.summary}</p>
+                ) : null}
+
+                <p className="flex flex-wrap items-center gap-3 text-xs opacity-70">
+                  <span className="flex items-center gap-1.5">
+                    <CalendarClock className="size-3.5" aria-hidden />
+                    {call.windowLabel}
+                  </span>
+                  {call.countdown ? (
+                    <span className="flex items-center gap-1.5 font-medium" data-testid="call-countdown">
+                      <Clock className="size-3.5" aria-hidden />
+                      {call.countdown}
+                    </span>
+                  ) : null}
+                  <span className="ef-badge">{call.state === 'OPEN' ? 'Aberta' : call.state === 'CLOSED' ? 'Encerrada' : 'Em breve'}</span>
+                </p>
+              </header>
+
+              {call.instructions ? (
+                <div className="ef-card space-y-2 p-4">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <FileText className="size-3.5" aria-hidden />
+                    Orientações
+                  </p>
+                  <p className="whitespace-pre-line text-pretty text-sm opacity-80">
+                    {call.instructions}
+                  </p>
+                </div>
               ) : null}
 
-              <p className="flex flex-wrap items-center gap-3 text-xs opacity-70">
-                <span className="flex items-center gap-1.5">
-                  <CalendarClock className="size-3.5" aria-hidden />
-                  {call.windowLabel}
-                </span>
-                {call.countdown ? (
-                  <span className="flex items-center gap-1.5 font-medium" data-testid="call-countdown">
-                    <Clock className="size-3.5" aria-hidden />
-                    {call.countdown}
-                  </span>
-                ) : null}
-                <span className="ef-badge">{call.state === 'OPEN' ? 'Aberta' : call.state === 'CLOSED' ? 'Encerrada' : 'Em breve'}</span>
-              </p>
-            </header>
+              {canSubmit ? (
+                <div className="ef-card p-5" data-testid="call-form-section">
+                  <h2 className="mb-4 text-lg font-semibold tracking-tight">Enviar proposta</h2>
 
-            {call.instructions ? (
-              <div className="ef-card space-y-2 p-4">
-                <p className="flex items-center gap-1.5 text-sm font-medium">
-                  <FileText className="size-3.5" aria-hidden />
-                  Orientações
-                </p>
-                <p className="whitespace-pre-line text-pretty text-sm opacity-80">
-                  {call.instructions}
-                </p>
-              </div>
-            ) : null}
-
-            {canSubmit ? (
-              <div className="ef-card p-5" data-testid="call-form-section">
-                <h2 className="mb-4 text-lg font-semibold tracking-tight">Enviar proposta</h2>
-
-                {user ? (
-                  <ProposalForm
-                    tenantSlug={tenantSlug}
-                    eventSlug={eventSlug}
-                    callSlug={callSlug}
-                    fields={fields}
-                    action={submitProposalAction}
-                  />
-                ) : (
-                  /**
-                   * Sem sessão, o caminho é entrar ou criar a conta — e VOLTAR para esta
-                   * chamada. O formulário não pede senha: quem propõe precisa ser uma
-                   * pessoa identificável, e é a conta que responde pelo protocolo.
-                   */
-                  <div className="space-y-3" data-testid="call-login-required">
-                    <p className="flex items-start gap-2 text-sm opacity-80">
-                      <LogIn className="mt-0.5 size-4 shrink-0" aria-hidden />
-                      Entre na plataforma para enviar sua proposta. Se ainda não tem conta, criar
-                      uma leva um minuto — e você volta direto para esta chamada.
-                    </p>
-                    <div className="flex flex-wrap gap-3">
-                      <Link
-                        className="ef-button"
-                        href={`/login?redirectTo=${encodeURIComponent(callPath)}`}
-                      >
-                        Entrar
-                      </Link>
-                      <Link
-                        className="ef-button"
-                        href={`/signup?redirectTo=${encodeURIComponent(callPath)}`}
-                        data-testid="call-signup-link"
-                      >
-                        Criar conta
-                      </Link>
+                  {user ? (
+                    <ProposalForm
+                      tenantSlug={tenantSlug}
+                      eventSlug={eventSlug}
+                      callSlug={callSlug}
+                      fields={fields}
+                      action={submitProposalAction}
+                    />
+                  ) : (
+                    /**
+                     * Sem sessão, o caminho é entrar ou criar a conta — e VOLTAR para esta
+                     * chamada. O formulário não pede senha: quem propõe precisa ser uma
+                     * pessoa identificável, e é a conta que responde pelo protocolo.
+                     */
+                    <div className="space-y-3" data-testid="call-login-required">
+                      <p className="flex items-start gap-2 text-sm opacity-80">
+                        <LogIn className="mt-0.5 size-4 shrink-0" aria-hidden />
+                        Entre na plataforma para enviar sua proposta. Se ainda não tem conta, criar
+                        uma leva um minuto — e você volta direto para esta chamada.
+                      </p>
+                      <div className="flex flex-wrap gap-3">
+                        <Link
+                          className="ef-button"
+                          href={`/login?redirectTo=${encodeURIComponent(callPath)}`}
+                        >
+                          Entrar
+                        </Link>
+                        <Link
+                          className="ef-button"
+                          href={`/signup?redirectTo=${encodeURIComponent(callPath)}`}
+                          data-testid="call-signup-link"
+                        >
+                          Criar conta
+                        </Link>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="ef-card flex items-start gap-2 p-5 text-sm"
+                  data-testid="call-not-open"
+                >
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span>
+                    {gate.ok === false
+                      ? gate.message
+                      : 'Seu perfil não tem permissão para propor nesta instituição. Fale com a organização do evento.'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* ── Lateral: o que esta chamada pede ─────────────────────────── */}
+            <aside className="space-y-4">
+              <div className="ef-card space-y-3 p-4">
+                <p className="text-sm font-medium">O que esta chamada pede</p>
+
+                <ul className="space-y-2 text-sm opacity-80">
+                  <li>Título e resumo da proposta</li>
+                  {fields.map((field) => (
+                    <li key={field.key}>
+                      {field.label}
+                      {field.required ? '' : ' (opcional)'}
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="text-xs opacity-60">
+                  {call.requiresBlindReview
+                    ? 'A avaliação é cega: quem julga não vê a autoria.'
+                    : 'A avaliação é aberta: quem julga vê a autoria.'}
+                  {call.maxSubmissionsPerAuthor > 0
+                    ? ` Limite de ${call.maxSubmissionsPerAuthor} proposta(s) por pessoa nesta chamada.`
+                    : ' Sem limite de propostas por pessoa.'}
+                </p>
               </div>
-            ) : (
-              <div
-                className="ef-card flex items-start gap-2 p-5 text-sm"
-                data-testid="call-not-open"
-              >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <span>
-                  {gate.ok === false
-                    ? gate.message
-                    : 'Seu perfil não tem permissão para propor nesta instituição. Fale com a organização do evento.'}
-                </span>
+
+              <div className="ef-card space-y-2 p-4 text-xs opacity-70">
+                <p className="font-medium opacity-100">Depois de enviar</p>
+                <p>
+                  Você recebe um protocolo e um e-mail de confirmação. É o protocolo que a
+                  organização usa para localizar sua proposta — guarde-o.
+                </p>
               </div>
-            )}
+            </aside>
           </div>
-
-          {/* ── Lateral: o que esta chamada pede ─────────────────────────── */}
-          <aside className="space-y-4">
-            <div className="ef-card space-y-3 p-4">
-              <p className="text-sm font-medium">O que esta chamada pede</p>
-
-              <ul className="space-y-2 text-sm opacity-80">
-                <li>Título e resumo da proposta</li>
-                {fields.map((field) => (
-                  <li key={field.key}>
-                    {field.label}
-                    {field.required ? '' : ' (opcional)'}
-                  </li>
-                ))}
-              </ul>
-
-              <p className="text-xs opacity-60">
-                {call.requiresBlindReview
-                  ? 'A avaliação é cega: quem julga não vê a autoria.'
-                  : 'A avaliação é aberta: quem julga vê a autoria.'}
-                {call.maxSubmissionsPerAuthor > 0
-                  ? ` Limite de ${call.maxSubmissionsPerAuthor} proposta(s) por pessoa nesta chamada.`
-                  : ' Sem limite de propostas por pessoa.'}
-              </p>
-            </div>
-
-            <div className="ef-card space-y-2 p-4 text-xs opacity-70">
-              <p className="font-medium opacity-100">Depois de enviar</p>
-              <p>
-                Você recebe um protocolo e um e-mail de confirmação. É o protocolo que a
-                organização usa para localizar sua proposta — guarde-o.
-              </p>
-            </div>
-          </aside>
-        </div>
-      </Section>
+        </Section>
+      </main>
     </ThemeScope>
   );
 }

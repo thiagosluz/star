@@ -5,6 +5,8 @@ import { signOutAction } from '@/app/actions/auth-actions';
 import { TenantMenu, type MembershipSummary } from '@/components/tenancy/tenant-menu';
 import { Avatar } from '@/components/ui/feedback';
 import { buttonClasses } from '@/components/ui/button';
+import { NAV_MODE_RAIL } from '@/lib/shell/nav-mode';
+import { readNavMode } from '@/lib/shell/nav-mode-server';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -20,9 +22,18 @@ import { cn } from '@/lib/utils/cn';
  *
  *  Agora os três andam juntos: avatar + nome (gatilho do menu de contexto, que já
  *  existe desde a FASE 2) e "Sair" ao lado. Uma conta, um bloco.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  ELE LÊ O ESTADO DA BARRA, EM VEZ DE RECEBÊ-LO (FASE 59)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Este bloco chega ao shell como `ReactNode` já montado — ele atravessa a
+ *  fronteira do layout como ELEMENTO, e não aceita prop nova depois de criado.
+ *  Ler o mesmo cookie aqui (uma leitura por requisição, deduplicada pelo
+ *  `cookies()`) mantém UM dono do estado — o cookie — em vez de criar um caminho
+ *  paralelo para a mesma verdade.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-export function AccountBlock({
+export async function AccountBlock({
   user,
   memberships,
   currentSlug,
@@ -34,35 +45,41 @@ export function AccountBlock({
   currentSlug?: string;
   className?: string;
 }) {
+  /**
+   * Barra recolhida: sobra o avatar.
+   *
+   * O bloco degrada em vez de sumir — a área de conta é o caminho para trocar de
+   * instituição, ver a própria sessão e sair, e nenhuma dessas coisas pode
+   * depender da largura da barra. O avatar fica; o nome e o e-mail viram
+   * `sr-only`, e o seletor de contexto recebe um nome acessível explícito, porque
+   * o avatar é decorativo (`aria-hidden`) e não nomearia coisa nenhuma.
+   */
+  const compact = (await readNavMode()) === NAV_MODE_RAIL;
+
+  const identificacao = (
+    <span className={cn('flex min-w-0 items-center gap-2.5', compact && 'justify-center')}>
+      <Avatar name={user.name} size="sm" />
+      <span className={cn('min-w-0', compact && 'sr-only')}>
+        <span className="block truncate text-sm font-medium text-foreground">{user.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+      </span>
+    </span>
+  );
+
   return (
-    <div className={cn('flex items-center gap-2', className)}>
-      <div className="min-w-0 flex-1">
-        {memberships && currentSlug ? (
-          <TenantMenu memberships={memberships} currentSlug={currentSlug}>
-            <span className="flex min-w-0 items-center gap-2.5">
-              <Avatar name={user.name} size="sm" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-foreground">
-                  {user.name}
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {user.email}
-                </span>
-              </span>
-            </span>
-          </TenantMenu>
-        ) : (
-          <span className="flex min-w-0 items-center gap-2.5 px-2 py-1">
-            <Avatar name={user.name} size="sm" />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-foreground">
-                {user.name}
-              </span>
-              <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
-            </span>
-          </span>
-        )}
-      </div>
+    <div className={cn('flex items-center gap-2', compact && 'flex-col', className)}>
+      {memberships && currentSlug ? (
+        <TenantMenu
+          memberships={memberships}
+          currentSlug={currentSlug}
+          compact={compact}
+          label={compact ? `Conta de ${user.name}` : undefined}
+        >
+          {identificacao}
+        </TenantMenu>
+      ) : (
+        identificacao
+      )}
 
       <form action={signOutAction}>
         <button

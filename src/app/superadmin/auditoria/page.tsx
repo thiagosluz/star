@@ -82,7 +82,7 @@ export default async function PlatformAuditPage({
   };
 
   return (
-    <div className="space-y-8" data-testid="platform-audit-page">
+    <main className="space-y-8" data-testid="platform-audit-page">
       <PageHeader
         title="Auditoria"
         description="Duas trilhas: as ações de governança da plataforma e os fatos de segurança das contas (senha, segundo fator, códigos, e-mail e sessões). Nenhuma delas guarda segredo."
@@ -269,7 +269,7 @@ export default async function PlatformAuditPage({
         Segredos (senha, token, código de recuperação e semente TOTP) são removidos ANTES de a linha
         existir: o que aparece é o estado alterado, não a credencial.
       </p>
-    </div>
+    </main>
   );
 }
 

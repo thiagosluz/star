@@ -76,6 +76,40 @@ const AUDIENCES_FOR_VIEWER: Readonly<Record<ProfileViewer, readonly ProfileAudie
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  A pessoa pode ser CITADA publicamente? (FASE 56 · E62 → FASE 60 · E79)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * A **fonte única** de "esta pessoa aparece em superfície pública?".
+ *
+ * ─── POR QUE ESTA PERGUNTA PRECISA DE UM LUGAR SÓ ─────────────────────────────
+ *
+ *  A moderação da plataforma (FASE 56 · E62) grava `User.publicProfileHiddenAt` e a
+ *  medida vale para a PESSOA — o `@handle` é global e a decisão é de todas as casas.
+ *  Enquanto cada superfície escrevia o próprio `if (publicProfileHiddenAt)`, a régua
+ *  era copiada: o perfil público e o diretório respeitavam a ocultação, e as duas
+ *  superfícies que apenas CITAM a pessoa (o bloco "Equipe do evento" da FASE 45 e o
+ *  link selado da carta da FASE 48/51) continuavam publicando nome, foto e equipe.
+ *  Foi esse o defeito da dívida **E79** — a terceira superfície a citar a pessoa
+ *  nasceria sem a checagem, porque não havia uma pergunta pronta para chamar.
+ *
+ *  Aqui a pergunta é UMA: `null` = não há decisão de moderação e a pessoa segue
+ *  visível; **qualquer data registrada** = ocultada em todas as instituições. Quem
+ *  cita a pessoa chama esta função — o perfil, o diretório, a vitrine da equipe e o
+ *  link da carta —, e um `select` que esqueça a coluna não tem como passar batido.
+ *
+ *  ─── POR QUE O PARÂMETRO É ESTRITO, E NÃO "FALSY" ─────────────────────────────
+ *
+ *  O tipo pede `Date | null` e a resposta só é `true` com `null` EXPLÍCITO. Um
+ *  `select` que esqueça a coluna entrega `undefined`, e a resposta passa a ser "não
+ *  visível" — fail-closed, como a régua de posse (invariante nº 4). O erro aparece
+ *  como gente FALTANDO na vitrine, que se investiga; o contrário (tratar `undefined`
+ *  como visível) publicaria a identidade de quem a moderação tirou do ar.
+ */
+export function isPersonPubliclyVisible(person: { publicProfileHiddenAt: Date | null }): boolean {
+  return person.publicProfileHiddenAt === null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Os campos do perfil
 // ───────────────────────────────────────────────────────────────────────────────
 /**

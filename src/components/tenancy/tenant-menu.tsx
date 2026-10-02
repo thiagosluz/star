@@ -8,6 +8,7 @@ import {
   switchTenantAction,
   type SwitchContextState,
 } from "@/app/actions/context-actions";
+import { cn } from "@/lib/utils/cn";
 
 export interface MembershipSummary {
   tenantId: string;
@@ -88,19 +89,47 @@ export function TenantMenu({
   memberships,
   currentSlug,
   children,
+  compact = false,
+  label,
 }: {
   memberships: readonly MembershipSummary[];
   currentSlug: string;
   children: React.ReactNode;
+  /**
+   * Barra recolhida (FASE 59): o gatilho vira quadrado.
+   *
+   * O bloco de conta sumiria da barra se o menu não soubesse encolher — e com ele
+   * iria o único caminho para trocar de instituição. O painel aberto continua com
+   * a largura de sempre (`w-72`), porque encolher o menu suspenso deixaria os
+   * nomes das instituições ilegíveis: quem está recolhido é a barra, não a
+   * informação.
+   */
+  compact?: boolean;
+  /**
+   * Nome acessível explícito para o gatilho.
+   *
+   * Na barra recolhida o texto que nomeia o `<summary>` está em `sr-only` e o
+   * avatar é decorativo: sem um rótulo, o gatilho chegaria ao leitor de tela como
+   * um controle sem nome — a mesma falha que reprova um link só com ícone.
+   */
+  label?: string;
 }) {
   return (
     <details className="group relative">
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm transition hover:bg-accent">
+      <summary
+        aria-label={label}
+        className={cn(
+          'flex cursor-pointer list-none items-center gap-2 rounded-md border border-border text-sm transition hover:bg-accent',
+          compact ? 'size-9 justify-center p-0' : 'px-3 py-1.5',
+        )}
+      >
         {children}
-        <ChevronDown
-          className="size-3.5 text-muted-foreground transition group-open:rotate-180"
-          aria-hidden
-        />
+        {compact ? null : (
+          <ChevronDown
+            className="size-3.5 text-muted-foreground transition group-open:rotate-180"
+            aria-hidden
+          />
+        )}
       </summary>
 
       <div className="absolute left-0 bottom-full z-50 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-lg">

@@ -103,7 +103,7 @@ export default async function PlatformJobsPage() {
   const running = health.filter((state) => state === 'RUNNING').length;
 
   return (
-    <div className="space-y-8" data-testid="platform-jobs">
+    <main className="space-y-8" data-testid="platform-jobs">
       <PageHeader
         title="Rotinas automáticas"
         description="O que a plataforma faz sozinha, quando cada rotina rodou pela última vez e o que aconteceu nas últimas passadas. Uma passada atende todas as instituições."
@@ -317,6 +317,6 @@ export default async function PlatformJobsPage() {
           </Card>
         )}
       </section>
-    </div>
+    </main>
   );
 }

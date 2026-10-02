@@ -173,6 +173,14 @@
 > E63, E66, E70 e E73 —, e declarou **E77** (o logo da instituição não entra na etiqueta) e
 > **I1** (os cenários E2E escritos sem execução). O total **59 → 49**.
 >
+> **FASE 60 (o que se oculta fica oculto · landmark · suíte E2E):** quitou **E79** — a
+> ocultação do perfil passou a valer em **toda** superfície que cita a pessoa (bloco "Equipe do
+> evento", link selado da carta e o **sorteio público**, cujo vazamento apareceu na auditoria da
+> própria dívida: a página publicava o nome inteiro de quem foi ocultado) —, **I2** (as **14**
+> telas sem `<main>`; a lista da F52 dizia 16, e duas eram herança/redirect), **I3** (a
+> interferência na suíte paralela: a spec que "poluía" era ela mesma) e **I1** (os **5**
+> cenários em `test.fixme` fecharam; resta o do **E76**, medido e reproduzido). Declarou **E80**.
+>
 > **FASE 52 ("fechar o que abrimos"):** quitou **E74** e **E75** (declaradas na F50) e
 > **riscou E8** — o lote de certificados em ZIP existe desde a **FASE 36**; a linha ficou
 > aberta porque a verificação original procurou **biblioteca de terceiro** (`zip|archiver|jszip`)
@@ -297,6 +305,7 @@
 | E77 | **O logo da instituição não é embutido na etiqueta do crachá** | FASE 51 (novo, ADR-288) | A identidade visual chegou como **cor do tema + faixa de categoria + nome da instituição**; o logo em imagem ficou de fora. O renderizador embute **JPEG** (é o formato do desenho do certificado) e o `logoUrl` é URL pública do MinIO: embutir exige baixar e converter a imagem no caminho de impressão — e a falha desse download passaria a poder derrubar a impressão do crachá no balcão | Decidir onde cachear a imagem convertida (por instituição? por evento?) e só então embutir, com erro que NÃO impeça a impressão (o crachá sai sem logo, com aviso na trilha) | M | Sim |
 | E78 | **A imagem EM USO não é convertida pelo reprocessador** | FASE 56 (novo, ADR-312) | A conversão troca a chave do objeto, e a URL está gravada nas referências (capa do evento, logotipo de patrocinador, foto de palestrante, JSON dos blocos da página). Reescrever todas elas é trabalho com risco próprio — o relatório do `media:reprocess` conta quantas ficaram | Acervo publicado segue pesado | M | Sim |
 | E79 | **Superfícies que citam a pessoa não respeitam a ocultação do perfil** | FASE 56 (novo, ADR-314) | O bloco "Equipe do evento" (F45) e o link público selado da carta continuam mostrando nome e equipe de quem teve o perfil oculto pela moderação: o efeito da E62 é sobre o PERFIL PÚBLICO, e estendê-lo a toda superfície que cita a pessoa é uma varredura própria | Dado de quem foi ocultado segue visível em duas superfícies | M | Sim |
+| E80 | **O ranking de conquistas cita quem foi ocultado** | FASE 60 (novo, ADR-321) | A tela `/t/<slug>/conquistas` mostra nome, `@handle` e foto sem consultar `isPersonPubliclyVisible`: a régua da ocultação existe desde a F60 e esta é a superfície que ficou fora dela. É tela AUTENTICADA (membros da instituição), não internet aberta — a exposição é menor, mas o desvio é o mesmo | Passar nome/handle/foto do ranking pela fonte única, como fizeram o perfil, o diretório, a equipe, a carta e o sorteio; e fixar a régua das superfícies INTERNAS (a pessoa some da lista ou aparece mascarada?) | S | Sim |
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
 | F2 | **Trocas e crafting de duplicatas** | F5 | `UserCard.quantity` acumula; não há conversão nem troca | Duplicata sem valor percebido | G | Decorrente |

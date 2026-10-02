@@ -244,8 +244,12 @@ describe('G5 — nome público', () => {
   });
 
   it('perfil público mostra o nome completo', () => {
-    expect(publicWinnerName({ name: 'Ana Souza', publicProfile: true })).toBe('Ana Souza');
-    expect(publicWinnerName({ name: 'Ana Souza', publicProfile: false })).toBe('Ana S.');
+    expect(
+      publicWinnerName({ name: 'Ana Souza', publicProfile: true, publicProfileHiddenAt: null }),
+    ).toBe('Ana Souza');
+    expect(
+      publicWinnerName({ name: 'Ana Souza', publicProfile: false, publicProfileHiddenAt: null }),
+    ).toBe('Ana S.');
   });
 });
 

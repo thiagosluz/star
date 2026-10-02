@@ -15,6 +15,20 @@ import {
 } from '@/domain/events/demand-rules';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { DemandBoardDnd } from '@/components/admin/demand-board-dnd';
+import { DemandCalendar } from '@/components/admin/demand-calendar';
+import { DemandGantt } from '@/components/admin/demand-gantt';
+import { demandSituationTone } from '@/components/admin/demand-situation-tone';
+import {
+  DemandViewSwitcher,
+  isDemandView,
+  type DemandViewFilters,
+} from '@/components/admin/demand-view-switcher';
+import {
+  calendarMonthKey,
+  ganttAnchorKey,
+  toTimelineDemands,
+} from '@/lib/events/demand-timeline';
+import { timelineWindow } from '@/domain/events/demand-timeline-rules';
 import {
   createColumnAction,
   createDemandAction,
@@ -72,10 +86,32 @@ export default async function EventDemandsPage({
     busca?: string;
     /** Quantos cartões por coluna — o "carregar mais" da coluna truncada (E52). */
     cartoes?: string;
+    /** Qual das três vistas desenhar: `kanban` (padrão), `gantt` ou `calendario` (F57). */
+    vista?: string;
+    /** Âncora do eixo do Gantt, `AAAA-MM-DD` (F57). */
+    de?: string;
+    /** Mês do calendário, `AAAA-MM` (F57). */
+    mes?: string;
   }>;
 }) {
   const { tenantSlug, eventId } = await params;
-  const { responsavel, equipe, situacao, busca, cartoes } = await searchParams;
+  const { responsavel, equipe, situacao, busca, cartoes, vista, de, mes } = await searchParams;
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  UMA LEITURA, TRÊS VISTAS (FASE 57)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O Gantt e o calendário NÃO fazem consulta nova: eles desenham as demandas que o
+   *  quadro já carregou, já filtradas. Uma leitura por vista seria a porta pela qual as
+   *  três discordariam — o filtro, a janela de cartões e a régua de situação teriam de
+   *  ser repetidos em cada caminho.
+   *
+   *  O instante é UM só, e vem daqui: é ele que decide "vence hoje" no cartão, no Gantt e
+   *  no anel do calendário. Duas chamadas a `new Date()` na mesma renderização poderiam
+   *  cair em dias diferentes na virada da meia-noite — e a mesma demanda apareceria
+   *  atrasada numa vista e no prazo na outra.
+   */
+  const now = new Date();
 
   const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
@@ -119,6 +155,7 @@ export default async function EventDemandsPage({
     tenantId,
     eventId,
     cardsPerColumn,
+    now,
     filters: {
       assigneeId: responsavel ?? null,
       teamId: equipe ?? null,
@@ -133,8 +170,55 @@ export default async function EventDemandsPage({
   const basePath = `/administracao/eventos/${eventId}/demandas`;
 
   /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A VISTA, E O QUE CADA UMA PRECISA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Valor desconhecido cai em `kanban`: um `?vista=` colado à mão (ou de uma versão
+   *  antiga da tela) não pode virar tela em branco — o padrão é a vista que já existia.
+   *
+   *  As demandas na régua das vistas novas SÃO as do quadro filtrado, convertidas uma vez
+   *  (`toTimelineDemands`); `undefined` no Kanban evita pagar a conversão que ninguém usa.
+   */
+  const view = isDemandView(vista) ? vista : 'kanban';
+  const timeline = view === 'kanban' ? [] : toTimelineDemands(board.columns, now, board.timeZone);
+
+  const ganttWindow =
+    view === 'gantt'
+      ? timelineWindow({
+          anchorKey: ganttAnchorKey({
+            requested: de ?? null,
+            demands: timeline,
+            timeZone: board.timeZone,
+            now,
+          }),
+        })
+      : null;
+
+  const calendarKey =
+    view === 'calendario'
+      ? calendarMonthKey({ requested: mes ?? null, timeZone: board.timeZone, now })
+      : null;
+
+  /**
+   * Os filtros da tela viajam nos links das vistas e na navegação do período: trocar de
+   * vista (ou de mês) e perder o filtro mostraria OUTRA lista, e a pessoa concluiria que
+   * o filtro não vale ali.
+   */
+  const filters: DemandViewFilters = { responsavel, equipe, situacao, busca, cartoes };
+
+  /**
+   * O teto de cartões por coluna (E52) também vale para as vistas novas — elas desenham o
+   * quadro filtrado, e não uma segunda leitura. Quando alguma coluna ficou truncada, a
+   * tela DIZ isso na vista nova: esconder em silêncio faria o Gantt omitir trabalho real.
+   */
+  const truncated = board.columns.some((column) => column.totalCards > column.cards.length);
+
+  /**
    * O link de "ver mais" PRESERVA os filtros da tela: perder o filtro ao pedir mais
    * cartões mostraria outra lista, e a pessoa acharia que o quadro mudou sozinho.
+   *
+   * Nas vistas novas ele preserva também a VISTA e o período: pedir mais cartões e cair
+   * no Kanban (ou no mês de hoje) seria sair da tela em que a pessoa estava.
    */
   const moreCardsQuery = (totalDaColuna: number): string => {
     const next = new URLSearchParams();
@@ -149,16 +233,19 @@ export default async function EventDemandsPage({
       String(Math.min(500, Math.max(totalDaColuna, cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE))),
     );
 
+    if (view === 'gantt' && ganttWindow) {
+      next.set('vista', 'gantt');
+      next.set('de', ganttWindow.fromKey);
+    }
+
+    if (view === 'calendario' && calendarKey) {
+      next.set('vista', 'calendario');
+      next.set('mes', calendarKey);
+    }
+
     return next.toString();
   };
   const boardPath = tenantPath(tenantSlug, basePath);
-
-  const situationTone = (situation: string): string => {
-    if (situation === 'OVERDUE') return 'border-destructive/50 bg-destructive/5';
-    if (situation === 'DUE_TODAY') return 'border-secondary-strong/50 bg-secondary/5';
-    if (situation === 'DONE') return 'border-border bg-muted/40';
-    return 'border-border';
-  };
 
   return (
     <main className="space-y-8">
@@ -178,6 +265,22 @@ export default async function EventDemandsPage({
           · as pessoas atribuídas saem da equipe ativa da instituição.
         </p>
       </header>
+
+      {/**
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  TRÊS DESENHOS DA MESMA LISTA (FASE 57)
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  O Kanban continua sendo o padrão; o Gantt responde "o que atravessa o período" e
+        *  o calendário, "o que vence em cada dia". A barra de filtros vale para as três —
+        *  o seletor fica ACIMA dela para que a escolha da vista e o recorte da lista
+        *  apareçam na ordem em que a pessoa os usa.
+        */}
+      <DemandViewSwitcher
+        tenantSlug={tenantSlug}
+        eventId={eventId}
+        current={view}
+        filters={filters}
+      />
 
       {/* ── Resumo: o que aperta primeiro ───────────────────────────────────── */}
       <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="demand-summary">
@@ -227,6 +330,13 @@ export default async function EventDemandsPage({
 
       {/* ── Filtros ─────────────────────────────────────────────────────────── */}
       <form method="get" action={boardPath} className="flex flex-wrap items-end gap-2" data-testid="demand-filters">
+        {/**
+          * O formulário é um GET com os campos da barra: sem a vista no endereço, filtrar
+          * no Gantt ou no calendário devolveria o Kanban — a pessoa perderia a vista ao
+          * apertar "Filtrar". No Kanban nada é enviado (ele é o padrão), então a URL dele
+          * continua a mesma de antes.
+          */}
+        {view === 'kanban' ? null : <input type="hidden" name="vista" value={view} />}
         <label className="space-y-1 text-xs">
           <span className="block text-muted-foreground">Buscar</span>
           <input
@@ -441,167 +551,230 @@ export default async function EventDemandsPage({
         </details>
       ) : null}
 
-      {/* ── O quadro ────────────────────────────────────────────────────────── */}
-      <DemandBoardDnd
-        action={moveDemandAction}
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        canMove={canManage}
-        keyboardHintId={KEYBOARD_HINT_ID}
-      >
-        {board.columns.map((column) => (
-          <section
-            key={column.id}
-            data-column-drop={column.id}
-            data-testid={`demand-column-${column.id}`}
-            className="flex min-h-40 flex-col gap-2 rounded-lg border border-border bg-card/60 p-2"
+      {/* ── As vistas ───────────────────────────────────────────────────────── */}
+      {/**
+        * O Kanban só entra no DOM quando é a vista escolhida, e o bloco inteiro fica como
+        * sempre esteve: o arrastar, os formulários do cartão e todos os `data-testid`
+        * continuam sendo os mesmos. O invólucro existe para a vista ter um identificador
+        * próprio — o do componente de arrastar (`demand-board`) continua no lugar.
+        */}
+      {view === 'kanban' ? (
+        <div data-testid="demand-board-kanban">
+          <DemandBoardDnd
+            action={moveDemandAction}
+            tenantSlug={tenantSlug}
+            eventId={eventId}
+            canMove={canManage}
+            keyboardHintId={KEYBOARD_HINT_ID}
           >
-            <header className="flex items-center justify-between gap-2 px-1">
-              <h2 className="text-sm font-medium">
-                {column.name}
-                {column.isDone ? (
-                  <span className="ml-1 text-xs uppercase tracking-wide text-muted-foreground">
-                    conclui
-                  </span>
-                ) : null}
-              </h2>
-              <span className="text-xs text-muted-foreground" data-testid={`demand-column-count-${column.id}`}>
-                {column.cards.length}
-              </span>
-            </header>
-
-            {column.cards.length === 0 ? (
-              <p className="px-1 py-4 text-xs text-muted-foreground">Nenhuma demanda aqui.</p>
-            ) : null}
-
-            {/**
-              * ─────────────────────────────────────────────────────────────────────
-              *  COLUNA TRUNCADA SE ANUNCIA E DÁ O CAMINHO (FASE 50 · dívida E52)
-              * ─────────────────────────────────────────────────────────────────────
-              *  Esconder cartão em silêncio seria pior que a lentidão: quem organiza
-              *  concluiria que a demanda sumiu. O aviso diz QUANTOS ficaram de fora, e o
-              *  link reabre o quadro com mais — parâmetro de URL, sem JavaScript.
-              */}
-            {column.totalCards > column.cards.length ? (
-              <p
-                className="rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground"
-                data-testid={`demand-column-truncated-${column.id}`}
-              >
-                Mostrando {column.cards.length} de {column.totalCards} demandas.{' '}
-                <Link
-                  href={`${basePath}?${moreCardsQuery(column.totalCards)}`}
-                  className="underline underline-offset-4"
-                  data-testid={`demand-column-more-${column.id}`}
-                >
-                  Ver mais
-                </Link>
-              </p>
-            ) : null}
-
-            {column.cards.map((card, index) => (
-              <article
-                key={card.id}
-                data-demand-id={card.id}
-                data-demand-column={column.id}
-                data-demand-index={index}
-                data-demand-situation={card.situation}
-                /**
-                 * O nome vai no DOM porque o ANÚNCIO do movimento por teclado precisa
-                 * dele ("A demanda X agora é a 2ª de 5"): ler o texto do link seria
-                 * depender da marcação interna, que muda por motivo de layout.
-                 */
-                data-demand-title={card.title}
-                /**
-                 * ─────────────────────────────────────────────────────────────────────
-                 *  O CARTÃO É FOCÁVEL, E O ATALHO VEM DESCRITO (dívida E51)
-                 * ─────────────────────────────────────────────────────────────────────
-                 *  `tabIndex={0}` põe o cartão na ordem de tabulação; o
-                 *  `aria-describedby` aponta para o aviso que ensina o `Alt + ↑/↓`, então
-                 *  quem chega pelo teclado OUVE o atalho ao focar — em vez de descobri-lo
-                 *  por acaso. Sem permissão de mover não há atalho: o cartão continua
-                 *  focável (o link do título é o conteúdo), mas nada é anunciado.
-                 */
-                tabIndex={canManage ? 0 : undefined}
-                aria-describedby={canManage ? KEYBOARD_HINT_ID : undefined}
-                draggable={canManage}
-                data-testid={`demand-card-${card.id}`}
-                /**
-                 * O anel de foco NÃO é escrito aqui: o `globals.css` já o aplica a todo
-                 * `[tabindex]` com `focus-visible` (o anel é do sistema, não de quem
-                 * lembra de escrever a classe).
-                 */
-                className={`space-y-2 rounded-md border p-2 text-sm ${situationTone(card.situation)}`}
-              >
-                <Link
-                  href={tenantPath(tenantSlug, `${basePath}/${card.id}`)}
-                  className="block font-medium underline-offset-2 hover:underline"
-                  data-testid={`demand-card-title-${card.id}`}
-                >
-                  {card.title}
-                </Link>
-
-                <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span data-testid={`demand-card-priority-${card.id}`}>{card.priorityLabel}</span>
-                  {card.dueLabel ? (
-                    <span className="flex items-center gap-1" data-testid={`demand-card-due-${card.id}`}>
-                      <CalendarClock className="size-3" aria-hidden />
-                      {card.dueLabel}
+          {board.columns.map((column) => (
+            <section
+              key={column.id}
+              data-column-drop={column.id}
+              data-testid={`demand-column-${column.id}`}
+              className="flex min-h-40 flex-col gap-2 rounded-lg border border-border bg-card/60 p-2"
+            >
+              <header className="flex items-center justify-between gap-2 px-1">
+                <h2 className="text-sm font-medium">
+                  {column.name}
+                  {column.isDone ? (
+                    <span className="ml-1 text-xs uppercase tracking-wide text-muted-foreground">
+                      conclui
                     </span>
                   ) : null}
-                  <span data-testid={`demand-card-situation-${card.id}`}>{card.situationLabel}</span>
-                  {card.commentCount > 0 ? <span>{card.commentCount} comentário(s)</span> : null}
-                </p>
+                </h2>
+                <span className="text-xs text-muted-foreground" data-testid={`demand-column-count-${column.id}`}>
+                  {column.cards.length}
+                </span>
+              </header>
 
-                <p className="flex flex-wrap items-center gap-1 text-xs" data-testid={`demand-card-people-${card.id}`}>
-                  <Users className="size-3 text-muted-foreground" aria-hidden />
-                  {card.teamName ? <span className="font-medium">{card.teamName}</span> : null}
-                  {card.assignees.length > 0 ? (
-                    <span className="text-muted-foreground">
-                      {card.assignees.map((assignee) => assignee.name).join(', ')}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">sem responsável</span>
-                  )}
-                </p>
+              {column.cards.length === 0 ? (
+                <p className="px-1 py-4 text-xs text-muted-foreground">Nenhuma demanda aqui.</p>
+              ) : null}
 
-                {/**
-                 * O formulário do cartão é o caminho que NÃO depende de JavaScript:
-                 * um `<form>` com a ação nativa `(formData) => void`, que o React
-                 * envia mesmo antes da hidratação. O arrastar e soltar é o atalho.
-                 */}
-                {canManage && board.columns.length > 1 ? (
-                  <form action={moveDemandFormAction} className="flex items-center gap-1">
-                    <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                    <input type="hidden" name="eventId" value={eventId} />
-                    <input type="hidden" name="demandId" value={card.id} />
-                    <input type="hidden" name="fromColumnId" value={column.id} />
-                    <select
-                      name="toColumnId"
-                      defaultValue={column.id}
-                      aria-label={`Mover "${card.title}" para`}
-                      className="min-w-0 flex-1 rounded-md border border-border bg-background px-1.5 py-1 text-xs"
-                      data-testid={`demand-move-select-${card.id}`}
-                    >
-                      {board.columns.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="submit"
-                      className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
-                      data-testid={`demand-move-submit-${card.id}`}
-                    >
-                      Mover
-                    </button>
-                  </form>
-                ) : null}
-              </article>
-            ))}
-          </section>
-        ))}
-      </DemandBoardDnd>
+              {/**
+                * ─────────────────────────────────────────────────────────────────────
+                *  COLUNA TRUNCADA SE ANUNCIA E DÁ O CAMINHO (FASE 50 · dívida E52)
+                * ─────────────────────────────────────────────────────────────────────
+                *  Esconder cartão em silêncio seria pior que a lentidão: quem organiza
+                *  concluiria que a demanda sumiu. O aviso diz QUANTOS ficaram de fora, e o
+                *  link reabre o quadro com mais — parâmetro de URL, sem JavaScript.
+                */}
+              {column.totalCards > column.cards.length ? (
+                <p
+                  className="rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground"
+                  data-testid={`demand-column-truncated-${column.id}`}
+                >
+                  Mostrando {column.cards.length} de {column.totalCards} demandas.{' '}
+                  <Link
+                    href={`${basePath}?${moreCardsQuery(column.totalCards)}`}
+                    className="underline underline-offset-4"
+                    data-testid={`demand-column-more-${column.id}`}
+                  >
+                    Ver mais
+                  </Link>
+                </p>
+              ) : null}
+
+              {column.cards.map((card, index) => (
+                <article
+                  key={card.id}
+                  data-demand-id={card.id}
+                  data-demand-column={column.id}
+                  data-demand-index={index}
+                  data-demand-situation={card.situation}
+                  /**
+                   * O nome vai no DOM porque o ANÚNCIO do movimento por teclado precisa
+                   * dele ("A demanda X agora é a 2ª de 5"): ler o texto do link seria
+                   * depender da marcação interna, que muda por motivo de layout.
+                   */
+                  data-demand-title={card.title}
+                  /**
+                   * ─────────────────────────────────────────────────────────────────────
+                   *  O CARTÃO É FOCÁVEL, E O ATALHO VEM DESCRITO (dívida E51)
+                   * ─────────────────────────────────────────────────────────────────────
+                   *  `tabIndex={0}` põe o cartão na ordem de tabulação; o
+                   *  `aria-describedby` aponta para o aviso que ensina o `Alt + ↑/↓`, então
+                   *  quem chega pelo teclado OUVE o atalho ao focar — em vez de descobri-lo
+                   *  por acaso. Sem permissão de mover não há atalho: o cartão continua
+                   *  focável (o link do título é o conteúdo), mas nada é anunciado.
+                   */
+                  tabIndex={canManage ? 0 : undefined}
+                  aria-describedby={canManage ? KEYBOARD_HINT_ID : undefined}
+                  draggable={canManage}
+                  data-testid={`demand-card-${card.id}`}
+                  /**
+                   * O anel de foco NÃO é escrito aqui: o `globals.css` já o aplica a todo
+                   * `[tabindex]` com `focus-visible` (o anel é do sistema, não de quem
+                   * lembra de escrever a classe).
+                   */
+                  className={`space-y-2 rounded-md border p-2 text-sm ${demandSituationTone(card.situation)}`}
+                >
+                  <Link
+                    href={tenantPath(tenantSlug, `${basePath}/${card.id}`)}
+                    className="block font-medium underline-offset-2 hover:underline"
+                    data-testid={`demand-card-title-${card.id}`}
+                  >
+                    {card.title}
+                  </Link>
+
+                  <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span data-testid={`demand-card-priority-${card.id}`}>{card.priorityLabel}</span>
+                    {card.dueLabel ? (
+                      <span className="flex items-center gap-1" data-testid={`demand-card-due-${card.id}`}>
+                        <CalendarClock className="size-3" aria-hidden />
+                        {card.dueLabel}
+                      </span>
+                    ) : null}
+                    <span data-testid={`demand-card-situation-${card.id}`}>{card.situationLabel}</span>
+                    {card.commentCount > 0 ? <span>{card.commentCount} comentário(s)</span> : null}
+                  </p>
+
+                  <p className="flex flex-wrap items-center gap-1 text-xs" data-testid={`demand-card-people-${card.id}`}>
+                    <Users className="size-3 text-muted-foreground" aria-hidden />
+                    {card.teamName ? <span className="font-medium">{card.teamName}</span> : null}
+                    {card.assignees.length > 0 ? (
+                      <span className="text-muted-foreground">
+                        {card.assignees.map((assignee) => assignee.name).join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">sem responsável</span>
+                    )}
+                  </p>
+
+                  {/**
+                   * O formulário do cartão é o caminho que NÃO depende de JavaScript:
+                   * um `<form>` com a ação nativa `(formData) => void`, que o React
+                   * envia mesmo antes da hidratação. O arrastar e soltar é o atalho.
+                   */}
+                  {canManage && board.columns.length > 1 ? (
+                    <form action={moveDemandFormAction} className="flex items-center gap-1">
+                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                      <input type="hidden" name="eventId" value={eventId} />
+                      <input type="hidden" name="demandId" value={card.id} />
+                      <input type="hidden" name="fromColumnId" value={column.id} />
+                      <select
+                        name="toColumnId"
+                        defaultValue={column.id}
+                        aria-label={`Mover "${card.title}" para`}
+                        className="min-w-0 flex-1 rounded-md border border-border bg-background px-1.5 py-1 text-xs"
+                        data-testid={`demand-move-select-${card.id}`}
+                      >
+                        {board.columns.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                        data-testid={`demand-move-submit-${card.id}`}
+                      >
+                        Mover
+                      </button>
+                    </form>
+                  ) : null}
+                </article>
+              ))}
+            </section>
+          ))}
+          </DemandBoardDnd>
+        </div>
+      ) : null}
+
+      {view === 'gantt' && ganttWindow ? (
+        <div className="space-y-2">
+          {truncated ? (
+            <p className="text-xs text-muted-foreground" data-testid="demand-view-truncated">
+              Algumas colunas têm mais demandas do que a janela trouxe — o eixo mostra as{' '}
+              {cardsPerColumn} primeiras de cada uma.{' '}
+              <Link
+                href={`${boardPath}?${moreCardsQuery(cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE)}`}
+                className="underline"
+              >
+                Ver mais
+              </Link>
+            </p>
+          ) : null}
+
+          <DemandGantt
+            tenantSlug={tenantSlug}
+            eventId={eventId}
+            demands={timeline}
+            window={ganttWindow}
+            timeZone={board.timeZone}
+            filters={filters}
+          />
+        </div>
+      ) : null}
+
+      {view === 'calendario' && calendarKey ? (
+        <div className="space-y-2">
+          {truncated ? (
+            <p className="text-xs text-muted-foreground" data-testid="demand-view-truncated">
+              Algumas colunas têm mais demandas do que a janela trouxe — o mês mostra as{' '}
+              {cardsPerColumn} primeiras de cada uma.{' '}
+              <Link
+                href={`${boardPath}?${moreCardsQuery(cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE)}`}
+                className="underline"
+              >
+                Ver mais
+              </Link>
+            </p>
+          ) : null}
+
+          <DemandCalendar
+            tenantSlug={tenantSlug}
+            eventId={eventId}
+            demands={timeline}
+            monthKey={calendarKey}
+            timeZone={board.timeZone}
+            now={now}
+            filters={filters}
+          />
+        </div>
+      ) : null}
 
       {board.columns.length === 0 ? (
         <p className="text-sm text-muted-foreground">

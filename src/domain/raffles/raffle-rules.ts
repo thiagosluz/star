@@ -24,6 +24,8 @@
  */
 import { createHash, createHmac } from 'node:crypto';
 
+import { isPersonPubliclyVisible } from '@/domain/profile/public-profile-rules';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Tipos
 // ───────────────────────────────────────────────────────────────────────────────
@@ -475,7 +477,9 @@ export function verifySeed(seed: string, commitment: string): boolean {
  *  notebook" na internet é exposição que ninguém consentiu ao se credenciar. O
  *  padrão é `Ana Souza` → `Ana S.`: quem estava no palco reconhece, quem só navega
  *  não identifica. Quem optou por ter perfil público (`User.isPublicProfile`) tem o
- *  nome completo publicado — consentimento explícito e verificável.
+ *  nome completo publicado — consentimento explícito e verificável —, salvo se a
+ *  moderação da plataforma ocultou o perfil (FASE 60 · E79): aí a máscara volta, e a
+ *  decisão de quem fica com o nome inteiro é a de `publicWinnerEntry`.
  *
  *  Nome de uma palavra só é preservado (`Ana` → `Ana`): mascarar viraria `A.`, que
  *  não identifica nem para quem estava lá.
@@ -494,9 +498,68 @@ export function maskName(fullName: string): string {
   return initials ? `${first} ${initials}` : first!;
 }
 
-/** Nome para exibição pública, respeitando o consentimento de perfil público. */
-export function publicWinnerName(input: { name: string; publicProfile: boolean }): string {
-  return input.publicProfile ? input.name : maskName(input.name);
+/**
+ * O que o sorteio publica sobre UMA pessoa que concorreu ou ganhou.
+ *
+ * O campo `publicProfileHiddenAt` é OBRIGATÓRIO pela mesma razão do bloco "Equipe do
+ * evento" (FASE 45): o tipo faz o `tsc` acusar quem esqueceu de pedir a coluna no
+ * `select`, e, para o que escapar do tipo (um `select` montado em runtime, um cast),
+ * a fonte única responde "não visível" no runtime (fail-closed). O erro dos dois lados
+ * é o MESMO e é visível — gente abreviada numa lista que já mostrava o nome —, e não
+ * identidade publicada por engano, que é o desfecho que não se investiga.
+ */
+export interface PublicWinnerNameInput {
+  name: string;
+  /** O consentimento ANTIGO (FASE 16, `User.isPublicProfile`): autoriza o nome inteiro. */
+  publicProfile: boolean;
+  /** O efeito da moderação da plataforma (FASE 56 · E62). `null` = não há decisão. */
+  publicProfileHiddenAt: Date | null;
+}
+
+/**
+ * O nome E a marca de máscara, decididos JUNTOS.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A REGRA PASSOU A TER UM LUGAR SÓ (FASE 60 · dívida E79)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O resultado do sorteio é um artefato PÚBLICO publicado: a lista da apuração, o
+ *  telão do palco, a página do resultado e a auditoria mostram nome de quem ganhou.
+ *  `publicWinnerName` consultava apenas o consentimento antigo
+ *  (`User.isPublicProfile`), então quem foi ocultado pela moderação da plataforma E
+ *  tinha aquele consentimento ligado continuava com o nome completo numa página
+ *  aberta a qualquer visitante — o defeito que a E79 achou nesta superfície.
+ *
+ *  A régua da ocultação vem da fonte única (`isPersonPubliclyVisible`, a mesma do
+ *  perfil público, do diretório, da vitrine da equipe e do link da carta) e VENCE o
+ *  consentimento: a decisão é da plataforma sobre a PESSOA, e não um degrau de
+ *  visibilidade que ela pudesse reverter sozinha.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE MASCARAR, E NÃO REMOVER NEM ANUNCIAR
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  1. **A LISTA NÃO PODE PERDER UM GANHADOR.** O resultado é lido em conjunto com a
+ *     posição, o prêmio e a contagem — é o que o balcão usa para entregar e o que a
+ *     auditoria usa para conferir a apuração. Sumir com a linha faria a lista mentir
+ *     sobre o próprio tamanho, e a conferência passaria a divergir da apuração.
+ *  2. **A CONFERÊNCIA NÃO DEPENDE DO NOME.** O conteúdo assinado da lista é
+ *     `{ index, code, minutes }` (`canonicalPool`) e o código de cada pessoa é digest
+ *     do par sorteio+participante — nenhum hash ou recibo carrega nome. Mascarar o
+ *     texto não invalida nada do que já foi publicado.
+ *  3. **RÓTULO NEUTRO.** Aqui a máscara é a MESMA de quem nunca autorizou o nome
+ *     (`Ana Souza` → `Ana S.`): quem estava no palco reconhece, quem só navega não
+ *     identifica. Escrever "oculto pela moderação" contaria a decisão da plataforma a
+ *     estranhos — exposição maior do que o próprio nome —, e é a lição que o link da
+ *     carta já fixou (`card-share-service.ts`).
+ */
+export function publicWinnerEntry(input: PublicWinnerNameInput): { name: string; masked: boolean } {
+  const masked = !input.publicProfile || !isPersonPubliclyVisible(input);
+
+  return { name: masked ? maskName(input.name) : input.name, masked };
+}
+
+/** Nome para exibição pública, respeitando o consentimento E a ocultação da moderação. */
+export function publicWinnerName(input: PublicWinnerNameInput): string {
+  return publicWinnerEntry(input).name;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

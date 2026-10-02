@@ -91,12 +91,31 @@ export function buildTenantNav(input: {
    * invisível para quem ainda não tem vínculo.
    */
   hasPendingSponsorInvite?: boolean;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A PESSOA ESTÁ VINCULADA A ALGUM PATROCINADOR? (FASE 59 — defeito)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A área do patrocinador é aberta por **VÍNCULO**, e não por papel (FASE 42): o
+   *  vínculo nasce do convite aceito ou da vinculação direta pela equipe, e é
+   *  `sponsor_users` (`status = ACTIVE`, `deletedAt IS NULL`) quem responde.
+   *
+   *  O item do menu perguntava `sponsor:read` — e essa permissão está no pacote MÍNIMO
+   *  de quem participa (é ela que deixa a PÁGINA ser aberta para mostrar o convite). O
+   *  resultado era o item "Área do patrocinador" aparecendo para revisor, dono e
+   *  qualquer participante, com a página dizendo "você não está vinculado a nenhum
+   *  patrocinador desta instituição" logo depois do clique.
+   *
+   *  Permissão responde "pode entrar?"; o VÍNCULO responde "tem algo lá dentro?". O
+   *  menu faz a segunda pergunta.
+   */
+  hasSponsorAccess?: boolean;
 }): ShellNavGroup[] {
   const {
     tenantSlug,
     principal,
     hasPendingSpeakerInvite = false,
     hasPendingSponsorInvite = false,
+    hasSponsorAccess = false,
   } = input;
 
   /**
@@ -124,11 +143,15 @@ export function buildTenantNav(input: {
   const isSpeaker = allowedFor(PERMISSIONS.SPEAKER_PROFILE_UPDATE_OWN);
 
   /**
-   * A área do patrocinador tem DUAS portas, como o portal do palestrante: quem tem o
-   * papel (nasceu com o aceite) e quem foi convidado e ainda não aceitou. O rótulo
-   * segue a porta, e quem não é nem uma coisa nem outra não vê o item.
+   * A área do patrocinador tem DUAS portas, como o portal do palestrante: quem está
+   * VINCULADO a um patrocinador e quem foi convidado e ainda não aceitou. O rótulo segue
+   * a porta, e quem não é nem uma coisa nem outra não vê o item.
+   *
+   * Era `holdsPermission(principal, PERMISSIONS.SPONSOR_READ)` — e essa permissão está
+   * no pacote mínimo de quem participa, então o item aparecia para todo mundo (FASE 59).
+   * O que decide é o VÍNCULO, que chega de fora (`hasSponsorAccess`), como o convite.
    */
-  const isSponsor = holdsPermission(principal, PERMISSIONS.SPONSOR_READ);
+  const isSponsor = hasSponsorAccess;
 
   const href = (path: string) => tenantPath(tenantSlug, path);
 

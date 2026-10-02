@@ -3,7 +3,10 @@ import { redirect } from 'next/navigation';
 import { getRequestContext, loadPrincipal } from '@/lib/auth/session';
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 import { hasPendingSpeakerInvite } from '@/lib/speakers/speaker-portal-service';
-import { hasPendingSponsorInvite } from '@/lib/sponsors/sponsor-portal-service';
+import {
+  hasPendingSponsorInvite,
+  listSponsorAccess,
+} from '@/lib/sponsors/sponsor-portal-service';
 import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
 import { AccountBlock } from '@/components/shell/account-block';
 import { AppShell } from '@/components/shell/app-shell';
@@ -132,6 +135,22 @@ export default async function TenantLayout({
          * painel sem nenhum caminho até o convite.
          */
         hasPendingSponsorInvite: await hasPendingSponsorInvite(tenant.id, context.user.email),
+        /**
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  E O VÍNCULO, QUE É OUTRA COISA QUE A PERMISSÃO (FASE 59)
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  `sponsor:read` está no pacote mínimo de quem participa — é ela que deixa a
+         *  PÁGINA da área ser aberta para mostrar o convite. Usá-la para decidir o ITEM
+         *  do menu fazia "Área do patrocinador" aparecer para revisor, dono e qualquer
+         *  participante, e a página respondia "você não está vinculado a nenhum
+         *  patrocinador desta instituição" no clique seguinte.
+         *
+         *  O vínculo é `sponsor_users` ativo — a mesma fonte que a página usa para
+         *  decidir o que mostrar. Uma consulta por render do shell, e só o booleano
+         *  atravessa daqui para o menu.
+         */
+        hasSponsorAccess:
+          (await listSponsorAccess(tenant.id, context.user.id)).length > 0,
       })}
       account={
         <AccountBlock

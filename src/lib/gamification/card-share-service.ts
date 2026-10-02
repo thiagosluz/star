@@ -10,7 +10,9 @@
  *  2. O NOME que aparece no link passa pela régua da FASE 44 (`visibleProfileFields`
  *     para visitante ANÔNIMO + `resolvePublicDisplayName`): quem não publica o nome
  *     aparece como `@handle`, exatamente como no perfil público — e quem não tem
- *     handle aparece com um rótulo neutro, sem inventar identidade.
+ *     handle aparece com um rótulo neutro, sem inventar identidade. Quem a moderação
+ *     da plataforma ocultou (F56 · E62 → F60 · E79) também recebe o rótulo neutro:
+ *     a carta continua abrindo, mas a identidade sai — ver `readSharedCard`.
  *  3. A página pública lê SÓ o que a carta precisa. Não há caminho, aqui, para XP,
  *     álbum, e-mail, outros certificados ou a lista de eventos da pessoa.
  *
@@ -62,6 +64,7 @@ import {
   type CardShareStatus,
 } from '@/domain/gamification/card-share-rules';
 import {
+  isPersonPubliclyVisible,
   parseProfileAudiences,
   resolvePublicDisplayName,
   visibleProfileFields,
@@ -206,17 +209,36 @@ export interface SharedCardView {
 }
 
 /**
- * Nome público do dono, pela régua da FASE 44.
+ * Nome público do dono, pela régua da FASE 44 — e pela ocultação da FASE 56.
  *
  * A página da carta é lida por visitante ANÔNIMO (o link vai para um grupo), então
  * é essa a régua aplicada — a mesma que a página do perfil usa para quem não está
  * logado. Nome privado ⇒ `@handle`; sem handle ⇒ rótulo neutro.
+ *
+ * ─── O PERFIL OCULTO NÃO ASSINA A CARTA (FASE 60 · E79) ──────────────────────
+ *
+ *  A decisão da moderação (`publicProfileHiddenAt`) tira do ar a IDENTIDADE pública
+ *  da pessoa — e o nome, o `@handle` e a foto são exatamente isso. Aqui eles caem para
+ *  o rótulo NEUTRO pela fonte única (`isPersonPubliclyVisible`), e sem passar pela
+ *  matriz de campos: a ocultação é medida da PLATAFORMA, e não um degrau a mais de
+ *  visibilidade que a pessoa pudesse reverter sozinha.
+ *
+ *  O rótulo é o NEUTRO, e isso é decisão, não descuido: escrever "perfil oculto pela
+ *  moderação" contaria a decisão a TODO mundo que tem o token — um grupo inteiro
+ *  saberia que aquela pessoa foi moderada, exposição maior do que o próprio nome.
+ *  Neutro, o visitante não distingue "não publica o nome" de "foi ocultada", que é
+ *  o mínimo que a medida precisa preservar.
  */
 function resolveShareName(input: {
   name: string | null;
   publicHandle: string | null;
   profileAudiences: unknown;
+  publicProfileHiddenAt: Date | null;
 }): { displayName: string; showsRealName: boolean } {
+  if (!isPersonPubliclyVisible(input)) {
+    return { displayName: NEUTRAL_SHARE_NAME, showsRealName: false };
+  }
+
   const audiences = parseProfileAudiences(input.profileAudiences);
   const visible = new Set(visibleProfileFields({ audiences, viewer: 'ANONYMOUS' }));
   const showsRealName = visible.has('displayName');
@@ -243,6 +265,8 @@ const SHARE_NAME_SELECT = {
   name: true,
   publicHandle: true,
   profileAudiences: true,
+  /** O efeito da moderação da plataforma (F56 · E62): o link não cita quem foi oculto. */
+  publicProfileHiddenAt: true,
 } as const;
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -670,10 +694,48 @@ export async function readSharedCard(input: {
     const { userCard } = row;
     const template = userCard.cardTemplate;
     const art = resolveArt(template.art);
+
+    /**
+     * ─── A CARTA CONTINUA ABRINDO; A IDENTIDADE NÃO (FASE 60 · E79) ─────────────
+     *
+     *  Decisão: quando a moderação oculta o perfil de quem conquistou a carta, o link
+     *  NÃO responde 404 — ele mostra a MESMA carta, sem nome, sem `@handle` e sem foto.
+     *  As razões, em ordem de peso:
+     *
+     *  1. **O link é COMPARTILHADO.** Quem tem o token é um terceiro (um grupo, uma
+     *     turma) que não fez nada, e o endereço já está na conversa dele. Um 404 aqui
+     *     é indistinguível de "revogado" e de "vencido" — a resposta ÚNICA que este
+     *     serviço dá de propósito —, então o efeito prático seria a conquista sumir
+     *     sem aviso, retroativamente, para quem só recebeu um link. A medida da
+     *     moderação é sobre a PESSOA, e não sobre a carta de outra pessoa.
+     *
+     *  2. **O EFEITO DOCUMENTADO DA E62 É SOBRE O PERFIL.** "O perfil deixa de aparecer
+     *     publicamente" — e a carta não é perfil: é conquista do evento, guardada no
+     *     álbum de quem a ganhou. Estender a medida à exclusão do objeto seria mais do
+     *     que a decisão diz, e destruiria o registro sem que ninguém tivesse pedido.
+     *
+     *  3. **OCULTAR NÃO É APAGAR.** A E62 já fixou isso para o `@handle`, que continua
+     *     reservado mesmo com o perfil oculto. Apagar o link de uma carta jogaria fora,
+     *     de quebra, o endereço que o dono talvez queira revogar ELE MESMO — e revogar
+     *     é um ato dele, com botão e trilha (F48/E70), não um efeito colateral da
+     *     moderação.
+     *
+     *  O que muda é só o que a medida tira: o nome, o `@handle` e a foto caem para o
+     *  rótulo neutro (`NEUTRAL_SHARE_NAME`), que é o mesmo caminho de quem não publica
+     *  o nome. A carta, a raridade, a ficha e a data permanecem — e o dono vê na tela
+     *  dele o mesmo rótulo que o link publica (`getCardShareState` usa esta régua).
+     */
     const name = resolveShareName(userCard.user);
 
+    /**
+     * A FOTO segue a MESMA pergunta do nome (F60 · E79): a ocultação tira a identidade
+     * inteira, e a foto é identidade. Sem ela, o cartão da carta cai na inicial — o
+     * caminho que já existe para quem não publica foto.
+     */
     const audiences = parseProfileAudiences(userCard.user.profileAudiences);
-    const avatarVisible = visibleProfileFields({ audiences, viewer: 'ANONYMOUS' }).includes('avatar');
+    const avatarVisible =
+      isPersonPubliclyVisible(userCard.user) &&
+      visibleProfileFields({ audiences, viewer: 'ANONYMOUS' }).includes('avatar');
 
     const card: SharedCardView = {
       cardName: template.name,

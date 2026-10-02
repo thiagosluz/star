@@ -64,7 +64,7 @@ export default async function MemberInvitePage({
     Boolean(user) && Boolean(invite) && normalizeEmailAddress(user?.email ?? '') === invite?.email;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-6 py-12">
+    <main className="mx-auto max-w-2xl space-y-6 px-6 py-12">
       <header className="space-y-1.5">
         <p className="text-xs uppercase tracking-wide opacity-60">{tenant.name}</p>
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -199,6 +199,6 @@ export default async function MemberInvitePage({
           )}
         </>
       )}
-    </div>
+    </main>
   );
 }

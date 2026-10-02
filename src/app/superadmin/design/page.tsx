@@ -147,7 +147,7 @@ export default async function DesignCatalogPage() {
   await requirePlatformPermission();
 
   return (
-    <div className="space-y-12" data-testid="design-catalog">
+    <main className="space-y-12" data-testid="design-catalog">
       <PageHeader
         title="Guia de estilo"
         breadcrumbs={[{ label: 'Plataforma', href: '/superadmin/metricas' }, { label: 'Guia de estilo' }]}
@@ -481,6 +481,6 @@ export default async function DesignCatalogPage() {
           </CardContent>
         </Card>
       </Section>
-    </div>
+    </main>
   );
 }

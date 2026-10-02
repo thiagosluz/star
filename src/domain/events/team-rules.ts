@@ -36,6 +36,7 @@
 import type { PublicContacts } from '@/domain/profile/public-contacts';
 import { PUBLIC_CONTACT_FIELD } from '@/domain/profile/public-contacts';
 import type { ProfileAudience, PublicProfileField } from '@/domain/profile/public-profile-rules';
+import { isPersonPubliclyVisible } from '@/domain/profile/public-profile-rules';
 import { orderTeamsForDisplay } from '@/domain/events/team-order-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -67,6 +68,14 @@ export interface PublicTeamMemberSource {
    * régua da matriz (só `PUBLIC` chega aqui — o bloco é uma página pública).
    */
   contacts: { email: string | null; links: PublicContacts } | null;
+  /**
+   * O EFEITO da moderação da plataforma (FASE 56 · E62) — a MESMA coluna que o perfil
+   * público e o diretório consultam, lida aqui pela fonte única
+   * (`isPersonPubliclyVisible`, FASE 60 · E79). O campo é OBRIGATÓRIO de propósito: um
+   * chamador que esqueça de selecioná-lo entrega `undefined`, a pessoa é tratada como
+   * oculta e some da vitrine — falha visível, e não identidade publicada por engano.
+   */
+  publicProfileHiddenAt: Date | null;
 }
 
 /** O cartão de uma pessoa na vitrine. */
@@ -102,12 +111,18 @@ export const TEAM_CARD_LIMIT = 60;
  *
  * ─── O QUE O BLOCO PODE E O QUE ELE NÃO PODE ──────────────────────────────────
  *
- *  • só equipe **ATIVA** e com **ao menos um membro** entra;
+ *  • só equipe **ATIVA** e com **ao menos uma pessoa visível** entra;
+ *  • pessoa OCULTA pela moderação da plataforma não vira cartão (FASE 60 · E79): o
+ *    cartão É a pessoa (foto, nome e etiqueta da equipe), e não existe jeito de
+ *    desenhá-lo sem citá-la. A régua é a MESMA do perfil público (FASE 44/56), lida
+ *    da fonte única — e o mesmo vale para quem está em duas equipes, porque o filtro
+ *    acontece ANTES do agrupamento;
  *  • pessoa em duas equipes aparece **UMA vez**, com as duas etiquetas — repetir o
  *    cartão faria a mesma foto aparecer duas vezes na mesma grade;
  *  • **foto** só com `avatar` em `PUBLIC` (é página pública: `ATTENDEES_ONLY` não
  *    vale aqui, e o cartão cai para as iniciais);
- *  • **contato** só com o campo `contacts` em `PUBLIC`, e o e-mail só junto dele;
+ *  • **contato** só com o campo `contacts` em `PUBLIC`, e o e-mail só junto dele — e
+ *    nem é PEDIDO (`emailOf`) para quem está oculto: o dado não sai do repositório;
  *  • a ordem é: `displayOrder` da equipe (manual, quando existe) → nome da equipe
  *    (pt-BR, quando ninguém ordenou) → líder primeiro → nome (pt-BR) → id. O id no fim
  *    é o que torna a ordem **estável**.
@@ -115,11 +130,22 @@ export const TEAM_CARD_LIMIT = 60;
 export function buildPublicTeam(input: BuildPublicTeamInput): PublicTeamCard[] {
   const limit = input.limit ?? TEAM_CARD_LIMIT;
 
-  const teams = orderTeamsForDisplay(
-    input.teams
-      .filter((team) => team.isActive && team.members.length > 0)
-      .filter((team) => (input.teamId ? team.id === input.teamId : true)),
-  );
+  /**
+   * ─── QUEM ESTÁ OCULTO SAI ANTES DE VIRAR CARTÃO (FASE 60 · E79) ──────────────
+   *
+   *  O filtro roda AQUI, uma vez, e não dentro do laço que monta cada cartão: assim
+   *  ele vale para as duas etiquetas de quem está em duas equipes e para a ordenação
+   *  (uma equipe inteira oculta não é "equipe com gente", e não deve segurar posição).
+   *  A régua vem da fonte única (`isPersonPubliclyVisible`), a mesma do perfil público
+   *  e do diretório — a decisão de moderação não é reinterpretada nesta tela.
+   */
+  const visibleTeams = input.teams
+    .filter((team) => team.isActive)
+    .filter((team) => (input.teamId ? team.id === input.teamId : true))
+    .map((team) => ({ ...team, members: team.members.filter(isPersonPubliclyVisible) }))
+    .filter((team) => team.members.length > 0);
+
+  const teams = orderTeamsForDisplay(visibleTeams);
 
   const cards = new Map<string, PublicTeamCard & { firstTeamName: string; teamOrder: number }>();
 

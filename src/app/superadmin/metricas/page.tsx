@@ -43,7 +43,7 @@ export default async function PlatformOverviewPage() {
   ]);
 
   return (
-    <div className="space-y-8" data-testid="platform-overview">
+    <main className="space-y-8" data-testid="platform-overview">
       <PageHeader
         title="Métricas da plataforma"
         description="Consolidação de todas as instituições. Números agregados — o painel não expõe dados de participantes."
@@ -208,6 +208,6 @@ export default async function PlatformOverviewPage() {
           </Card>
         )}
       </section>
-    </div>
+    </main>
   );
 }

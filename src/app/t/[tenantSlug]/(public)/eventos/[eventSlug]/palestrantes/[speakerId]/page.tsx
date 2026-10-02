@@ -70,128 +70,130 @@ export default async function PublicSpeakerPage({
 
   return (
     <ThemeScope theme={event.theme}>
-      <Section>
-        <nav className="mb-6">
-          <Link
-            href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
-            className="text-xs opacity-60 underline underline-offset-4"
-          >
-            ← {event.title}
-          </Link>
-        </nav>
+      <main>
+        <Section>
+          <nav className="mb-6">
+            <Link
+              href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
+              className="text-xs opacity-60 underline underline-offset-4"
+            >
+              ← {event.title}
+            </Link>
+          </nav>
 
-        <header className="flex flex-col gap-5 sm:flex-row sm:items-start">
-          <SpeakerAvatar name={speaker.name} avatarUrl={speaker.avatarUrl} size="lg" />
+          <header className="flex flex-col gap-5 sm:flex-row sm:items-start">
+            <SpeakerAvatar name={speaker.name} avatarUrl={speaker.avatarUrl} size="lg" />
 
-          <div className="min-w-0 space-y-3">
-            <div className="space-y-1">
-              <h1
-                className="text-balance text-3xl font-semibold tracking-tight"
-                data-testid="speaker-name"
-              >
-                {speaker.name}
-              </h1>
-              <p className="text-sm opacity-80" data-testid="speaker-role">
-                {speaker.isKeynote ? '★ ' : ''}
-                {speaker.roleTitle ?? 'Palestrante'}
-                {speaker.institution ? ` · ${speaker.institution}` : ''}
-                {!speaker.institution && speaker.company ? ` · ${speaker.company}` : ''}
-              </p>
+            <div className="min-w-0 space-y-3">
+              <div className="space-y-1">
+                <h1
+                  className="text-balance text-3xl font-semibold tracking-tight"
+                  data-testid="speaker-name"
+                >
+                  {speaker.name}
+                </h1>
+                <p className="text-sm opacity-80" data-testid="speaker-role">
+                  {speaker.isKeynote ? '★ ' : ''}
+                  {speaker.roleTitle ?? 'Palestrante'}
+                  {speaker.institution ? ` · ${speaker.institution}` : ''}
+                  {!speaker.institution && speaker.company ? ` · ${speaker.company}` : ''}
+                </p>
+              </div>
+
+              <SpeakerSocialLinks links={speaker.socialLinks} />
             </div>
+          </header>
 
-            <SpeakerSocialLinks links={speaker.socialLinks} />
-          </div>
-        </header>
+          {speaker.bio ? (
+            <div
+              className="mt-6 max-w-3xl whitespace-pre-line text-pretty leading-relaxed opacity-85"
+              data-testid="speaker-full-bio"
+            >
+              {speaker.bio}
+            </div>
+          ) : null}
 
-        {speaker.bio ? (
-          <div
-            className="mt-6 max-w-3xl whitespace-pre-line text-pretty leading-relaxed opacity-85"
-            data-testid="speaker-full-bio"
-          >
-            {speaker.bio}
-          </div>
-        ) : null}
+          <section className="mt-10 space-y-4" aria-labelledby="atividades-palestrante">
+            <h2 id="atividades-palestrante" className="text-lg font-semibold tracking-tight">
+              {activities.length === 1 ? 'Atividade' : 'Atividades'} neste evento
+            </h2>
 
-        <section className="mt-10 space-y-4" aria-labelledby="atividades-palestrante">
-          <h2 id="atividades-palestrante" className="text-lg font-semibold tracking-tight">
-            {activities.length === 1 ? 'Atividade' : 'Atividades'} neste evento
-          </h2>
+            <ul className="grid gap-4 sm:grid-cols-2" data-testid="speaker-activity-list">
+              {activities.map((activity) => {
+                const role = speaker.activities.find((entry) => entry.activityId === activity.id)?.roleTitle;
 
-          <ul className="grid gap-4 sm:grid-cols-2" data-testid="speaker-activity-list">
-            {activities.map((activity) => {
-              const role = speaker.activities.find((entry) => entry.activityId === activity.id)?.roleTitle;
-
-              return (
-                <li key={activity.id} className="ef-card space-y-2 p-5">
-                  <p className="flex items-center gap-2 text-xs uppercase tracking-wide opacity-60">
-                    <Mic className="size-3.5" aria-hidden />
-                    {role ?? activityTypeLabel(activity.type)}
-                    {role ? ` · ${activityTypeLabel(activity.type)}` : ''}
-                  </p>
-
-                  <p className="font-medium">
-                    <Link
-                      href={tenantPath(
-                        tenantSlug,
-                        `/eventos/${eventSlug}/atividades/${activity.slug}`,
-                      )}
-                      className="underline underline-offset-4"
-                      data-testid={`speaker-activity-${activity.id}`}
-                    >
-                      {activity.title}
-                    </Link>
-                  </p>
-
-                  <dl className="space-y-1 text-xs opacity-75">
-                    <div className="flex items-center gap-2">
-                      <CalendarDays className="size-3.5 shrink-0" aria-hidden />
-                      <dt className="sr-only">Data</dt>
-                      <dd>
-                        {new Intl.DateTimeFormat('pt-BR', {
-                          day: '2-digit',
-                          month: 'long',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          timeZone: event.timezone,
-                        }).format(activity.startsAt)}
-                      </dd>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Clock className="size-3.5 shrink-0" aria-hidden />
-                      <dt className="sr-only">Carga horária</dt>
-                      <dd>{formatDuration(activity.workloadMinutes)}</dd>
-                    </div>
-
-                    {activity.roomName ? (
-                      <div className="flex items-center gap-2">
-                        <MapPin className="size-3.5 shrink-0" aria-hidden />
-                        <dt className="sr-only">Local</dt>
-                        <dd>{activity.roomName}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
-
-                  {activity.materials.length > 0 ? (
-                    <p className="text-xs opacity-70" data-testid={`speaker-materials-${activity.id}`}>
-                      {activity.materials.length} material(is) de apoio disponível(is) na atividade.
+                return (
+                  <li key={activity.id} className="ef-card space-y-2 p-5">
+                    <p className="flex items-center gap-2 text-xs uppercase tracking-wide opacity-60">
+                      <Mic className="size-3.5" aria-hidden />
+                      {role ?? activityTypeLabel(activity.type)}
+                      {role ? ` · ${activityTypeLabel(activity.type)}` : ''}
                     </p>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
 
-        <div className="mt-8 flex flex-wrap gap-3 text-sm">
-          <Link
-            href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
-            className="ef-button-outline"
-          >
-            Ver a programação completa
-          </Link>
-        </div>
-      </Section>
+                    <p className="font-medium">
+                      <Link
+                        href={tenantPath(
+                          tenantSlug,
+                          `/eventos/${eventSlug}/atividades/${activity.slug}`,
+                        )}
+                        className="underline underline-offset-4"
+                        data-testid={`speaker-activity-${activity.id}`}
+                      >
+                        {activity.title}
+                      </Link>
+                    </p>
+
+                    <dl className="space-y-1 text-xs opacity-75">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="size-3.5 shrink-0" aria-hidden />
+                        <dt className="sr-only">Data</dt>
+                        <dd>
+                          {new Intl.DateTimeFormat('pt-BR', {
+                            day: '2-digit',
+                            month: 'long',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            timeZone: event.timezone,
+                          }).format(activity.startsAt)}
+                        </dd>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Clock className="size-3.5 shrink-0" aria-hidden />
+                        <dt className="sr-only">Carga horária</dt>
+                        <dd>{formatDuration(activity.workloadMinutes)}</dd>
+                      </div>
+
+                      {activity.roomName ? (
+                        <div className="flex items-center gap-2">
+                          <MapPin className="size-3.5 shrink-0" aria-hidden />
+                          <dt className="sr-only">Local</dt>
+                          <dd>{activity.roomName}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
+
+                    {activity.materials.length > 0 ? (
+                      <p className="text-xs opacity-70" data-testid={`speaker-materials-${activity.id}`}>
+                        {activity.materials.length} material(is) de apoio disponível(is) na atividade.
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          <div className="mt-8 flex flex-wrap gap-3 text-sm">
+            <Link
+              href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
+              className="ef-button-outline"
+            >
+              Ver a programação completa
+            </Link>
+          </div>
+        </Section>
+      </main>
     </ThemeScope>
   );
 }

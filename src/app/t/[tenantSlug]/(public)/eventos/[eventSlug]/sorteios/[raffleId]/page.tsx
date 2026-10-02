@@ -35,7 +35,9 @@ export const dynamic = 'force-dynamic';
  *  não está publicado": isso já seria informação que quem não organiza não deveria
  *  receber (mesma decisão do material de palestrante de inscritos, FASE 25).
  *
- *  O nome sai MASCARADO por padrão (`publicWinnerName`), e a página publica a PROVA
+ *  O nome sai MASCARADO por padrão — quem tem perfil público aparece inteiro e quem
+ *  a moderação da plataforma ocultou (F56 · E62 → F60 · E79) sai abreviado, sem
+ *  perder a posição nem o prêmio (`publicWinnerEntry`) —, e a página publica a PROVA
  *  junto do resultado: hash do resultado, compromisso e semente revelada. Publicar só
  *  o nome transformaria o sorteio em promessa.
  * ═══════════════════════════════════════════════════════════════════════════════

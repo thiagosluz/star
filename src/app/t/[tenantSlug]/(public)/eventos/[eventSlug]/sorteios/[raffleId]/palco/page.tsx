@@ -41,9 +41,10 @@ export const dynamic = 'force-dynamic';
  *       projetar, não para aparecer em busca.
  *
  *  A PRIVACIDADE dos nomes é a mesma de todo o resto: o servidor entrega o nome já
- *  mascarado (`publicWinnerName`), e o telão não decide consentimento — quem
- *  autorizou o perfil público aparece inteiro, quem não autorizou aparece abreviado,
- *  inclusive na parede.
+ *  resolvido pela régua do sorteio (`publicWinnerEntry`), e o telão não decide
+ *  consentimento — quem autorizou o perfil público aparece inteiro, quem não
+ *  autorizou aparece abreviado, e quem a moderação da plataforma ocultou (F56 · E62 →
+ *  F60 · E79) recebe a MESMA abreviação, inclusive na parede.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export async function generateMetadata({

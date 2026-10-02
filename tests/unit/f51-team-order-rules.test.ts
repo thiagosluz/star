@@ -58,6 +58,8 @@ function vitrine(input: {
       isLead: member.isLead ?? false,
       avatarUrl: null,
       contacts: { email: null, links: {} },
+      /** Ninguém oculto nestes cenários: a F60 tem suíte própria. */
+      publicProfileHiddenAt: null,
     })),
   };
 }

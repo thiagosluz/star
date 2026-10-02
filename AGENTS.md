@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 56** (**F56 entregue**: mutirão da Jornada do participante em 4 fatias)
-Testes ................. 2820 (Vitest: unit + integração) + 225 (Playwright E2E)
-ADRs ................... 314 (numeração GLOBAL e sequencial — a próxima é ADR-315)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 60** (**F56 a F60 entregues**)
+Testes ................. 2906 (Vitest: unit + integração) + 264 (Playwright E2E)
+ADRs ................... 322 (numeração GLOBAL e sequencial — a próxima é ADR-323)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 58 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -747,16 +747,20 @@ tests/{unit,integration,e2e}
 | 52 | **"Fechar o que abrimos"** — a **dívida que nós criamos**: o **token de aviso** separado em claro × escuro com o contraste **medido** e preso por catraca que lê o CSS (6,44:1 / 7,09:1 no claro; 9,17:1 no telão), deixando o **portão WCAG AA sem isenções**; **um único <main> por tela** (a casca deixou de ser landmark e as 4 telas que se apoiavam nela ganharam o seu; a EventLanding passou a ter o dela, o que deu landmark à página pública); **8 dos 13 cenários E2E** de volta ao verde — e um deles achou um **DEFEITO REAL**: a emissão à mão do crachá recusava quem a tela oferecia (a régua passou a ser inscrição ∪ vínculo); **E8 riscada** (o ZIP de certificados existe desde a F36: a verificação procurou biblioteca de terceiro e não viu o escritor próprio); **B6 corrigida** para **206** console.*; declarou **E77** (o logo na etiqueta exige imagem no escritor de PDF à mão) e **I2** (16 páginas sem landmark); quitou **E74** e **E75** | ✅ |
 | 53 | **Painel de prontidão e áreas do evento** — a raiz do evento diz **o que falta para o evento ficar pronto** (pendências com efeito, gravidade, ordem e o caminho que resolve, e a régua do que NÃO é pendência), e a faixa de links virou **grade de cartões nos quatro grupos do trabalho**, preservando todos os `data-testid`; **+ trilhas unificadas** em `/chamadas` e seções no grupo a que pertencem; **+ lição de produto**: o casco lateral foi rejeitado no uso e desfeito (ADR-297) | ✅ |
 | 54 | **O selo de contagem nos cartões** — cada área da raiz diz **quanto há lá dentro** ("3 chamadas", "nenhuma vaga retida", "publicada"), contado **por evento** e só sobre o que vale, em **uma leitura**. A frase é regra de domínio: **zero aparece** e **`null` é "não sei" e vira SEM SELO**; as vagas retidas **não são recontadas** (a tela injeta o número que já calculou) | ✅ |
-| 55 | **As seções da raiz viram páginas com cartão** — as QUATRO sanfonas da raiz do evento viraram **páginas com cartão** (Reconhecimento, Dados, Salas, Programação) e a raiz ficou **prontidão + mapa**: 341 linhas (eram 955) e **ZERO `<details>`**, preso no E2E. `data-testid` preservados, 7 specs reapontados, pendências do painel **linkando para o cartão**. Lições: `<details>` aninhado exige cortar pelo fechamento EXTERNO; build engolido mantém o container velho; a frase do zero não se deduz da terminação do singular | ✅ |
-| 56 | **Mutirão de dívidas da Jornada do participante** — nove dívidas do tema E, em 4 fatias, **TODAS ENTREGUES**. **Fatia 1 (E33 + E1)**: evento **com lotação ENFILEIRA** com a **fila visível**, e a promoção **retém a vaga com prazo de 48 h**, com o **aceite da PESSOA**. **Fatia 2 (E2 + E31)**: listas públicas **paginam no banco** (uma fórmula só, endereço canônico) e o **autor RETIRA o próprio trabalho**. **Fatia 3 (E18 + E65 + E54)**: **MINIATURA** do acervo derivada na leitura, acervo antigo em WebP por **`npm run media:reprocess`** (chave nova, imagem em uso pulada e contada), e **CPF** (do formulário de inscrição, com dígitos verificadores) + **título da apresentação** como variáveis congeladas do certificado. **Fatia 4 (E62 + E45)**: o recado virou **conversa de mão dupla** (`direction` + `parentId` na RAIZ, indicador **"respondeu"** na ficha) e o que é público ganhou **denúncia e moderação da PLATAFORMA** (`/superadmin/denuncias`, ocultar preserva o handle e tira o perfil da página e do diretório) | ✅ |
+| 55 | **As seções da raiz viram páginas com cartão** — as quatro sanfonas da raiz do evento viraram **páginas com cartão** e a raiz ficou **prontidão + mapa**: 341 linhas (eram 955) e **ZERO `<details>`**, preso no E2E. `data-testid` preservados, 7 specs reapontados | ✅ |
+| 56 | **Mutirão de dívidas da Jornada do participante** — nove dívidas do tema E, em 4 fatias, **TODAS ENTREGUES**: fila de espera no EVENTO + promoção com prazo e aceite da pessoa (E33/E1); paginação das listas públicas + retirada da submissão pelo autor (E2/E31); miniatura do acervo, reprocessamento em WebP e CPF/título da apresentação no certificado (E18/E65/E54); conversa de mão dupla no recado e denúncia com moderação da plataforma (E62/E45). Detalhe em `docs/fase-56-mutirao-da-jornada-do-participante.md` | ✅ |
+| 57 | **Gantt e calendário das demandas** — duas vistas novas no quadro da F38 (`?vista=kanban\|gantt\|calendario`): eixo de dias no fuso do evento, barra começando em `startAt` ou na criação (**marcada como estimada**), calendário com as demandas no dia do PRAZO. Uma leitura, três vistas, navegação por link, fora do período **contado**. ADR-315/316 | ✅ |
+| 58 | **As telas novas no portão de acessibilidade** — `/demandas` (as três vistas) e `/superadmin/denuncias` varridas pelo `axe` WCAG AA, com fixtures de conteúdo; o **contraste do calendário (2,9:1)** foi **corrigido**, sem isenção nova. ADR-317/318 | ✅ |
+| 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (permissão do pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie lido no servidor**, botão que funciona sem JavaScript e a trilha de ícones com nome acessível. ADR-319/320 | ✅ |
+| 60 | **O que se oculta fica oculto · todo tela tem landmark · a suíte E2E para de mentir** — **E79**: a ocultação de perfil passou a valer em toda superfície que cita a pessoa (bloco Equipe do evento, link selado da carta **e** o vazamento achado na auditoria: o **sorteio público** publicava o nome inteiro), por **fonte única** no domínio; **I2**: as 14 telas sem `<main>` ganharam o seu (a lista da F52 dizia 16 — 2 eram herança/redirect), com catraca provada por mutação; **I3**: a spec que "poluía" era ela mesma (casos lendo o dado do caso 1), corrigida na raiz; **I1**: os 5 `fixme` fecharam. ADR-321/322 | ✅ |
 
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**43 itens abertos**; A=3, B=4, C=1, D=3, E=21, F=5, H=3, I=3) está em **`docs/dividas-tecnicas.md`**.
-Quitados recentemente: **F51** (E7, E19, E32, E37, E42, E57, E58, E63, E66, E70, E73), **F52** (E74, E75; **E8 riscada**) e **F56** (as nove: **E33, E1, E2, E31, E18, E65, E54, E62, E45**).
-Seguem abertas: **E76, E77, E78, E79**, **I1, I2** e **I3** — leia antes de propor a próxima fase.
+**Dívidas técnicas:** o levantamento consolidado (**40 itens abertos**; A=3, B=4, C=1, D=3, E=21, F=5, H=3, I=0) está em **`docs/dividas-tecnicas.md`**.
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E) e **F60** (**E79, I1, I2, I3**).
+Seguem abertas: **E76, E77, E78, E80** — leia antes de propor a próxima fase.
 
 ---
 
@@ -764,7 +768,7 @@ Seguem abertas: **E76, E77, E78, E79**, **I1, I2** e **I3** — leia antes de pr
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-56-mutirao-da-jornada-do-participante.md`; a comunicação é
+   fase entregue** (`docs/fase-60-o-que-se-oculta-landmark-e-suite-e2e.md`; antes, F59 e F58; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

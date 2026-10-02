@@ -54,7 +54,7 @@ export default async function ProfileModerationPage() {
 
   if (!queue.ok) {
     return (
-      <div className="space-y-8" data-testid="moderation-queue">
+      <main className="space-y-8" data-testid="moderation-queue">
         <PageHeader
           title="Denúncias de perfil"
           description="Denúncias de perfis públicos aguardando decisão da plataforma."
@@ -65,14 +65,14 @@ export default async function ProfileModerationPage() {
         <Alert tone="danger" title="Não foi possível carregar a fila" data-testid="moderation-error">
           {queue.message}
         </Alert>
-      </div>
+      </main>
     );
   }
 
   const { items, summary } = queue;
 
   return (
-    <div className="space-y-8" data-testid="moderation-queue">
+    <main className="space-y-8" data-testid="moderation-queue">
       <PageHeader
         title="Denúncias de perfil"
         description="Denúncias abertas contra perfis públicos. A decisão é da PLATAFORMA porque o @handle é o mesmo em todas as instituições — e o efeito vale para todas elas."
@@ -227,6 +227,6 @@ export default async function ProfileModerationPage() {
           plataforma, em Auditoria.
         </p>
       </footer>
-    </div>
+    </main>
   );
 }

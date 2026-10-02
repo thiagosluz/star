@@ -31,7 +31,7 @@ export default async function PlatformGovernancePage() {
   const permissionAudit = audit.filter((entry) => entry.action === 'PERMISSION_CHANGE');
 
   return (
-    <div className="space-y-8" data-testid="platform-governance">
+    <main className="space-y-8" data-testid="platform-governance">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Governança</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -108,6 +108,6 @@ export default async function PlatformGovernancePage() {
           </ul>
         )}
       </section>
-    </div>
+    </main>
   );
 }
