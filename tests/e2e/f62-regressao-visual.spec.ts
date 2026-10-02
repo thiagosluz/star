@@ -34,7 +34,7 @@ import {
  *  encolheu, o item de menu que sumiu, o contraste que ficou lavado no escuro).
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O CONJUNTO É PEQUENO DE PROPÓSITO: DOZE SNAPSHOTS, CINCO ESTADOS
+ *  O CONJUNTO É PEQUENO DE PROPÓSITO: QUATORZE SNAPSHOTS, QUATRO SUPERFÍCIES
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Quarenta telas dariam quarenta linhas de base para revisar a cada mudança de
  *  design — e uma linha de base que ninguém revisa é pior que nenhuma. A escolha
@@ -52,13 +52,82 @@ import {
  *       DENSA do sistema num só lugar (o próprio portão de acessibilidade diz isso):
  *       formulário de filtro, painel de exportação, painel de recado, tabela de cinco
  *       colunas com etiquetas. Densidade é onde o layout quebra primeiro.
+ *    4. **O rodapé público da plataforma** (`rodape-publico-claro`,
+ *       `rodape-publico-escuro`) — **as duas linhas de base que nasceram na FASE 63**:
+ *       a raiz `/` com o controle de aparência do VISITANTE (o `<form>` de três
+ *       `<button name="tema">` do rodapé). Ver a seção seguinte, que explica o recorte.
  *
- *  Cada uma das duas telas entra nos DOIS modos (claro e escuro, pelo cookie
+ *  Cada uma das duas telas autenticadas entra nos DOIS modos (claro e escuro, pelo cookie
  *  `ef_tema` — a mesma fiação da FASE 61) e nos DOIS tamanhos (desktop e celular,
  *  este último com a gaveta aberta, que é o estado em que o rodapé de conta aparece
  *  no telefone). O modo escuro entra porque ele é uma ESCALA NOVA (FASE 61): nenhum
  *  par dele tem histórico de imagem, e o `axe` só mede contraste — não mede o cinza
  *  que ficou baixo demais para ler, nem a sombra que sumiu.
+ *
+ *  O rodapé público (item 4) segue a MESMA régua: os dois modos, pelo mesmo cookie,
+ *  e sem sessão nenhuma — quem o usa é o visitante que nunca entrou.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O RODAPÉ PÚBLICO — QUE RECORTE, E POR QUÊ (os dois casos da FASE 63)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O alvo é a linha do controle de aparência que a FASE 63 pôs no rodapé das páginas
+ *  públicas da plataforma (a raiz `/`), nos dois modos. A pergunta do recorte é
+ *  respondida pelo defeito que ESTA suíte achou: a gaveta do celular presa em 64 px
+ *  passou por todas as catracas justamente porque cada uma media um nó SEM o
+ *  contexto em que ele vive. Um recorte do `<footer>` isolado repetiria esse erro —
+ *  ele mostraria a linha bonita mesmo que ela tivesse estourado a largura de `main`,
+ *  sobreposto a última seção ou sido empurrada para fora da viewport.
+ *
+ *  Por isso o snapshot é da PÁGINA INTEIRA (`page`), com o rodapé NO LUGAR dele,
+ *  depois da última seção. A raiz é curta, estática e sem máscara nenhuma (não há
+ *  dado de execução nela), então medir a página toda custa pouco e é o que prende o
+ *  desenho como um todo — inclusive a quebra de linha do rodapé, que é o que muda
+ *  quando um dos três botões ganha ou perde `padding`.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O RÓTULO DO CONTROLE FOI CORRIGIDO NA FASE 63 — E AS DUAS LINHAS DE BASE
+ *  DO RODAPÉ PÚBLICO NÃO MUDARAM UM PIXEL (medido, não suposto)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  `rodape-publico-claro-chromium-win32.png` e `rodape-publico-escuro-chromium-win32.png`
+ *  nasceram na FASE 63 (são as duas linhas de base deste bloco) e já registram a
+ *  tinta CORRETA do rótulo. O que aconteceu, na ordem:
+ *
+ *    • o portão de acessibilidade (`tests/e2e/accessibility.spec.ts`, WCAG AA, sem
+ *      isenção) reprovou a página pública com **uma** violação, e ela era do rótulo
+ *      visível deste controle: `<span id="ef-aparencia" class="… text-muted">Aparência:</span>`;
+ *    • `text-muted` NÃO é token de texto — `--muted` resolve em `--ef-surface-low`,
+ *      a superfície de agrupamento. Como cor de TEXTO sobre a superfície da página
+ *      ele media **1,05:1 no claro** e **1,08:1 no escuro**, contra os 4,5:1 que o
+ *      AA pede para texto pequeno. O rótulo era, na prática, invisível;
+ *    • o rótulo passou a `text-muted-foreground` (`--ef-on-surface-variant`, o
+ *      token de texto secundário que as variantes `menu` e `account` já usavam no
+ *      `<legend>`): **8,93:1** no claro e **10,43:1** no escuro, presos no par
+ *      "rótulo do grupo de aparência sobre o rodapé público" de
+ *      `tests/unit/f61-contraste-dos-dois-modos.test.ts`.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A REGERAÇÃO DEU ZERO BYTE DE DIFERENÇA (e por que isso é o registro)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  `npx playwright test tests/e2e/f62-regressao-visual.spec.ts --update-snapshots`
+ *  (14/14 verde) NÃO reescreveu nenhum dos dois arquivos: o SHA-256 é o mesmo antes
+ *  e depois, e a comparação pixel a pixel da imagem que o navegador desenha com a
+ *  linha de base commitada deu **0 pixel diferente** nos dois modos (1440×1200).
+ *
+ *  O motivo é medido: o pixel de tinta do rótulo DENTRO das linhas de base é, no
+ *  claro, `rgb(70,69,85)` = `#464555`, e no escuro `rgb(197,198,208)` = `#c5c6d0` —
+ *  exatamente o `--ef-on-surface-variant`, e a 297 e 292 de distância do
+ *  `--ef-surface-low` (`#f1f3ff` / `#1d1f26`). Ou seja: **as linhas de base foram
+ *  geradas ANTES de o rótulo ser esmaecido para `text-muted`** — o defeito que o
+ *  `axe` pegou entrou depois da geração das imagens e nunca foi regerado, e por isso
+ *  a suíte visual passou a ser, sem saber, a única testemunha do desenho certo.
+ *  A correção de contraste, portanto, RESTAUROU o desenho que estas duas imagens já
+ *  registravam (as imagens de `docs/imagens/f63-rodape-*.png` carregam a mesma tinta).
+ *
+ *  A lição fica escrita para a próxima vez: **linha de base que não muda quando a
+ *  classe muda está dizendo que a classe não chegou a ser aplicada** — ou, como aqui,
+ *  que a imagem é mais antiga que o defeito. Nos dois casos quem separa as duas
+ *  hipóteses é medir a tinta no arquivo, e não rodar `--update-snapshots` no escuro.
+ *  O DESENHO não foi tocado: três botões, ordem dos modos, `gap` e `padding` iguais.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  DETERMINISMO É O CORAÇÃO DA ENTREGA
@@ -71,10 +140,12 @@ import {
  *      (ver `mask`/`maskColor` abaixo, com o motivo de cada máscara); o que é fixture
  *      é FIXO (nomes escritos à mão, contagens previsíveis) — nada aqui depende do
  *      seed de demonstração.
- *    • **Datas** — as duas telas escolhidas não imprimem data nenhuma de fixture. Foi
+ *    • **Datas** — as telas escolhidas não imprimem data nenhuma de fixture. Foi
  *      um critério de escolha: a raiz do evento imprime `startsAt` a `endsAt` e o
  *      quadro de demandas imprime prazo relativo a hoje, então os dois mudariam de
- *      linha de base a cada dia. Data que muda todo dia não é regressão visual.
+ *      linha de base a cada dia. Data que muda todo dia não é regressão visual. A raiz
+ *      pública (item 4) passa pelo mesmo crivo: ela é estática — nenhum dado de banco,
+ *      nenhuma data, nada derivado do `RUN_ID`.
  *    • **Animações** — `animations: 'disabled'` (e o estilo injetado em
  *      `estabilizar`) congela transição e animação do Tailwind no estado final.
  *    • **Cursor e foco** — `caret: 'hide'`; nenhum teste clica em campo de texto, e o
@@ -225,6 +296,12 @@ import {
  *  que muda com o tempo (prazo, contagem ao vivo, cor do organizador) ou que já têm
  *  prova dirigida própria. Cobri-las aqui exigiria mascarar justamente o que se quer
  *  medir. A catraca visual cresce por ADIÇÃO de risco novo, não por varredura.
+ *
+ *  A **página pública do EVENTO** continua de fora (o parágrafo acima é sobre ela), e
+ *  a distinção importa: o que entrou na FASE 63 foi o rodapé das páginas públicas da
+ *  PLATAFORMA — a raiz, que é estática e é de todo mundo. A página do evento carrega a
+ *  identidade visual que o ORGANIZADOR escolheu, e por isso mediria a cor de outra
+ *  pessoa.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -570,6 +647,33 @@ async function abrirDiretorio(page: Page): Promise<void> {
   await estabilizar(page);
 }
 
+/**
+ * A raiz pública da PLATAFORMA com o controle de aparência do visitante (FASE 63).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  SEM SESSÃO, E DE PROPÓSITO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Quem usa este controle é quem NÃO tem conta: nenhum `signInAs` aqui (o `preparar`
+ *  acima é das telas do painel). O único cookie é o `ef_tema` — a mesma fiação do
+ *  modo noturno —, gravado ANTES do `goto` para o servidor desenhar o modo escolhido
+ *  na PRIMEIRA resposta, e não o sistema operacional da máquina que roda a suíte.
+ *
+ *  A espera afirma os DOIS fatos que a imagem precisa ter para valer como linha de
+ *  base: o controle está no rodapé E é o modo pedido que está marcado. Sem isso, uma
+ *  imagem do tema errado (ou de uma página sem o controle) viraria "padrão" sem
+ *  ninguém perceber.
+ */
+async function abrirRaizPublica(page: Page, tema: 'claro' | 'escuro'): Promise<void> {
+  await page.context().addCookies([{ name: 'ef_tema', value: tema, url: BASE }]);
+
+  await page.goto('/');
+
+  await expect(page.getByTestId('theme-choice')).toBeVisible();
+  await expect(page.getByTestId(`theme-option-${tema}`)).toHaveAttribute('aria-pressed', 'true');
+
+  await estabilizar(page);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  DESKTOP — o rodapé de conta, o painel e o diretório, nos dois modos
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -744,5 +848,56 @@ test.describe('celular', () => {
       ...TOLERANCIA,
       mask: [mascaraDoEndereco(gavetaDoCelular(page))],
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  O RODAPÉ PÚBLICO DA PLATAFORMA (FASE 63) — o controle do VISITANTE, nos dois modos
+//
+//  A linha que a FASE 63 criou é a que mais fácil quebra em SILÊNCIO: três botões
+//  lado a lado num rótulo de texto mudo, com um deles preenchido pela variante
+//  `primary` — nada ali depende de dado, então `axe` e teste de unidade passam por
+//  cima, e um `padding` que muda de token ou um botão que perde o `border` só
+//  aparecem em pixel. Nenhuma máscara: a raiz é estática e não carrega `RUN_ID`,
+//  e-mail nem slug de instituição nenhuma (ver o cabeçalho, seção do recorte).
+// ═══════════════════════════════════════════════════════════════════════════════
+test.describe('rodapé público da plataforma', () => {
+  test.use({ viewport: DESKTOP });
+
+  /**
+   * `fullPage` é o que garante que o RODAPÉ esteja na imagem.
+   *
+   * Hoje a raiz cabe inteira na viewport (1440×1200) e a linha aparece no lugar dela
+   * sem rolagem — mas `toBeVisible` do Playwright não pergunta se o elemento está na
+   * ÁREA fotografada, e uma seção nova acima do rodapé empurraria o alvo para fora da
+   * imagem em silêncio: a linha de base continuaria verde medindo outra coisa. Com a
+   * página inteira, o que a imagem mede é o desenho todo, com o rodapé onde ele vive.
+   */
+  const PAGINA_INTEIRA = { ...TOLERANCIA, fullPage: true } as const;
+
+  test('13. o rodapé público da raiz no claro', async ({ page }) => {
+    await abrirRaizPublica(page, 'claro');
+
+    /**
+     * A PÁGINA INTEIRA, com o rodapé no lugar dele — e não um recorte do `<footer>`:
+     * foi um recorte que escondeu o contexto no defeito que abriu esta suíte (a
+     * gaveta de 64 px passou por todas as catracas porque cada uma media um nó
+     * sozinho). Aqui a imagem também denuncia o rodapé que estoura a largura de
+     * `main` ou que invade a última seção.
+     */
+    await expect(page).toHaveScreenshot('rodape-publico-claro.png', PAGINA_INTEIRA);
+  });
+
+  test('14. o rodapé público da raiz no escuro', async ({ page }) => {
+    await abrirRaizPublica(page, 'escuro');
+
+    /** A prova de que o escuro veio do SERVIDOR (o cookie é lido na requisição). */
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+
+    /**
+     * O escuro é uma ESCALA NOVA, e é onde o botão marcado troca de par de contraste
+     * (`primary` sobre `primary-foreground`): a segunda linha de base da FASE 63.
+     */
+    await expect(page).toHaveScreenshot('rodape-publico-escuro.png', PAGINA_INTEIRA);
   });
 });

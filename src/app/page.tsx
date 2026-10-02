@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowRight, CalendarDays, Award, Sparkles, FileCheck2 } from 'lucide-react';
 
+import { ThemeChoice } from '@/components/theme/theme-choice';
 import { getRequestContext } from '@/lib/auth/session';
 import { tenantPath } from '@/domain/tenancy/resolution';
 
@@ -98,12 +99,23 @@ export default async function PlatformHomePage() {
         ))}
       </section>
 
-      <footer className="text-center text-xs text-muted-foreground">
+      <footer className="space-y-3 text-center text-xs text-muted-foreground">
         <p>
           Cada instituição acessa pelo próprio endereço
           (<span className="code-data">instituicao.{process.env.ROOT_DOMAIN ?? 'lvh.me'}</span>)
           ou por <span className="code-data">/t/&lt;instituicao&gt;</span>.
         </p>
+
+        {/*
+          ─────────────────────────────────────────────────────────────────────────
+          O VISITANTE SEM SESSÃO TAMBÉM ESCOLHE A APARÊNCIA (FASE 63)
+          ─────────────────────────────────────────────────────────────────────────
+          Sem cookie, esta página nasce obedecendo ao sistema operacional — e quem
+          abre uma aba anônima num computador configurado no escuro não tinha como
+          discordar: não há menu de conta, porque não há conta. O controle fica no
+          rodapé, que é onde ele cabe sem disputar com a chamada para entrar.
+        */}
+        <ThemeChoice variant="public" className="justify-center" />
       </footer>
     </main>
   );

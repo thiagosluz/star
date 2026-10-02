@@ -460,6 +460,105 @@ test.describe('telas públicas', () => {
 
     await expectNoCriticalViolations(page, 'diretório de instituições (/organizacoes)');
   });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O CONTROLE DE APARÊNCIA DO VISITANTE TAMBÉM PASSA PELO PORTÃO (FASE 63)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A FASE 63 pôs no rodapé das páginas públicas da PLATAFORMA uma peça nova: um
+   *  `<form>` com três `<button name="tema">` que funciona sem JavaScript, dentro de
+   *  um `role="group"` nomeado pelo texto VISÍVEL ("Aparência:"). Nada disso tinha
+   *  histórico de varredura — e as três coisas que o `axe` reprova e que esta peça
+   *  pode quebrar sozinha são exatamente as que o desenho usa: contraste (o texto
+   *  mudo ao lado de três botões, um deles com o preenchimento de `primary`), nome
+   *  acessível do conjunto (o `aria-labelledby` apontando para um `id`) e rótulo de
+   *  cada botão.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE A VARREDURA EXISTENTE DA RAIZ NÃO BASTAVA
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O primeiro caso deste bloco (`a landing da plataforma não tem violação
+   *  crítica`) varre `/` — e passaria IGUAL se o controle não existisse: o `axe`
+   *  mede o que está no DOM, e "o controle sumiu" não é violação de regra nenhuma.
+   *  Por isso estes dois casos AFIRMAM a peça antes de varrer (o `<form>` dentro do
+   *  `<footer>`, os três estados e EXATAMENTE um com `aria-pressed="true"`) e varrem
+   *  o tema ESCOLHIDO, e não o sistema operacional da máquina que roda a suíte.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O MODO ESCURO, E POR QUE O DIRETÓRIO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A FASE 61 varreu o modo escuro do PAINEL autenticado — e nada mais: a escala
+   *  escura das páginas públicas nunca foi medida aqui, e é onde o rodapé da FASE 63
+   *  vive. O cookie `ef_tema=escuro` entra ANTES do `goto` (o mesmo caminho do caso
+   *  do painel escuro): o servidor desenha o escuro na PRIMEIRA resposta, e o `axe`
+   *  lê a paleta de verdade em vez de um tema aplicado depois pelo cliente.
+   *
+   *  O diretório entra porque é a outra superfície do mesmo controle: ali o rodapé
+   *  fica depois de uma vitrine de CARTÕES (`bg-card`, texto mudo, botão `primary`)
+   *  e de um formulário de busca — e a busca é o que traz a instituição DESTA
+   *  execução para a tela (`q=<slug da fixture>`), em vez de uma página de vitrine
+   *  emprestada de execuções anteriores.
+   */
+  test('a raiz pública com o controle de aparência no rodapé não tem violação crítica', async ({
+    page,
+    baseURL,
+  }) => {
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'escuro', url: baseURL ?? 'http://localhost:3000' },
+    ]);
+
+    await page.goto('/');
+    /** A prova de que quem entregou o escuro foi o SERVIDOR, e não o cliente. */
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+
+    const controle = page.locator('footer').getByTestId('theme-choice');
+
+    await expect(controle, 'o controle de aparência não está no rodapé de `/`').toBeVisible();
+    await expect(controle).toContainText('Aparência:');
+    await expect(controle.getByRole('button')).toHaveCount(3);
+    await expect(controle.getByRole('group')).toHaveAccessibleName(/Aparência/);
+
+    /** E o estado atual é UM só: três botões idênticos não respondem "qual vale?". */
+    await expect(controle.locator('[aria-pressed="true"]')).toHaveCount(1);
+    await expect(page.getByTestId('theme-option-escuro')).toHaveAttribute('aria-pressed', 'true');
+
+    await expectNoCriticalViolations(
+      page,
+      'raiz pública com o controle de aparência (/ · ef_tema=escuro)',
+    );
+  });
+
+  test('o diretório público com o controle de aparência no rodapé não tem violação crítica', async ({
+    page,
+    baseURL,
+  }) => {
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'escuro', url: baseURL ?? 'http://localhost:3000' },
+    ]);
+
+    /**
+     * A busca recorta a vitrine para a instituição DESTA execução (`createTenant`
+     * deriva o slug de `RUN_ID`): o cenário mede o diretório COM o cartão que ele
+     * mesmo criou, e não o que outra execução deixou na página 1.
+     */
+    await page.goto(`/organizacoes?q=acessibilidade-${RUN_ID}`);
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+
+    const cartoes = page.getByTestId('directory-card');
+
+    await expect(cartoes, 'a vitrine não mostrou a instituição da fixture').toHaveCount(1);
+    await expect(cartoes.first()).toContainText(`Instituição Acessível ${RUN_ID}`);
+
+    const controle = page.locator('footer').getByTestId('theme-choice');
+
+    await expect(controle, 'o controle de aparência não está no rodapé do diretório').toBeVisible();
+    await expect(controle.locator('[aria-pressed="true"]')).toHaveCount(1);
+
+    await expectNoCriticalViolations(
+      page,
+      `diretório público com o controle de aparência (/organizacoes?q=acessibilidade-${RUN_ID} · ef_tema=escuro)`,
+    );
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

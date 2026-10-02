@@ -76,5 +76,31 @@ export async function setThemeModeAction(formData: FormData): Promise<void> {
    * um recarregamento completo. É a mesma linha que a troca de contexto e a
    * inversão da barra lateral usam.
    */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  ESTA LINHA FOI MEDIDA NA FASE 63, E NÃO É ELA QUE FAZ A PÁGINA MUDAR
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A pergunta era se `revalidatePath('/', 'layout')` ALCANÇA as rotas públicas
+   *  (`/`, `/organizacoes`, `/validar/**`), onde o visitante anônimo agora escolhe a
+   *  aparência pelo rodapé. Medição com o E2E da fase, observando a resposta do POST
+   *  e um marcador de cliente que morre em qualquer recarregamento:
+   *
+   *      [F63] / · escolha "claro" · POST 200 http://localhost:3000/ · sem recarregar: true
+   *      [F63] /organizacoes · escolha "claro" · POST 200 …/organizacoes · sem recarregar: true
+   *      [F63] /validar/CERT-NAOEXISTE-63 · escolha "claro" · POST 200 … · sem recarregar: true
+   *
+   *  E a ABLAÇÃO (a linha comentada, o container reconstruído, a mesma spec rodada)
+   *  deu os MESMOS seis casos verdes, inclusive o que volta para a página pública
+   *  anterior pelo cache do roteador. O que carrega a mudança é outra coisa: gravar
+   *  o cookie e a leitura dele no layout raiz tornam a rota DINÂMICA, então o Next
+   *  redesenha a árvore na resposta da própria ação e nunca serve uma árvore
+   *  guardada de uma página que lê cookie.
+   *
+   *  A linha continua aqui porque é a única proteção que sobrevive a uma mudança de
+   *  régua: no dia em que uma dessas páginas nascer ESTÁTICA (deixando de ler o
+   *  cookie no layout), sem esta invalidação o visitante escolheria o tema e a
+   *  próxima navegação devolveria a árvore antiga do cache de rota — que é
+   *  exatamente o defeito que ela foi escrita para evitar na FASE 61.
+   */
   revalidatePath('/', 'layout');
 }

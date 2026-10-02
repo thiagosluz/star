@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AlertTriangle, BadgeCheck, Ban, ClipboardCheck, Info, XCircle } from 'lucide-react';
 
+import { ThemeChoice } from '@/components/theme/theme-choice';
 import { verifyCertificateBatch } from '@/lib/certificates/certificate-batch-service';
 import { CERTIFICATE_BATCH_LIMIT } from '@/domain/certificates/certificate-batch-rules';
 import { CERTIFICATE_KIND_LABELS } from '@/domain/certificates/certificate-rules';
@@ -305,6 +306,15 @@ export default async function CertificateBatchPage({
           Ir para a página inicial
         </Link>
       </nav>
+
+      {/*
+        A linha de conferência em lote é usada por quem NÃO tem conta na plataforma
+        (departamento de pessoal, banca, órgão de fomento) e é onde o visitante
+        anônimo mais precisa poder discordar do tema do sistema operacional.
+      */}
+      <footer className="border-t border-border pt-6">
+        <ThemeChoice variant="public" />
+      </footer>
     </main>
   );
 }

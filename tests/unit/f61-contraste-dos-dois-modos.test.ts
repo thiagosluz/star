@@ -201,6 +201,26 @@ const PARES_ESCUROS: Par[] = [
    */
   { onde: 'corpo de texto sobre a superfície flutuante', frente: escuro('ef-on-surface'), fundo: escuro('ef-surface-popover') },
   { onde: 'texto esmaecido sobre a página', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface') },
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O RÓTULO DO CONTROLE DE APARÊNCIA NO RODAPÉ PÚBLICO (FASE 63)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O `<span id="ef-aparencia">Aparência:</span>` do rodapé das páginas públicas
+   *  da plataforma (`src/components/theme/theme-choice.tsx`, variante `public`) é o
+   *  `aria-labelledby` do `role="group"` e vive sobre a superfície da PÁGINA — os
+   *  quatro rodapés (`/`, `/organizacoes`, `/validar/<code>`, `/validar/lote`) são
+   *  `<footer>` dentro de um `<main>` sem fundo próprio, então quem pinta atrás do
+   *  rótulo é o `bg-background` do `<body>`.
+   *
+   *  Ele nasceu com a classe `text-muted`, que NÃO é tom de texto: `--muted` resolve
+   *  em `--ef-surface-low`, o token da superfície de agrupamento. O `axe` reprovou a
+   *  página com essa única violação (`color-contrast`, séria) porque texto da cor do
+   *  fundo mede **1,05:1 no claro** e **1,08:1 no escuro** — muito abaixo dos 4,5:1
+   *  do AA para texto pequeno. O par abaixo prende o valor CORRETO, e o caso
+   *  "o token de superfície usado como texto reprova" (mais adiante) prende o
+   *  motivo: quem devolver o rótulo a um token de FUNDO reprova ali, com o número.
+   */
+  { onde: 'rótulo do grupo de aparência sobre o rodapé público', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface') },
   { onde: 'texto esmaecido sobre agrupamento', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-low') },
   { onde: 'texto esmaecido sobre o cartão', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-lowest') },
   { onde: 'texto esmaecido sobre o realce (hover)', frente: escuro('ef-on-surface-variant'), fundo: escuro('ef-surface-high') },
@@ -264,6 +284,7 @@ const MEDIDOS_NO_ESCURO: Record<string, number> = {
   'corpo de texto sobre o topo da escada': 9.75,
   'corpo de texto sobre a superfície flutuante': 9.92,
   'texto esmaecido sobre a página': 10.43,
+  'rótulo do grupo de aparência sobre o rodapé público': 10.43,
   'texto esmaecido sobre agrupamento': 9.69,
   'texto esmaecido sobre o cartão': 9,
   'texto esmaecido sobre o realce (hover)': 8.19,
@@ -324,6 +345,13 @@ const PARES_CLAROS: Par[] = [
   { onde: 'corpo de texto sobre a página', frente: claro('ef-on-surface'), fundo: claro('ef-surface') },
   { onde: 'corpo de texto sobre o cartão', frente: claro('ef-on-surface'), fundo: claro('ef-surface-lowest') },
   { onde: 'texto esmaecido sobre a página', frente: claro('ef-on-surface-variant'), fundo: claro('ef-surface') },
+  /**
+   * O MESMO par do rodapé público no modo CLARO — a outra metade do defeito da
+   * FASE 63 (o comentário completo está na lista do escuro, logo acima do par
+   * equivalente). O rótulo é uma linha só e não tem modo: ele tem de passar nos
+   * DOIS, e o `text-muted` reprovava nos dois (1,05:1 aqui, 1,08:1 no escuro).
+   */
+  { onde: 'rótulo do grupo de aparência sobre o rodapé público', frente: claro('ef-on-surface-variant'), fundo: claro('ef-surface') },
   { onde: 'texto esmaecido sobre o cartão', frente: claro('ef-on-surface-variant'), fundo: claro('ef-surface-lowest') },
   { onde: 'texto esmaecido sobre agrupamento', frente: claro('ef-on-surface-variant'), fundo: claro('ef-surface-low') },
   { onde: 'texto esmaecido sobre o realce (hover)', frente: claro('ef-on-surface-variant'), fundo: claro('ef-surface-high') },
@@ -361,6 +389,7 @@ const MEDIDOS_NO_CLARO: Record<string, number> = {
   'corpo de texto sobre a página': 16.27,
   'corpo de texto sobre o cartão': 17.07,
   'texto esmaecido sobre a página': 8.93,
+  'rótulo do grupo de aparência sobre o rodapé público': 8.93,
   'texto esmaecido sobre o cartão': 9.36,
   'texto esmaecido sobre agrupamento': 8.47,
   'texto esmaecido sobre o realce (hover)': 7.66,
@@ -516,6 +545,47 @@ describe('FASE 61 · H3 — o contraste da escala escura', () => {
     expect(claro('ef-success-strong')).toBe('#047857');
     expect(claro('ef-danger-strong')).toBe('#b91c1c');
     expect(claro('ef-outline-variant')).toBe('#83808f');
+  });
+
+  it('o token de SUPERFÍCIE usado como texto reprova — o defeito do rótulo da FASE 63', () => {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A CAUSA RAIZ, MEDIDA — e não a isenção dela
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O defeito do rodapé público não foi "o tom ficou claro demais": foi um token
+     *  de FUNDO (`--muted` → `--ef-surface-low`, a superfície de agrupamento) usado
+     *  como COR DE TEXTO. O nome engana — "muted" soa como "texto discreto" —, e o
+     *  `axe` só pegou porque a página existe no DOM.
+     *
+     *  O par dos dois modos acima prende o valor CERTO. Este caso prende o PORQUÊ, e
+     *  é o que transforma a correção em catraca: se alguém devolver o rótulo a um
+     *  token de superfície (`text-muted`, `bg-*` como texto), os dois números abaixo
+     *  continuam sendo os do defeito original — e o teste diz isso em vez de deixar a
+     *  classe voltar em silêncio.
+     */
+    expect(
+      contraste(claro('ef-surface-low'), claro('ef-surface')),
+      'a superfície de agrupamento como TEXTO sobre a página (modo claro)',
+    ).toBeLessThan(MINIMO_TEXTO);
+    expect(
+      contraste(escuro('ef-surface-low'), escuro('ef-surface')),
+      'a superfície de agrupamento como TEXTO sobre a página (modo escuro)',
+    ).toBeLessThan(MINIMO_TEXTO);
+
+    /** E os dois números do defeito são EXATAMENTE os que o `axe` reprovou. */
+    expect(contraste(claro('ef-surface-low'), claro('ef-surface'))).toBe(1.05);
+    expect(contraste(escuro('ef-surface-low'), escuro('ef-surface'))).toBe(1.08);
+
+    /**
+     * O outro lado: o token de texto secundário — o que o rótulo passou a usar e o
+     * que as variantes `menu` e `account` já usavam no `<legend>` — sobra nos dois.
+     */
+    expect(contraste(claro('ef-on-surface-variant'), claro('ef-surface'))).toBeGreaterThanOrEqual(
+      MINIMO_TEXTO,
+    );
+    expect(contraste(escuro('ef-on-surface-variant'), escuro('ef-surface'))).toBeGreaterThanOrEqual(
+      MINIMO_TEXTO,
+    );
   });
 
   it('a escolha explícita de CLARO vence a preferência escura do sistema', () => {

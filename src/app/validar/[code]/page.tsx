@@ -1,11 +1,32 @@
 import Link from 'next/link';
 import { AlertTriangle, BadgeCheck, Ban, FileText, QrCode, ShieldCheck, XCircle } from 'lucide-react';
 
+import { ThemeChoice } from '@/components/theme/theme-choice';
 import { getPublicCertificate } from '@/lib/certificates/certificate-service';
 import { CERTIFICATE_KIND_LABELS } from '@/domain/certificates/certificate-rules';
 
 export const metadata = { title: 'Validação de certificado' };
 export const dynamic = 'force-dynamic';
+
+/**
+ * O rodapé de aparência desta página — nas DUAS respostas.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ELE É UMA FUNÇÃO LOCAL, E NÃO DUAS CÓPIAS DO `<footer>`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A recusa não é um detalhe: código digitado errado, certificado revogado e
+ *  documento expirado são o caminho MAIS comum de quem confere, e é uma página
+ *  pública inteira (o portão de acessibilidade varre justamente ela). Deixá-la sem
+ *  o controle seria dar a escolha só a quem acertou o código. O que muda entre as
+ *  respostas é o conteúdo; o rodapé é o mesmo, e por isso ele existe uma vez aqui.
+ */
+function RodapeDeAparencia() {
+  return (
+    <footer className="border-t border-border pt-6">
+      <ThemeChoice variant="public" />
+    </footer>
+  );
+}
 
 const STATUS_STYLE: Record<string, { border: string; text: string; icon: typeof BadgeCheck }> = {
   VALID: { border: 'border-success/40', text: 'text-success-strong', icon: BadgeCheck },
@@ -47,10 +68,12 @@ export default async function ValidateCertificatePage({
 
   if (!result.ok) {
     return (
-      <main className="mx-auto max-w-2xl px-6 py-16">
+      <main className="mx-auto max-w-2xl space-y-6 px-6 py-16">
         <p className="rounded-lg border border-destructive/40 bg-card p-6 text-sm text-destructive">
           {result.message}
         </p>
+
+        <RodapeDeAparencia />
       </main>
     );
   }
@@ -235,6 +258,8 @@ export default async function ValidateCertificatePage({
           </Link>
         </p>
       </nav>
+
+      <RodapeDeAparencia />
     </main>
   );
 }

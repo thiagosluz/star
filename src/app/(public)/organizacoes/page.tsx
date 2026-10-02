@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Building2, CalendarDays, ExternalLink, Globe, Search } from 'lucide-react';
 
+import { ThemeChoice } from '@/components/theme/theme-choice';
 import { buildTenantUrl, tenantPath } from '@/domain/tenancy/resolution';
 import { DEFAULT_DIRECTORY_PAGE_SIZE } from '@/domain/platform/platform-rules';
 import { listPublicDirectory } from '@/lib/platform/directory-service';
@@ -258,6 +259,19 @@ export default async function OrganizationsDirectoryPage({
           )}
         </nav>
       ) : null}
+
+      {/*
+        ───────────────────────────────────────────────────────────────────────────
+        O VISITANTE SEM SESSÃO TAMBÉM ESCOLHE A APARÊNCIA (FASE 63)
+        ───────────────────────────────────────────────────────────────────────────
+        O diretório é a porta de entrada de quem chega de fora: não tem login, não
+        tem menu de conta e — até esta fase — não tinha rodapé. Sem o controle aqui,
+        quem abre o diretório num sistema operacional escuro fica no escuro por não
+        haver onde discordar.
+      */}
+      <footer className="mt-12 border-t border-border pt-6">
+        <ThemeChoice variant="public" />
+      </footer>
     </main>
   );
 }
