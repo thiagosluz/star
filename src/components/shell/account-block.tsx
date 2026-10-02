@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { Building2, LogIn, LogOut, UserRound } from 'lucide-react';
+import { Building2, LogIn, LogOut, Palette, UserRound } from 'lucide-react';
 
 import { signOutAction } from '@/app/actions/auth-actions';
+import { ThemeChoice } from '@/components/theme/theme-choice';
 import { TenantMenu, type MembershipSummary } from '@/components/tenancy/tenant-menu';
 import { Avatar } from '@/components/ui/feedback';
 import { buttonClasses } from '@/components/ui/button';
@@ -67,7 +68,12 @@ export async function AccountBlock({
   );
 
   return (
-    <div className={cn('flex items-center gap-2', compact && 'flex-col', className)}>
+    /**
+     * `min-w-0` na LINHA e `shrink-0` nos dois botões: o seletor de instituição é quem
+     * encolhe (e trunca nome/e-mail); o tema e o sair nunca são espremidos para fora da
+     * barra — foi assim que o botão de sair apareceu cortado na borda (FASE 61).
+     */
+    <div className={cn('flex min-w-0 items-center gap-2', compact && 'flex-col', className)}>
       {memberships && currentSlug ? (
         <TenantMenu
           memberships={memberships}
@@ -81,7 +87,36 @@ export async function AccountBlock({
         identificacao
       )}
 
-      <form action={signOutAction}>
+      {/**
+        * ───────────────────────────────────────────────────────────────────────────
+        *  O TEMA MORA ONDE A PESSOA JÁ PROCURA PELO QUE É DELA (FASE 61)
+        * ───────────────────────────────────────────────────────────────────────────
+        *  O menu de conta é o lugar que existe em TODAS as telas do sistema — no
+        *  painel da instituição, na governança da plataforma e (via `/conta`) fora
+        *  de qualquer casa. Um controle de aparência escondido numa tela de
+        *  configuração seria encontrado por quem já sabe que ele existe.
+        *
+        *  É um `<details>` e não um menu controlado por JavaScript: abre antes de o
+        *  React hidratar, fecha com `Esc` nativamente e não guarda estado nenhum no
+        *  cliente — o mesmo desenho do seletor de instituição ao lado. Na barra
+        *  recolhida ele encolhe para o ícone, com o nome preservado em `sr-only`.
+        */}
+      <details className="relative shrink-0">
+        <summary
+          title="Tema da interface"
+          data-testid="account-theme-menu"
+          className="inline-flex size-9 cursor-pointer list-none items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground"
+        >
+          <Palette className="size-4" aria-hidden />
+          <span className="sr-only">Tema da interface</span>
+        </summary>
+
+        <div className="absolute left-0 bottom-full z-50 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+          <ThemeChoice />
+        </div>
+      </details>
+
+      <form action={signOutAction} className="shrink-0">
         <button
           type="submit"
           title="Sair da conta"

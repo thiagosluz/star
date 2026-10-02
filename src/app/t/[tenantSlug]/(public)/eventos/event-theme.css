@@ -10,24 +10,51 @@
    enxergar as classes em tempo de build. Uma cor vinda do banco não pode virar
    `bg-[#abc]` dinamicamente. Custom properties resolvem isso e ainda permitem
    trocar o tema sem re-render no servidor.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   AQUI O TEMA DO ORGANIZADOR É AUTOSSUFICIENTE (FASE 61 · dívida H3)
+   ─────────────────────────────────────────────────────────────────────────────
+   Este arquivo NÃO declara `--ef-*` e NÃO tem fallback para token da plataforma.
+   Os dois eram o mesmo defeito: até esta fase os papéis que o organizador não
+   escolhia caíam em `var(--color-surface, …)` / `var(--color-on-surface, …)` /
+   `var(--color-primary, …)` — tokens da PLATAFORMA, que a escala escura redefine.
+   Resultado: quem escolheu só a cor primária (ou declarou `colorMode: 'light'`) via
+   a página pública escurecer junto com o painel, apesar de a decisão da fase ser
+   "na página do evento quem manda é o organizador".
+
+   A correção está no MAPA (`themeToCssVariables`, em
+   src/domain/events/landing-page.ts), que passou a publicar TODOS os papéis — os
+   escolhidos e os padrão do modo declarado (`--ef-primary`, `--ef-secondary`,
+   `--ef-accent`, `--ef-background`, `--ef-text`, `--ef-radius`,
+   `--ef-spacing-scale`, `--ef-font-sans`). Como o mapa escreve no atributo `style`,
+   e estilo inline vence regra de classe, a paleta do modo declarado também deixou
+   de ser responsabilidade deste arquivo: os blocos `[data-theme-mode='dark']` e a
+   media query de `auto` saíram, senão haveria DUAS fontes da mesma cor (e elas
+   divergiriam no primeiro ajuste).
+
+   A catraca é `tests/unit/f61-tema-do-evento.test.ts`: ela lê este arquivo e falha
+   se algum `var(--…)` daqui não for definido pelo mapa. A única exceção declarada é
+   a TIPOGRAFIA do produto (`--font-display` / `--font-sans`), que não muda com o
+   modo — não existe escala escura de fonte.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .ef-theme {
-  /* Fallbacks: se o organizador não definir nada, a página continua legível — e,
-     desde a FASE 11A, herda a IDENTIDADE do sistema em vez de um roxo solto. São
-     os mesmos tokens de `globals.css`; o tema do evento apenas os sobrescreve. */
-  --ef-primary: var(--color-primary, #4f46e5);
-  --ef-secondary: var(--color-surface-low, #f1f3ff);
-  --ef-accent: var(--color-secondary-container, #40c2fd);
-  --ef-background: var(--color-surface, #f9f9ff);
-  --ef-text: var(--color-on-surface, #181c24);
-  --ef-radius: var(--radius-md, 12px);
-  --ef-spacing-scale: 1;
-  --ef-font-sans: var(--font-sans, system-ui, sans-serif);
-
   background-color: var(--ef-background);
   color: var(--ef-text);
   font-family: var(--ef-font-sans);
+}
+
+/* O modo declarado também governa os controles NATIVOS (select, barra de rolagem,
+   seletor de data, autofill): sem esta regra, uma página clara dentro de um sistema
+   operacional escuro teria campo nativo escuro — o mesmo defeito, um nível abaixo.
+   `auto` entra com o claro porque é o modo que o mapa aplica para ele. */
+.ef-theme[data-theme-mode='light'],
+.ef-theme[data-theme-mode='auto'] {
+  color-scheme: light;
+}
+
+.ef-theme[data-theme-mode='dark'] {
+  color-scheme: dark;
 }
 
 /* Títulos das páginas de evento usam a fonte de display do sistema — é o que faz a
@@ -37,26 +64,6 @@
 .ef-theme h3 {
   font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
   letter-spacing: -0.02em;
-}
-
-/* Modo escuro: o organizador escolhe explicitamente, não seguimos o sistema por
-   padrão — a identidade visual do evento precisa ser previsível. */
-.ef-theme[data-theme-mode='dark'] {
-  --ef-background: oklch(0.15 0.01 265);
-  --ef-text: oklch(0.97 0 0);
-  --ef-secondary: oklch(0.26 0.01 265);
-}
-
-.ef-theme[data-theme-mode='auto'] {
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  .ef-theme[data-theme-mode='auto'] {
-    --ef-background: oklch(0.15 0.01 265);
-    --ef-text: oklch(0.97 0 0);
-    --ef-secondary: oklch(0.26 0.01 265);
-  }
 }
 
 /* ─── Componentes do tema ───────────────────────────────────────────────────── */

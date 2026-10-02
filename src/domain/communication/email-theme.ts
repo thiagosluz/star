@@ -29,7 +29,10 @@ export const EMAIL_PALETTE = {
   card: '#ffffff',
   surfaceLow: '#f1f3ff',
   surfaceHigh: '#e5e8f4',
-  border: '#c7c4d8',
+  /* Acompanhou a FASE 61: o `--ef-outline-variant` do claro foi de `#c7c4d8`
+     (1,63:1, reprovado no AA non-text) para `#83808f`. Este arquivo é cópia fiel
+     por contrato, e o teste `email-communication.test.ts` prende a igualdade. */
+  border: '#83808f',
   foreground: '#181c24',
   muted: '#464555',
   primary: '#4f46e5',

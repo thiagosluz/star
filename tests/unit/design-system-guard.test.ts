@@ -222,6 +222,13 @@ describe('sistema de design — tokens obrigatórios', () => {
      * Amarra o código ao documento. Se alguém "ajustar" a marca sem atualizar o
      * DESIGN.md, este teste falha — e a conversa acontece antes de 40 telas
      * mudarem de cor por acidente.
+     *
+     * TRÊS VALORES MUDARAM NA FASE 61 (dívida H3), por contraste medido: o texto
+     * de sucesso (`#059669` → `#047857`, que media 3,49:1 sobre o próprio fundo
+     * lavado), o de perigo (`#dc2626` → `#b91c1c`, 4,41:1) e a borda de campo
+     * (`#c7c4d8` → `#83808f`, 1,63:1). O número novo é o que a catraca passa a
+     * prender — é a FASE 52 de novo: o contraste medido vence o valor documentado,
+     * e o documento muda na mesma entrega (`DESIGN.md`, seção de estados).
      */
     const expected: [string, string][] = [
       ['--ef-surface:', '#f9f9ff'],
@@ -230,7 +237,7 @@ describe('sistema de design — tokens obrigatórios', () => {
       ['--ef-surface-high:', '#e5e8f4'],
       ['--ef-on-surface:', '#181c24'],
       ['--ef-on-surface-variant:', '#464555'],
-      ['--ef-outline-variant:', '#c7c4d8'],
+      ['--ef-outline-variant:', '#83808f'],
       ['--ef-primary:', '#3525cd'],
       ['--ef-primary-container:', '#4f46e5'],
       ['--ef-secondary:', '#00668a'],
@@ -238,6 +245,8 @@ describe('sistema de design — tokens obrigatórios', () => {
       ['--ef-success:', '#10b981'],
       ['--ef-warning:', '#f59e0b'],
       ['--ef-danger:', '#ef4444'],
+      ['--ef-success-strong:', '#047857'],
+      ['--ef-danger-strong:', '#b91c1c'],
     ];
 
     for (const [declaration, value] of expected) {

@@ -115,18 +115,31 @@ export function TenantMenu({
   label?: string;
 }) {
   return (
-    <details className="group relative">
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O MENU DA CONTA ENCOLHE (FASE 61 — defeito de layout relatado)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Este `<details>` é um ITEM FLEX dentro da linha do bloco de conta, ao lado do
+     *  controle de tema e do botão de sair (dois `size-9`). Sem `min-w-0` aqui e no
+     *  `<summary>`, o item não encolhe abaixo do próprio conteúdo — `min-width: auto`
+     *  é o padrão do flexbox —, e a linha empurrava os dois botões para FORA da barra:
+     *  o de sair aparecia cortado na borda.
+     *
+     *  Com `min-w-0` a cadeia inteira passa a poder truncar: o nome e o e-mail são
+     *  `truncate`, o chevron não encolhe, e os botões mantêm o tamanho.
+     */
+    <details className="group relative min-w-0">
       <summary
         aria-label={label}
         className={cn(
-          'flex cursor-pointer list-none items-center gap-2 rounded-md border border-border text-sm transition hover:bg-accent',
+          'flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md border border-border text-sm transition hover:bg-accent',
           compact ? 'size-9 justify-center p-0' : 'px-3 py-1.5',
         )}
       >
         {children}
         {compact ? null : (
           <ChevronDown
-            className="size-3.5 text-muted-foreground transition group-open:rotate-180"
+            className="size-3.5 shrink-0 text-muted-foreground transition group-open:rotate-180"
             aria-hidden
           />
         )}

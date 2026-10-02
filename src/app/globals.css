@@ -30,12 +30,20 @@
    ─────────────────────────────────────────────────────────────────────────────
    • Nenhum componente escreve cor literal (`#4F46E5`, `bg-[#…]`) nem usa a paleta
      cinza do Tailwind (`slate-500`, `emerald-500`). Cor vem de token.
-   • Tema escuro NÃO foi revisado nesta fase: o bloco `.dark` existe para não
-     quebrar `dark:` herdado, e está registrado como dívida técnica. A identidade
-     é clara (o DESIGN.md é explícito: "defaults to a pristine light mode").
+   • A ESCALA ESCURA existe de verdade desde a FASE 61 (dívida H3): o bloco do
+     modo escuro redefine os MESMOS papéis com outros valores. Todo token de cor
+     nasce nas duas escalas — a catraca de cobertura
+     (`tests/unit/f61-escala-escura.test.ts`) reprova o próximo token que nascer
+     só no claro, e a catraca de contraste (`tests/unit/f61-contraste-dos-dois-modos.test.ts`)
+     mede cada par de texto/fundo nos dois modos.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 :root {
+  /* O modo claro é o padrão do sistema: sem escolha gravada e sem preferência
+     escura do sistema operacional, os controles nativos (select, scrollbar,
+     autofill) nascem claros. O modo escuro declara `dark` mais abaixo. */
+  color-scheme: light;
+
   /* ── 1. Paleta crua — exatamente o DESIGN.md ─────────────────────────────── */
 
   /* Superfícies (escala tonal Material 3 do documento) */
@@ -55,9 +63,23 @@
   --ef-inverse-surface: #2c3039;
   --ef-inverse-on-surface: #eef0fc;
 
-  /* Contornos: `outline-variant` é a hairline estrutural do documento */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CONTORNOS — o `outline-variant` deixou de ser um tom decorativo (FASE 61)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Ele ERA `#c7c4d8`, que media **1,63:1** sobre o canvas e **1,71:1** sobre o
+   *  branco do cartão. O AA non-text pede 3:1 para borda de CAMPO e contorno de
+   *  componente — e este token é também o `--input`: o contorno que delimita onde
+   *  se escreve. Um campo cujo contorno não alcança 3:1 desaparece para quem tem
+   *  baixa visão, e o defeito era invisível em revisão visual porque o TEXTO
+   *  dentro dele sempre esteve legível.
+   *
+   *  Em `#83808f` o contorno mede **3,67:1** sobre a tela e **3,85:1** sobre o
+   *  cartão (`tests/unit/f61-contraste-dos-dois-modos.test.ts`). A mudança é
+   *  VISÍVEL: a hairline do modo claro ficou um tom mais escura.
+   */
   --ef-outline: #777587;
-  --ef-outline-variant: #c7c4d8;
+  --ef-outline-variant: #83808f;
 
   /* Marca */
   --ef-primary: #3525cd;
@@ -100,7 +122,17 @@
 
   /* ── Estados funcionais (seção "Accents & Dynamic States") ───────────────── */
   --ef-success: #10b981;
-  --ef-success-strong: #059669;
+  /**
+   * O `success-strong` ERA `#059669` e media **3,59:1** sobre a tela, **3,77:1**
+   * sobre o cartão e **3,49:1** sobre o próprio `success-soft` — reprovado no AA
+   * em TODOS os lugares onde ele é usado, porque ele é o TEXTO do estado
+   * ("aprovado", "verificado", "confirmado"). O tom do preenchimento
+   * (`--ef-success`, o ícone e a barra) não foi tocado: o que mudou foi o papel de
+   * texto, que passou a `#047857` — **5,23:1** / **5,48:1** / **5,09:1**.
+   * Descoberto ao escrever a catraca dos dois modos (FASE 61), dez fases depois de
+   * o `success-soft` existir.
+   */
+  --ef-success-strong: #047857;
   --ef-warning: #f59e0b;
   /**
    * ─────────────────────────────────────────────────────────────────────────────
@@ -124,7 +156,14 @@
   --ef-warning-strong: #92400e;
   --ef-warning-strong-on-dark: #fcd34d;
   --ef-danger: #ef4444;
-  --ef-danger-strong: #dc2626;
+  /**
+   * O `danger-strong` ERA `#dc2626` e media **4,41:1** sobre o `destructive-soft`
+   * — reprovado por 0,09. Em `#b91c1c` mede **5,90:1** sobre o suave, **6,17:1**
+   * sobre a tela e **6,47:1** sobre o cartão. O `--ef-danger` (o fill do ícone e
+   * da barra) e o `--destructive-foreground` branco do botão cheio NÃO mudaram: o
+   * ajuste é do papel de TEXTO do estado (FASE 61).
+   */
+  --ef-danger-strong: #b91c1c;
 
   /* ── Raridade de cartas e selos (seção "Tier & Rarity Tokens") ───────────── */
   --ef-tier-common-from: #64748b;
@@ -424,35 +463,312 @@
   }
 }
 
-/* ── 6. Tema escuro — DÍVIDA TÉCNICA da FASE 11A ──────────────────────────────
-   O DESIGN.md define identidade clara. Este bloco existe apenas para que classes
-   `dark:` herdadas não apontem para variáveis indefinidas. A escala escura
-   completa (superfícies, contornos, elevação, tiers) será definida quando o tema
-   escuro entrar no produto — está registrado na documentação da fase.            */
+/* ── 6. MODO ESCURO — a escala escura (FASE 61 · dívida H3) ───────────────────
+   O DEFEITO QUE ISTO CORRIGE: o sistema tinha identidade só clara, e quem usa o
+   computador em modo escuro via o claro. Aqui está a outra metade da escala.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   AS TRÊS REGRAS DE DESENHO DESTA ESCALA
+   ─────────────────────────────────────────────────────────────────────────────
+   1. **Só a camada `--ef-*` é redefinida.** O `@theme inline` acima traduz papel
+      em utilidade do Tailwind e não muda: um componente escreve `bg-card` e
+      recebe #ffffff no claro e #23252d no escuro sem saber que o modo existe.
+      É por isso que a fase inteira cabe neste arquivo (ADR-324).
+   2. **Os mesmos papéis, com as MESMAS relações de luminosidade.** Se no claro
+      `on-surface` é o tom mais claro e `surface-dim` o mais escuro, no escuro
+      isso se inverte — o texto é o mais claro, o fundo o mais escuro, e as
+      camadas continuam subindo em degraus. O que muda é o valor, nunca o
+      contrato: `--card` continua sendo a superfície de leitura.
+   3. **Os pares de texto/fundo são MEDIDOS, não estimados.** Cada combinação
+      usada por um componente tem a razão do WCAG presa em
+      `tests/unit/f61-contraste-dos-dois-modos.test.ts`, com os números reais no
+      comentário ao lado do valor. Nenhum tom entrou por olhômetro — e três deles
+      foram AJUSTADOS porque o primeiro palpite reprovava (o verde, o vermelho e
+      o azul de informação, que como texto sobre o fundo suave do próprio estado
+      ficavam abaixo de 4,5:1).
+
+   ─────────────────────────────────────────────────────────────────────────────
+   O QUE **NÃO** MUDA DE VALOR, E POR QUÊ (as exceções por desenho)
+   ─────────────────────────────────────────────────────────────────────────────
+   • `--ef-inverse-surface` / `--ef-inverse-on-surface` — é a "superfície escura
+     por definição", e existe justamente para telas que precisam ser escuras nos
+     DOIS modos: o telão do sorteio e as cápsulas sobre imagem (legenda de capa,
+     contador do álbum, véu da gaveta de navegação). Inverter esse token no
+     escuro o tornaria claro e apagaria esses três lugares — a F52 mediu o aviso
+     do telão (`#fcd34d`) exatamente sobre ele (9,17:1).
+   • `--ef-warning-strong-on-dark` — é o par do telão; vive sobre a superfície
+     acima, que não muda.
+   • `--ef-warning` e o par `--ef-warning-strong` do CLARO — a F52 os separou e
+     mediu; o tom do escuro é que ganha valor próprio.
+   • A família `--ef-tier-*` mira a ARTE da carta (a cor de uma conquista, como a
+     cor de um time), não texto sobre superfície. Ela é declarada no escuro para
+     a catraca de cobertura continuar inteira, com os mesmos valores.
+   • `--ef-surface-bright` — é a superfície mais clara da escada Material 3; no
+     escuro, "mais claro" é o próprio cartão.
+   • `--ef-on-primary` — o rótulo do botão de ação é branco nos dois modos, sobre
+     indigos diferentes; e `--ef-primary-fixed-dim` / `--ef-inverse-primary`
+     ficaram no mesmo tom porque são apoio da marca, não superfície.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   QUEM DECIDE O MODO (três estados, uma classe e uma guarda)
+   ─────────────────────────────────────────────────────────────────────────────
+   • `.dark` no `<html>` é a escolha EXPLÍCITA de escuro (a fiação grava a classe;
+     esta fase não escreve fiação).
+   • `data-tema="claro"` no `<html>` desliga a media query do sistema — sem essa
+     guarda, quem escolhe "Claro" num sistema operacional escuro continuaria vendo
+     escuro, que é o defeito da H3 de cabeça para baixo (o comentário do bloco da
+     media query explica o mecanismo).
+   • Sem escolha gravada (`data-tema="sistema"`), quem responde é
+     `@media (prefers-color-scheme: dark)` — é assim que a preferência do sistema
+     operacional vale sem JavaScript e sem cookie, que é o defeito relatado na H3.
+   • `color-scheme` acompanha o modo: sem ele, `select`, barra de rolagem,
+     seletor de data e o fundo do autofill continuam claros dentro de uma tela
+     escura — e um campo de e-mail preenchido pelo navegador vira um retângulo
+     branco com texto escuro no meio do escuro.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   O TEMA DO ORGANIZADOR MANDA NA PÁGINA PÚBLICA DO EVENTO
+   ─────────────────────────────────────────────────────────────────────────────
+   Os componentes do sistema leem `--card`, `--border`, `--muted-foreground`…
+   (sem prefixo) — e é a esses que os blocos abaixo respondem. A página pública do
+   evento usa `--ef-*` PUBLICADO pela `ThemeScope` (o tema que o organizador
+   escolheu); como variável declarada no elemento vence a herdada de `:root`, o
+   escopo do evento continua com as cores dele e a plataforma em volta (casco,
+   login, inscrição, área de conta) segue o modo. Inverter a escolha de terceiro
+   seria desfazer uma decisão dele, não corrigir um defeito.                          */
 .dark {
-  --background: #12141a;
-  --foreground: #eef0fc;
-  --surface: #12141a;
-  --surface-low: #1a1d25;
-  --surface-container: #20232c;
-  --surface-high: #262a34;
-  --surface-highest: #2c3039;
-  --on-surface: #eef0fc;
-  --on-surface-variant: #c7c4d8;
-  --card: #1a1d25;
-  --card-foreground: #eef0fc;
-  --popover: #1a1d25;
-  --popover-foreground: #eef0fc;
-  --muted: #20232c;
-  --muted-foreground: #c7c4d8;
-  --accent: #262a34;
-  --accent-foreground: #eef0fc;
-  --primary: #c3c0ff;
-  --primary-foreground: #0f0069;
-  --border: #3a3d47;
-  --border-strong: #777587;
-  --input: #3a3d47;
-  --ring: #c3c0ff;
+  color-scheme: dark;
+
+  /* Superfícies: canvas → cartão → camadas de apoio. A escada é ascendente (o
+     cartão é mais claro que o fundo); `surface-dim` é o degrau que RECUA. */
+  --ef-surface: #17181e;
+  --ef-surface-dim: #121319;
+  --ef-surface-bright: #23252d;
+  --ef-surface-lowest: #23252d;
+  --ef-surface-low: #1d1f26;
+  --ef-surface-container: #23252d;
+  --ef-surface-high: #2a2c35;
+  --ef-surface-highest: #31333d;
+  --ef-surface-variant: #3a3d47;
+
+  /* Conteúdo sobre superfícies */
+  --ef-on-surface: #e1e2ec;
+  --ef-on-surface-variant: #c5c6d0;
+  /* Fixos de propósito: é a superfície que já é escura nos dois modos (telão e
+     cápsulas sobre imagem). Ver o bloco de exceções acima. */
+  --ef-inverse-surface: #2c3039;
+  --ef-inverse-on-surface: #eef0fc;
+
+  /* Contornos: `outline-variant` é a hairline estrutural e consegue 3,66:1 sobre
+     o canvas escuro (o mínimo de 3:1 para elemento de interface). */
+  --ef-outline: #8b90a1;
+  --ef-outline-variant: #6b7280;
+
+  /* Marca. `primary` é o indigo CLARO porque o papel mais crítico dele é ser
+     TEXTO (link, item ativo) e anel de foco sobre fundo escuro; o botão cheio
+     usa `primary-container`, escuro o bastante para o texto branco (11,27:1). */
+  --ef-primary: #a5b4fc;
+  --ef-on-primary: #ffffff;
+  --ef-primary-container: #2b1fa8;
+  --ef-primary-hover: #4236c4;
+  --ef-on-primary-container: #dad7ff;
+  --ef-inverse-primary: #c3c0ff;
+  --ef-primary-fixed: #2b1fa8;
+  --ef-primary-fixed-dim: #c3c0ff;
+  --ef-on-primary-fixed: #dad7ff;
+  --ef-on-primary-fixed-variant: #c3c0ff;
+  --ef-surface-tint: #a5b4fc;
+
+  /* Secundária — a informação neutra. O chip de informação usa `bg-secondary`
+     (que é `secondary-fixed`) com o texto de `secondary-strong` (`--ef-secondary`):
+     7,04:1 sobre o container escuro, 10,62:1 sobre a tela. O container é escuro o
+     bastante para não virar um bloco aceso, e o rótulo claro dentro dele é quem
+     carrega a leitura — mesma troca de papéis do botão de ação. */
+  --ef-secondary: #7dd3fc;
+  --ef-on-secondary: #00344a;
+  --ef-secondary-container: #075985;
+  --ef-on-secondary-container: #e0f2fe;
+  --ef-secondary-fixed: #164e63;
+  --ef-secondary-fixed-dim: #0e7490;
+  --ef-on-secondary-fixed: #c4e7ff;
+  --ef-on-secondary-fixed-variant: #a5f3fc;
+
+  /* Terciária — confirmação institucional (vínculo, certificado, presença). */
+  --ef-tertiary: #5eead4;
+  --ef-on-tertiary: #00281c;
+  --ef-tertiary-container: #0d4f3a;
+  --ef-on-tertiary-container: #6ffbbe;
+  --ef-tertiary-fixed: #0d4f3a;
+  --ef-tertiary-fixed-dim: #2dd4bf;
+  --ef-on-tertiary-fixed: #6ffbbe;
+  --ef-on-tertiary-fixed-variant: #a7f3d0;
+
+  /* Erro (Material 3) — o container é um preenchimento largo; o que carrega a
+     leitura é o `on-error-container` sobre ele (7,24:1). */
+  --ef-error: #ffb4ab;
+  --ef-on-error: #690005;
+  --ef-error-container: #93000a;
+  --ef-on-error-container: #ffdad6;
+
+  /* ── Estados funcionais ─────────────────────────────────────────────────────
+     Cada estado tem três papéis, e no escuro eles NÃO podem ser o mesmo valor:
+       • `success` / `warning` / `danger` — o FILL (ícone, barra, ponto de status);
+       • `-soft` — o fundo lavado do alerta, misturado com o CARTÃO escuro;
+       • `-strong` — o TEXTO dentro desse fundo, mais claro que o fill para
+         sobreviver à mistura. Foi medindo que o verde e o vermelho "óbvios"
+         (#34d399 e #f87171) reprovaram aqui: 4,32:1 e 3,59:1 sobre o próprio
+         suave. Os tons escolhidos medem 5,44:1, 5,38:1 e 5,24:1.               */
+  --ef-success: #34d399;
+  --ef-success-strong: #6ee7b7;
+  --ef-warning: #fbbf24;
+  --ef-warning-strong: #fcd34d;
+  /* Fixo: o par do telão, que não muda de superfície (9,17:1). */
+  --ef-warning-strong-on-dark: #fcd34d;
+  --ef-danger: #f87171;
+  --ef-danger-strong: #fca5a5;
+
+  /* Raridade — a ARTE da carta, não texto (ver o bloco de exceções acima). */
+  --ef-tier-common-from: #64748b;
+  --ef-tier-common-to: #94a3b8;
+  --ef-tier-rare-from: #0284c7;
+  --ef-tier-rare-to: #38bdf8;
+  --ef-tier-epic-from: #7c3aed;
+  --ef-tier-epic-to: #a855f7;
+  --ef-tier-legendary-from: #d97706;
+  --ef-tier-legendary-to: #fbbf24;
+  --ef-tier-mythic-from: #e11d48;
+  --ef-tier-mythic-mid: #f43f5e;
+  --ef-tier-mythic-to: #fb7185;
+
+  /* ── Os apelidos que NÃO são `var()` puro ───────────────────────────────────
+     `primary-soft` e os três `-soft` de estado são uma MISTURA, e a receita do
+     `:root` mistura com o branco do cartão — num sistema escuro isso produz um
+     cinza sujo que não pertence a nenhum dos dois estados. Aqui a mistura usa o
+     cartão escuro e o mesmo percentual, com o par medido em cada caso.         */
+  --primary-soft: color-mix(in oklab, var(--ef-primary-container) 12%, var(--ef-surface-lowest));
+  --success-soft: color-mix(in oklab, var(--ef-success) 12%, var(--ef-surface-lowest));
+  --warning-soft: color-mix(in oklab, var(--ef-warning) 14%, var(--ef-surface-lowest));
+  --destructive-soft: color-mix(in oklab, var(--ef-danger) 12%, var(--ef-surface-lowest));
+
+  /* Elevação: sobre fundo escuro a sombra preta quase não aparece, então ela
+     ganha opacidade — sem isso o cartão perde o degrau que o separa da tela. */
+  --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -1px rgb(0 0 0 / 0.35);
+  --shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+}
+
+/**
+ * O MESMO CONJUNTO SEM ESCOLHA EXPLÍCITA — a preferência do SISTEMA (dívida H3).
+ *
+ *  Duplicar os valores aqui (em vez de uma variável de indireção) é deliberado: o
+ *  teste de cobertura compara os DOIS blocos escuros valor a valor, então não há
+ *  como o modo do sistema e o modo explícito divergirem — que é exatamente o
+ *  defeito que apareceria em silêncio se alguém ajustasse só um dos dois.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A GUARDA `:not([data-tema='claro'])` — por que ela é obrigatória
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  SEM a guarda, este bloco tem a MESMA especificidade do `:root` de cima e vem
+ *  DEPOIS dele — então, num sistema operacional escuro, quem escolheu "Claro"
+ *  continuaria vendo escuro. Seria o defeito da H3 de cabeça para baixo: a
+ *  preferência explícita da pessoa perdendo para a do sistema operacional.
+ *
+ *  A fiação grava `data-tema` no `<html>` SEMPRE (`claro` | `escuro` | `sistema`),
+ *  e é esse atributo que a guarda lê. Com ele:
+ *    • `data-tema="claro"`    → a media query NÃO se aplica (a escolha vence);
+ *    • `data-tema="escuro"`   → a classe `.dark` pinta o escuro (e este bloco
+ *      concorda com ela, valor a valor);
+ *    • `data-tema="sistema"`  → a media query decide, que é o padrão da fase.
+ *
+ *  O seletor ganha uma classe de especificidade (0,2,0) contra o (0,1,0) do
+ *  `:root`, o que também garante que ele não seja sobrescrito por um `:root`
+ *  posterior. O teste de cobertura prende as duas metades deste contrato: a
+ *  existência da guarda E o fato de ela conter o valor que a fiação escreve.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema='claro']) {
+    color-scheme: dark;
+
+    --ef-surface: #17181e;
+    --ef-surface-dim: #121319;
+    --ef-surface-bright: #23252d;
+    --ef-surface-lowest: #23252d;
+    --ef-surface-low: #1d1f26;
+    --ef-surface-container: #23252d;
+    --ef-surface-high: #2a2c35;
+    --ef-surface-highest: #31333d;
+    --ef-surface-variant: #3a3d47;
+
+    --ef-on-surface: #e1e2ec;
+    --ef-on-surface-variant: #c5c6d0;
+    --ef-inverse-surface: #2c3039;
+    --ef-inverse-on-surface: #eef0fc;
+
+    --ef-outline: #8b90a1;
+    --ef-outline-variant: #6b7280;
+
+    --ef-primary: #a5b4fc;
+    --ef-on-primary: #ffffff;
+    --ef-primary-container: #2b1fa8;
+    --ef-primary-hover: #4236c4;
+    --ef-on-primary-container: #dad7ff;
+    --ef-inverse-primary: #c3c0ff;
+    --ef-primary-fixed: #2b1fa8;
+    --ef-primary-fixed-dim: #c3c0ff;
+    --ef-on-primary-fixed: #dad7ff;
+    --ef-on-primary-fixed-variant: #c3c0ff;
+    --ef-surface-tint: #a5b4fc;
+
+    --ef-secondary: #7dd3fc;
+    --ef-on-secondary: #00344a;
+    --ef-secondary-container: #075985;
+    --ef-on-secondary-container: #e0f2fe;
+    --ef-secondary-fixed: #164e63;
+    --ef-secondary-fixed-dim: #0e7490;
+    --ef-on-secondary-fixed: #c4e7ff;
+    --ef-on-secondary-fixed-variant: #a5f3fc;
+
+    --ef-tertiary: #5eead4;
+    --ef-on-tertiary: #00281c;
+    --ef-tertiary-container: #0d4f3a;
+    --ef-on-tertiary-container: #6ffbbe;
+    --ef-tertiary-fixed: #0d4f3a;
+    --ef-tertiary-fixed-dim: #2dd4bf;
+    --ef-on-tertiary-fixed: #6ffbbe;
+    --ef-on-tertiary-fixed-variant: #a7f3d0;
+
+    --ef-error: #ffb4ab;
+    --ef-on-error: #690005;
+    --ef-error-container: #93000a;
+    --ef-on-error-container: #ffdad6;
+
+    --ef-success: #34d399;
+    --ef-success-strong: #6ee7b7;
+    --ef-warning: #fbbf24;
+    --ef-warning-strong: #fcd34d;
+    --ef-warning-strong-on-dark: #fcd34d;
+    --ef-danger: #f87171;
+    --ef-danger-strong: #fca5a5;
+
+    --ef-tier-common-from: #64748b;
+    --ef-tier-common-to: #94a3b8;
+    --ef-tier-rare-from: #0284c7;
+    --ef-tier-rare-to: #38bdf8;
+    --ef-tier-epic-from: #7c3aed;
+    --ef-tier-epic-to: #a855f7;
+    --ef-tier-legendary-from: #d97706;
+    --ef-tier-legendary-to: #fbbf24;
+    --ef-tier-mythic-from: #e11d48;
+    --ef-tier-mythic-mid: #f43f5e;
+    --ef-tier-mythic-to: #fb7185;
+
+    --primary-soft: color-mix(in oklab, var(--ef-primary-container) 12%, var(--ef-surface-lowest));
+    --success-soft: color-mix(in oklab, var(--ef-success) 12%, var(--ef-surface-lowest));
+    --warning-soft: color-mix(in oklab, var(--ef-warning) 14%, var(--ef-surface-lowest));
+    --destructive-soft: color-mix(in oklab, var(--ef-danger) 12%, var(--ef-surface-lowest));
+
+    --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -1px rgb(0 0 0 / 0.35);
+    --shadow-modal: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+  }
 }
 
 /* ── 7. Palco do sorteio (FASE 29) ─────────────────────────────────────────────

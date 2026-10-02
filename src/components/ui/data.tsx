@@ -44,10 +44,17 @@ export function TBody({ className, ...props }: ComponentProps<'tbody'>) {
   return <tbody className={cn('divide-y divide-border', className)} {...props} />;
 }
 
+/**
+ * O realce da linha vem do token `on-surface`, não de `rgb(15 23 42 / 0.02)`
+ * (FASE 61 · dívida H3): um véu escuro fixo de 2% desaparece sobre a superfície
+ * escura — a linha deixaria de responder ao ponteiro. Medido a partir do texto, ele
+ * vale o mesmo cinza no claro (0,2/255 por canal de diferença) e clareia a linha no
+ * escuro.
+ */
 export function TR({ className, ...props }: ComponentProps<'tr'>) {
   return (
     <tr
-      className={cn('h-13 transition-colors hover:bg-[rgb(15_23_42/0.02)]', className)}
+      className={cn('h-13 transition-colors hover:bg-on-surface/[0.02]', className)}
       {...props}
     />
   );

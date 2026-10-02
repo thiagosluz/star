@@ -32,6 +32,16 @@ import {
  *  condicional nos componentes.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
+ *  O MAPA FECHA TODOS OS PAPÉIS — NENHUM `var()` CAI NA PLATAFORMA (FASE 61)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O CSS do evento (`event-theme.css`) consome `--ef-*` e não tem fallback: os
+ *  papéis que o organizador não escolheu chegam aqui com o padrão do MODO que ele
+ *  declarou. Antes eram `var(--color-surface, …)` — token da plataforma, que a
+ *  escala escura redefine —, e a página de quem escolheu só a cor primária
+ *  escurecia junto com o painel. A catraca que prende isso é
+ *  `tests/unit/f61-tema-do-evento.test.ts`.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
  *  A COR DO EVENTO TAMBÉM VIRA TOKEN DO SISTEMA (FASE 51 · E42)
  * ─────────────────────────────────────────────────────────────────────────────
  *  As variáveis `--ef-*` são do CSS da PÁGINA PÚBLICA: os componentes do sistema

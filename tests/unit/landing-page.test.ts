@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BLOCK_LABELS,
   DEFAULT_THEME,
+  EVENT_THEME_PALETTE,
   PAGE_BLOCK_TYPES,
   RECOMMENDED_BLOCK_ORDER,
   SANDBOXED_BLOCK_TYPES,
@@ -142,9 +143,19 @@ describe('themeToCssVariables()', () => {
     }
   });
 
-  it('não emite variável para cor ausente', () => {
+  it('emite TODO papel de cor — o ausente recebe o padrão do modo, nunca um token de fora', () => {
+    /**
+     * A FASE 61 inverteu esta expectativa de propósito. Antes, uma cor não escolhida
+     * simplesmente não era emitida — e o `var(--color-surface, …)` do CSS do evento
+     * caía no token da PLATAFORMA, que a escala escura redefine (a página pública
+     * escurecia junto com o painel). Agora o mapa publica todos os papéis, e o mapa
+     * completo é a única fonte do tema do evento.
+     */
     const vars = themeToCssVariables(DEFAULT_THEME);
-    expect(vars['--ef-primary']).toBeUndefined();
+
+    expect(vars['--ef-primary']).toBe(EVENT_THEME_PALETTE.light.primary);
+    expect(vars['--ef-background']).toBe(EVENT_THEME_PALETTE.light.background);
+    expect(vars['--ef-text']).toBe(EVENT_THEME_PALETTE.light.text);
     expect(vars['--ef-radius']).toBe('12px');
   });
 

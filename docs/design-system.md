@@ -14,13 +14,15 @@
 
 | Camada | Onde | O que garante |
 |---|---|---|
-| **Valores** | `DESIGN.md` (YAML) | A identidade em si: paleta, tipografia, espaçamento, elevação |
-| **Tokens** | `src/app/globals.css` | Traduz os valores em variáveis e apelidos semânticos |
+| **Valores** | `DESIGN.md` (YAML) | A identidade em si: paleta (clara **e escura**), tipografia, espaçamento, elevação |
+| **Tokens** | `src/app/globals.css` | Traduz os valores em variáveis e apelidos semânticos, nas duas escalas |
 | **Primitivos** | `src/components/ui/**` | Componentes que já usam os tokens — a única forma de montar tela |
-| **Trava** | `tests/unit/design-system-guard.test.ts` | Impede cor crua, tamanho arbitrário e dívida que cresce |
+| **Trava** | `tests/unit/design-system-guard.test.ts` · `f61-escala-escura.test.ts` · `f61-contraste-dos-dois-modos.test.ts` | Impede cor crua, tamanho arbitrário, dívida que cresce, escala escura incompleta e contraste abaixo do AA |
 
 Um módulo novo **não escolhe cor, tamanho de fonte nem sombra**. Ele escolhe
 componentes e, no máximo, tokens semânticos (`bg-card`, `text-muted-foreground`).
+E **não escolhe modo**: o tema escuro não é uma tela, é a outra metade da escala
+(seção 3).
 
 ---
 
@@ -40,7 +42,7 @@ Os valores abaixo são os do `DESIGN.md` e estão em `:root` no `globals.css`. U
 | `bg-surface-highest` | `#dfe2ee` | Separador forte |
 | `text-foreground` / `text-on-surface` | `#181c24` | Texto principal |
 | `text-muted-foreground` | `#464555` | Texto secundário, rótulo de metadado |
-| `border-border` | `#c7c4d8` | Hairline estrutural |
+| `border-border` | `#83808f` | Hairline estrutural e borda de campo (`--input`) |
 | `border-border-strong` | `#777587` | Contorno de ênfase |
 
 ### Marca e ações
@@ -58,21 +60,96 @@ Os valores abaixo são os do `DESIGN.md` e estão em `:root` no `globals.css`. U
 
 | Token | Fill | Texto acessível | Fundo suave | Uso |
 |---|---|---|---|---|
-| sucesso | `bg-success` `#10b981` | `text-success-strong` `#059669` | `bg-success-soft` | Confirmado, verificado, aprovado |
-| atenção | `bg-warning` `#f59e0b` | `text-warning-strong` `#d97706` | `bg-warning-soft` | Espera, em análise, rascunho |
-| perigo | `bg-destructive` `#dc2626` | `text-destructive` | `bg-destructive-soft` | Recusado, bloqueado, expirado |
+| sucesso | `bg-success` `#10b981` | `text-success-strong` `#047857` | `bg-success-soft` | Confirmado, verificado, aprovado |
+| atenção | `bg-warning` `#f59e0b` | `text-warning-strong` `#92400e` | `bg-warning-soft` | Espera, em análise, rascunho |
+| perigo | `bg-destructive` `#b91c1c` | `text-destructive` | `bg-destructive-soft` | Recusado, bloqueado, expirado |
 | informação | `bg-secondary` | `text-secondary-strong` | `bg-secondary/25` | Informação neutra |
+
+Os valores de texto dos estados mudaram na FASE 61 (`#059669` → `#047857` e
+`#dc2626` → `#b91c1c`) porque a catraca de contraste mediu o par de cada um contra
+o fundo lavado e contra a superfície: ver a seção 8 (dívida quitada).
 
 ### Raridade (gamificação) — só para conquista
 
 `tier-common` · `tier-rare` · `tier-epic` · `tier-legendary` · `tier-mythic` (classes
 de gradiente em `globals.css`) e `RarityBadge` no catálogo de primitivos.
 **Status operacional nunca usa gradiente** — a fronteira entre "estado do sistema" e
-"mérito do participante" é parte do produto.
+"mérito do participante" é parte do produto. A raridade é **arte de carta**, não
+texto sobre superfície, e por isso é a mesma nos dois modos.
 
 ---
 
-## 3. Tipografia
+## 3. O modo escuro é uma ESCALA, não uma tela (FASE 61 · dívida H3)
+
+O sistema tem duas escalas completas. O modo escuro redefine **apenas a camada
+`--ef-*`**: o `@theme inline` é escrito uma vez, os componentes escrevem os mesmos
+papéis (`bg-card`, `border-border`, `text-warning-strong`) e não têm — nem podem
+ter — condicional de tema. Isso é o ADR-324, e é o que impediu a fase inteira de
+virar uma segunda interface que envelhece separada da primeira.
+
+| Papel (token de uso) | Claro | Escuro |
+|---|---|---|
+| `bg-surface` (canvas) | `#f9f9ff` | `#17181e` |
+| `bg-surface-low` (agrupamento) | `#f1f3ff` | `#1d1f26` |
+| `bg-card` (cartão, o padrão) | `#ffffff` | `#23252d` |
+| `bg-surface-high` (hover, realce) | `#e5e8f4` | `#2a2c35` |
+| `bg-surface-highest` (separador forte) | `#dfe2ee` | `#31333d` |
+| `bg-surface-dim` (superfície que recua) | `#d7dae5` | `#121319` |
+| `text-foreground` | `#181c24` | `#e1e2ec` |
+| `text-muted-foreground` | `#464555` | `#c5c6d0` |
+| `border-border` (hairline e borda de campo) | `#83808f` | `#6b7280` |
+| `border-border-strong` | `#777587` | `#8b90a1` |
+| `bg-primary` (ação) | `#4f46e5` | `#2b1fa8` |
+| `text-primary-foreground` | `#ffffff` | `#ffffff` |
+| `bg-primary-hover` | `#4338ca` | `#4236c4` |
+| `text-brand` (link, item ativo) | `#3525cd` | `#a5b4fc` |
+| `bg-primary-soft` | `#e2dfff` | 12% do preenchimento sobre o cartão |
+| `text-secondary-strong` | `#00668a` | `#7dd3fc` |
+| `text-tertiary-strong` | `#005338` | `#5eead4` |
+| `bg-success` / `text-success-strong` | `#10b981` / `#047857` | `#34d399` / `#6ee7b7` |
+| `bg-warning` / `text-warning-strong` | `#f59e0b` / `#92400e` | `#fbbf24` / `#fcd34d` |
+| `bg-destructive` / `text-destructive` | `#b91c1c` | `#93000a` / `#fca5a5` |
+| `--ring` (anel de foco) | `#4f46e5` | `#a5b4fc` |
+| `--shadow-card` | preto a 5% | preto a 50% (sombra sobre escuro precisa de densidade) |
+
+**Os mesmos papéis, as mesmas relações.** No claro o texto é o tom mais escuro e o
+fundo o mais claro; no escuro isso se inverte, e a escada continua ascendente — o
+cartão é sempre um degrau acima do canvas. O que muda é o valor, nunca o contrato.
+
+**Os tokens que NÃO mudam têm motivo escrito** (`DESIGN.md`, seção de cores): o
+`inverse-surface` é a superfície que já é escura por definição — o **telão do
+sorteio** e as cápsulas sobre imagem —, a raridade é arte de carta, e
+`warning-strong-on-dark` é o par de aviso medido da FASE 52. Inverter qualquer um
+deles apagaria a operação de palco.
+
+### Como o modo é decidido (e o que NÃO é desta camada)
+
+| Estado | O que existe no CSS | Quem responde |
+|---|---|---|
+| **Sistema** (padrão, sem escolha gravada) | `@media (prefers-color-scheme: dark)` | a preferência do sistema operacional, **sem JavaScript e sem cookie** — é o defeito que a H3 descrevia |
+| **Escuro** (escolha manual) | `.dark` no `<html>` | a classe que a fiação grava |
+| **Claro** (escolha manual) | nada | a ausência da classe |
+
+`color-scheme` acompanha: `light` no `:root` e `dark` nos dois blocos escuros. Sem
+ele, `select`, barra de rolagem, seletor de data e o fundo do autofill continuam
+claros dentro de uma tela escura — o campo de e-mail preenchido pelo navegador vira
+um retângulo branco no meio da página.
+
+Duas exceções por desenho, e as duas são verificadas por teste:
+
+1. **O telão do sorteio** (`--inverse-surface`, `--warning-strong-on-dark`, as
+   classes `.ef-stage-*`) é escuro nos DOIS modos — a F52 mediu o par (9,17:1).
+2. **Documento impresso não tem modo escuro**: certificado e crachá saem em PDF/ZPL
+   renderizados no servidor para papel branco, e não leem token de tema.
+3. **A página pública do evento mantém o tema do organizador**
+   (`event-theme.css`, `theme-scope.tsx`): as cores que ele escolheu não são
+   invertidas nem recalculadas. Como variável declarada no elemento vence a herdada
+   de `:root`, o escopo do evento continua com as cores dele enquanto a plataforma
+   em volta (casco, login, inscrição, área de conta) segue o modo.
+
+---
+
+## 4. Tipografia
 
 | Papel | Classe | Fonte |
 |---|---|---|
@@ -89,7 +166,7 @@ fonte era carregada: o produto usava a fonte do sistema operacional.
 
 ---
 
-## 4. Primitivos — o catálogo
+## 5. Primitivos — o catálogo
 
 Importe **sempre** de `@/components/ui`:
 
@@ -168,7 +245,7 @@ Regras que o primitivo já carrega:
 
 ---
 
-## 5. Navegação — os três shells
+## 6. Navegação — os três shells
 
 | Shell | Onde | Composição |
 |---|---|---|
@@ -190,7 +267,7 @@ redireciona e a tela inalcançável.
 
 ---
 
-## 6. Receita: um módulo novo em 6 passos
+## 7. Receita: um módulo novo em 6 passos
 
 1. **Página**: `export default async function Page()` começando por `PageHeader`
    (com `breadcrumbs` e `actions`). A rota herda o shell do layout — não monte
@@ -213,7 +290,7 @@ redireciona e a tela inalcançável.
 
 ---
 
-## 7. Proibido (a trava reprova)
+## 8. Proibido (a trava reprova)
 
 | Proibido | Por quê | Faça |
 |---|---|---|
@@ -223,6 +300,7 @@ redireciona e a tela inalcançável.
 | Segundo botão preenchido na mesma tela | Disputa a ação principal | `variant="outline"` / `"ghost"` |
 | Cartão dentro de cartão com sombra | Achatamento visual | `elevated={false}` |
 | Gradiente fora de conquista | Borra a fronteira estado × mérito | `Badge` com `tone` |
+| Condicional de tema em componente (`dark:`) ou segundo `@theme` | Cria uma segunda interface, que envelhece separada da primeira (ADR-324) | papéis (`bg-card`, `text-muted-foreground`) — a escala escura responde por eles |
 
 ### Dívida aberta (a catraca)
 
@@ -230,6 +308,33 @@ Depois da **FASE 11B**, as duas listas (`RAW_COLOR_DEBT` e `ARBITRARY_TEXT_DEBT`
 **vazias** — isto é, o teto de qualquer arquivo é zero e a proibição é absoluta. O
 mecanismo continua no teste de propósito: se uma migração futura precisar de exceção, o
 lugar dela já existe, é explícito e só pode encolher depois.
+
+**Contraste do modo claro (FASE 61 · QUITADO).** A catraca dos dois modos
+(`f61-contraste-dos-dois-modos.test.ts`) mediu seis pares da escala **clara** abaixo
+do AA. Eram dívida anterior à fase, e a decisão foi corrigir — a régua da casa
+(FASE 52) é que o contraste medido vence o valor documentado:
+
+| Par | Antes | Agora |
+|---|---|---|
+| `text-success-strong` sobre a tela | 3,59:1 (`#059669`) | **5,23:1** (`#047857`) |
+| `text-success-strong` sobre o cartão | 3,77:1 | **5,48:1** |
+| `text-success-strong` sobre o `success-soft` | 3,49:1 | **5,09:1** |
+| `text-destructive` sobre o `destructive-soft` | 4,41:1 (`#dc2626`) | **5,90:1** (`#b91c1c`) |
+| `border-border` (borda de campo) sobre a tela | 1,63:1 (`#c7c4d8`) | **3,67:1** (`#83808f`) |
+| `border-border` sobre o cartão | 1,71:1 | **3,85:1** |
+
+A lista de exceção saiu do teste: **nenhum** par dos dois modos está dispensado do
+AA. A mudança é VISÍVEL no modo claro (verde e vermelho um tom mais escuros, borda
+mais firme) — e é a segunda vez que a paleta muda por medição, como o aviso mudou
+na FASE 52.
+
+**Escolha explícita de CLARO (FASE 61).** A media query do sistema é
+`:root:not([data-tema='claro'])`: sem essa guarda, `:root` e `:root` têm a mesma
+especificidade e a media query vence por vir depois — num sistema operacional
+escuro, quem escolheu "Claro" veria escuro (o defeito da H3 de cabeça para baixo).
+A guarda lê o `data-tema` que a fiação grava sempre no `<html>`
+(`claro` · `escuro` · `sistema`), e o `:not()` sobe a especificidade de (0,1,0) para
+(0,2,0).
 
 ### Rótulo de campo: `id` ou envolvente
 
@@ -242,16 +347,26 @@ controle de outro formulário — e o rótulo visível deixa de ser o rótulo da
 
 ---
 
-## 8. Verificação
+## 9. Verificação
 
 ```bash
-npx vitest run tests/unit/design-system-guard.test.ts   # a trava
-npm run lint && npm run typecheck                       # tipos e estilo
+npx vitest run tests/unit/design-system-guard.test.ts            # a trava dos tokens
+npx vitest run tests/unit/f61-escala-escura.test.ts              # a escala escura está completa
+npx vitest run tests/unit/f61-contraste-dos-dois-modos.test.ts   # contraste nos DOIS modos
+npx vitest run tests/unit/f52-warning-contrast.test.ts           # o par do aviso e do telão
+npm run lint && npm run typecheck                                # tipos e estilo
 # e, com o app rodando:
 #   /superadmin/design   → a identidade renderizada
 ```
 
-O teste verifica: ausência de paleta crua acima do teto, ausência de hexadecimal,
-tamanho de fonte sempre da escala, presença dos tokens obrigatórios e **igualdade
-dos valores** com o `DESIGN.md` — se alguém "ajustar" a marca sem atualizar o
-documento, a suíte falha antes de 40 telas mudarem de cor.
+O que cada catraca prende:
+
+| Teste | O que ele impede |
+|---|---|
+| `design-system-guard.test.ts` | paleta crua do Tailwind, hexadecimal em componente, tamanho de fonte fora da escala, token obrigatório ausente e **valor de identidade diferente do `DESIGN.md`** |
+| `f61-escala-escura.test.ts` | token de cor que nasce só na escala clara (ou só na escura), bloco `.dark` divergente da media query do sistema, apelido misturado não reescrito no escuro, `@theme` duplicado e `color-scheme` ausente |
+| `f61-contraste-dos-dois-modos.test.ts` | par texto/fundo abaixo de 4,5:1 e borda/contorno/anel abaixo de 3:1, **nos dois modos**, com o número medido preso linha a linha |
+| `f52-warning-contrast.test.ts` | o aviso voltar a ter um tom só (o do painel claro reprovava no telão) |
+
+Nenhum par entra na escala por olhômetro: o teste lê o `globals.css`, calcula a razão
+do WCAG e reprova dizendo o número.

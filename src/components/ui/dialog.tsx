@@ -132,7 +132,20 @@ export function Modal({
       data-testid={testId}
       className={cn(
         'm-auto w-[calc(100%-2rem)] rounded-lg border border-border bg-card p-0 text-foreground shadow-card',
-        'backdrop:bg-foreground/45',
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O VÉU DO MODAL NÃO PODE SER O `foreground` (FASE 61 · dívida H3)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O `foreground` inverte com o modo: era um véu escuro no claro e virava uma
+         *  névoa CLARA por cima da página no escuro — ou seja, o modal não escurecia
+         *  mais nada, ofuscava. O véu é do `inverse-surface`, o mesmo token que a
+         *  gaveta do menu móvel já usa (`mobile-nav.tsx`) e que a escala escura NÃO
+         *  redefine, porque o telão do sorteio o mantém escuro nos dois modos.
+         *
+         *  45% do `foreground` e 50% do `inverse-surface` dão o mesmo tom no claro
+         *  (diferença de ~1,5/255 por canal sobre branco — o modo claro não muda).
+         */
+        'backdrop:bg-inverse-surface/50',
         size === 'sm' ? 'max-w-md' : 'max-w-2xl',
       )}
     >

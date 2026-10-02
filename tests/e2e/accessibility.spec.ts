@@ -528,6 +528,46 @@ test.describe('telas autenticadas', () => {
     ]);
   });
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  E O MODO ESCURO TAMBÉM PASSA PELO PORTÃO (FASE 61 · dívida H3)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até aqui toda varredura deste arquivo media UMA paleta: a clara, que é o `:root`
+   *  de sempre. O modo noturno traz um conjunto NOVO de pares texto/fundo — e nenhum
+   *  deles tem histórico de medição.
+   *
+   *  O navegador entra com a escolha JÁ gravada (`ef_tema=escuro`, o mesmo cookie que o
+   *  layout raiz lê no servidor), então a página chega escura desde a primeira
+   *  resposta: o `axe` mede a paleta escura de verdade, e não um tema aplicado depois
+   *  por JavaScript — que é justamente o que não queremos que exista.
+   */
+  test('o painel em modo escuro não tem violação crítica', async ({ page, baseURL }) => {
+    await signInAs(page, adminEmail);
+
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'escuro', url: baseURL ?? 'http://localhost:3000' },
+    ]);
+
+    await page.goto(`/t/${tenantSlug}/dashboard`);
+    /** A prova de que o SERVIDOR entregou o escuro (e não o cliente, depois). */
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+
+    await expectNoCriticalViolations(
+      page,
+      `painel em modo escuro (/t/${tenantSlug}/dashboard · ef_tema=escuro)`,
+    );
+
+    /**
+     * A paleta volta à CLARA para o resto do arquivo: o cookie é do CONTEXTO do
+     * navegador, e um teste seguinte mediria o escuro sem ter pedido. `claro` é
+     * escolha explícita de propósito: sem cookie o modo é o do SISTEMA, e a varredura
+     * passaria a depender da preferência da máquina que roda a suíte.
+     */
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'claro', url: baseURL ?? 'http://localhost:3000' },
+    ]);
+  });
+
   test('o diretório de participantes não tem violação crítica', async ({ page }) => {
     await signInAs(page, adminEmail);
 

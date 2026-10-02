@@ -95,7 +95,13 @@ function Submit({
   const styles = {
     primary: 'bg-primary text-primary-foreground hover:opacity-90',
     outline: 'border border-border hover:bg-muted',
-    danger: 'bg-destructive text-white hover:opacity-90',
+    /**
+     * O texto do preenchimento destrutivo vem do token (`destructive-foreground`,
+     * que vale `#ffffff`), não de `text-white` (FASE 61 · dívida H3): é o mesmo
+     * branco no modo claro, e o token existe justamente para o dia em que o
+     * vermelho precisar de outro texto no escuro.
+     */
+    danger: 'bg-destructive text-destructive-foreground hover:opacity-90',
   }[variant];
 
   return (

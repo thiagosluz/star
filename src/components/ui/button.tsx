@@ -27,10 +27,36 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
+        /**
+         * O realce interno é derivado do `primary-foreground` (o branco do texto):
+         * o mesmo `rgb(255 255 255 / 0.12)` de antes, agora acompanhando o que a
+         * escala escura decidir para o texto sobre a marca.
+         *
+         * `var(--primary-foreground)` — o APELIDO, não `--color-primary-foreground`:
+         * o `@theme inline` do `globals.css` gera as utilidades com `var(--alias)` e
+         * não publica as variáveis `--color-*` (medido no CSS construído: nenhuma
+         * declaração `--color-*` da identidade sobrevive, e o `var()` sem valor
+         * deixaria o botão SEM realce nenhum nos dois modos).
+         */
         primary:
-          'bg-primary text-primary-foreground hover:bg-primary-hover shadow-[inset_0_1px_0_0_rgb(255_255_255/0.12)]',
+          'bg-primary text-primary-foreground hover:bg-primary-hover shadow-[inset_0_1px_0_0_color-mix(in_oklab,var(--primary-foreground)_12%,transparent)]',
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O FUNDO TRANSLÚCIDO É DO TOKEN, NÃO DA COR CRUA (FASE 61 · dívida H3)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O secundário era `rgb(15 23 42 / 0.05)` — um véu do AZUL ESCURO fixo. No
+         *  modo claro isso é um cinza neutro sobre branco; no escuro, 5% de tinta
+         *  escura sobre uma superfície escura é **nada**: o botão perde o fundo e a
+         *  hairline de 12% some junto, sobrando um texto solto.
+         *
+         *  O mesmo véu medido a partir de `on-surface` (o token que JÁ inverte com o
+         *  modo) resolve os dois: no claro, 5% de `#181c24` sobre branco dá o mesmo
+         *  cinza de antes (menos de 1/255 por canal — o modo claro não muda); no
+         *  escuro, 5% de tinta clara sobre superfície escura, que é exatamente o que
+         *  "fundo translúcido neutro com hairline" significa nos dois modos.
+         */
         secondary:
-          'bg-[rgb(15_23_42/0.05)] text-foreground border border-[rgb(15_23_42/0.12)] hover:bg-[rgb(15_23_42/0.1)]',
+          'bg-on-surface/5 text-foreground border border-on-surface/[0.12] hover:bg-on-surface/10',
         outline: 'border border-border bg-card text-foreground hover:bg-surface-low',
         ghost: 'text-foreground hover:bg-surface-low',
         destructive:

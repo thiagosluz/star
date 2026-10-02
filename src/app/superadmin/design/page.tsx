@@ -76,10 +76,17 @@ const BRAND = [
   ['tertiary-strong', '#005338', 'Confirmação institucional'],
 ] as const;
 
+/**
+ * Amostras dos ESTADOS — o fill e o TEXTO acessível de cada um, com os valores
+ * vigentes do `globals.css`. O guia existe para mostrar a verdade do sistema: um
+ * hexadecimal desatualizado aqui ensina a cor errada para quem copia da tela, e
+ * foi o que a FASE 61 corrigiu (o aviso ainda exibia o tom único da F52 e o
+ * sucesso/perigo exibiam os tons que a catraca de contraste reprovou).
+ */
 const STATES = [
-  ['success', '#10b981', '#059669', 'Confirmado, verificado, aprovado'],
-  ['warning', '#f59e0b', '#d97706', 'Espera, em análise, rascunho'],
-  ['danger', '#ef4444', '#dc2626', 'Recusado, bloqueado, expirado'],
+  ['success', '#10b981', '#047857', 'Confirmado, verificado, aprovado'],
+  ['warning', '#f59e0b', '#92400e', 'Espera, em análise, rascunho'],
+  ['danger', '#ef4444', '#b91c1c', 'Recusado, bloqueado, expirado'],
   ['info', '#40c2fd', '#004d6a', 'Informação neutra'],
 ] as const;
 

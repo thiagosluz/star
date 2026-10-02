@@ -147,28 +147,114 @@ export function resolveTheme(raw: unknown): {
   return { theme: DEFAULT_THEME, isValid: false };
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  A paleta padrão DO EVENTO — e por que ela não é token da plataforma
+// ───────────────────────────────────────────────────────────────────────────────
+export interface EventThemePalette {
+  primary: string;
+  secondary: string;
+  accent: string;
+  background: string;
+  text: string;
+}
+
+/**
+ * O que a página do evento mostra no papel que o organizador NÃO escolheu.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O DEFEITO QUE ISTO CORRIGE (o mapa fechava só as cores escolhidas)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 61, os papéis ausentes ficavam com `var(--color-surface, …)`,
+ *  `var(--color-on-surface, …)` e `var(--color-primary, …)` — tokens da
+ *  PLATAFORMA. Como a escala escura redefine esses tokens, um organizador que
+ *  escolheu **só a cor primária** (ou que declarou `colorMode: 'light'`) via a
+ *  página pública escurecer junto com o painel: a decisão de quem manda no evento
+ *  era anulada por quem escolheu o tema do sistema.
+ *
+ *  A régua desta entrega é: **nenhum `var()` do CSS do evento pode alcançar um
+ *  token da plataforma**. Para isso o mapa publica TODOS os papéis — o escolhido e
+ *  o padrão do MODO DECLARADO —, e o CSS do evento (`event-theme.css`) deixou de
+ *  ter fallback: ele só consome.
+ *
+ *  Os valores são os que o CSS do evento já usava (o literal do fallback claro e o
+ *  bloco escuro que ele declarava), promovidos a constante para haver UMA fonte: o
+ *  claro continua exatamente o mesmo, e quem já escolheu todas as cores não vê
+ *  mudança nenhuma (as escolhas vencem o padrão).
+ *
+ *  `primary` e `accent` são a MARCA — não são superfície, então não invertem com o
+ *  modo: o botão cheio e o degradê do cabeçalho continuam os mesmos nos dois modos,
+ *  que é o que o organizador vê no editor quando escolhe a cor de ação.
+ */
+export const EVENT_THEME_PALETTE: Record<'light' | 'dark', EventThemePalette> = {
+  light: {
+    primary: '#4f46e5',
+    secondary: '#f1f3ff',
+    accent: '#40c2fd',
+    background: '#f9f9ff',
+    text: '#181c24',
+  },
+  dark: {
+    primary: '#4f46e5',
+    secondary: 'oklch(0.26 0.01 265)',
+    accent: '#40c2fd',
+    background: 'oklch(0.15 0.01 265)',
+    text: 'oklch(0.97 0 0)',
+  },
+};
+
+/**
+ * O modo que o mapa aplica — a ÚNICA autoridade sobre claro/escuro na página.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE `auto` RESOLVE PARA CLARO, E NÃO PARA O SISTEMA DE QUEM VISITA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O motivo é de cascata, antes de ser estético: o mapa escreve as custom
+ *  properties no atributo `style` do escopo, e **estilo inline vence qualquer
+ *  regra de classe** — inclusive uma dentro de `@media (prefers-color-scheme:
+ *  dark)`. No instante em que o mapa publica todos os papéis (o que esta entrega
+ *  faz), nenhuma media query do CSS pode mais trocar a paleta; manter `auto`
+ *  seguindo o sistema exigiria justamente NÃO publicar os papéis que o organizador
+ *  não escolheu — que é o buraco por onde o token da plataforma entrava.
+ *
+ *  A escolha, então, é explícita: **quem manda na página do evento é o organizador,
+ *  nunca o modo de quem visita**. `light` e `dark` são o que ele declarou; `auto`
+ *  (e o não declarado, que o schema já resolve para `light`) rendem a paleta clara,
+ *  que é o modo em que ele escolheu as cores no editor.
+ */
+export function resolveEventThemeMode(mode: ResolvedEventTheme['colorMode']): 'light' | 'dark' {
+  return mode === 'dark' ? 'dark' : 'light';
+}
+
 /**
  * Converte o tema em CSS custom properties, sob o prefixo `--ef-`.
  *
  * O prefixo não é cosmético: isola as variáveis do evento das variáveis do
  * design system da plataforma, impedindo que um evento sobrescreva estilos de
  * outra parte da aplicação.
+ *
+ * Todo papel que o CSS do evento consome sai daqui — inclusive os que o
+ * organizador não escolheu, que recebem o padrão do modo declarado. A catraca
+ * `tests/unit/f61-tema-do-evento.test.ts` lê o CSS do evento e reprova o papel
+ * que ficar de fora, e reprova também um PAPEL DE COR cujo valor seja `var(…)`
+ * (uma referência é uma porta de volta para o token da plataforma; a tipografia é
+ * a exceção declarada, porque não tem escala escura).
  */
 export function themeToCssVariables(input: ResolvedEventTheme): Record<string, string> {
   const theme = input;
-  const vars: Record<string, string> = {
+  const palette = EVENT_THEME_PALETTE[resolveEventThemeMode(theme.colorMode)];
+
+  return {
     '--ef-radius': `${theme.radius}px`,
     '--ef-font-sans': FONT_STACKS[theme.fontFamily],
     '--ef-spacing-scale': String(SPACING_SCALE[theme.spacing]),
+
+    /** A escolha do organizador vence o padrão — o padrão só cobre o que ele não escolheu. */
+    '--ef-primary': theme.primaryColor ?? palette.primary,
+    '--ef-secondary': theme.secondaryColor ?? palette.secondary,
+    '--ef-accent': theme.accentColor ?? palette.accent,
+    '--ef-background': theme.backgroundColor ?? palette.background,
+    '--ef-text': theme.textColor ?? palette.text,
   };
-
-  if (theme.primaryColor) vars['--ef-primary'] = theme.primaryColor;
-  if (theme.secondaryColor) vars['--ef-secondary'] = theme.secondaryColor;
-  if (theme.accentColor) vars['--ef-accent'] = theme.accentColor;
-  if (theme.backgroundColor) vars['--ef-background'] = theme.backgroundColor;
-  if (theme.textColor) vars['--ef-text'] = theme.textColor;
-
-  return vars;
 }
 
 /** Serializa as variáveis para o atributo `style` de um elemento. */

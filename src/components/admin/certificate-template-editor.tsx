@@ -277,13 +277,29 @@ function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onR
 
   return (
     <div className="space-y-2">
+      {/**
+       * ───────────────────────────────────────────────────────────────────────────
+       *  O PALCO DO CERTIFICADO É PAPEL (FASE 61 · dívida H3)
+       * ───────────────────────────────────────────────────────────────────────────
+       *  Era `bg-card`, que é `--ef-surface-lowest`: branco no modo claro e #23252d
+       *  no escuro. O texto de cada caixa é TINTA (`element.color`, o padrão
+       *  `#111827`), então no modo escuro o organizador arrastaria caixas com o
+       *  rótulo invisível sobre um retângulo escuro — e o desenho que ele está
+       *  compondo é para PAPEL BRANCO nos dois modos.
+       *
+       *  `bg-white` aqui não é cor crua por descuido: é a única superfície do
+       *  sistema que NÃO pode acompanhar o tema. No claro é o mesmo branco de antes
+       *  (`--ef-surface-lowest` = `#ffffff`), então o modo claro não muda; no escuro
+       *  ele continua sendo a folha. A exceção está declarada com o motivo em
+       *  `tests/unit/f61-varredura-escuro.test.ts`.
+       */}
       <div
         ref={stageRef}
         onPointerMove={handleMove}
         onPointerUp={endDrag}
         onPointerLeave={endDrag}
         data-testid="template-stage"
-        className="relative w-full overflow-hidden rounded-md border border-border bg-card shadow-sm"
+        className="relative w-full overflow-hidden rounded-md border border-border bg-white shadow-sm"
         style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
       >
       {backgroundHref ? (
@@ -542,8 +558,14 @@ export function CertificateTemplateEditor({
           <h2 className="text-sm font-semibold">Prévia do documento</h2>
 
           {preview ? (
+            /**
+             * A MESMA RAZÃO DO PALCO: o SVG da prévia é TRANSPARENTE (o
+             * `drawLayoutSvg` não pinta fundo — quem pinta é o papel) e o texto dele é
+             * tinta escura. Sobre o cartão do tema, no escuro, a prévia sumiria. Aqui
+             * o branco é a folha, não uma cor de interface.
+             */
             <div
-              className="overflow-hidden rounded-md border border-border bg-card [&>svg]:h-auto [&>svg]:w-full"
+              className="overflow-hidden rounded-md border border-border bg-white [&>svg]:h-auto [&>svg]:w-full"
               data-testid="template-preview"
               // O SVG vem do MESMO renderizador do PDF emitido, com dados de exemplo.
               dangerouslySetInnerHTML={{ __html: preview }}

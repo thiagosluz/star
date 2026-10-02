@@ -1,6 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, Fingerprint, KeyRound, ShieldCheck, Smartphone, UserRound } from 'lucide-react';
+import {
+  ArrowLeft,
+  Fingerprint,
+  KeyRound,
+  ShieldCheck,
+  Smartphone,
+  SunMoon,
+  UserRound,
+} from 'lucide-react';
 
 import { getCurrentSession } from '@/lib/auth/session';
 import { getAccountOverview, readAccountSessions } from '@/lib/auth/account-service';
@@ -35,6 +43,7 @@ import {
   AccountTwoFactorPanel,
 } from '@/components/account/account-forms';
 import { VerificationNotice } from '@/components/communication/verification-notice';
+import { ThemeChoice } from '@/components/theme/theme-choice';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 
 export const metadata = { title: 'Minha conta' };
@@ -129,6 +138,35 @@ export default async function AccountPage({
       {!account.emailVerified ? (
         <VerificationNotice email={account.email} redirectTo="/conta" />
       ) : null}
+
+      {/* ── Aparência (FASE 61) ─────────────────────────────────────────────── */}
+      {/**
+        * ───────────────────────────────────────────────────────────────────────────
+        *  O TEMA É DESTE NAVEGADOR, E A TELA DIZ ISSO — NÃO É UM DADO DA CONTA
+        *  ───────────────────────────────────────────────────────────────────────────
+        *  A alternativa descartada foi a coluna no banco. O aviso existe porque a
+        *  confusão contrária é a esperada: quem escolhe escuro aqui e abre o
+        *  sistema em outra máquina encontra claro, e sem a frase concluiria que a
+        *  preferência "não salvou". Ela salvou — no navegador em que foi feita.
+        */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SunMoon className="size-4 text-primary" aria-hidden />
+            Aparência
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            O tema vale para{' '}
+            <strong className="font-medium text-foreground">este navegador</strong>, não para a
+            sua conta: você pode preferir escuro no celular e claro no computador do trabalho.
+            Sem escolha gravada, a plataforma acompanha o tema do seu sistema operacional.
+          </p>
+
+          <ThemeChoice variant="account" />
+        </CardContent>
+      </Card>
 
       {/* ── Foto e dados ─────────────────────────────────────────────────────── */}
       <Card>
