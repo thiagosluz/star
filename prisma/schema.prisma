@@ -1049,9 +1049,90 @@ model Tenant {
   /// FASE 49 — exportações de dados pessoais pedidas nesta instituição.
   dataExports      DataExport[]
 
+  /// FASE 64 — a página pública da instituição (uma por instituição).
+  publicPage       TenantPublicPage[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
+}
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  PÁGINA PÚBLICA DA INSTITUIÇÃO (FASE 64)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE UMA TABELA COM RASCUNHO E PUBLICADO NA MESMA LINHA
+///  ─────────────────────────────────────────────────────────────────────────────
+///  A instituição tem UMA página (o evento pode ter várias — ver `EventPage`).
+///  Com uma só, guardar a versão publicada como uma SEGUNDA LINHA obrigaria toda
+///  leitura a saber qual das duas é a vigente, e a exclusão mútua entre "um
+///  rascunho e um publicado por instituição" viraria um índice parcial a mais para
+///  alguém esquecer. Aqui o rascunho são as colunas do topo e o publicado é a
+///  coluna `publishedSnapshot`.
+///
+///  `publishedSnapshot` é IMUTÁVEL na prática: só a publicação o escreve, e ela
+///  copia o rascunho inteiro. Editar o rascunho NÃO muda a página no ar — o
+///  visitante continua vendo a versão do dia em que o organizador publicou, que é
+///  a promessa de "publicado × rascunho".
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE OS BLOCOS SÃO JSON, E NÃO `page_blocks`
+///  ─────────────────────────────────────────────────────────────────────────────
+///  No EVENTO os blocos são linhas (`page_blocks`) porque o editor opera um bloco
+///  por vez e o histórico de versões restaura a página inteira. Aqui a fatia é de
+///  FUNDAÇÃO e o desenho aprovado diz "blocos em JSON": o snapshot publicado precisa
+///  ser atômico de qualquer forma (um bloco publicado sem os outros seria uma página
+///  pela metade), e um segundo par de tabelas para o mesmo conceito só se justifica
+///  quando a tela pedir operação por bloco — que é a fatia 3.
+///
+///  `publishedSnapshot` guarda o MESMO formato das colunas do topo
+///  (`TenantPageSnapshot` em `src/domain/tenancy/tenant-public-page.ts`): título,
+///  descrição, capa, logotipo, tema e blocos. O checksum não é coluna — ver o
+///  comentário de `tenantPageChecksum` no domínio.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model TenantPublicPage {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+
+  /// Rascunho: o que o organizador está montando no editor.
+  title         String  @db.VarChar(200)
+  description   String? @db.Text
+  coverImageUrl String? @db.VarChar(1024)
+  logoUrl       String? @db.VarChar(1024)
+  /// Tema da instituição (paleta, tipografia, densidade) — validado no domínio.
+  theme         Json    @default("{}")
+  /// Blocos do rascunho, no formato `TenantPageBlock[]`.
+  blocks        Json    @default("[]")
+
+  /// A versão que os visitantes veem. `{}` = a página nunca foi publicada.
+  ///
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  POR QUE `{}` E NÃO NULL
+  /// ─────────────────────────────────────────────────────────────────────────────
+  ///  O Prisma 7 distingue `JsonNull` de `DbNull` num campo `Json?`, e o valor
+  ///  certo para "sem versão publicada" seria `DbNull`. Nenhuma outra coluna do
+  ///  projeto grava SQL NULL em Json, e introduzir essa sutileza aqui custaria um
+  ///  símbolo novo (`Prisma.DbNull`) em cada caminho de escrita para dizer uma coisa
+  ///  que o vazio já diz: **um snapshot sem título não é um snapshot** — é o que
+  ///  `readTenantPageSnapshot` responde com `null` no domínio.
+  ///
+  ///  Assim a coluna é NOT NULL e a única forma de "nunca publicada" é o objeto
+  ///  vazio, que nenhuma publicação produz (publicar exige título).
+  publishedSnapshot Json @default("{}")
+  publishedAt       DateTime? @db.Timestamptz(6)
+  publishedById     String?   @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Quem publicou. Nulo se a conta for removida — a página no ar permanece.
+  publishedBy User?  @relation("TenantPublicPagePublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  /// UMA página por instituição: a leitura pública e o editor não escolhem entre linhas.
+  @@unique([tenantId])
+  @@index([publishedById])
+  @@map("tenant_public_pages")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1233,8 +1314,7 @@ model User {
   invitationsAccepted  TenantInvitation[] @relation("TenantInvitationAcceptedBy")
 
   /// Demandas internas que esta pessoa criou — FASE 38.
-  demandsCreated       Demand[]          @relation("DemandCreatedBy")
-  /// Demandas atribuídas a esta pessoa — FASE 38.
+  demandsCreated       Demand[]          @relation("DemandCreatedBy")  /// Demandas atribuídas a esta pessoa — FASE 38.
   demandAssignments    DemandAssignee[]  @relation("DemandAssignedTo")
   /// Comentários que esta pessoa escreveu nas demandas — FASE 38.
   demandComments       DemandComment[]
@@ -1247,6 +1327,9 @@ model User {
 
   /// Segundo fator da conta (FASE 47). Um por conta; a biblioteca mantém a linha.
   twoFactor TwoFactor[] @relation("UserTwoFactor")
+
+  /// Páginas públicas de instituição que esta pessoa publicou — FASE 64.
+  tenantPublicPagesPublished TenantPublicPage[] @relation("TenantPublicPagePublishedBy")
 
   @@index([email])
   @@index([deletedAt])

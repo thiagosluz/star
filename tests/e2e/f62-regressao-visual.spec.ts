@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 import {
@@ -11,6 +12,10 @@ import {
   linkUser,
   uniqueEmail,
 } from './helpers';
+import {
+  publishTenantPublicPage,
+  saveTenantPublicPageDraft,
+} from '../../src/lib/tenancy/tenant-public-page-write-service';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -34,7 +39,7 @@ import {
  *  encolheu, o item de menu que sumiu, o contraste que ficou lavado no escuro).
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O CONJUNTO É PEQUENO DE PROPÓSITO: QUATORZE SNAPSHOTS, QUATRO SUPERFÍCIES
+ *  O CONJUNTO É PEQUENO DE PROPÓSITO: DEZESSEIS SNAPSHOTS, CINCO SUPERFÍCIES
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Quarenta telas dariam quarenta linhas de base para revisar a cada mudança de
  *  design — e uma linha de base que ninguém revisa é pior que nenhuma. A escolha
@@ -56,6 +61,13 @@ import {
  *       `rodape-publico-escuro`) — **as duas linhas de base que nasceram na FASE 63**:
  *       a raiz `/` com o controle de aparência do VISITANTE (o `<form>` de três
  *       `<button name="tema">` do rodapé). Ver a seção seguinte, que explica o recorte.
+ *    5. **A página pública da instituição** (`pagina-da-instituicao-claro`,
+ *       `pagina-da-instituicao-escuro`) — **as duas linhas de base da FASE 64**: a
+ *       vitrine que a instituição monta em `/t/<slug>` (capa, identidade, os três
+ *       grupos de eventos e os blocos), nos dois modos do VISITANTE. É a superfície
+ *       mais nova do produto e a que mais gente vê sem ter conta; ver a seção
+ *       "A PÁGINA DA INSTITUIÇÃO" mais abaixo, que explica por que ela entra e a
+ *       página do EVENTO continua de fora.
  *
  *  Cada uma das duas telas autenticadas entra nos DOIS modos (claro e escuro, pelo cookie
  *  `ef_tema` — a mesma fiação da FASE 61) e nos DOIS tamanhos (desktop e celular,
@@ -302,6 +314,52 @@ import {
  *  PLATAFORMA — a raiz, que é estática e é de todo mundo. A página do evento carrega a
  *  identidade visual que o ORGANIZADOR escolheu, e por isso mediria a cor de outra
  *  pessoa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A PÁGINA DA INSTITUIÇÃO: POR QUE ELA ENTRA, E COMO ELA FICOU DETERMINÍSTICA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 64 pôs uma página NOVA na mesma família da raiz (item 5): `/t/<slug>`
+ *  deixou de ser um redirect para o painel e virou a vitrine da casa. Ela entra nesta
+ *  catraca pelo mesmo critério do rodapé público — é pública, é de todo mundo e é
+ *  estática —, e com uma vantagem sobre a página do evento: **a identidade é da
+ *  INSTITUIÇÃO da fixture** (criada por `createTenant`), não de um organizador
+ *  qualquer, então medir a cor dela não é medir a cor de outra pessoa.
+ *
+ *  Determinismo, que é o que permite `maxDiffPixelRatio: 0`:
+ *
+ *    • **Nenhuma máscara é necessária** — e isso foi CONFERIDO, não suposto. O único
+ *      dado que carrega o `RUN_ID` da execução é o SLUG da instituição, e o slug não
+ *      aparece em pixel nenhum: o que a página escreve é o NOME (fixo,
+ *      `TENANT_NAME`), o título e a descrição publicados (fixos) e o fuso. Os títulos
+ *      de evento são fixos e escritos à mão aqui.
+ *    • **As DATAS dos eventos da fixture são INSTANTES FIXOS.** Este é o ponto que a
+ *      página quebra se ninguém olhar: o cartão de evento imprime o período
+ *      ("10/03/2099 09:00 até 12/03/2099 18:00"), e o `createEvent` do helper ancora
+ *      tudo em "daqui a N dias" — uma data relativa a HOJE mudaria a linha de base a
+ *      cada dia, e a catraca passaria a acusar regressão onde havia calendário.
+ *      `fixarJanela` reescreve a janela para um instante fixo, longe o bastante para
+ *      não virar passado (2099) e um evento no passado igualmente fixo (2000).
+ *      O grupo "Acontecendo agora" fica VAZIO de propósito: ele é o único que exigiria
+ *      uma janela contendo o AGORA, que é relativa por definição. A frase do grupo
+ *      vazio é fixa e é ela que a imagem registra.
+ *    • **Sem capa e sem logotipo**: a imagem de capa viria de um upload com URL de
+ *      bucket (que carrega a origem do ambiente), então as duas linhas de base medem a
+ *      página no estado em que a maioria das instituições a publica — identidade
+ *      tipográfica e blocos de texto.
+ *
+ *  Os dois modos entram porque a página da instituição é o único lugar do produto em
+ *  que a escala do VISITANTE e a paleta da CASA convivem: o escopo publica os `--ef-*`
+ *  da instituição (ADR-332) e o que a TELA pinta vem da escala do modo escolhido — uma
+ *  troca de token do escuro não aparece em teste de unidade nenhum, e é isso que estas
+ *  duas linhas de base prendem.
+ *
+ *  O que estas imagens NÃO provam (e está medido, com números, em
+ *  `docs/fase-64-pagina-da-instituicao.md` §8.2): os `--ef-*` publicados pelo escopo
+ *  **não chegam a pintar pixel nenhum**, porque a página usa os tokens do sistema e o
+ *  `globals.css` resolve os apelidos na RAIZ — sobrescrever `--ef-primary` num
+ *  descendente não re-resolve `--brand`. As duas linhas de base registram a ESCALA DO
+ *  MODO, não a paleta da instituição; quando a paleta ganhar leitor, elas vão mudar, e
+ *  a mudança será a prova de que o conserto chegou à tela.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -368,6 +426,37 @@ const TOLERANCIA = {
 
 let tenantSlug: string;
 let emailDaConta: string;
+/** O `id` de quem administra a fixture: é ele que assina a publicação da página (FASE 64). */
+let idDaConta: string;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS DATAS DA PÁGINA DA INSTITUIÇÃO SÃO INSTANTES FIXOS (FASE 64)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O cartão de evento da vitrine imprime o PERÍODO, e um período relativo a hoje
+ *  mudaria a linha de base a cada dia — que é a definição de linha de base inútil.
+ *  Os dois instantes abaixo são fixos e ficam onde precisam ficar: o primeiro no
+ *  FUTURO (o grupo "Em breve") e o segundo no PASSADO (o grupo "Edições anteriores").
+ *  O horário é 12:00 UTC porque 09:00 no fuso da instituição é dia útil e não cruza a
+ *  virada de data em nenhum fuso do Brasil.
+ */
+const JANELA_FUTURA = {
+  startsAt: new Date('2099-03-10T12:00:00.000Z'),
+  endsAt: new Date('2099-03-12T21:00:00.000Z'),
+} as const;
+
+const JANELA_ANTIGA = {
+  startsAt: new Date('2000-05-04T12:00:00.000Z'),
+  endsAt: new Date('2000-05-06T21:00:00.000Z'),
+} as const;
+
+/** Os títulos são fixos (sem `RUN_ID`): é o que permite a linha de base não ter máscara. */
+const EVENTO_FUTURO_TITULO = 'Mostra de Arte e Ciência';
+const EVENTO_ANTIGO_TITULO = 'Bienal do Recôncavo';
+const TEXTO_DE_SOBRE =
+  'Fundado em 1974, o instituto reúne ateliês, galerias e um programa público de formação.';
+const TEXTO_DE_CONTATO =
+  'Rua das Artes Visuais, 240 — Santo Amaro/BA';
 
 async function signUpVia(
   api: APIRequestContext,
@@ -417,6 +506,68 @@ async function signInAs(page: Page, endereco: string): Promise<void> {
  *  A linha de base mede a tela em REPOUSO; a verificação de e-mail tem prova própria
  *  na FASE 15.
  */
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A JANELA DE DATAS DA FIXTURA, DITA EM INSTANTES (FASE 64)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O `createEvent` do helper ancora tudo em "daqui a N dias", que é o certo para as
+ *  outras specs e o ERRADO aqui: a vitrine da instituição imprime o período do
+ *  evento, e "daqui a 30 dias" é uma data diferente a cada execução. `fixarJanela`
+ *  reescreve a janela depois que o evento existe (o evento continua nascendo pelo
+ *  helper, com todas as outras colunas dele), e `criarEventoComJanela` cria o evento
+ *  antigo que o helper não sabe montar.
+ *
+ *  Os dois passam pelo contexto de instituição, como todo dado de tenant.
+ */
+async function fixarJanela(input: {
+  tenantId: string;
+  eventId: string;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.event.update({
+      where: { id: input.eventId },
+      data: { startsAt: input.startsAt, endsAt: input.endsAt },
+    });
+  });
+}
+
+async function criarEventoComJanela(input: {
+  tenantId: string;
+  slug: string;
+  title: string;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.event.create({
+      data: {
+        id: randomUUID(),
+        tenantId: input.tenantId,
+        slug: input.slug,
+        title: input.title,
+        summary: null,
+        status: 'PUBLISHED',
+        modality: 'IN_PERSON',
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        timezone: 'America/Bahia',
+        city: 'Santo Amaro',
+        state: 'BA',
+        capacity: null,
+        confirmedCount: 0,
+        registrationOpensAt: new Date('1999-01-01T00:00:00.000Z'),
+        registrationClosesAt: new Date('2099-12-31T00:00:00.000Z'),
+      },
+    });
+  });
+}
+
 test.beforeAll(async ({ playwright, baseURL }) => {
   const api = await playwright.request.newContext({ baseURL });
 
@@ -426,6 +577,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
     const conta = await signUpVia(api, NOME_DA_CONTA);
     emailDaConta = conta.email;
+    idDaConta = conta.id;
 
     await linkUser({ tenantId: tenant.id, userId: conta.id });
     await grantRole({ tenantId: tenant.id, userId: conta.id, role: 'OWNER' });
@@ -447,10 +599,68 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     const event = await createEvent({
       tenantId: tenant.id,
       slug: `visual-${RUN_ID}`,
-      title: 'Mostra de Arte e Ciência',
+      title: EVENTO_FUTURO_TITULO,
       status: 'REGISTRATION_OPEN',
       capacity: 100,
     });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A JANELA DO EVENTO VIRA UM INSTANTE FIXO (FASE 64)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Sem isto a vitrine da instituição imprimiria "daqui a 30 dias" em número, e a
+     *  linha de base mudaria todo dia. O evento continua sendo o MESMO para o painel e
+     *  para o diretório de participantes — nenhum dos dois desenha esta data (o
+     *  `<select>` de evento mostra a opção SELECIONADA, que é "Todos os eventos", e a
+     *  opção fechada de um `<select>` não é pintada).
+     */
+    await fixarJanela({ tenantId: tenant.id, eventId: event.id, ...JANELA_FUTURA });
+
+    await criarEventoComJanela({
+      tenantId: tenant.id,
+      slug: `antigo-${RUN_ID}`,
+      title: EVENTO_ANTIGO_TITULO,
+      ...JANELA_ANTIGA,
+    });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A PÁGINA PÚBLICA DA INSTITUIÇÃO É PUBLICADA PELO SERVIÇO REAL (FASE 64)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `saveTenantPublicPageDraft` + `publishTenantPublicPage` são o caminho da fatia
+     *  1 (validação, trilha, rascunho × publicado). Inserir a linha com `e2eDb`
+     *  pularia a régua que o editor usa — e a imagem mediria uma página que o editor
+     *  nunca produziria (a mesma razão do E2E da fase).
+     *
+     *  Sem capa e sem logotipo de propósito: os dois viriam de upload com URL de
+     *  bucket, e a linha de base passaria a medir a origem do ambiente.
+     */
+    const rascunho = await saveTenantPublicPageDraft({
+      tenantId: tenant.id,
+      actorId: idDaConta,
+      title: TENANT_NAME,
+      description: 'A casa das artes visuais do Recôncavo, com agenda aberta o ano inteiro.',
+      blocks: [
+        {
+          type: 'ABOUT',
+          content: { title: 'Quem somos', foundedLabel: '1974', body: TEXTO_DE_SOBRE },
+        },
+        {
+          type: 'CONTACT',
+          content: {
+            title: 'Contato e localização',
+            address: TEXTO_DE_CONTATO,
+            email: 'secretaria@institutovisual.test',
+          },
+        },
+      ],
+    });
+
+    if (!rascunho.ok) throw new Error(`Falha ao gravar a página: ${rascunho.message}`);
+
+    const publicada = await publishTenantPublicPage({ tenantId: tenant.id, actorId: idDaConta });
+
+    if (!publicada.ok) throw new Error(`Falha ao publicar a página: ${publicada.message}`);
 
     await createActivity({
       tenantId: tenant.id,
@@ -899,5 +1109,90 @@ test.describe('rodapé público da plataforma', () => {
      * (`primary` sobre `primary-foreground`): a segunda linha de base da FASE 63.
      */
     await expect(page).toHaveScreenshot('rodape-publico-escuro.png', PAGINA_INTEIRA);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  A PÁGINA PÚBLICA DA INSTITUIÇÃO (FASE 64) — a vitrine da casa, nos dois modos
+//
+//  SUPERFÍCIE NOVA, E A MAIS EXPOSTA DO PRODUTO: `/t/<slug>` deixou de ser um
+//  redirect para o painel e virou a página que a instituição monta (capa, identidade,
+//  os três grupos de eventos e os blocos). Quem chega por link compartilhado não tem
+//  sessão, e é esta tela — e só ela — que a instituição tem para ser encontrada.
+//
+//  Nenhuma máscara, e o motivo está medido no cabeçalho do arquivo: o `RUN_ID` da
+//  execução só vive no SLUG, e o slug não é desenhado em pixel nenhum; as datas dos
+//  eventos da fixture são instantes FIXOS (`JANELA_FUTURA`/`JANELA_ANTIGA`), e por
+//  isso a imagem não muda de um dia para o outro. O grupo "Acontecendo agora" aparece
+//  VAZIO de propósito — ele exigiria uma janela contendo o AGORA, que é relativa por
+//  definição.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A vitrine da instituição, SEM SESSÃO (como o rodapé público acima).
+ *
+ * A espera afirma os fatos que a imagem precisa ter para valer como linha de base: a
+ * página é a PERSONALIZADA (e não o fallback da listagem de eventos, que aparece no
+ * mesmo endereço quando não há página publicada), o título é o publicado, os dois
+ * grupos com evento têm cartão e o modo pedido é o que está marcado no rodapé. Sem
+ * isso, uma imagem do fallback — ou do tema errado — viraria "padrão" sem ninguém
+ * perceber.
+ */
+async function abrirPaginaDaInstituicao(page: Page, tema: 'claro' | 'escuro'): Promise<void> {
+  await page.context().addCookies([{ name: 'ef_tema', value: tema, url: BASE }]);
+
+  await page.goto(`/t/${tenantSlug}`);
+
+  await expect(page.getByTestId('tenant-public-page')).toBeVisible();
+  await expect(page.getByTestId('tenant-events-fallback')).toHaveCount(0);
+  await expect(page.getByTestId('tenant-page-title')).toHaveText(TENANT_NAME);
+
+  /** O cartão de evento dos DOIS grupos que têm conteúdo — e o período, já escrito. */
+  await expect(
+    page.getByTestId('tenant-group-upcoming').getByTestId('tenant-event-card'),
+  ).toContainText(EVENTO_FUTURO_TITULO);
+  await expect(page.getByTestId('tenant-group-past').getByTestId('tenant-event-card')).toContainText(
+    EVENTO_ANTIGO_TITULO,
+  );
+
+  /** A prova de que quem entregou o modo foi o SERVIDOR (o cookie é lido na requisição). */
+  await expect(page.getByTestId(`theme-option-${tema}`)).toHaveAttribute('aria-pressed', 'true');
+
+  await estabilizar(page);
+}
+
+test.describe('página pública da instituição', () => {
+  test.use({ viewport: DESKTOP });
+
+  /**
+   * `fullPage` pelo mesmo motivo do rodapé público: a pergunta é sobre o DESENHO
+   * inteiro, com cada seção no lugar dela. Um recorte do cabeçalho mostraria a
+   * identidade bonita mesmo que os grupos tivessem estourado a largura de `main` ou
+   * que o rodapé da aparência tivesse sido empurrado para fora da imagem.
+   */
+  const PAGINA_INTEIRA = { ...TOLERANCIA, fullPage: true } as const;
+
+  test('15. a página da instituição no claro', async ({ page }) => {
+    await abrirPaginaDaInstituicao(page, 'claro');
+
+    await expect(page).toHaveScreenshot('pagina-da-instituicao-claro.png', PAGINA_INTEIRA);
+  });
+
+  test('16. a página da instituição no escuro', async ({ page }) => {
+    await abrirPaginaDaInstituicao(page, 'escuro');
+
+    /**
+     * O escuro é a SEGUNDA escala da mesma tela, e é o encontro que só existe aqui: a
+     * paleta da instituição (os `--ef-*` do escopo) sobre a escala escura da
+     * plataforma. Uma cor que ficasse no token claro, ou um papel que o escopo não
+     * publicasse, só aparece em pixel.
+     */
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+    await expect(page.locator('[data-tenant-theme-scope="page"]')).toHaveAttribute(
+      'data-theme-mode',
+      'dark',
+    );
+
+    await expect(page).toHaveScreenshot('pagina-da-instituicao-escuro.png', PAGINA_INTEIRA);
   });
 });

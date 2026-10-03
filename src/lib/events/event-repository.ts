@@ -42,6 +42,23 @@ export interface TenantContext {
   primaryColor: string | null;
   locale: string;
   timezone: string;
+  /**
+   * A apresentação do diretório (`Tenants.description`).
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ELE ENTROU NA PROJEÇÃO (FASE 64 · fatia 2)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A página pública da instituição usa esta coluna como a descrição de FALLBACK:
+   *  quando o organizador publica a página sem escrever uma descrição própria, o
+   *  visitante não vê um vazio — vê o que a própria instituição escreveu sobre si no
+   *  diretório. É o comportamento que a fatia 1 já documentou no read model
+   *  (`getPublicTenantPage` → `published.description ?? identity.description`), e sem
+   *  a coluna aqui o fallback seria código morto: a tela leria `null` para sempre.
+   *
+   *  Uma coluna a mais numa consulta por chave primária; nenhum consumidor anterior
+   *  muda de comportamento.
+   */
+  description: string | null;
 }
 
 /** Resolve o contexto da instituição pelo slug. */
@@ -58,6 +75,7 @@ export async function getTenantContext(
       primaryColor: true,
       locale: true,
       timezone: true,
+      description: true,
       status: true,
     },
   });
@@ -72,6 +90,7 @@ export async function getTenantContext(
     primaryColor: tenant.primaryColor,
     locale: tenant.locale,
     timezone: tenant.timezone,
+    description: tenant.description,
   };
 }
 

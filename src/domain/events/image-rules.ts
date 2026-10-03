@@ -43,7 +43,31 @@
 // ───────────────────────────────────────────────────────────────────────────────
 //  Finalidades
 // ───────────────────────────────────────────────────────────────────────────────
-export const ASSET_TARGETS = ['COVER', 'LOGO', 'SPONSOR_LOGO', 'GALLERY', 'SPEAKER_AVATAR'] as const;
+export const ASSET_TARGETS = [
+  'COVER',
+  'LOGO',
+  'SPONSOR_LOGO',
+  'GALLERY',
+  'SPEAKER_AVATAR',
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A CAPA E O LOGOTIPO DA PÁGINA DA INSTITUIÇÃO (FASE 64 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  São finalidades PRÓPRIAS, e não as do evento com outro nome. A chave do
+   *  objeto no bucket e a deduplicação do acervo usam a finalidade como parte da
+   *  identidade: com `COVER`, a mesma imagem usada na capa de um evento e na da
+   *  instituição seria gravada UMA vez só, e a segunda tela apontaria para o
+   *  objeto da primeira — apagar uma deixaria a outra quebrada.
+   *
+   *  Fora isso, elas são o MESMO caso de uso da capa e do logotipo do evento (uma
+   *  imagem larga que aparece no topo e uma marca pequena), e é por isso que
+   *  entram AQUI, no catálogo canônico, em vez de num catálogo paralelo: limites,
+   *  allowlist de tipo, assinatura real (magic bytes) e política de WebP são a
+   *  MESMA régua, e uma segunda tabela de limites divergiria no primeiro ajuste.
+   */
+  'TENANT_COVER',
+  'TENANT_LOGO',
+] as const;
 export type AssetTarget = (typeof ASSET_TARGETS)[number];
 
 /**
@@ -80,6 +104,10 @@ export const ASSET_TARGET_LABELS: Record<ImageTarget, string> = {
   // divergiria justamente na verificação de assinatura, que é a parte de segurança.
   SPEAKER_AVATAR: 'Foto do palestrante',
   USER_AVATAR: 'Sua foto',
+  /** FASE 64: a capa larga do topo da página da instituição. */
+  TENANT_COVER: 'Imagem de capa da instituição',
+  /** FASE 64: a marca quadrada ao lado do nome da instituição. */
+  TENANT_LOGO: 'Logotipo da instituição',
 };
 
 /**
@@ -104,6 +132,13 @@ export const MAX_IMAGE_BYTES: Record<ImageTarget, number> = {
   SPEAKER_AVATAR: 2 * 1024 * 1024,
   /** Foto da pessoa: mesmo raciocínio do palestrante — é retrato, e é visto pequeno. */
   USER_AVATAR: 2 * 1024 * 1024,
+  /**
+   * Capa da instituição: a faixa larga do topo, na largura de uma tela. O mesmo
+   * teto da capa do evento — é a mesma classe de imagem (o que sai de uma câmera).
+   */
+  TENANT_COVER: 5 * 1024 * 1024,
+  /** Logotipo da instituição: marca pequena, ao lado do nome — o teto do logotipo. */
+  TENANT_LOGO: 1 * 1024 * 1024,
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -146,6 +181,14 @@ export const WEBP_POLICY: Record<ImageTarget, WebpPolicy> = {
   USER_AVATAR: { mode: 'FOTOGRAFIA', maxLongestSide: 512 },
   LOGO: { mode: 'GRAFICO', maxLongestSide: null },
   SPONSOR_LOGO: { mode: 'GRAFICO', maxLongestSide: null },
+  /**
+   * FASE 64: a capa da instituição é uma FOTOGRAFIA (mesmo teto da capa do evento) e
+   * o logotipo é GRÁFICO (sem redimensionar) — a mesma régua, por finalidade
+   * equivalente. É esta tabela que `image-converter` lê para decidir perda calibrada
+   * × sem perda e o maior lado.
+   */
+  TENANT_COVER: { mode: 'FOTOGRAFIA', maxLongestSide: 1920 },
+  TENANT_LOGO: { mode: 'GRAFICO', maxLongestSide: null },
 };
 
 /** Qualidade da codificação com perda. 82 é o joelho da curva para foto. */

@@ -20,6 +20,7 @@ import {
   Mail,
   Medal,
   Mic,
+  Palette,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -330,6 +331,24 @@ export function buildTenantNav(input: {
           label: 'Equipe',
           icon: <Users className="size-4" aria-hidden />,
           permission: PERMISSIONS.TENANT_MEMBER_INVITE,
+        },
+        {
+          /**
+           * ─────────────────────────────────────────────────────────────────────────
+           *  A PÁGINA PÚBLICA DA INSTITUIÇÃO (FASE 64 · fatia 3)
+           * ─────────────────────────────────────────────────────────────────────────
+           *  A permissão é a MESMA da página do evento (`page:manage`), decidida pelo
+           *  mesmo predicado de instituição — menu e tela têm de concordar nos dois
+           *  sentidos (armadilha 44): esconder o link de quem pode abrir a tela é o
+           *  mesmo defeito do link que só redireciona, invertido.
+           *
+           *  Nenhuma permissão nova foi criada: montar a vitrine pública é UM ofício,
+           *  e `page:manage` já o nomeia desde a FASE 2.
+           */
+          href: href('/administracao/pagina'),
+          label: 'Página pública',
+          icon: <Palette className="size-4" aria-hidden />,
+          permission: PERMISSIONS.PAGE_MANAGE,
         },
         {
           // FASE 15: a caixa de saída mostra o que a plataforma enviou em nome da

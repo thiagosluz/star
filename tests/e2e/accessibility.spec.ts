@@ -48,6 +48,10 @@ import { randomUUID } from 'node:crypto';
 import { RUN_ID, cleanupRun, createEvent, createTenant, e2eDb, grantPlatformRole, grantRole, linkUser } from './helpers';
 import { createDemand } from '../../src/lib/events/demand-service';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
+import {
+  publishTenantPublicPage,
+  saveTenantPublicPageDraft,
+} from '../../src/lib/tenancy/tenant-public-page-write-service';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'acessibilidade';
@@ -245,6 +249,27 @@ async function expectNoCriticalViolations(page: Page, tela: string): Promise<{ i
    *  seu `<main>`; DOIS pega a casca voltando a ser landmark — o defeito original
    *  (achado H5), que não pode renascer em silêncio.
    *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A RÉGUA VOLTOU A SER ESTRITA, E O CONSERTO FOI NA CAUSA (FASE 64 · fatia 5)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Quando o editor da página da instituição passou a EMBUTIR a página pública
+   *  inteira como prévia, o caso novo reprovou aqui com `Received: 2` — o `<main>` do
+   *  editor e o da prévia. A primeira reação foi perguntar ao navegador se o elemento
+   *  produz caixa (`checkVisibility()`), porque o `<main>` da prévia estava com
+   *  `display: contents`. **Era um falso conserto**: `display: contents` tira a caixa,
+   *  mas o nó continua na árvore de acessibilidade como região `main` em parte dos
+   *  leitores de tela — a página seguia com dois "conteúdo principal".
+   *
+   *  A casa já tinha resolvido esse mesmo tipo de defeito pela CAUSA uma vez (foi
+   *  assim na fatia 2, quando a catraca reprovou e o `<main>` saiu do ramo do
+   *  fallback em vez de a catraca mudar). Aqui não foi diferente: a prévia passou a
+   *  pedir `landmark="none"` ao `TenantPublicPage` e desenha um `<div>` — ela não é o
+   *  conteúdo principal da tela do editor, é um pedaço do formulário.
+   *
+   *  Com isso a régua voltou a ser a ESTRITA: `page.locator('main')` e nada mais. Ela
+   *  continua pegando, nos dois sentidos, o que sempre pegou — e sem depender de
+   *  nenhuma propriedade de estilo.
+   *
    *  Vem ANTES do retorno antecipado de propósito: dentro do caminho de falha, a
    *  catraca só rodaria em tela já reprovada.
    */
@@ -320,6 +345,48 @@ async function signInAs(page: Page, email: string): Promise<void> {
   });
 
   if (!response.ok()) throw new Error(`Falha ao autenticar ${email}: HTTP ${response.status()}`);
+}
+
+/**
+ * Cria um evento com a JANELA de datas pedida (FASE 64).
+ *
+ * O `createEvent` do helper ancora tudo em "daqui a N dias" e serve à maioria das
+ * fixtures; aqui a JANELA é o que decide o grupo em que o evento aparece na página da
+ * instituição ("em breve", "acontecendo agora", "edições anteriores"), então ela
+ * precisa ser dita. O evento nasce pelo contexto de instituição, como todo dado de
+ * tenant.
+ */
+async function criarEventoComJanela(input: {
+  tenantId: string;
+  slug: string;
+  title: string;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.event.create({
+      data: {
+        id: randomUUID(),
+        tenantId: input.tenantId,
+        slug: input.slug,
+        title: input.title,
+        summary: 'Evento criado para a varredura de acessibilidade da FASE 64.',
+        status: 'PUBLISHED',
+        modality: 'IN_PERSON',
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        timezone: 'America/Bahia',
+        city: 'Salvador',
+        state: 'BA',
+        capacity: null,
+        confirmedCount: 0,
+        registrationOpensAt: new Date(Date.now() - 86_400_000),
+        registrationClosesAt: new Date(Date.now() + 30 * 86_400_000),
+      },
+    });
+  });
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -408,6 +475,90 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       category: 'SPAM',
       details: 'Denúncia criada pela varredura de acessibilidade para a fila ter conteúdo.',
     });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A PÁGINA PÚBLICA DA INSTITUIÇÃO ENTRA NO PORTÃO (FASE 64)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A FASE 64 deu à instituição uma página própria em `/t/<slug>` (capa, identidade,
+     *  os três grupos de eventos e blocos) e um editor em `/t/<slug>/administracao/pagina`.
+     *  Nenhuma das duas telas tinha varredura: a página é NOVA e o editor desenha a
+     *  página inteira outra vez, na prévia.
+     *
+     *  A fixture publica a página PELO SERVIÇO REAL (`saveTenantPublicPageDraft` +
+     *  `publishTenantPublicPage`): é o mesmo caminho da fatia 1, e é o que garante que
+     *  o portão mede o que o editor produz — e não uma linha montada à mão.
+     */
+    const pagina = await saveTenantPublicPageDraft({
+      tenantId: tenant.id,
+      actorId: admin.id,
+      title: `Instituição Acessível ${RUN_ID}`,
+      description: 'A casa dos cursos de graduação e pós-graduação, aberta ao público.',
+      coverImageUrl: null,
+      theme: { primaryColor: '#7b2ff7' },
+      blocks: [
+        {
+          type: 'ABOUT',
+          content: {
+            title: 'Nossa história',
+            foundedLabel: '1946',
+            body: 'Fundada em 1946, a casa reúne cursos de graduação e pós-graduação.',
+          },
+        },
+        { type: 'RICH_TEXT', content: { title: 'Como chegar', body: 'A portaria abre às 7h.' } },
+        { type: 'PAST_EVENTS', content: { title: 'Edições anteriores', limit: 3 } },
+        {
+          type: 'CONTACT',
+          content: {
+            title: 'Contato e localização',
+            address: 'Rua das Artes, 100 — Salvador/BA',
+            email: 'secretaria@acessivel.test',
+            phone: '(71) 3333-4444',
+          },
+        },
+        {
+          type: 'FAQ',
+          content: {
+            title: 'Perguntas frequentes',
+            items: [
+              { question: 'Preciso me inscrever?', answer: 'Sim, a inscrição é gratuita.' },
+            ],
+          },
+        },
+        {
+          type: 'CUSTOM_HTML',
+          content: { title: 'Aviso', html: '<p>Este HTML aparece como texto.</p>' },
+        },
+      ],
+    });
+
+    if (!pagina.ok) throw new Error(`Falha ao gravar a página: ${pagina.message}`);
+
+    const publicada = await publishTenantPublicPage({ tenantId: tenant.id, actorId: admin.id });
+
+    if (!publicada.ok) throw new Error(`Falha ao publicar a página: ${publicada.message}`);
+
+    /**
+     * Os três grupos precisam de evento em CADA um: um grupo vazio desenha uma frase
+     * e nenhum cartão, e a varredura mediria menos do que a tela mostra. As janelas
+     * são relativas ao agora porque é o INSTANTE que decide o grupo (o agrupador do
+     * domínio) — data fixa faria o cenário mentir no dia seguinte.
+     */
+    await criarEventoComJanela({
+      tenantId: tenant.id,
+      slug: `acessivel-em-curso-${RUN_ID}`,
+      title: 'Semana de portas abertas',
+      startsAt: new Date(hoje.getTime() - 86_400_000),
+      endsAt: new Date(hoje.getTime() + 86_400_000),
+    });
+
+    await criarEventoComJanela({
+      tenantId: tenant.id,
+      slug: `acessivel-antigo-${RUN_ID}`,
+      title: 'Mostra do ano passado',
+      startsAt: new Date(hoje.getTime() - 30 * 86_400_000),
+      endsAt: new Date(hoje.getTime() - 25 * 86_400_000),
+    });
   } finally {
     await api.dispose();
   }
@@ -459,6 +610,62 @@ test.describe('telas públicas', () => {
     await expect(page.locator('body')).toBeVisible();
 
     await expectNoCriticalViolations(page, 'diretório de instituições (/organizacoes)');
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A PÁGINA PÚBLICA DA INSTITUIÇÃO TAMBÉM PASSA PELO PORTÃO (FASE 64)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `/t/<slug>` deixou de ser um redirect para o painel e virou a VITRINE da casa:
+   *  capa, identidade, os três grupos de eventos e até seis tipos de bloco, todos
+   *  desenhados ali pela primeira vez. Nada disso tinha histórico de varredura, e é
+   *  a superfície mais exposta do produto — quem chega de um link compartilhado NÃO
+   *  tem sessão, e a página é a única chance de a instituição ser encontrada.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O CASO AFIRMA O CONTEÚDO ANTES DE VARRER
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O `axe` mede o que está no DOM, e "o grupo sumiu" não é violação de regra
+   *  nenhuma: uma página que perdesse os cartões, os blocos ou o controle de
+   *  aparência passaria IGUAL. As asserções abaixo prendem o conteúdo da fixture — os
+   *  três grupos com o evento certo em cada um, os blocos publicados e a peça da
+   *  FASE 63 no rodapé —, e só então a varredura mede a tela que existe.
+   */
+  test('a página pública da instituição não tem violação crítica', async ({ page }) => {
+    await page.goto(`/t/${tenantSlug}`);
+
+    await expect(page.getByTestId('tenant-public-page')).toBeVisible();
+    await expect(page.getByTestId('tenant-page-title')).toHaveText(
+      `Instituição Acessível ${RUN_ID}`,
+    );
+
+    /** Os TRÊS grupos, com um evento em cada — nenhum deles vazio. */
+    await expect(
+      page.getByTestId('tenant-group-upcoming').getByTestId('tenant-event-card'),
+    ).toHaveCount(1);
+    await expect(
+      page.getByTestId('tenant-group-ongoing').getByTestId('tenant-event-card'),
+    ).toHaveCount(1);
+    await expect(page.getByTestId('tenant-group-past').getByTestId('tenant-event-card')).toHaveCount(
+      1,
+    );
+
+    /** Os blocos: o `ABOUT` publicado, o histórico automático e o contato. */
+    await expect(page.getByText('Fundada em 1946, a casa reúne cursos')).toBeVisible();
+    await expect(page.locator('#edicoes-anteriores')).toContainText('Mostra do ano passado');
+    await expect(page.getByText('secretaria@acessivel.test')).toBeVisible();
+
+    /**
+     * O controle de aparência do VISITANTE vive no rodapé DESTA página (FASE 63/64) e
+     * fica FORA do escopo do tema da instituição — é ele que garante que a paleta da
+     * casa não mata o claro/escuro de quem lê.
+     */
+    const controle = page.locator('footer').getByTestId('theme-choice');
+
+    await expect(controle).toBeVisible();
+    await expect(controle.locator('[aria-pressed="true"]')).toHaveCount(1);
+
+    await expectNoCriticalViolations(page, `página pública da instituição (/t/${tenantSlug})`);
   });
 
   /**
@@ -665,6 +872,50 @@ test.describe('telas autenticadas', () => {
     await page.context().addCookies([
       { name: 'ef_tema', value: 'claro', url: baseURL ?? 'http://localhost:3000' },
     ]);
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O EDITOR DA PÁGINA DA INSTITUIÇÃO (FASE 64 · fatias 3 e 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A tela de administração é a outra metade da fase, e é a mais densa das duas: ela
+   *  traz formulários de identidade e de paleta, dois envios de imagem, a lista de
+   *  blocos com quatro ações cada, o guia dos tipos de bloco e — o que mais importa
+   *  aqui — a PRÉVIA DA PÁGINA INTEIRA, desenhada pelo MESMO componente do visitante.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A PRÉVIA DO EDITOR NÃO TRAZ UM SEGUNDO `<main>` (FASE 64 · fatia 5)
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O `TenantPublicPage` desenha o `<main>` dele — e deve desenhar: na página
+   *  pública ele É o conteúdo, e é exatamente um. Dentro do editor, a prévia o traria
+   *  como SEGUNDO landmark, e a tela ficaria com dois "conteúdo principal" para quem
+   *  navega por leitor de tela. O conserto é na CAUSA: a prévia pede
+   *  `landmark="none"` e desenha um `<div>` (ver o comentário longo em
+   *  `administracao/pagina/page.tsx`). O que a prévia MOSTRA não mudou: mesmos filhos,
+   *  mesmas classes, mesmo `data-testid`.
+   *
+   *  Por isso a régua do landmark continua a ESTRITA (`page.locator('main')`, um só),
+   *  sem depender de nenhuma propriedade de estilo: ZERO continua pegando a tela sem o
+   *  seu conteúdo, e DOIS continua pegando a casca voltando a ser landmark — o defeito
+   *  H5 da FASE 52.
+   *
+   *  O caso é o mesmo que a própria fase escreveu no spec do editor
+   *  (`f64-editor-da-pagina.spec.ts`, bloco (d)): um portão que não roda não é portão,
+   *  e aqui ele roda junto com os outros dezesseis.
+   */
+  test('o editor da página da instituição não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/administracao/pagina`);
+
+    await expect(page.getByTestId('tenant-page-status')).toBeVisible();
+    await expect(page.getByTestId('tenant-block-editor')).toBeVisible();
+    await expect(page.getByTestId('tenant-page-preview-banner')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `editor da página da instituição (/t/${tenantSlug}/administracao/pagina)`,
+    );
   });
 
   test('o diretório de participantes não tem violação crítica', async ({ page }) => {

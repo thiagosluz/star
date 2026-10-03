@@ -169,6 +169,14 @@ export const TENANT_SCOPED_TABLES = [
    * alguém apagar.
    */
   'data_exports',
+  /**
+   * FASE 64 — a página pública da instituição. É a vitrine da casa, com o
+   * rascunho e a versão publicada na MESMA linha. Entra aqui como qualquer outra
+   * tabela de tenant: a página de uma instituição não pode ser lida — nem
+   * publicada — a partir do contexto de outra, e é a RLS que garante isso mesmo se
+   * uma consulta esquecer o filtro (o slug da URL é entrada de visitante anônimo).
+   */
+  'tenant_public_pages',
 ];
 
 /**

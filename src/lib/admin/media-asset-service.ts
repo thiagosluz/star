@@ -47,7 +47,13 @@ export type MediaResult<T> =
 // ───────────────────────────────────────────────────────────────────────────────
 export interface RegisterAssetInput {
   tenantId: string;
-  eventId: string;
+  /**
+   * Evento de origem. `null` é o ACERVO DA INSTITUIÇÃO — o caso previsto na coluna
+   * desde a FASE 24 e usado de verdade pela capa/logotipo da página da instituição
+   * (FASE 64). O comentário vive aqui, e não só no modelo, porque é esta assinatura
+   * que diz quem pode passar `null`.
+   */
+  eventId: string | null;
   actorId: string;
   target: AssetTarget;
   bucket: string;

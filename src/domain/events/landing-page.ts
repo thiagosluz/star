@@ -307,6 +307,22 @@ export interface PageBlock {
 }
 
 /**
+ * O mínimo que um bloco precisa ter para ser ordenado e filtrado.
+ *
+ * Existe para a MESMA função servir à página do evento e à da instituição
+ * (FASE 64): as duas ordenam e descartam bloco invisível/desconhecido, e a segunda
+ * tem tipos que a primeira não conhece. Duas implementações dessa ordenação fariam
+ * o editor numerar uma ordem e a página desenhar outra — que é o defeito que
+ * `orderBlockIds` existe para impedir.
+ */
+export interface RenderableBlock {
+  id: string;
+  type: string;
+  displayOrder: number;
+  isVisible: boolean;
+}
+
+/**
  * Ordena e filtra blocos para renderização.
  *
  * Regras:
@@ -315,9 +331,16 @@ export interface PageBlock {
  *     de layout entre renders quando dois blocos têm a mesma ordem);
  *   • blocos de tipo desconhecido são descartados em vez de quebrar a página —
  *     permite adicionar tipos novos sem medo de quebrar eventos antigos.
+ *
+ * `allowedTypes` é o conjunto de tipos que ESTA página desenha: por padrão, o do
+ * evento. A página da instituição passa o dela e ganha a mesma ordenação, sem uma
+ * segunda régua (ver `selectRenderableTenantBlocks`).
  */
-export function selectRenderableBlocks(blocks: readonly PageBlock[]): PageBlock[] {
-  const KNOWN = new Set<string>(PAGE_BLOCK_TYPES);
+export function selectRenderableBlocks<TBlock extends RenderableBlock>(
+  blocks: readonly TBlock[],
+  allowedTypes: readonly TBlock['type'][] = PAGE_BLOCK_TYPES,
+): TBlock[] {
+  const KNOWN = new Set<string>(allowedTypes);
 
   return [...blocks]
     .filter((block) => block.isVisible && KNOWN.has(block.type))

@@ -287,6 +287,20 @@ const TELAS_PUBLICAS: Tela[] = [
     caminho: () => `/t/${tenantSlug}/eventos/${EVENT_SLUG}`,
     ancora: (page) => page.getByRole('heading', { level: 1, name: EVENT_TITLE }),
   },
+  {
+    /**
+     * A RAIZ DA INSTITUIÇÃO (FASE 64).
+     *
+     * Até a FASE 63 este endereço era um `redirect` para o painel: nenhuma tela, nenhum
+     * landmark. Ele passou a ser a página personalizada da instituição — e, quando ela
+     * nunca foi publicada, a listagem de eventos (o fallback). A fixture desta spec não
+     * publica página, então o que este cenário mede é o FALLBACK: ele também tem de
+     * herdar um `<main>` de um componente, e não ganhar um segundo na página.
+     */
+    nome: 'raiz da instituição (a página personalizada ou a listagem)',
+    caminho: () => `/t/${tenantSlug}`,
+    ancora: (page) => page.getByTestId('tenant-events-fallback'),
+  },
 ];
 
 /**

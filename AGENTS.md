@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 63** (**F56 a F63 entregues**)
-Testes ................. 2984 (Vitest: unit + integração) + 299 (Playwright E2E)
-ADRs ................... 330 (numeração GLOBAL e sequencial — a próxima é ADR-331)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 64** (**F56 a F64 entregues**)
+Testes ................. 3105 (Vitest: unit + integração) + 317 (Playwright E2E)
+ADRs ................... 333 (numeração GLOBAL e sequencial — a próxima é ADR-334)
 Permissões ............. 66 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 58 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 59 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
@@ -99,7 +99,7 @@ documentação, capacidades e contagens.
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 2734+ testes passando
+npm test              # esperado: 3105+ testes passando
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -114,7 +114,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 212+ testes passando
+npm run test:e2e      # esperado: 317+ testes passando
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -736,7 +736,7 @@ tests/{unit,integration,e2e}
 | 41 | **Vitrine do patrocínio** (a cota define **cor** e **tamanho da logo** na página pública — Pequena · Média · Grande · Destaque —, com **prévia do cartão** no cadastro e amostras de cor como atalho; a página desenha uma faixa por cota com **cartões tingidos**; a coluna de cor existia desde a FASE 17 e **não tinha leitor**); não declarou dívida) — escopo definido pelo humano | ✅ |
 | 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe **autorizar** ou não, com o MESMO crédito (LGPD art. 8º §3º); lead de **nome e e-mail** com prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
 | 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP, chave no ALVO contra farm), **certificado emitido** (50 XP), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada**; achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
-| 44 | **Perfil público do participante** (`/u/<handle>` com **quinze campos** de visibilidade em três níveis — internet · quem participa desta instituição · só eu —, pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa**: o `user` é global e a RLS não o protege; `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; a trilha guarda a decisão, não a bio; quitou a **E35** e achou 4 defeitos reais, entre eles a **posição relativa invertida**; declarou **E60/E61/E62**) | ✅ |
+| 44 | **Perfil público do participante** — `/u/<handle>` com **quinze campos** em três níveis (internet · quem participa da instituição · só eu), pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa** (o `user` é global: a RLS não o protege); `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; quitou a **E35**; declarou **E60/E61/E62**) — detalhe no documento da fase | ✅ |
 | 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e quem está em duas equipes aparece uma vez com as duas; **líder primeiro**; **nome e equipe são do evento, foto e contato são da pessoa** — … | ✅ |
 | 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada, **logotipo sem perda**, metadados descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é … | ✅ |
 | 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), … | ✅ |
@@ -754,15 +754,16 @@ tests/{unit,integration,e2e}
 | 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (permissão do pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie lido no servidor**, botão que funciona sem JavaScript e a trilha de ícones com nome acessível. ADR-319/320 | ✅ |
 | 60 | **O que se oculta fica oculto · todo tela tem landmark · a suíte E2E para de mentir** — **E79**: a ocultação de perfil passou a valer em toda superfície que cita a pessoa (bloco Equipe do evento, link selado da carta **e** o vazamento achado na auditoria: o **sorteio público** publicava o nome inteiro), por **fonte única** no domínio; **I2**: as 14 telas sem `<main>` ganharam o seu (a lista da F52 dizia 16 — 2 eram herança/redirect), com catraca provada por mutação; **I3**: a spec que "poluía" era ela mesma (casos lendo o dado do caso 1), corrigida na raiz; **I1**: os 5 `fixme` fecharam. ADR-321/322 | ✅ |
 | 61 | **Modo noturno (dívida H3)** — a escala escura redefinindo **só a camada de tokens** (nenhum componente aprendeu o que é "modo"), com **três estados** de escolha (**Claro · Escuro · Sistema**), a preferência do sistema valendo sem cookie e sem JavaScript, a escolha explícita de Claro **vencendo o sistema operacional escuro**, o estado no `<html>` da **primeira resposta** (sem piscar) e o controle no menu de conta e em `/conta`. Contraste **medido nos dois modos** (35 pares no claro, 42 no escuro) e o painel **em modo escuro entrando no portão WCAG AA** — no caminho, **6 pares do modo claro reprovavam o AA desde antes** (3 tokens corrigidos) e a página do organizador deixou de herdar o modo da plataforma. Telão e impressos ficaram de fora por desenho. ADR-323/324/325 | ✅ |
-| 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido** — o padrão 0,2 era cego à troca de token do escuro); **I3**: a espera do `Alt+↑` passou a **repetir o gesto** até a ordem mudar no banco, `workers: 1` mantido **com número** (o 2 foi 8,9% melhor no relógio e 70% pior por cenário) e `npm run e2e:clean` (dry run, preservação nominal da demonstração e do seed); **E80**: o ranking mascara quem foi ocultado **sem tirar a posição** (ADR-328); **E81**: elevação do escuro por **TOM** (ADR-329). **A catraca nova achou um defeito grave**: a gaveta de navegação do celular estava presa dentro do cabeçalho (64 px — `backdrop-filter` cria containing block para `position: fixed`) e passou por F52/F58/F59/F61 porque nenhuma dessas fases **media a TELA**; corrigida por portal + `min-h-0`, com asserção de geometria. ADR-326/327 | ✅ |
-| 63 | **A aparência do visitante** — o visitante **anônimo** passou a escolher a aparência, numa linha do **rodapé** das páginas públicas da plataforma (`/`, `/organizacoes`, `/validar/<código>`, `/validar/lote`): **um componente só** (variante `public` do controle que já existia), funcionando **sem JavaScript**, gravando no **mesmo cookie** `ef_tema` — a escolha **sobrevive ao login**, sem duas verdades (ADR-330). A **página do evento ficou de fora** (o tema é do organizador, ADR-325) e um teste prende isso. A fase **mediu** que a mudança chega **na mesma resposta** e fez a **ablação** que mostrou que quem a carrega é o cookie lido pelo layout raiz, não o `revalidatePath` (a linha fica, documentada). No caminho, o **portão WCAG AA** ganhou a página pública (13 → **15 casos**, `ISENCOES` continua `[]`) e o rótulo do grupo teve o contraste **preso por catraca** nos dois modos. Declarou **E84** | ✅ |
+| 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido** — o padrão 0,2 era cego ao escuro); **I3**: espera que repete o gesto, `workers: 1` **com número** e `npm run e2e:clean`; **E80** e **E81**. A catraca nova achou um defeito grave: a gaveta do celular presa em 64 px (`backdrop-filter`) … | ✅ |
+| 63 | **A aparência do visitante** — o visitante **anônimo** escolhe a aparência no **rodapé** das páginas públicas da plataforma (`/`, `/organizacoes`, `/validar/<código>`, `/validar/lote`): **um componente só**, funcionando **sem JavaScript**, no **mesmo cookie** `ef_tema` (a escolha **sobrevive ao login**). A **página do evento ficou de fora** e um teste prende isso; o **portão WCAG AA** foi de 13 → **15 casos** e o rótulo do grupo teve o contraste **preso por catraca**. ADR-330. Declarou **E84** … | ✅ |
+| 64 | **A página pública da instituição** — `/t/<slug>` deixou de ser um `redirect` para o painel e virou a **vitrine da casa** (capa, identidade, os **três grupos por DATA** — em breve · acontecendo agora · edições anteriores — lidos na renderização, e blocos montados no editor); sem página publicada o endereço continua servindo a **listagem de eventos**. Rascunho × publicado é SNAPSHOT na mesma linha (`tenant_public_pages`, RLS + FORCE), e a **E84 fica quitada para esta página** (o modo é do visitante) — aberta para a do evento. A **catraca visual nova achou um defeito real** (o cartão desenhava o calendário com o texto VAZIO) e a medição da paleta achou outro: os `--ef-*` eram publicados e **não pintavam** — o escopo passou a publicar os apelidos de identidade, com o texto ajustado ao modo. ADR-331/332/333 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
 **Dívidas técnicas:** o levantamento consolidado (**40 itens abertos**; A=3, B=4, C=1, D=3, E=23, F=5, H=1, I=0) está em **`docs/dividas-tecnicas.md`**.
-Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**) e **F62** (**H6, I3, E80, E81**).
-Seguem abertas: **E76, E77, E78, E82, E83, E84**.
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**) e **F64** (**E84 quitada para a PÁGINA DA INSTITUIÇÃO** — o claro/escuro é do visitante; **segue aberta para a página do EVENTO**, onde o modo é do organizador).
+Seguem abertas: **E76, E77, E78, E82, E83** e **E84 (só para a página do evento)**.
 
 ---
 
@@ -770,7 +771,7 @@ Seguem abertas: **E76, E77, E78, E82, E83, E84**.
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-63-aparencia-do-visitante.md`; antes, F62 e F61; a comunicação é
+   fase entregue** (`docs/fase-64-pagina-da-instituicao.md`; antes, F63 e F62; a comunicação é
    `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

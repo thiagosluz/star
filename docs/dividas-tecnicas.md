@@ -173,7 +173,31 @@
 > E63, E66, E70 e E73 —, e declarou **E77** (o logo da instituição não entra na etiqueta) e
 > **I1** (os cenários E2E escritos sem execução). O total **59 → 49**.
 >
-> **FASE 62 (a tela medida · a suíte honesta · dois fechamentos):** quitou **H6** (regressão visual com
+> **FASE 64 (a página pública da instituição):** quitou **E84 PARA A PÁGINA DA INSTITUIÇÃO** — a
+> dívida que a FASE 63 declarou (e que nunca chegou a abrir linha na tabela): lá o claro/escuro do
+> visitante **vence** a paleta da casa, porque a página vive dentro do casco da plataforma e o
+> controle de aparência fica logo abaixo (ADR-332). **A dívida CONTINUA ABERTA para a página do
+> EVENTO**, onde quem manda no modo é o organizador (ADR-325) — por isso a linha entra na tabela
+> como PARCIAL. Nada mais é quitado nem declarado com número: o defeito grave que a fase achou (o
+> cartão de evento desenhava o ícone do calendário com o texto VAZIO, porque o domínio carimbava
+> `periodLabel` só em `items` e a tela desenha `events`) foi **consertado na hora**, e quem o pegou
+> foi a **catraca de regressão visual** nova — nenhum teste de unidade, nenhuma varredura de
+> acessibilidade e nenhum E2E o pegava. **Contagem:** entra UM item (a linha da E84), e o total
+> medido linha por linha passa de **47 → 48**; os totais por tema da §3 seguem com a defasagem já
+> registrada na correção da FASE 51.
+>
+> **RESOLVIDO NA PRÓPRIA FASE 64 (fatia 5): a paleta da instituição não pintava — e passou a
+> pintar.** Medido com `theme.primaryColor = '#7b2ff7'` publicado no escopo, a cor computada do
+> "Ver evento" (`text-brand`) era `rgb(53, 37, 205)` = `#3525cd` no claro e `rgb(165, 180, 252)`
+> = `#a5b4fc` no escuro — os valores da RAIZ, porque o `globals.css` declara os apelidos semânticos
+> na raiz e o CSS substitui `var()` no elemento onde a declaração é feita. O conserto ficou no
+> DOMÍNIO (`buildTenantThemeScope` passou a publicar os apelidos de IDENTIDADE que a página lê, com
+> o papel de TEXTO ajustado ao modo até 5:1) e **não** tocou no `globals.css`. Depois: `#7b2ff7` no
+> claro e `#9c63f9` no escuro (4,69:1 na superfície real da plataforma), com o fundo da página
+> intacto nos dois modos e o portão WCAG AA 17/17 sem isenção — a medição de antes e depois está em
+> `docs/fase-64-pagina-da-instituicao.md` §8.2. **Não é item deste levantamento** (nasceu e morreu
+> dentro da fase) e por isso não entra na contagem.
+>> **FASE 62 (a tela medida · a suíte honesta · dois fechamentos):** quitou **H6** (regressão visual com
 > `toHaveScreenshot`: 12 snapshots, `maxDiffPixelRatio: 0` e `threshold` 0,04 **medido** — o padrão 0,2
 > era cego à troca de token do escuro), **I3** (a espera do `Alt+↑` passou a repetir o GESTO até a ordem
 > mudar no banco; `workers: 1` mantido **com número**; `npm run e2e:clean` com dry run e preservação
@@ -329,6 +353,7 @@
 | ~~E81~~ (QUITADA na FASE 62) | **A elevação por sombra não existe no modo escuro** | FASE 61 (novo, ADR-324) | Resolvida por **TOM** (ADR-329): novo `--ef-surface-popover` (`#2f323c`, acima do cartão `#23252d`), `--ef-surface-container` deixou de empatar com o cartão e a sombra virou reforço do que flutua. O `--ef-outline-variant` do escuro subiu para `#7a7f8d` por medição (a hairline media 2,64:1 sobre o flutuante mais claro) | — | — | Sim |
 | E82 | **O ranking de REVISORES cita quem foi ocultado** | FASE 62 (novo, ADR-328) | `getReviewerRanking` (`src/lib/gamification/achievement-service.ts:232`) usa `reviewer.name` sem a fonte única (`isPersonPubliclyVisible`), consumido pelo painel de Reconhecimento. A régua interna agora existe (mascarar sem tirar a posição) | Aplicar a fonte única ali; o painel de premiação também nomeia quem RECEBEU a carta, então a decisão é de produto e pede fixture de pareceres própria | M | Sim |
 | E83 | **A espera por GESTO em outros cenários** | FASE 62 (novo, ADR-327) | `certificate-template.spec.ts:433-446` aperta a tecla uma vez e repete só a ASSERÇÃO (a mesma forma latente do `Alt+↑` corrigido em `demand-board`), e `f51-credential-badge.spec.ts:463` flocou 1× sob carga com mecanismo próprio (clique tardio do laço do select) | Medir antes/depois como na I3 e aplicar o mesmo `teclarAte`/repetição — declarado em vez de "consertado no escuro" | S | Sim |
+| E84 (PARCIAL: quitada para a PÁGINA DA INSTITUIÇÃO na FASE 64; ABERTA para a página do EVENTO) | **O claro/escuro do visitante não vence a paleta do organizador** | FASE 63 (novo, ADR-330) | Na página do **EVENTO** quem manda no modo é o organizador (ADR-325): quem escolheu "escuro" no rodapé recebe a página clara que o organizador desenhou, sem aviso. Na página da **INSTITUIÇÃO** o problema foi resolvido na FASE 64 (ADR-332) — o modo vem do cookie `ef_tema` e a paleta da casa é identidade, não iluminação. O que falta é a página do evento, e ali a decisão é de produto (a landing é um cartaz) | O visitante que pediu escuro vê claro numa página pública | M | Sim |
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
 | F2 | **Trocas e crafting de duplicatas** | F5 | `UserCard.quantity` acumula; não há conversão nem troca | Duplicata sem valor percebido | G | Decorrente |
