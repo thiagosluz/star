@@ -29,6 +29,9 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+# Saída do Playwright fora da árvore de testes (`--output=…`): relatórios, traces e
+# capturas de falha são RESÍDUO, e um dia a pasta já foi commitada por engano.
+.tmp-e2e/
 
 # ─── Editor / SO ──────────────────────────────────────────────────────────────
 .vscode/*

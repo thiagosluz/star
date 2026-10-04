@@ -2,6 +2,7 @@ import Link from 'next/link';
 import {
   ArrowRight,
   CalendarDays,
+  CheckCircle2,
   Clock,
   Link2,
   Mail,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { formatDuration } from '@/domain/events/event-rules';
+import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
 import { activityTypeLabel } from '@/domain/events/activity-rules';
 import {
   BLOCK_LABELS,
@@ -37,6 +39,19 @@ import { hasPublicContacts, PUBLIC_CONTACT_LABELS, PUBLIC_CONTACT_NETWORKS } fro
 import { teamInitials } from '@/domain/events/team-rules';
 import { Section, SectionHeading } from '@/components/events/theme-scope';
 import { SpeakerGallery } from '@/components/events/speaker-gallery';
+import { AgendaMarks } from '@/components/events/agenda-marks';
+import { AgendaClashNotice } from '@/components/events/agenda-clash-notice';
+import { FavoriteButton } from '@/components/events/favorite-button';
+import { ActivityExportLinks } from '@/components/events/activity-export-links';
+import { HappeningNowBanner } from '@/components/events/happening-now';
+import { activityIcsUrl } from '@/lib/events/agenda-export';
+import { EMPTY_HAPPENING_NOW, type HappeningNowView } from '@/domain/agenda/now-rules';
+import {
+  clashesWithAgenda,
+  EMPTY_AGENDA_VIEW,
+  type AgendaViewerItem,
+  type EventAgendaView,
+} from '@/lib/events/agenda-view';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -96,11 +111,27 @@ function RichTextBlock({ content }: { content: unknown }) {
 function ActivitiesBlock({
   activities,
   tenantSlug,
+  eventId,
   eventSlug,
+  timezone,
+  agenda,
+  justMarkedActivityId,
+  now,
 }: {
   activities: PublicActivitySummary[];
   tenantSlug: string;
+  eventId: string;
   eventSlug: string;
+  /** Fuso do EVENTO — a régua de todo horário escrito para o participante. */
+  timezone: string;
+  agenda: EventAgendaView;
+  /** A atividade que a Server Action acabou de marcar (volta pela URL). */
+  justMarkedActivityId: string | null;
+  /**
+   * A visão do "acontecendo agora" (FASE 65 · fatia 4) — decidida no SERVIDOR, como o
+   * resto da página. Vazia quando não há nada em curso: aí a faixa não aparece.
+   */
+  now: HappeningNowView;
 }) {
   if (activities.length === 0) return null;
 
@@ -112,13 +143,53 @@ function ActivitiesBlock({
         description="Inscreva-se nas atividades de seu interesse. As vagas são limitadas."
       />
 
+      {/**
+        * ── A FAIXA DO "ACONTECENDO AGORA" (FASE 65 · fatia 4) ───────────────────
+        *
+        *  Ela fica no TOPO da programação — onde quem chega ao evento olha primeiro —
+        *  e leva para a aba, que tem o detalhe por sala. Quando não há nada em curso,
+        *  o componente devolve `null`: a programação não ganha um bloco dizendo
+        *  "nenhuma atividade em curso", porque isso ocuparia o lugar mais nobre da
+        *  tela com uma negativa.
+        */}
+      <HappeningNowBanner view={now} tenantSlug={tenantSlug} eventSlug={eventSlug} />
+
+      {/**
+        * ── A PORTA PARA A GRADE DA PESSOA (FASE 65 · fatia 2) ─────────────────────
+        *
+        *  Quem está logado vê a programação COM os botões de marcar e precisa de um
+        *  caminho de volta para a própria grade — e ele leva o evento junto, porque a
+        *  agenda é POR EVENTO (`?evento=<id>`), como o crachá.
+        *
+        *  O aviso de que favoritar não reserva vaga fica AQUI, onde a decisão acontece:
+        *  é a diferença entre as duas marcas (intenção × lugar) que a tela inteira
+        *  sustenta, e dizê-la só na outra tela seria dizê-la depois da escolha.
+        */}
+      {agenda.authenticated ? (
+        <p className="mb-4 -mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs opacity-70">
+          <Link
+            href={`${tenantPath(tenantSlug, '/minha-agenda')}?evento=${eventId}`}
+            className="underline underline-offset-4"
+            data-testid="minha-agenda-link"
+          >
+            Ver a minha agenda deste evento
+          </Link>
+          <span aria-hidden>·</span>
+          <span>Marcar não reserva vaga: quem garante lugar é a inscrição.</span>
+        </p>
+      ) : null}
+
       <ul className="space-y-3">
         {activities.map((activity) => (
           <ActivityCard
             key={activity.id}
             activity={activity}
             tenantSlug={tenantSlug}
+            eventId={eventId}
             eventSlug={eventSlug}
+            timezone={timezone}
+            agenda={agenda}
+            justMarked={justMarkedActivityId === activity.id}
           />
         ))}
       </ul>
@@ -129,18 +200,59 @@ function ActivitiesBlock({
 export function ActivityCard({
   activity,
   tenantSlug,
+  eventId = '',
   eventSlug,
+  timezone = 'UTC',
+  agenda = EMPTY_AGENDA_VIEW,
+  justMarked = false,
 }: {
   activity: PublicActivitySummary;
   tenantSlug: string;
+  eventId?: string;
   eventSlug: string;
+  /**
+   * Fuso do EVENTO (IANA) — o fuso em que o horário da atividade é LIDO.
+   *
+   * O default `'UTC'` existe para não quebrar consumidor antigo, e não como escolha:
+   * quem renderiza um cartão tem o evento em mãos e passa o fuso dele. Ver o comentário
+   * do horário, abaixo, para o defeito que este parâmetro corrige.
+   */
+  timezone?: string;
+  /** A grade de quem está olhando — sem sessão, à visão vazia. */
+  agenda?: EventAgendaView;
+  /** Esta é a atividade que acabou de ser marcada/desmarcada? */
+  justMarked?: boolean;
 }) {
   const isFull = activity.remainingSeats === 0;
   const closed =
     activity.status === 'CANCELED' || activity.status === 'COMPLETED';
 
+  /** O que esta pessoa já tem nesta atividade (nada, favorito, inscrição ou os dois). */
+  const minha: AgendaViewerItem | undefined = agenda.items.find(
+    (item) => item.activityId === activity.id,
+  );
+
+  /**
+   * ── O AVISO DE CHOQUE, NA HORA DA ESCOLHA (FASE 65 · fatia 2) ────────────────
+   *
+   *  Ele é calculado contra a MINHA grade — favoritos ∪ inscrições vivas — pela régua
+   *  do domínio (`clashesWithAgenda`), e aparece ANTES do clique: quem está prestes a
+   *  marcar vê com o que a atividade disputa o horário e decide. Depois de marcar, o
+   *  aviso CONTINUA ali (o fato não deixou de ser verdade) — e é isso que mostra, na
+   *  mesma tela, que o sistema avisou e gravou mesmo assim.
+   */
+  const choques = clashesWithAgenda(
+    {
+      activityId: activity.id,
+      startsAt: activity.startsAt,
+      endsAt: activity.endsAt,
+      status: activity.status,
+    },
+    agenda.items,
+  );
+
   return (
-    <li className="ef-card p-5">
+    <li className="ef-card p-5" id={`atividade-${activity.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -158,6 +270,18 @@ export function ActivityCard({
             ) : isFull ? (
               <span className="ef-badge">Lotada</span>
             ) : null}
+
+            {/**
+              * A MARCA VISUAL DISTINTA (FASE 65 · fatia 2): o que já está na agenda da
+              * pessoa se anuncia no cartão — "Inscrito", "Favorito" ou os dois, cada um
+              * com o seu ícone e o seu texto.
+              */}
+            <AgendaMarks
+              registered={minha?.registered ?? false}
+              favorited={minha?.favorited ?? false}
+              variant="tema"
+              testId={`marcas-${activity.id}`}
+            />
           </div>
 
           <h3 className="text-base font-semibold">{activity.title}</h3>
@@ -169,13 +293,22 @@ export function ActivityCard({
           <dl className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs opacity-70">
             <div className="flex items-center gap-1.5">
               <CalendarDays className="size-3.5 shrink-0" aria-hidden />
-              <dd>
-                {new Intl.DateTimeFormat('pt-BR', {
-                  day: '2-digit',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }).format(activity.startsAt)}
+              <dd data-testid={`atividade-horario-${activity.id}`}>
+                {/**
+                  * ── O HORÁRIO SAI NO FUSO DO EVENTO (FASE 65 · item C) ──────────────
+                  *
+                  *  Aqui havia um `new Intl.DateTimeFormat('pt-BR', {...}).format(...)`
+                  *  SEM `timeZone`. O container roda em UTC (`TZ=UTC`), e o efeito era
+                  *  visível e grave: o rodapé da página promete "Horários em
+                  *  America/Bahia" e o cartão mostrava UTC — uma atividade das 10:00 em
+                  *  Salvador aparecia como 13:00. É o horário que diz à pessoa quando
+                  *  ela tem de estar na sala, e ele estava três horas errado.
+                  *
+                  *  A régua agora é a MESMA do resto do sistema (`formatZonedDateTime`,
+                  *  a função da FASE 24 que a grade da fatia 1 e a visão do "agora" já
+                  *  usam): uma régua só para "que horas são no evento".
+                  */}
+                {formatZonedDateTime(activity.startsAt, timezone)}
               </dd>
             </div>
             <div className="flex items-center gap-1.5">
@@ -203,11 +336,60 @@ export function ActivityCard({
               </dd>
             </div>
           </dl>
+
+          {/**
+            * ── EXPORTAR PARA O CALENDÁRIO (FASE 65 · fatia 3) ─────────────────────
+            *
+            *  Os dois links existem para TODO visitante, inclusive o anônimo: o arquivo
+            *  de UMA atividade é o mesmo para qualquer pessoa (leva título, horário,
+            *  sala e descrição — nada de ninguém), e é justamente quem ainda não tem
+            *  conta que mais precisa do lembrete na agenda. Quem não pode ver o cartão
+            *  também não chega aqui: a programação só mostra evento e atividade
+            *  públicos, e a rota reconfere as duas coisas.
+            */}
+          <ActivityExportLinks
+            activityId={activity.id}
+            title={activity.title}
+            startsAt={activity.startsAt}
+            endsAt={activity.endsAt}
+            timezone={timezone}
+            location={activity.roomName}
+            description={activity.description}
+            icsHref={activityIcsUrl({ tenantSlug, activityId: activity.id })}
+            variant="tema"
+          />
+
+          {choques.length > 0 ? (
+            <AgendaClashNotice
+              targets={choques}
+              variant="tema"
+              testId={`choque-${activity.id}`}
+              hint="Você escolhe qual assistir — marcar as duas é permitido."
+            />
+          ) : null}
+
+          {justMarked ? (
+            <p
+              className="flex items-center gap-1.5 text-xs font-medium"
+              data-testid={`agenda-confirmacao-${activity.id}`}
+            >
+              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
+              {minha?.favorited
+                ? 'Adicionada à sua agenda.'
+                : 'Removida da sua agenda.'}
+            </p>
+          ) : null}
         </div>
 
-        <div className="shrink-0">
+        <div className="flex shrink-0 flex-col items-end gap-2">
           {closed ? (
-            <span className="ef-button-outline pointer-events-none opacity-50">
+            /**
+             * `ef-muted-on-card` no lugar de `opacity-50` (FASE 66): a composição
+             * media **3,10:1** sobre o cartão do evento no tema padrão claro. O
+             * convite continua parecendo indisponível (`pointer-events-none` e a
+             * borda do botão de contorno), mas em texto que se lê.
+             */
+            <span className="ef-button-outline ef-muted-on-card pointer-events-none">
               Indisponível
             </span>
           ) : (
@@ -221,11 +403,33 @@ export function ActivityCard({
               {isFull && activity.waitlistEnabled ? 'Entrar na espera' : 'Inscrever-se'}
             </Link>
           )}
+
+          {/**
+            * O BOTÃO DE MARCAR SÓ EXISTE PARA QUEM TEM AGENDA — isto é, para quem tem
+            * sessão. Para o visitante anônimo não há "minha agenda" nenhuma, e o
+            * caminho é o login (que preserva esta página como destino).
+            *
+            * Em atividade CANCELADA ele também não aparece: marcar o que não vai
+            * acontecer só criaria um item morto na grade.
+            */}
+          {agenda.authenticated && activity.status !== 'CANCELED' ? (
+            <FavoriteButton
+              tenantSlug={tenantSlug}
+              eventId={eventId}
+              eventSlug={eventSlug}
+              activityId={activity.id}
+              activityTitle={activity.title}
+              favorited={minha?.favorited ?? false}
+              origem="PROGRAMACAO"
+              variant="tema"
+            />
+          ) : null}
         </div>
       </div>
     </li>
   );
 }
+
 
 function SponsorsBlock({
   sponsors,
@@ -292,8 +496,10 @@ function SponsorsBlock({
               data-tier-id={key}
               data-tier-scale={first.tierLogoScale}
             >
-              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider opacity-60">
-                {tint ? (
+              {/* `ef-muted` no lugar de `opacity-60` (FASE 66): o nome da cota fica
+                  sobre a `--ef-background` do organizador, onde a opacidade media
+                  4,44:1 no tema padrão claro — abaixo do AA. */}
+              <h3 className="ef-muted flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">                {tint ? (
                   /**
                    * Marcador da cota: uma BARRA na cor, e não o título pintado. Texto
                    * na cor da cota é o caminho mais curto para um título ilegível
@@ -525,7 +731,9 @@ function CustomHtmlBlock({ content }: { content: unknown }) {
       <SectionHeading
         title={readString(content, 'title') ?? BLOCK_LABELS.CUSTOM_HTML}
       />
-      <p className="mb-3 text-xs opacity-60">
+      {/* `ef-muted` (FASE 66): a mesma correção do `SectionHeading` — o aviso fica
+          sobre a `--ef-background`, e a opacidade media 4,44:1 no claro. */}
+      <p className="ef-muted mb-3 text-xs">
         Este bloco é exibido como texto por segurança. HTML não é interpretado.
       </p>
       <pre className="ef-card overflow-x-auto whitespace-pre-wrap p-4 code-data opacity-80">
@@ -726,7 +934,9 @@ function TracksBlock({
             {track.description ? (
               <p className="text-sm opacity-70">{track.description}</p>
             ) : null}
-            <p className="text-xs opacity-60">
+            {/* Sobre o CARTÃO da trilha: o papel é o `on-card` (FASE 66), porque o
+                `.ef-muted` de 60% mede 4,24:1 sobre o cartão — abaixo do AA. */}
+            <p className="ef-muted-on-card text-xs">
               {track.submissionCount} {track.submissionCount === 1 ? 'trabalho' : 'trabalhos'} submetido(s)
             </p>
           </li>
@@ -793,7 +1003,8 @@ function CallsBlock({
               <span className="ef-badge shrink-0">{CALL_STATE_LABELS[call.state]}</span>
             </div>
 
-            <p className="text-xs opacity-60">{call.kindLabel}</p>
+            {/* Dentro do cartão da chamada: `.ef-muted-on-card` (FASE 66). */}
+            <p className="ef-muted-on-card text-xs">{call.kindLabel}</p>
 
             {call.summary ? (
               <p className="text-sm opacity-80">{call.summary}</p>
@@ -1009,6 +1220,21 @@ export interface BlockRendererProps {
   now: number;
   /** Chamadas publicadas do evento (FASE 33) — lidas pelo bloco de chamadas. */
   publicCalls: readonly CallView[];
+  /**
+   * A grade de quem está olhando (FASE 65 · fatia 2): sem sessão chega a visão vazia,
+   * e o bloco da programação não desenha botão nenhum. Opcional para que a
+   * pré-visualização e os consumidores antigos do bloco continuem válidos.
+   */
+  agenda?: EventAgendaView;
+  /** A atividade recém-marcada, quando a pessoa volta da Server Action. */
+  justMarkedActivityId?: string | null;
+  /**
+   * A visão do "acontecendo agora" (FASE 65 · fatia 4). Chega PRONTA (lida na página,
+   * com o relógio e o fuso do evento) porque este é um componente de RENDERIZAÇÃO — a
+   * mesma razão de `now` e da agenda. O default vazio existe para a pré-visualização,
+   * onde não há relógio a decidir: ali a faixa simplesmente não aparece.
+   */
+  happeningNow?: HappeningNowView;
 }
 
 /** Traduz um bloco do banco no componente correspondente. */
@@ -1019,6 +1245,9 @@ export function BlockRenderer({
   tenantSlug,
   now,
   publicCalls,
+  agenda = EMPTY_AGENDA_VIEW,
+  justMarkedActivityId = null,
+  happeningNow = EMPTY_HAPPENING_NOW,
 }: BlockRendererProps) {
   switch (type) {
     case 'RICH_TEXT':
@@ -1028,7 +1257,12 @@ export function BlockRenderer({
         <ActivitiesBlock
           activities={event.activities}
           tenantSlug={tenantSlug}
+          eventId={event.id}
           eventSlug={event.slug}
+          timezone={event.timezone}
+          agenda={agenda}
+          justMarkedActivityId={justMarkedActivityId}
+          now={happeningNow}
         />
       );
     case 'SPONSORS':

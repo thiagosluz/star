@@ -64,7 +64,9 @@ export function EventRegistrationForm({
         <p className="text-sm opacity-80" data-testid="event-registration-message">
           {state.message}
         </p>
-        <p className="text-xs opacity-60">
+        {/* Dentro do cartão de sucesso: `.ef-muted-on-card` (FASE 66) no lugar de
+            `opacity-60`, que media 4,17:1 sobre o cartão do tema padrão claro. */}
+        <p className="ef-muted-on-card text-xs">
           Acompanhe e cancele em “Minhas inscrições”.
         </p>
       </div>
@@ -72,6 +74,16 @@ export function EventRegistrationForm({
   }
 
   return (
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O TEXTO SECUNDÁRIO DO FORMULÁRIO SAIU DA OPACIDADE (FASE 66)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O formulário é um `.ef-card`, e sobre o cartão do tema o `opacity-60` media
+     *  **4,17:1** no tema padrão claro — abaixo dos 4,5:1 do AA. O papel que passa
+     *  nas duas superfícies (cartão e fundo) é `.ef-muted-on-card`, preso em
+     *  `tests/unit/f66-contraste-do-rotulo.test.ts`. O `opacity-80` do resumo
+     *  continua onde está: ele mede 7,75:1 sobre o cartão e não é o defeito.
+     */
     <form action={formAction} className="ef-card space-y-4 p-5" data-testid="event-registration-form">
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="eventSlug" value={eventSlug} />
@@ -114,7 +126,7 @@ export function EventRegistrationForm({
         */}
       <div className="space-y-1.5">
         <label htmlFor="cpf" className="text-sm font-medium">
-          CPF <span className="font-normal opacity-60">(opcional — sai no certificado)</span>
+          CPF <span className="ef-muted-on-card font-normal">(opcional — sai no certificado)</span>
         </label>
         <input
           id="cpf"
@@ -133,7 +145,7 @@ export function EventRegistrationForm({
           placeholder="000.000.000-00"
           data-testid="event-registration-cpf"
         />
-        <p className="text-xs opacity-60">
+        <p className="ef-muted-on-card text-xs">
           Usado apenas para emitir o seu certificado. Sem ele, o certificado é emitido do
           mesmo jeito.
         </p>
@@ -142,7 +154,7 @@ export function EventRegistrationForm({
       <div className="space-y-1.5">
         <label htmlFor="accessibilityNotes" className="text-sm font-medium">
           Necessidades de acessibilidade ou restrições alimentares{' '}
-          <span className="font-normal opacity-60">(opcional)</span>
+          <span className="ef-muted-on-card font-normal">(opcional)</span>
         </label>
         <textarea
           id="accessibilityNotes"
@@ -167,7 +179,7 @@ export function EventRegistrationForm({
           <input type="checkbox" name="consentData" className="mt-0.5" required />
           <span>
             Autorizo o tratamento dos meus dados pessoais para fins de organização deste
-            evento. <span className="opacity-60">(obrigatório)</span>
+            evento. <span className="ef-muted-on-card">(obrigatório)</span>
           </span>
         </label>
 
@@ -175,13 +187,13 @@ export function EventRegistrationForm({
           <input type="checkbox" name="consentImage" className="mt-0.5" />
           <span>
             Autorizo o uso da minha imagem em registros e divulgação do evento.{' '}
-            <span className="opacity-60">(opcional)</span>
+            <span className="ef-muted-on-card">(opcional)</span>
           </span>
         </label>
       </fieldset>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <p className="text-xs opacity-60">
+        <p className="ef-muted-on-card text-xs">
           Sua vaga no evento é reservada no momento da confirmação.
         </p>
         <SubmitButton />

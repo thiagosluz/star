@@ -45,9 +45,21 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-import { RUN_ID, cleanupRun, createEvent, createTenant, e2eDb, grantPlatformRole, grantRole, linkUser } from './helpers';
+import {
+  RUN_ID,
+  cleanupRun,
+  createActivity,
+  createEvent,
+  createRoom,
+  createTenant,
+  e2eDb,
+  grantPlatformRole,
+  grantRole,
+  linkUser,
+} from './helpers';
 import { createDemand } from '../../src/lib/events/demand-service';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
+import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import {
   publishTenantPublicPage,
   saveTenantPublicPageDraft,
@@ -316,6 +328,40 @@ let eventId: string;
 /** A conta de PLATAFORMA: a fila de denúncias só abre para SuperAdmin (FASE 56 · E62). */
 let superEmail: string;
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS TELAS DA FASE 65 ACHAM CONTEÚDO AQUI (fatia 5)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Duas telas novas entram no portão, e as duas medem MAIS quando têm o que
+ *  mostrar:
+ *
+ *    • **"minha agenda"** (`/t/<slug>/minha-agenda`) — o resumo, as DUAS marcas
+ *      (`Inscrito` × `Favorito`) e o bloco de choque de horário. Uma agenda vazia
+ *      desenha uma frase e nenhum distintivo: a varredura mediria bem menos do que
+ *      a tela mostra;
+ *    • **a aba "Acontecendo agora"** (`?aba=agora`) — o agrupamento por sala, o
+ *      cartão em curso, a barra de progresso com os atributos ARIA e os dois
+ *      caminhos (crachá e balcão). Sem uma atividade cuja janela CONTÉM o agora, a
+ *      aba desenha o estado vazio — e a barra, que é a peça com o `role` e o
+ *      contraste medido, nem existiria no DOM.
+ */
+/** O evento EM CURSO: a janela dele contém o agora (é ele que hospeda a aba). */
+let eventoEmCursoSlug: string;
+/**
+ * O evento da fixture da FASE 65 (o das duas atividades em choque) — e o dono da aba
+ * "Programação", que entra no portão na FASE 66. O `slug` é o que falta para alcançar
+ * a página pública: os outros casos desta tela usam o `id` (a "minha agenda" recebe
+ * `?evento=<id>`), mas a página do evento é aberta pelo `slug`.
+ */
+let eventoSlug: string;
+/** A atividade EM CURSO — começou há vinte minutos e termina em quarenta. */
+let atividadeEmCursoId: string;
+/** A sala onde ela acontece: é o nome do grupo na aba. */
+const SALA_EM_CURSO = `Auditório A11y ${RUN_ID}`;
+/** As duas atividades que DISPUTAM o mesmo horário (o choque da minha agenda). */
+let atividadeLongaId: string;
+let atividadeInternaId: string;
+
 async function signUpVia(
   api: import('@playwright/test').APIRequestContext,
   name: string,
@@ -362,13 +408,15 @@ async function criarEventoComJanela(input: {
   title: string;
   startsAt: Date;
   endsAt: Date;
-}): Promise<void> {
+}): Promise<string> {
+  const id = randomUUID();
+
   await e2eDb.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
 
     await tx.event.create({
       data: {
-        id: randomUUID(),
+        id,
         tenantId: input.tenantId,
         slug: input.slug,
         title: input.title,
@@ -384,6 +432,39 @@ async function criarEventoComJanela(input: {
         confirmedCount: 0,
         registrationOpensAt: new Date(Date.now() - 86_400_000),
         registrationClosesAt: new Date(Date.now() + 30 * 86_400_000),
+      },
+    });
+  });
+
+  /** O `id` volta porque a FASE 65 pendura a atividade em curso no evento EM CURSO. */
+  return id;
+}
+
+/**
+ * A inscrição CONFIRMADA de alguém numa atividade — fixture direta, pelo banco.
+ *
+ * O caminho da tela é da fatia irmã e tem spec própria; aqui a inscrição é o FATO
+ * que a varredura precisa ENCONTRAR na grade. Sem ela, "minha agenda" não teria a
+ * marca `Inscrito` nem o par em choque — e o portão mediria uma tela mais pobre do
+ * que a que a pessoa usa.
+ */
+async function inscreverNaAtividade(input: {
+  tenantId: string;
+  eventId: string;
+  activityId: string;
+  userId: string;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.registration.create({
+      data: {
+        id: randomUUID(),
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        activityId: input.activityId,
+        userId: input.userId,
+        status: 'CONFIRMED',
       },
     });
   });
@@ -427,6 +508,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     });
 
     eventId = event.id;
+    eventoSlug = `acessivel-${RUN_ID}`;
 
     const hoje = new Date();
     const demandaBase = {
@@ -546,18 +628,111 @@ test.beforeAll(async ({ playwright, baseURL }) => {
      */
     await criarEventoComJanela({
       tenantId: tenant.id,
+      slug: `acessivel-antigo-${RUN_ID}`,
+      title: 'Mostra do ano passado',
+      startsAt: new Date(hoje.getTime() - 30 * 86_400_000),
+      endsAt: new Date(hoje.getTime() - 25 * 86_400_000),
+    });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  AS DUAS TELAS DA FASE 65 — O CONTEÚDO QUE A VARREDURA PRECISA ENCONTRAR
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  (1) A ABA "ACONTECENDO AGORA" precisa de uma atividade cuja JANELA CONTÉM o
+     *  agora e de uma SALA (é a sala que dá nome ao grupo, e o "a seguir nesta sala"
+     *  só existe quando há uma próxima). Ela é pendurada no evento que JÁ está em
+     *  curso na vitrine ("Semana de portas abertas", de ontem a amanhã): um evento
+     *  que está acontecendo e uma atividade que está acontecendo é o cenário
+     *  coerente — e é o estado em que a pessoa realmente abre a aba.
+     */
+    const eventoEmCursoId = await criarEventoComJanela({
+      tenantId: tenant.id,
       slug: `acessivel-em-curso-${RUN_ID}`,
       title: 'Semana de portas abertas',
       startsAt: new Date(hoje.getTime() - 86_400_000),
       endsAt: new Date(hoje.getTime() + 86_400_000),
     });
 
-    await criarEventoComJanela({
+    eventoEmCursoSlug = `acessivel-em-curso-${RUN_ID}`;
+
+    const sala = await createRoom({
       tenantId: tenant.id,
-      slug: `acessivel-antigo-${RUN_ID}`,
-      title: 'Mostra do ano passado',
-      startsAt: new Date(hoje.getTime() - 30 * 86_400_000),
-      endsAt: new Date(hoje.getTime() - 25 * 86_400_000),
+      eventId: eventoEmCursoId,
+      name: SALA_EM_CURSO,
+      capacity: 80,
+    });
+
+    /** Em curso DE VERDADE: começou há vinte minutos e termina daqui a quarenta. */
+    atividadeEmCursoId = (
+      await createActivity({
+        tenantId: tenant.id,
+        eventId: eventoEmCursoId,
+        slug: `acessivel-agora-${RUN_ID}`,
+        title: 'Mesa redonda sobre avaliação por pares',
+        roomId: sala.id,
+        startsAtOffsetDays: -20 / (24 * 60),
+        workloadMinutes: 60,
+      })
+    ).id;
+
+    /** A PRÓXIMA da mesma sala: é ela que dá conteúdo ao "a seguir nesta sala". */
+    await createActivity({
+      tenantId: tenant.id,
+      eventId: eventoEmCursoId,
+      slug: `acessivel-proxima-${RUN_ID}`,
+      title: 'Oficina de rubricas',
+      roomId: sala.id,
+      startsAtOffsetDays: 1 / 24,
+      workloadMinutes: 60,
+    });
+
+    /**
+     * (2) "MINHA AGENDA" precisa das DUAS marcas e de um CHOQUE. As duas atividades
+     * nascem no MESMO instante (o mesmo deslocamento de dias) com durações
+     * diferentes: a palestra cai DENTRO do minicurso, e `intervalsOverlap` responde
+     * choque por CONTER — a borda decidida na fatia 1 (encostar não é choque).
+     */
+    atividadeLongaId = (
+      await createActivity({
+        tenantId: tenant.id,
+        eventId: event.id,
+        slug: `acessivel-longa-${RUN_ID}`,
+        title: 'Minicurso de avaliação por pares',
+        startsAtOffsetDays: 30,
+        workloadMinutes: 240,
+      })
+    ).id;
+
+    atividadeInternaId = (
+      await createActivity({
+        tenantId: tenant.id,
+        eventId: event.id,
+        slug: `acessivel-interna-${RUN_ID}`,
+        title: 'Palestra sobre rubricas',
+        startsAtOffsetDays: 30,
+        workloadMinutes: 60,
+      })
+    ).id;
+
+    /**
+     * As duas marcas são gravadas pelo SERVIÇO REAL onde ele existe: o favorito passa
+     * por `favoriteActivity` (a régua da fatia 1 — atividade visível, evento público,
+     * RLS no meio). A inscrição não tem serviço de fixture aqui, e vai pelo banco,
+     * como o resto das fixtures deste arquivo.
+     */
+    const favorito = await favoriteActivity({
+      tenantId: tenant.id,
+      userId: admin.id,
+      activityId: atividadeLongaId,
+    });
+
+    if (!favorito.ok) throw new Error(`Falha ao favoritar: ${favorito.message}`);
+
+    await inscreverNaAtividade({
+      tenantId: tenant.id,
+      eventId: event.id,
+      activityId: atividadeInternaId,
+      userId: admin.id,
     });
   } finally {
     await api.dispose();
@@ -915,6 +1090,172 @@ test.describe('telas autenticadas', () => {
     await expectNoCriticalViolations(
       page,
       `editor da página da instituição (/t/${tenantSlug}/administracao/pagina)`,
+    );
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS DUAS TELAS DA FASE 65 ENTRAM NO PORTÃO (fatia 5)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A fase entregou duas superfícies novas, e nenhuma delas tinha varredura:
+   *
+   *    • **"minha agenda"** (`/t/<slug>/minha-agenda`) — a grade do dia com as duas
+   *      marcas, o resumo e o bloco de choque. É uma tela DENSA para o padrão desta
+   *      suíte: quatro contadores num `<dl>`, cartões com três botões cada (link,
+   *      `.ics`, Google, favoritar), duas seções com `aria-labelledby` e um aviso com
+   *      `role="note"`. É onde falta de rótulo e contraste fora do token aparecem;
+   *    • **a aba "Acontecendo agora"** (`/t/<slug>/eventos/<slug>?aba=agora`) — a
+   *      primeira peça do produto com `role="progressbar"` e `aria-valuetext`, dentro
+   *      do `ThemeScope` do evento. A barra é o que o `axe` pode reprovar sozinho: um
+   *      preenchimento sobre um trilho sem contraste é violação de componente.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O CASO DO "AGORA" ENTRA COM SESSÃO (e não como visitante)
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A aba é pública, mas ela desenha DOIS caminhos que só existem para quem tem o
+   *  que fazer ali: "Abrir o meu crachá" (exige sessão) e "Abrir o balcão de
+   *  credenciamento" (exige `registration:checkin`, conferida no servidor). Varrer a
+   *  versão anônima mediria um DOM MENOR — e os dois links são justamente os nós que
+   *  esta varredura existe para prender (link sem nome acessível, contraste do
+   *  `currentColor` do tema). Com a administradora (que tem a permissão), a varredura
+   *  mede a UNIÃO do que a tela pode desenhar. A régua do landmark continua a mesma:
+   *  a página herda UM `<main>` da `EventLanding`.
+   */
+  test('a tela "minha agenda" não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/minha-agenda?evento=${eventId}`);
+
+    /** A tela é a CERTA e tem conteúdo — os quatro números que a fixture montou. */
+    await expect(page.getByRole('heading', { level: 1, name: 'Minha agenda' })).toBeVisible();
+    await expect(page.getByTestId('minha-agenda')).toBeVisible();
+    await expect(page.getByTestId('resumo-itens')).toHaveText('2');
+    await expect(page.getByTestId('resumo-inscritas')).toHaveText('1');
+    await expect(page.getByTestId('resumo-favoritas')).toHaveText('1');
+    await expect(page.getByTestId('resumo-choques')).toHaveText('1');
+
+    /** As DUAS marcas, cada uma no seu cartão — é a leitura de relance da grade. */
+    await expect(page.getByTestId(`agenda-item-${atividadeLongaId}`)).toHaveAttribute(
+      'data-mark',
+      'FAVORITO',
+    );
+    await expect(page.getByTestId(`agenda-item-${atividadeInternaId}`)).toHaveAttribute(
+      'data-mark',
+      'INSCRITO',
+    );
+
+    /** E o choque, com os dois títulos: o aviso que INFORMA e não bloqueia nada. */
+    await expect(page.getByTestId('minha-agenda-choques-secao')).toBeVisible();
+    await expect(page.getByTestId(`choque-${atividadeInternaId}`)).toBeVisible();
+
+    /**
+     * O caminho de exportação está na tela e é um LINK de verdade: a fatia 3 tirou o
+     * download do estado de cliente, e a varredura mede o `<a>` que a pessoa usa.
+     */
+    await expect(page.getByTestId('minha-agenda-exportacao')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `minha agenda (/t/${tenantSlug}/minha-agenda?evento=<id>)`,
+    );
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A ABA "PROGRAMAÇÃO" ENTRA NO PORTÃO (FASE 66) — E ELA JÁ TINHA UM DEFEITO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A FASE 65 fechou a aba "Acontecendo agora" neste portão e deixou registrado, com
+   *  o número na mão, que a aba "Programação" estava FORA dele — e que o `eyebrow` do
+   *  `SectionHeading` (o rótulo "Programação") media **4,44:1** sobre a
+   *  `--ef-background` do organizador, abaixo dos 4,5:1 do AA. O defeito sobreviveu
+   *  por UM motivo: a tela onde ele mora não era medida. Este caso é a outra metade da
+   *  correção (a catraca de unidade é `tests/unit/f66-contraste-do-rotulo.test.ts`).
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O CASO AFIRMA O CONTEÚDO ANTES DE VARRER
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O `axe` mede o que está no DOM. Se a aba perdesse a grade, ou se o cabeçalho de
+   *  seção deixasse de ser desenhado, a varredura passaria IGUAL — e o nó que esta fase
+   *  corrigiu nem estaria na página. Por isso as três asserções: a aba ATIVA (o
+   *  `aria-current` vem do servidor, sem estado de cliente), a seção `#programacao` com
+   *  o rótulo do cabeçalho, e as DUAS atividades da fixture na grade.
+   */
+  test('a aba "Programação" não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoSlug}`);
+
+    /** A aba navegada é a ATIVA — e a irmã não é. */
+    await expect(page.getByTestId('aba-programacao')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('aba-agora')).not.toHaveAttribute('aria-current', 'page');
+
+    const programacao = page.locator('#programacao');
+
+    await expect(programacao).toBeVisible();
+
+    /**
+     * O RÓTULO do cabeçalho de seção — o nó que a FASE 66 corrigiu. O `<header>` tem
+     * DOIS `<p>` (o rótulo e a descrição), e o filtro por texto é o que diz qual deles
+     * a asserção está medindo: contar "quantos `<p>` o cabeçalho tem" mediria o desenho,
+     * não o fato.
+     */
+    const rotulo = programacao.locator('header p', { hasText: 'Programação' });
+
+    await expect(rotulo).toHaveCount(1);
+    await expect(rotulo).toHaveText('Programação');
+    await expect(programacao).toContainText('Minicurso de avaliação por pares');
+    await expect(programacao).toContainText('Palestra sobre rubricas');
+
+    await expectNoCriticalViolations(
+      page,
+      `aba "programação" (/t/${tenantSlug}/eventos/<slug>)`,
+    );
+  });
+
+  test('a aba "Acontecendo agora" não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoEmCursoSlug}?aba=agora`);
+
+    /** A aba navegada é a ATIVA (link com `aria-current`, sem estado de cliente). */
+    await expect(page.getByTestId('aba-agora')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('aba-programacao')).not.toHaveAttribute('aria-current', 'page');
+
+    const secao = page.getByTestId('agora');
+
+    await expect(secao).toBeVisible();
+    await expect(page.getByTestId(`agora-sala-${SALA_EM_CURSO}`)).toBeVisible();
+    await expect(page.getByTestId(`agora-item-${atividadeEmCursoId}`)).toContainText(
+      'Mesa redonda sobre avaliação por pares',
+    );
+
+    /**
+     * A BARRA ACESSÍVEL — o motivo de esta tela entrar no portão. Os atributos são
+     * afirmados antes da varredura porque `role="progressbar"` SEM `aria-label` é
+     * exatamente o defeito que passa despercebido no olho e reprova no leitor de tela
+     * (o `axe` também reprova, e a mensagem fica com o diagnóstico junto).
+     */
+    const barra = page.getByTestId('agora-barra');
+
+    await expect(barra).toHaveAttribute('role', 'progressbar');
+    await expect(barra).toHaveAttribute('aria-valuemin', '0');
+    await expect(barra).toHaveAttribute('aria-valuemax', '100');
+    await expect(barra).toHaveAttribute(
+      'aria-label',
+      'Tempo restante da atividade Mesa redonda sobre avaliação por pares',
+    );
+    await expect(page.getByTestId('agora-restante')).toHaveText(/termina em /);
+
+    /** E os DOIS caminhos do dia do evento: o crachá e o balcão. */
+    await expect(page.getByTestId(`agora-cracha-${atividadeEmCursoId}`)).toBeVisible();
+    await expect(page.getByTestId(`agora-balcao-${atividadeEmCursoId}`)).toBeVisible();
+
+    /** O que vem depois NA MESMA SALA — o "a seguir" que a visão por sala existe para dar. */
+    await expect(page.getByTestId(`agora-proxima-${SALA_EM_CURSO}`)).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `aba "acontecendo agora" (/t/${tenantSlug}/eventos/<slug>?aba=agora)`,
     );
   });
 

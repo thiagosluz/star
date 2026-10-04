@@ -173,6 +173,47 @@
 > E63, E66, E70 e E73 —, e declarou **E77** (o logo da instituição não entra na etiqueta) e
 > **I1** (os cenários E2E escritos sem execução). O total **59 → 49**.
 >
+> **FASE 65 (o dia do evento na mão do participante):** não quitou nenhum item deste
+> levantamento e **declarou dois** — **E85** (a assinatura `webcal` e a revogação
+> individual do endereço de exportação da agenda) e **E86** (a margem de deslocamento
+> entre salas no choque). Os dois nasceram do recorte aprovado pelo humano: a exportação
+> desta fase entrega **arquivo `.ics` + link do Google** (o Apple entra pelo próprio
+> arquivo) e a assinatura fica declarada, porque o token da fase é **derivado**
+> (`HMAC-SHA256` sobre `tenantId:userId`) e um endereço estável de assinatura sem
+> revogação individual prometeria o que não existe (ADR-336); e o aviso de choque usa o
+> **intervalo puro** — encostar não é choque, conter é —, sem margem para atravessar o
+> campus. **Contagem:** entram dois itens, então o `AGENTS.md` passa de **40** para
+> **42** e o tema E de **23** para **25**. A contagem **linha por linha** da tabela dá
+> **43** porque as linhas de **I1** e **I2** continuam sem o risco de quitadas (a FASE 60
+> as fechou): a defasagem é ANTERIOR a esta fase e está registrada aqui para não virar
+> número novo — o `AGENTS.md` segue a contagem publicada, e a tabela é que precisa da
+> correção.
+>
+> No caminho, esta fase achou — e **NÃO** corrigiu, por estar fora do escopo da fatia —
+> uma violação séria de contraste na aba **"Programação"** da página do evento, que o
+> portão WCAG AA não varre: o `eyebrow` do `SectionHeading`
+> (`src/components/events/theme-scope.tsx:118`, anterior a esta fase) pinta
+> `opacity-60` sobre a `--ef-background` do organizador e mede **4,44:1**
+> (`#72747c` sobre `#f9f9ff`) contra os 4,5:1 do AA. É a MESMA causa dos três nós que a
+> fase corrigiu, e a correção seria a MESMA classe (`ef-muted`); falta a decisão de
+> levar a aba "Programação" ao portão (o 20º caso). A medição completa está em
+> `docs/fase-65-dia-do-evento.md` §8.
+>
+> **FASE 66 (o rótulo que ficou fora do portão):** fechou o que a FASE 65 achou e não fechou
+> e **não quitou nem declarou item nenhum** — o defeito do rótulo de seção não estava neste
+> levantamento, e o resto da família que a varredura achou já tem dono: é o escopo da **E84**,
+> agora **medido** (o token de texto da PLATAFORMA sobre o tema **escuro** do organizador dá
+> **2,10:1** sobre o fundo e **1,86:1** sobre o cartão; no modo claro do organizador o mesmo
+> par passa, 8,93:1 e 7,45:1 — a assimetria é o achado). Neste documento, a fase fez UMA
+> coisa: **corrigir a contagem**. As linhas de **I1** e **I2** ganharam o risco de quitadas —
+> a FASE 60 as fechou, e o documento daquela fase diz "Quitadas: **E79, I2, I3 e I1**" — e a
+> contagem passou a ser a **MEDIDA linha por linha**, sem tocar em nenhuma outra linha:
+> A=3 · B=4 · C=1 · D=3 · **E=24** · F=5 · H=1 · **I=0** = **41**. A defasagem que a FASE 65
+> registrou era de **dois** erros que se cancelavam: as duas linhas sem o risco (43 contadas
+> como abertas) e o tema E anunciado com **25** quando a tabela tem **24** abertos. Os totais
+> por tema da §3 continuam com a defasagem histórica já registrada na correção da FASE 51 —
+> o número que as fases seguintes usam é o do `AGENTS.md`, que agora é o medido.
+>
 > **FASE 64 (a página pública da instituição):** quitou **E84 PARA A PÁGINA DA INSTITUIÇÃO** — a
 > dívida que a FASE 63 declarou (e que nunca chegou a abrir linha na tabela): lá o claro/escuro do
 > visitante **vence** a paleta da casa, porque a página vive dentro do casco da plataforma e o
@@ -354,6 +395,8 @@
 | E82 | **O ranking de REVISORES cita quem foi ocultado** | FASE 62 (novo, ADR-328) | `getReviewerRanking` (`src/lib/gamification/achievement-service.ts:232`) usa `reviewer.name` sem a fonte única (`isPersonPubliclyVisible`), consumido pelo painel de Reconhecimento. A régua interna agora existe (mascarar sem tirar a posição) | Aplicar a fonte única ali; o painel de premiação também nomeia quem RECEBEU a carta, então a decisão é de produto e pede fixture de pareceres própria | M | Sim |
 | E83 | **A espera por GESTO em outros cenários** | FASE 62 (novo, ADR-327) | `certificate-template.spec.ts:433-446` aperta a tecla uma vez e repete só a ASSERÇÃO (a mesma forma latente do `Alt+↑` corrigido em `demand-board`), e `f51-credential-badge.spec.ts:463` flocou 1× sob carga com mecanismo próprio (clique tardio do laço do select) | Medir antes/depois como na I3 e aplicar o mesmo `teclarAte`/repetição — declarado em vez de "consertado no escuro" | S | Sim |
 | E84 (PARCIAL: quitada para a PÁGINA DA INSTITUIÇÃO na FASE 64; ABERTA para a página do EVENTO) | **O claro/escuro do visitante não vence a paleta do organizador** | FASE 63 (novo, ADR-330) | Na página do **EVENTO** quem manda no modo é o organizador (ADR-325): quem escolheu "escuro" no rodapé recebe a página clara que o organizador desenhou, sem aviso. Na página da **INSTITUIÇÃO** o problema foi resolvido na FASE 64 (ADR-332) — o modo vem do cookie `ef_tema` e a paleta da casa é identidade, não iluminação. O que falta é a página do evento, e ali a decisão é de produto (a landing é um cartaz) | O visitante que pediu escuro vê claro numa página pública | M | Sim |
+| E85 | **A agenda não tem assinatura (`webcal`) nem revogação individual do endereço** | FASE 65 (novo, ADR-336) | O endereço do `.ics` é um token **derivado** (`HMAC-SHA256` sobre `tenantId:userId`, sem tabela): ele vale enquanto o vínculo valer, e não existe "gerar um link novo". Sem isso não há assinatura de calendário — uma assinatura exige endereço ESTÁVEL e um cliente que o releia, e prometer revogação que não existe é pior do que não ter a assinatura. O caminho alternativo está escrito no ADR-336: token aleatório em tabela (com `revokedAt`), que exigiria a migração que a fatia 1 fechou de propósito | Quem quer a grade sempre atualizada no celular precisa baixar o arquivo de novo; um endereço vazado não pode ser cortado sozinho (só desativando o vínculo) | M | Sim |
+| E86 | **O choque de horário não considera a margem de deslocamento entre salas** | FASE 65 (novo, decisão do humano no plano) | A régua é `intervalsOverlap` sobre o **intervalo puro**: duas atividades em salas DIFERENTES que terminam e começam no mesmo minuto não são choque — e na prática a pessoa não tem tempo de atravessar o campus. A decisão foi avisar sobre o intervalo puro e declarar a margem, em vez de inventar um tempo de deslocamento que ninguém mediu (e que dependeria de mapa, andar e distância entre salas) | O aviso não cobre o caso real "sai de uma sala e chega atrasado na outra" | S | Sim |
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
 | F2 | **Trocas e crafting de duplicatas** | F5 | `UserCard.quantity` acumula; não há conversão nem troca | Duplicata sem valor percebido | G | Decorrente |
@@ -387,8 +430,8 @@
 
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
-| I1 | **Cenários E2E em `test.fixme`** | FASE 51 (novo) | **PARCIAL na FASE 52**: dos 13, **8 rodam e passam** (mídia, catálogo, link da carta, crachá). Cada um tinha causa própria — hidratação de formulário controlado, dependência de ordem entre cenários, helper que contava `<li>` aninhado, `page.url()` lido antes da navegação e comparação de HTML em vez do que o visitante lê. Os **5 restantes** seguem em `fixme` com o motivo escrito no arquivo: troca de categoria de UM crachá (select controlado), a rota de impressão respondendo **400** pelo endereço da própria tela, o crachá online (dado do cenário sem vínculo) e o seletor de lente (exige `enumerateDevices` falso) | Fechar os 5 — nenhum é comportamento sem cobertura: unidade e integração cobrem os mesmos fatos | S | Sim |
-| I2 | **16 páginas sem landmark `<main>`** | FASE 52 (novo) | 8 do painel de plataforma (`/superadmin/**`) e 8 públicas (`/t/<slug>/eventos/<eventSlug>`, chamada, inscrição, convite, ficha do palestrante…). Anterior a esta fase: o landmark vinha da casca e só existia no painel autenticado — as outras árvores nunca tiveram | Boa prática de landmark (o AA não reprova). Envolver o conteúdo de cada página em `<main>`, como as telas do painel já fazem | M | Não |
+| ~~I1~~ (QUITADA na FASE 60) | **Cenários E2E em `test.fixme`** | FASE 51 (novo) | **PARCIAL na FASE 52**: dos 13, **8 rodam e passam** (mídia, catálogo, link da carta, crachá). Cada um tinha causa própria — hidratação de formulário controlado, dependência de ordem entre cenários, helper que contava `<li>` aninhado, `page.url()` lido antes da navegação e comparação de HTML em vez do que o visitante lê. Os **5 restantes** seguiam em `fixme` com o motivo escrito no arquivo. **A FASE 60 fechou os cinco**, e nenhum era "timeout": o **400** era do TESTE (rodando sozinho, o lote ia vazio), a troca de categoria de UM crachá era o clique tardio do `<select>` controlado, o crachá online era dado de cenário sem vínculo e o seletor de lente pedia `enumerateDevices` falso. Todos rodam e passam, sem afrouxar asserção | — | — | Sim |
+| ~~I2~~ (QUITADA na FASE 60) | **16 páginas sem landmark `<main>`** | FASE 52 (novo) | 8 do painel de plataforma (`/superadmin/**`) e 8 públicas (`/t/<slug>/eventos/<eventSlug>`, chamada, inscrição, convite, ficha do palestrante…). Anterior a esta fase: o landmark vinha da casca e só existia no painel autenticado — as outras árvores nunca tiveram. **A FASE 60 fechou as 14** (a lista dizia 16, e três arquivos sem `<main>` próprio não são defeito): cada página ganhou o seu, a régua passou a ser "exatamente um" — perguntada ao DOM, nos dois sentidos — e a catraca do landmark foi provada por mutação | — | — | Sim |
 | ~~I3~~ (QUITADA na FASE 62) | **Interferência entre testes na suíte E2E paralela** — **REABERTA na FASE 61** | FASE 54 (novo) | Duas execuções completas seguidas acusaram falhas em specs **diferentes** (`demand-board` 3 casos numa; `content-and-media` 1 caso na outra), **todos passando isolados**. A FASE 60 achou o mecanismo de um dos casos — o próprio `demand-board` lia o cartão do caso anterior, e um tropeço virava três vermelhos —, corrigiu e fechou a execução verde; **a FASE 61 reabriu**: com 6 cenários novos na suíte, a execução completa voltou a acusar **1 vermelho** (`demand-board`, "Alt+↓ reordena e anuncia a posição") e o **mesmo arquivo passa isolado** (`7 passed`, 11,3 s). O vermelho continua podendo ser CARGA, não defeito | Medir o limite (workers, tempo por cenário, dado acumulado no banco de E2E — havia ~350 instituições de execuções interrompidas) e/ou tornar determinística a espera da ação de reordenar. Enquanto isso, execução completa com 1 vermelho exige rodar o arquivo isolado antes de tratar como regressão |
 
 ---

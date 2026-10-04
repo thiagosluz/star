@@ -53,6 +53,29 @@ export default async function MyRegistrationsPage({
         <p className="text-sm text-muted-foreground">
           Atividades em que você se inscreveu em {context.activeTenant.tenantName}.
         </p>
+        {/**
+          * ── A PORTA PARA A AGENDA (FASE 65 · fatia 2) ─────────────────────────────
+          *
+          *  A inscrição é LUGAR e o favorito é INTENÇÃO: as duas coisas convivem na
+          *  grade do dia, e esta tela é a irmã dela — o link fica AQUI, ao lado das
+          *  inscrições, e não na barra lateral.
+          *
+          *  A decisão é da fatia 5, e o motivo é medido: um item de menu mexeria em ~10
+          *  linhas de base de PIXEL (a barra inteira, a recolhida, a gaveta, o painel e
+          *  o diretório, nos dois modos) para oferecer um caminho que já está a um
+          *  clique daqui. A catraca visual da F62 existe para pegar o que ninguém pensou
+          *  em medir — usá-la para carimbar um link novo é o caminho mais curto para
+          *  ninguém revisar as imagens.
+          */}
+        <p className="text-sm">
+          <Link
+            href={tenantPath(tenantSlug, '/minha-agenda')}
+            className="text-muted-foreground underline underline-offset-4"
+            data-testid="minha-agenda-link"
+          >
+            Ver a minha agenda do dia
+          </Link>
+        </p>
       </header>
 
       {registrations.length === 0 ? (

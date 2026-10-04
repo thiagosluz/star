@@ -1052,6 +1052,9 @@ model Tenant {
   /// FASE 64 — a página pública da instituição (uma por instituição).
   publicPage       TenantPublicPage[]
 
+  /// FASE 65 — favoritos do participante (a agenda pessoal do dia do evento).
+  activityFavorites ActivityFavorite[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -1246,6 +1249,8 @@ model User {
   reviews                   Review[]
   reviewAssignments         ReviewAssignment[]
   activitySpeakers          ActivitySpeaker[]
+  /// Atividades que esta pessoa marcou como favoritas — FASE 65.
+  activityFavorites         ActivityFavorite[]
   cards                     UserCard[]
   /// Links públicos de carta que esta pessoa criou — FASE 48.
   cardShareLinks            CardShareLink[]
@@ -1798,6 +1803,8 @@ model Activity {
   attendances      Attendance[]
   submissions      Submission[]
   speakers         ActivitySpeaker[]
+  /// Quem marcou esta atividade para acompanhar — FASE 65. Não reserva vaga.
+  favorites        ActivityFavorite[]
   roleAssignments  RoleAssignment[]
   certificates     Certificate[]
   xpTransactions   XpTransaction[]
@@ -1880,6 +1887,65 @@ model ActivitySpeaker {
   @@index([userId])
   @@index([tenantId, speakerProfileId])
   @@map("activity_speakers")
+}
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  FAVORITO DO PARTICIPANTE — a pessoa marcou a ATIVIDADE (FASE 65 · fatia 1)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  FAVORITAR NÃO É INSCREVER, E A SEPARAÇÃO É O DESENHO INTEIRO
+///  ─────────────────────────────────────────────────────────────────────────────
+///  O favorito nasce do desejo de acompanhar a agenda ANTES (ou sem) a inscrição:
+///  quem está decidindo o que assistir marca as candidatas e só depois se inscreve
+///  nas que couberem. Se favoritar passasse pelo motor de inscrição, cada marca
+///  consumiria vaga, entraria na loteria/lista de espera e faria a pessoa ocupar
+///  lugar que ela ainda não pediu — o "não consigo me inscrever" apareceria antes
+///  de ela decidir.
+///
+///  Por isso a tabela é INDEPENDENTE de `registrations`: não há contador, não há
+///  status, não há chave para a inscrição, e nenhum serviço de favorito toca em
+///  `activities."confirmedCount"`. O teste de integração prende isso com a
+///  atividade LOTADA (a marca continua funcionando e a contagem não muda).
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE DESFAVORITAR APAGA A LINHA (E O ÍNDICE ÚNICO É TOTAL)
+///  ─────────────────────────────────────────────────────────────────────────────
+///  Em `registrations` a exclusão é lógica e o índice único é PARCIAL porque
+///  cancelar é TERMINAL: a linha cancelada permanece como história, e a pessoa se
+///  inscreve de novo criando OUTRA linha (armadilha 103). Aqui não há história a
+///  preservar — o favorito é preferência pessoal, reversível e sem efeito para a
+///  instituição (o porquê está no comentário de `favoriteActivity`, no serviço) —,
+///  então desfavoritar é `DELETE` e a unicidade pode ser TOTAL.
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE NÃO EXISTE COLUNA `eventId`
+///  ─────────────────────────────────────────────────────────────────────────────
+///  O evento é derivado da ATIVIDADE, que é a fonte única dele. Uma cópia aqui
+///  poderia divergir e a "minha grade" passaria a mostrar o mesmo item em dois dias
+///  — a mesma razão pela qual o vínculo de palestrante não guarda a bio (ver
+///  `ActivitySpeaker`).
+///
+///  `(activityId, userId)` cobre o índice da FK da atividade; `(userId, tenantId)`
+///  atende a leitura da própria agenda e cobre a FK de `user`.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model ActivityFavorite {
+  id         String @id @default(uuid(7)) @db.Uuid
+  tenantId   String @db.Uuid
+  activityId String @db.Uuid
+  userId     String @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Favoritar duas vezes é idempotente NO BANCO (`INSERT ... ON CONFLICT DO
+  /// NOTHING`), e não numa checagem de leitura que duas requisições simultâneas
+  /// atravessariam (armadilha 97).
+  @@unique([activityId, userId])
+  @@index([userId, tenantId])
+  @@map("activity_favorites")
 }
 
 /// Quem enviou a foto publicada do palestrante (FASE 46).

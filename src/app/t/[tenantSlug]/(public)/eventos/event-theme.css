@@ -120,6 +120,55 @@
   background-color: color-mix(in oklab, var(--ef-text) 8%, transparent);
 }
 
+/* ─── Texto secundário do TEMA (FASE 65 · fatia 5) ─────────────────────────────
+   O papel que antes era `opacity-60` sobre o texto do organizador — a migalha e o
+   rodapé da página do evento.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   POR QUE A OPACIDADE SAIU (medido, não suposto)
+   ─────────────────────────────────────────────────────────────────────────────
+   `opacity` não escolhe cor: ela COMPÕE o texto com o fundo, e o fundo é a
+   `--ef-background` que o ORGANIZADOR escolheu. No tema padrão claro a composição
+   dava **4,44:1** (`#72747c` sobre `#f9f9ff`; 4,43 sobre a mistura crua, antes da
+   quantização para 8 bits) — abaixo dos 4,5:1 do AA para texto
+   pequeno. Quem achou foi o portão de acessibilidade, ao varrer a aba "Acontecendo
+   agora" (a página do evento nunca tinha passado por ele).
+
+   A mistura abaixo é a MESMA ideia (o texto puxado na direção do fundo), com o
+   valor explícito e MEDIDO: **5,08:1** no tema padrão claro (`#686b73` sobre
+   `#f9f9ff`) e **5,91:1** no escuro (`#8b8d8f` sobre `#090b0f`).
+   60% é a proporção que reproduz o tom que a página já tinha — o conserto muda o
+   MECANISMO (mistura declarada em vez de opacidade) e preserva o desenho.
+
+   O limite, declarado: a mistura é sobre a paleta do organizador, e um tema com
+   contraste base baixo derruba qualquer tom derivado. Na página do evento quem
+   responde pela paleta é ele (ADR da FASE 61) — a plataforma publica os papéis que
+   ele escolheu e não inventa cores por cima. O portão mede o tema PADRÃO, que é o
+   de quem não escolheu nada, e é por isso que esta classe existe em vez de cinco
+   `opacity-*` espalhados pelo componente. */
+.ef-muted {
+  color: color-mix(in oklab, var(--ef-text) 60%, var(--ef-background));
+}
+
+/* ─── Texto secundário sobre o CARTÃO do tema (FASE 66) ────────────────────────
+   O `.ef-muted` acima resolve o texto sobre a `--ef-background` — e NÃO sobre o
+   `.ef-card`. O cartão já é a mistura do fundo com 8% da tinta, então a mesma
+   proporção de 60% mede **4,24:1** no claro: abaixo dos 4,5:1 do AA, mesmo com a
+   mistura (declarada e medida) no lugar da opacidade. A superfície é que muda, e
+   por isso o papel muda com ela.
+
+   70% é o MENOR peso que passa nas DUAS superfícies e nos DOIS modos do tema:
+   **5,84:1** sobre o cartão e **7,00:1** sobre o fundo no claro; **7,17:1** e
+   **8,08:1** no escuro. Ele substitui o `opacity-60` que sete nós do formulário de
+   inscrição e dois da programação usavam — sobre o cartão aquela opacidade media
+   **4,17:1** no claro, e sobre o fundo, 4,44:1.
+
+   A catraca é `tests/unit/f66-contraste-do-rotulo.test.ts`, e ela prende os dois
+   papéis separadamente: nenhum dos dois é um "cinza" escolhido a olho. */
+.ef-muted-on-card {
+  color: color-mix(in oklab, var(--ef-text) 70%, var(--ef-background));
+}
+
 .ef-hero-gradient {
   background-image: linear-gradient(
     135deg,

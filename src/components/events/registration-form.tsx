@@ -110,6 +110,16 @@ export function RegistrationForm({
   }
 
   return (
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O TEXTO SECUNDÁRIO DO FORMULÁRIO SAIU DA OPACIDADE (FASE 66)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O formulário é um `.ef-card`, e sobre o cartão do tema o `opacity-60`
+     *  media **4,17:1** no tema padrão claro (e 4,44:1 sobre o fundo, na mesma
+     *  página) — abaixo dos 4,5:1 do AA. O papel do tema que passa nas duas
+     *  superfícies é `.ef-muted-on-card` (70% da tinta: 5,84:1 sobre o cartão),
+     *  preso em `tests/unit/f66-contraste-do-rotulo.test.ts`.
+     */
     <form action={formAction} className="ef-card space-y-4 p-5">
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="eventSlug" value={eventSlug} />
@@ -124,7 +134,7 @@ export function RegistrationForm({
       <div className="space-y-1.5">
         <label htmlFor="accessibilityNotes" className="text-sm font-medium">
           Necessidades de acessibilidade ou restrições alimentares{' '}
-          <span className="font-normal opacity-60">(opcional)</span>
+          <span className="ef-muted-on-card font-normal">(opcional)</span>
         </label>
         <textarea
           id="accessibilityNotes"
@@ -148,7 +158,7 @@ export function RegistrationForm({
           <input type="checkbox" name="consentData" className="mt-0.5" required />
           <span>
             Autorizo o tratamento dos meus dados pessoais para fins de organização
-            deste evento. <span className="opacity-60">(obrigatório)</span>
+            deste evento. <span className="ef-muted-on-card">(obrigatório)</span>
           </span>
         </label>
 
@@ -156,13 +166,13 @@ export function RegistrationForm({
           <input type="checkbox" name="consentImage" className="mt-0.5" />
           <span>
             Autorizo o uso da minha imagem em registros e divulgação do evento.{' '}
-            <span className="opacity-60">(opcional)</span>
+            <span className="ef-muted-on-card">(opcional)</span>
           </span>
         </label>
       </fieldset>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <p className="text-xs opacity-60">
+        <p className="ef-muted-on-card text-xs">
           {isWaitlist
             ? 'A atividade está lotada. Você entrará na lista de espera.'
             : 'Sua vaga é reservada no momento da confirmação.'}

@@ -152,7 +152,9 @@ export function SpeakerCard({
             {speaker.roleTitle ?? 'Palestrante'}
           </span>
           {speaker.institution || speaker.company ? (
-            <span className="block truncate text-xs opacity-60">
+            /** Sobre o cartão do palestrante: `.ef-muted-on-card` (FASE 66), porque o
+                `opacity-60` media 4,17:1 sobre o cartão no tema padrão claro. */
+            <span className="ef-muted-on-card block truncate text-xs">
               {speaker.institution ?? speaker.company}
             </span>
           ) : null}

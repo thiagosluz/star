@@ -102,7 +102,23 @@ export function Section({
   );
 }
 
-/** Cabeçalho de seção, reaproveitado por todos os blocos. */
+/**
+ * Cabeçalho de seção, reaproveitado por todos os blocos.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O RÓTULO NÃO USA `opacity` (FASE 66) — e o defeito é o mesmo da FASE 65
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O `eyebrow` era `opacity-60` e media **4,44:1** sobre a `--ef-background` do
+ *  tema padrão claro (`#72747c` sobre `#f9f9ff`) — abaixo dos 4,5:1 do AA para
+ *  texto pequeno (12 px, sem negrito). É a MESMA causa dos quatro nós que a
+ *  FASE 65 corrigiu: a opacidade compõe a tinta com o fundo que o ORGANIZADOR
+ *  escolheu, e quem responde pela paleta dentro do tema é ele (ADR da F61).
+ *
+ *  Sobrou para esta fase porque a página do evento na aba "Programação" não
+ *  estava no portão WCAG AA — o defeito só existia onde ninguém media. O valor
+ *  agora vem do papel do tema (`.ef-muted`: 5,08:1 no claro e 5,91:1 no escuro),
+ *  preso em `tests/unit/f66-contraste-do-rotulo.test.ts`.
+ */
 export function SectionHeading({
   eyebrow,
   title,
@@ -115,7 +131,7 @@ export function SectionHeading({
   return (
     <header className="mb-[calc(2rem*var(--ef-spacing-scale,1))] space-y-2">
       {eyebrow ? (
-        <p className="text-xs font-semibold uppercase tracking-wider opacity-60">
+        <p className="ef-muted text-xs font-semibold uppercase tracking-wider">
           {eyebrow}
         </p>
       ) : null}

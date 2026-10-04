@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, CalendarDays, Clock, MapPin, Users, Eye } from 'lucide-react';
+import { AlertCircle, ArrowRight, CalendarDays, Clock, MapPin, Users, Eye } from 'lucide-react';
 
 import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
 
@@ -20,6 +20,9 @@ import { BlockRenderer } from '@/components/events/block-renderer';
 import type { CallView } from '@/lib/proposals/call-service';
 import { RaffleResults } from '@/components/raffles/raffle-results';
 import { Section, ThemeScope } from '@/components/events/theme-scope';
+import { EMPTY_AGENDA_VIEW, type EventAgendaView } from '@/lib/events/agenda-view';
+import { HappeningNowSection } from '@/components/events/happening-now';
+import { EMPTY_HAPPENING_NOW, type HappeningNowView } from '@/domain/agenda/now-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -61,6 +64,24 @@ export interface EventLandingPreviewInfo {
   editorHref: string;
 }
 
+/**
+ * As abas da página do evento (FASE 65 · fatia 4).
+ *
+ * São DUAS, e a navegação é por LINK (sem JavaScript, com `aria-current`): a página do
+ * evento é o endereço que a pessoa abre no celular, e uma aba que dependesse de estado
+ * de cliente não teria como ser compartilhada nem como funcionar sem bundle.
+ *
+ * O valor da aba viaja em `?aba=` e é validado pela PÁGINA (o componente nunca lê a
+ * URL): o valor que chega aqui já é `'programacao'` ou `'agora'`.
+ */
+export type EventTab = 'programacao' | 'agora';
+
+/** O rótulo de cada aba, em um lugar só (a faixa também usa). */
+const TAB_LABELS: Record<EventTab, string> = {
+  programacao: 'Programação',
+  agora: 'Acontecendo agora',
+};
+
 export function EventLanding({
   event,
   tenantSlug,
@@ -68,6 +89,12 @@ export function EventLanding({
   now,
   publicRaffles,
   publicCalls,
+  agenda = EMPTY_AGENDA_VIEW,
+  justMarkedActivityId = null,
+  actionError = null,
+  happeningNow = EMPTY_HAPPENING_NOW,
+  activeTab = 'programacao',
+  canOperateCounter = false,
   preview,
 }: {
   event: PublicEventDetail;
@@ -82,6 +109,38 @@ export function EventLanding({
    * quem decide se uma chamada está aberta é o domínio, no relógio do banco.
    */
   publicCalls: readonly CallView[];
+  /**
+   * A grade de quem está olhando (FASE 65 · fatia 2): favoritos ∪ inscrições, com as
+   * marcas e os horários já rotulados no fuso do evento pela fatia 1. Chega PRONTA
+   * (lida na página, por `getMyAgenda`) porque o componente é de renderização e não
+   * conhece banco — a MESMA razão de `now` vir de fora.
+   *
+   * Anônimo recebe a visão vazia: nada de marca, nada de botão de favoritar.
+   */
+  agenda?: EventAgendaView;
+  /** A atividade recém-marcada, para o cartão se identificar na volta (sem JS). */
+  justMarkedActivityId?: string | null;
+  /**
+   * O motivo pelo qual a última tentativa de marcar/desmarcar foi recusada pelo
+   * serviço. Volta pela URL (`?agenda-erro=`), e não pelo estado da ação: a página é
+   * componente de SERVIDOR, e o caminho funciona sem JavaScript (padrão da FASE 49).
+   */
+  actionError?: string | null;
+  /**
+   * A visão do "acontecendo agora" (FASE 65 · fatia 4) — decidida no SERVIDOR, com o
+   * relógio e o fuso do EVENTO. O default vazio é o da pré-visualização do rascunho:
+   * ali não há "agora" para afirmar.
+   */
+  happeningNow?: HappeningNowView;
+  /** A aba ativa da página (navegação por link, sem JavaScript). */
+  activeTab?: EventTab;
+  /**
+   * Quem opera o balcão de credenciamento NESTE evento (`registration:checkin`).
+   *
+   * É a permissão verificada no SERVIDOR, e ela só decide se o LINK aparece — a tela
+   * do balcão refaz a checagem por conta própria (a autorização nunca é do link).
+   */
+  canOperateCounter?: boolean;
   /** Presente apenas na pré-visualização do rascunho. */
   preview?: EventLandingPreviewInfo;
 }) {
@@ -146,12 +205,47 @@ export function EventLanding({
           <div className="mx-auto w-full max-w-5xl">
             <Link
               href={tenantPath(tenantSlug, '/eventos')}
-              className="text-xs opacity-60 underline underline-offset-4"
+              /**
+               * `ef-muted` (FASE 65 · fatia 5) no lugar de `opacity-60`: a opacidade
+               * compunha o texto com o fundo do organizador e media **4,43:1** no tema
+               * padrão claro — abaixo do AA. A classe declara a mistura MEDIDA do tema
+               * (ver o comentário dela em `event-theme.css`).
+               */
+              className="ef-muted text-xs underline underline-offset-4"
             >
               ← Todos os eventos de {tenantName}
             </Link>
           </div>
         </nav>
+
+        {/**
+          * ── A FALHA AO MARCAR NA AGENDA (FASE 65 · fatia 2) ──────────────────────
+          *
+          *  O serviço devolve o motivo como VALOR (atividade indisponível, falha
+          *  interna); ele volta por `?agenda-erro=` e aparece aqui, no mesmo caminho do
+          *  sucesso — porque sem JavaScript não há estado de ação para receber o texto.
+          *
+          *  `role="alert"` porque isto É uma interrupção: a pessoa acabou de fazer algo
+          *  e o resultado não foi o esperado.
+          */}
+        {actionError ? (
+          <div className="px-6 pt-4">
+            <div className="mx-auto w-full max-w-5xl">
+              <p
+                role="alert"
+                data-testid="agenda-erro"
+                className="flex items-start gap-2 rounded-md border border-current px-3 py-2 text-sm"
+                style={{
+                  borderColor: 'color-mix(in oklab, currentColor 45%, transparent)',
+                  backgroundColor: 'color-mix(in oklab, currentColor 6%, transparent)',
+                }}
+              >
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                Não foi possível atualizar a sua agenda: {actionError}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {/* ── HERO ──────────────────────────────────────────────────────── */}
         <header
@@ -248,7 +342,70 @@ export function EventLanding({
         </header>
 
         {/* ── CONTEÚDO ──────────────────────────────────────────────────── */}
-        {hasConfiguredLayout ? (
+        {/**
+          * ── AS ABAS DA PÁGINA (FASE 65 · fatia 4) ─────────────────────────────
+          *
+          *  Navegação por LINKS com `aria-current`, e não por botões com estado: a
+          *  pessoa precisa poder mandar o endereço da aba para outra ("o que está
+          *  acontecendo agora?" chega por mensagem), e a aba tem de funcionar sem
+          *  JavaScript. O `aria-current="page"` é o que diz ao leitor de tela qual das
+          *  duas está aberta.
+          *
+          *  A aba "Acontecendo agora" só aparece quando o evento TEM atividades: num
+          *  evento sem programação não há o que acompanhar, e a aba levaria a uma tela
+          *  vazia.
+          */}
+        {event.activities.length > 0 ? (
+          <nav className="px-6 pt-6" aria-label="Seções do evento">
+            <div className="mx-auto flex w-full max-w-5xl flex-wrap gap-2">
+              {(['programacao', 'agora'] as const).map((tab) => {
+                const isActive = tab === activeTab;
+
+                return (
+                  <Link
+                    key={tab}
+                    href={
+                      tab === 'programacao'
+                        ? tenantPath(tenantSlug, `/eventos/${event.slug}`)
+                        : `${tenantPath(tenantSlug, `/eventos/${event.slug}`)}?aba=agora`
+                    }
+                    aria-current={isActive ? 'page' : undefined}
+                    data-testid={`aba-${tab}`}
+                    data-ativa={String(isActive)}
+                    className={
+                      'rounded-md border px-3 py-1.5 text-sm font-medium transition ' +
+                      (isActive
+                        ? 'border-current'
+                        : 'border-transparent opacity-70 hover:opacity-100')
+                    }
+                    style={
+                      isActive
+                        ? { backgroundColor: 'color-mix(in oklab, currentColor 10%, transparent)' }
+                        : undefined
+                    }
+                  >
+                    {TAB_LABELS[tab]}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        ) : null}
+
+        {activeTab === 'agora' ? (
+          <div className="px-6 pt-6">
+            <div className="mx-auto w-full max-w-5xl">
+              <HappeningNowSection
+                view={happeningNow}
+                tenantSlug={tenantSlug}
+                eventSlug={event.slug}
+                eventId={event.id}
+                authenticated={agenda.authenticated}
+                canOperateCounter={canOperateCounter}
+              />
+            </div>
+          </div>
+        ) : hasConfiguredLayout ? (
           // Layout definido pelo organizador, na ordem dele.
           configuredBlocks.map((block) => (
             <BlockRenderer
@@ -259,6 +416,9 @@ export function EventLanding({
               tenantSlug={tenantSlug}
               now={now.getTime()}
               publicCalls={publicCalls}
+              agenda={agenda}
+              justMarkedActivityId={justMarkedActivityId}
+              happeningNow={happeningNow}
             />
           ))
         ) : (
@@ -281,6 +441,9 @@ export function EventLanding({
               tenantSlug={tenantSlug}
               now={now.getTime()}
               publicCalls={publicCalls}
+              agenda={agenda}
+              justMarkedActivityId={justMarkedActivityId}
+              happeningNow={happeningNow}
             />
 
             {event.sponsors.length > 0 ? (
@@ -320,7 +483,12 @@ export function EventLanding({
         {/* ── Rodapé ────────────────────────────────────────────────────── */}
         <footer className="px-6 py-10">
           <div
-            className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 border-t pt-6 text-xs opacity-60"
+            /**
+             * `ef-muted` (FASE 65 · fatia 5) no lugar de `opacity-60` — a MESMA correção
+             * da migalha acima, e a mesma medição (4,43:1 no tema padrão claro). O
+             * `text-xs` continua dando a hierarquia; a cor agora vem medida do tema.
+             */
+            className="ef-muted mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 border-t pt-6 text-xs"
             style={{ borderColor: 'color-mix(in oklab, var(--ef-text) 12%, transparent)' }}
           >
             <p>

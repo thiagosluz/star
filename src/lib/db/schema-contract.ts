@@ -177,6 +177,14 @@ export const TENANT_SCOPED_TABLES = [
    * uma consulta esquecer o filtro (o slug da URL é entrada de visitante anônimo).
    */
   'tenant_public_pages',
+  /**
+   * FASE 65 — favorito do participante (pessoa × atividade). É preferência
+   * PESSOAL, mas continua sendo dado da instituição: a agenda de quem participa
+   * de um evento não pode ser lida a partir do contexto de outra casa, e a RLS é
+   * o que garante isso mesmo numa consulta que esqueça o filtro. Não há FK para
+   * `registrations` — favoritar não reserva vaga (ver o modelo no schema).
+   */
+  'activity_favorites',
 ];
 
 /**

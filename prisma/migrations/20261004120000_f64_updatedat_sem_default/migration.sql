@@ -1,0 +1,51 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  FASE 64 — PÁGINA PÚBLICA DA INSTITUIÇÃO (correção de drift, escrita na FASE 65)
+--
+--  Remove o `DEFAULT CURRENT_TIMESTAMP` de `tenant_public_pages."updatedAt"`.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE ESTE ARQUIVO EXISTE
+--  ─────────────────────────────────────────────────────────────────────────────
+--  A migração da FASE 64 (`20261001180000_f64_pagina_publica_da_instituicao`)
+--  declarou a coluna assim, copiando o `createdAt` da linha de cima:
+--
+--      "updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+--
+--  Mas o schema declara `updatedAt DateTime @updatedAt` — e `@updatedAt` NÃO tem
+--  default no banco: quem envia o valor é o PRISMA, em toda escrita. O default era
+--  portanto (a) inalcançável pelo runtime (o cliente sempre manda o valor) e
+--  (b) INVISÍVEL nas migrações anteriores, porque só difere do schema quando
+--  alguém compara o banco com o datamodel. O sintoma foi exatamente esse:
+--  `prisma migrate dev --create-only` queria um `ALTER COLUMN ... DROP DEFAULT`
+--  extra, e o `prisma migrate diff` acusava o drift que ninguém tinha escrito.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  O QUE FOI ALINHADO — E EM QUE SENTIDO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  A coluna do SCHEMA é a fonte da verdade (`@updatedAt`), então quem muda é o
+--  BANCO: o default sai. O contrário (trocar `@updatedAt` por um default de banco)
+--  apagaria a garantia de que TODA escrita passa pelo Prisma e atualiza o carimbo —
+--  e deixaria as escritas fora do ORM (as migrações à mão, os `$executeRaw`) sem
+--  carimbo nenhum.
+--
+--  Nenhum dado é tocado: o valor das linhas existentes continua onde está, e a
+--  coluna continua `NOT NULL`. O que sai é só o valor PADRÃO de quem não mandar
+--  nada — e quem não manda nada hoje é ninguém.
+--
+--  ⚠ `createdAt` NÃO é tocado: lá o default é legítimo — o schema declara
+--  `@default(now())`, que É um default de banco (`now()`), e é ele que carimba a
+--  linha que nasce por SQL cru.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  COMO CONFERIR QUE NÃO SOBROU DRIFT
+--  ─────────────────────────────────────────────────────────────────────────────
+--      npx prisma migrate status          # nenhuma migração pendente
+--      npx prisma migrate diff --from-config-datasource \
+--        --to-schema prisma/schema.prisma --exit-code   # saída vazia (código 0)
+--
+--  O `--exit-code` é o que transforma a conferência em catraca: ele devolve 0
+--  quando banco e schema estão idênticos e 2 quando há diferença.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE "tenant_public_pages"
+  ALTER COLUMN "updatedAt" DROP DEFAULT;

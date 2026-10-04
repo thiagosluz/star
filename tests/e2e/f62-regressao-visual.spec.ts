@@ -6,12 +6,14 @@ import {
   cleanupRun,
   createActivity,
   createEvent,
+  createRoom,
   createTenant,
   e2eDb,
   grantRole,
   linkUser,
   uniqueEmail,
 } from './helpers';
+import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import {
   publishTenantPublicPage,
   saveTenantPublicPageDraft,
@@ -39,7 +41,7 @@ import {
  *  encolheu, o item de menu que sumiu, o contraste que ficou lavado no escuro).
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O CONJUNTO É PEQUENO DE PROPÓSITO: DEZESSEIS SNAPSHOTS, CINCO SUPERFÍCIES
+ *  O CONJUNTO É PEQUENO DE PROPÓSITO: DEZENOVE SNAPSHOTS, SETE SUPERFÍCIES
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Quarenta telas dariam quarenta linhas de base para revisar a cada mudança de
  *  design — e uma linha de base que ninguém revisa é pior que nenhuma. A escolha
@@ -68,6 +70,15 @@ import {
  *       mais nova do produto e a que mais gente vê sem ter conta; ver a seção
  *       "A PÁGINA DA INSTITUIÇÃO" mais abaixo, que explica por que ela entra e a
  *       página do EVENTO continua de fora.
+ *    6. **"Minha agenda"** (`minha-agenda-claro`, `minha-agenda-escuro`) — **as duas
+ *       linhas de base da FASE 65**: a grade do dia (favoritos ∪ inscrições, com as
+ *       duas marcas, os contadores e o bloco de choque). Tela DENSA e nova, nos dois
+ *       modos do painel; ver "A MINHA AGENDA E A ABA DO AGORA" mais abaixo.
+ *    7. **A aba "Acontecendo agora"** (`evento-aba-agora`) — a outra superfície da
+ *       FASE 65, e a única desta suíte que é **relativa ao relógio**: a barra de
+ *       progresso, o tempo restante e os horários mudam a cada minuto. Ela entra com
+ *       essas quatro peças MASCARADAS e o motivo declarado (ver a mesma seção) — o que
+ *       resta medido é o que a fase desenhou em volta delas.
  *
  *  Cada uma das duas telas autenticadas entra nos DOIS modos (claro e escuro, pelo cookie
  *  `ef_tema` — a mesma fiação da FASE 61) e nos DOIS tamanhos (desktop e celular,
@@ -360,6 +371,75 @@ import {
  *  descendente não re-resolve `--brand`. As duas linhas de base registram a ESCALA DO
  *  MODO, não a paleta da instituição; quando a paleta ganhar leitor, elas vão mudar, e
  *  a mudança será a prova de que o conserto chegou à tela.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A MINHA AGENDA E A ABA DO AGORA (FASE 65) — O QUE ENTRA, O QUE É MASCARADO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 65 entregou duas superfícies novas para o dia do evento, e nenhuma das duas
+ *  tinha imagem. Elas entram aqui por dois caminhos DIFERENTES, porque uma é estática
+ *  e a outra não é:
+ *
+ *    • **"Minha agenda"** (`/t/<slug>/minha-agenda?evento=<id>`), nos DOIS modos do
+ *      painel. **Sem máscara nenhuma**, e isso foi conquistado, não suposto: as duas
+ *      atividades da fixture nascem com instantes FIXOS (`JANELA_DA_GRADE_*`), então o
+ *      horário que a tela imprime ("10/03/2099, 09:00 – 13:00") não muda de um dia
+ *      para o outro — foi exatamente o problema que a página da instituição já tinha
+ *      (FASE 64) e que `fixarJanela` resolveu. O nome da conta, o nome da instituição
+ *      e os títulos são FIXOS (nada carrega o `RUN_ID`); o endereço do `.ics` carrega
+ *      um token, mas token não é pixel. A tela entra com conteúdo de verdade: DUAS
+ *      marcas (inscrita e favorita), os quatro contadores, um CHOQUE de horário por
+ *      CONTER e os dois caminhos de exportação. Uma agenda vazia desenharia uma frase
+ *      e nenhum dos componentes que esta fase criou.
+ *
+ *    • **A aba "Acontecendo agora"** (`/t/<slug>/eventos/<slug>?aba=agora`), em UMA
+ *      linha de base — e **com quatro máscaras**, cada uma com o motivo medido:
+ *
+ *        1. o PREENCHIMENTO da barra (`agora-barra > div`) — a largura é o quanto já
+ *           decorreu, e ela muda a cada minuto: é a peça que a própria fase mandou
+ *           mascarar;
+ *        2. o TEXTO do tempo restante (`agora-restante`) — "termina em 39 min" muda a
+ *           cada minuto. O que ele AFIRMA não fica sem prova: o E2E funcional da fase
+ *           (`f65-exportacao.spec.ts`, bloco (e)) confere o texto e o `aria-valuetext`,
+ *           e o portão de acessibilidade confere os atributos ARIA. Aqui a imagem mede
+ *           o DESENHO em volta, não o número;
+ *        3. o HORÁRIO do cartão (`agora-horario-*`) — a janela da atividade em curso é
+ *           relativa a agora, então o rótulo é outra data a cada execução;
+ *        4. a linha do "A SEGUIR nesta sala" (`agora-proxima-*`) — mesma razão: ela
+ *           imprime a hora de início da próxima.
+ *
+ *      O que a imagem AINDA mede, e é bastante: as duas abas com o estado ativo, o
+ *      título e a legenda da seção, o cabeçalho da SALA, o cartão inteiro (título,
+ *      etiqueta "Em curso", os ícones da linha de informação), o TRILHO da barra e a
+ *      geometria do preenchimento, os dois caminhos (crachá e balcão) e o rodapé com a
+ *      contagem de atividades. Nenhuma dessas peças é relativa ao relógio.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A ABA DO AGORA NÃO ENTRA NOS DOIS MODOS, E NÃO É ESQUECIMENTO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Na página do EVENTO quem manda no claro/escuro é o ORGANIZADOR (FASE 61 · ADR-325),
+ *  e não o cookie do visitante: o `ef_tema` não tem efeito nenhum ali. Duas linhas de
+ *  base "claro" e "escuro" seriam a MESMA imagem duas vezes — e uma linha de base que
+ *  não distingue nada é uma linha de base que não mede nada. Quem quiser o escuro do
+ *  EVENTO mede o tema com o `ThemeScope` (é o que a catraca de unidade da fase faz).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O PREÇO PAGO NAS LINHAS DE BASE QUE JÁ EXISTIAM (e como ele foi conferido)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  As cinco atividades da fixture nova são do MESMO evento da instituição, e duas
+ *  telas antigas contam dado de instituição: o painel conta atividades ("Atividades"
+ *  passou de 1 para 5) e o diretório de participantes conta, por PESSOA, os eventos e
+ *  as inscrições confirmadas — a dona da conta ganhou uma inscrição nesta fase, e a
+ *  linha dela mudou de "0 evento(s)" para "1 evento(s) / 1 inscrição(ões)
+ *  confirmada(s)".
+ *
+ *  As QUATRO linhas de base afetadas (painel e diretório, no desktop, claro e escuro)
+ *  foram regeradas, e a mudança foi MEDIDA antes: a caixa dos pixels diferentes é
+ *  `x 706..719 · y 165..183` no painel (o dígito do cartão) e `x 320..1025 · y
+ *  204..866` no diretório (a linha da dona da conta) — nada mais mudou. As de celular
+ *  não mudaram: o que mudou está abaixo da dobra numa viewport de 844 px.
+ *
+ *  Registrado aqui porque "regerar porque mudou o número" é indistinguível de "regerar
+ *  para esconder uma regressão" sem esta frase.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -428,6 +508,10 @@ let tenantSlug: string;
 let emailDaConta: string;
 /** O `id` de quem administra a fixture: é ele que assina a publicação da página (FASE 64). */
 let idDaConta: string;
+/** O evento da vitrine — é nele que a FASE 65 pendura a grade e a atividade em curso. */
+let eventoId: string;
+/** O `slug` do mesmo evento: a aba do "agora" é uma URL pública, sem `evento=<id>`. */
+let eventoSlug: string;
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -450,9 +534,41 @@ const JANELA_ANTIGA = {
   endsAt: new Date('2000-05-06T21:00:00.000Z'),
 } as const;
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS DUAS ATIVIDADES DA "MINHA AGENDA" — INSTANTES FIXOS, E UM CHOQUE (FASE 65)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Mesma razão da janela do evento: a grade imprime o horário de cada atividade, e um
+ *  horário relativo a hoje mudaria a linha de base a cada dia. Os dois instantes são
+ *  fixos, dentro da janela do evento (2099) e no dia 10/03/2099 — 09:00–13:00 e
+ *  10:00–11:00 em Salvador (UTC−3), a mesma hora do cartão do evento.
+ *
+ *  A segunda cai DENTRO da primeira: é o caso de CONTER, que a régua da sobreposição
+ *  decide como choque (encostar não é). A tela assim mostra o bloco de aviso — o
+ *  componente que a fase criou para dizer "você escolhe qual assistir" —, e não só a
+ *  lista de itens.
+ */
+const GRADE_LONGA = {
+  startsAt: new Date('2099-03-10T12:00:00.000Z'),
+  endsAt: new Date('2099-03-10T16:00:00.000Z'),
+} as const;
+
+const GRADE_INTERNA = {
+  startsAt: new Date('2099-03-10T13:00:00.000Z'),
+  endsAt: new Date('2099-03-10T14:00:00.000Z'),
+} as const;
+
 /** Os títulos são fixos (sem `RUN_ID`): é o que permite a linha de base não ter máscara. */
 const EVENTO_FUTURO_TITULO = 'Mostra de Arte e Ciência';
 const EVENTO_ANTIGO_TITULO = 'Bienal do Recôncavo';
+/** A sala da grade — o nome dela é impresso no item, então ele também é fixo. */
+const SALA_DA_GRADE = 'Sala de oficinas';
+/** A sala da atividade em curso, na aba do agora (é o nome do grupo). */
+const SALA_DO_AGORA = 'Auditório Central';
+/** Os títulos das atividades da FASE 65, fixos como os dos eventos. */
+const GRADE_LONGA_TITULO = 'Minicurso de avaliação por pares';
+const GRADE_INTERNA_TITULO = 'Palestra sobre rubricas';
+const ATIVIDADE_EM_CURSO_TITULO = 'Mesa redonda sobre avaliação por pares';
 const TEXTO_DE_SOBRE =
   'Fundado em 1974, o instituto reúne ateliês, galerias e um programa público de formação.';
 const TEXTO_DE_CONTATO =
@@ -535,6 +651,66 @@ async function fixarJanela(input: {
   });
 }
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A MESMA IDEIA PARA A ATIVIDADE (FASE 65)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `createActivity` ancora o início em "daqui a N dias" — o certo para as outras
+ *  specs e o ERRADO aqui, porque a minha agenda IMPRIME o horário de cada item. A
+ *  atividade continua nascendo pelo helper (com todas as colunas dele); o que este
+ *  ajuste reescreve é a JANELA, depois que ela existe.
+ */
+async function fixarAtividade(input: {
+  tenantId: string;
+  activityId: string;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.activity.update({
+      where: { id: input.activityId },
+      data: {
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        workloadMinutes: Math.round(
+          (input.endsAt.getTime() - input.startsAt.getTime()) / 60_000,
+        ),
+      },
+    });
+  });
+}
+
+/**
+ * A inscrição CONFIRMADA de quem administra a fixture numa atividade.
+ *
+ * O caminho da tela tem spec própria; aqui a inscrição é o FATO que a grade precisa
+ * ENCONTRAR — sem ela, "minha agenda" não teria a marca `Inscrito` nem o par em
+ * choque, e a linha de base registraria uma tela mais pobre do que a que a pessoa usa.
+ */
+async function inscreverNaAtividade(input: {
+  tenantId: string;
+  eventId: string;
+  activityId: string;
+  userId: string;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.registration.create({
+      data: {
+        id: randomUUID(),
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        activityId: input.activityId,
+        userId: input.userId,
+        status: 'CONFIRMED',
+      },
+    });
+  });
+}
+
 async function criarEventoComJanela(input: {
   tenantId: string;
   slug: string;
@@ -604,6 +780,9 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       capacity: 100,
     });
 
+    eventoId = event.id;
+    eventoSlug = event.slug;
+
     /**
      * ─────────────────────────────────────────────────────────────────────────────
      *  A JANELA DO EVENTO VIRA UM INSTANTE FIXO (FASE 64)
@@ -667,6 +846,99 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       eventId: event.id,
       slug: `abertura-${RUN_ID}`,
       title: 'Mesa de abertura',
+    });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  AS ATIVIDADES DA FASE 65 (fatia 5) — a grade e a aba do "agora"
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Três atividades no MESMO evento da vitrine, e cada uma tem um papel:
+     *
+     *    • as DUAS primeiras formam a "minha agenda" — a pessoa está INSCRITA na longa
+     *      e FAVORITOU a interna, que cai dentro dela (o choque por CONTER);
+     *    • a terceira está EM CURSO (começou há vinte minutos, termina em quarenta) e
+     *      dá conteúdo à aba "Acontecendo agora": sem ela a aba desenharia o estado
+     *      vazio, e a barra de progresso — a peça com `role` e contraste medidos — nem
+     *      existiria no DOM.
+     *
+     *  Os instantes das duas primeiras são FIXOS; o da terceira não tem como ser (é
+     *  "agora"), e é por isso que a linha de base dela entra com máscara (ver o
+     *  cabeçalho).
+     */
+    const salaDaGrade = await createRoom({
+      tenantId: tenant.id,
+      eventId: event.id,
+      name: SALA_DA_GRADE,
+      capacity: 60,
+    });
+
+    const gradeLonga = await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `grade-longa-${RUN_ID}`,
+      title: GRADE_LONGA_TITULO,
+      roomId: salaDaGrade.id,
+      workloadMinutes: 240,
+    });
+
+    const gradeInterna = await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `grade-interna-${RUN_ID}`,
+      title: GRADE_INTERNA_TITULO,
+      workloadMinutes: 60,
+    });
+
+    await fixarAtividade({ tenantId: tenant.id, activityId: gradeLonga.id, ...GRADE_LONGA });
+    await fixarAtividade({ tenantId: tenant.id, activityId: gradeInterna.id, ...GRADE_INTERNA });
+
+    /** A inscrição pela rota direta (o caminho da tela tem spec própria) e o favorito pelo SERVIÇO. */
+    await inscreverNaAtividade({
+      tenantId: tenant.id,
+      eventId: event.id,
+      activityId: gradeLonga.id,
+      userId: idDaConta,
+    });
+
+    const favorito = await favoriteActivity({
+      tenantId: tenant.id,
+      userId: idDaConta,
+      activityId: gradeInterna.id,
+    });
+
+    if (!favorito.ok) throw new Error(`Falha ao favoritar: ${favorito.message}`);
+
+    const salaDoAgora = await createRoom({
+      tenantId: tenant.id,
+      eventId: event.id,
+      name: SALA_DO_AGORA,
+      capacity: 120,
+    });
+
+    await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `agora-${RUN_ID}`,
+      title: ATIVIDADE_EM_CURSO_TITULO,
+      roomId: salaDoAgora.id,
+      startsAtOffsetDays: -20 / (24 * 60),
+      workloadMinutes: 60,
+    });
+
+    /**
+     * A PRÓXIMA da mesma sala: é ela que dá conteúdo ao "a seguir nesta sala" — a
+     * peça que diz à pessoa onde ela deve estar no minuto seguinte, e a razão de a
+     * visão ser por SALA. Não é enfeite: sem uma próxima, a linha não existe (o
+     * componente não inventa) e a linha de base mediria menos do que a tela mostra.
+     */
+    await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `agora-proxima-${RUN_ID}`,
+      title: 'Oficina de rubricas',
+      roomId: salaDoAgora.id,
+      startsAtOffsetDays: 40 / (24 * 60),
+      workloadMinutes: 60,
     });
   } finally {
     await api.dispose();
@@ -1194,5 +1466,185 @@ test.describe('página pública da instituição', () => {
     );
 
     await expect(page).toHaveScreenshot('pagina-da-instituicao-escuro.png', PAGINA_INTEIRA);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  "MINHA AGENDA" (FASE 65) — a grade do dia, nos DOIS modos do painel
+//
+//  Superfície NOVA e DENSA: os quatro contadores, as duas marcas (inscrita ×
+//  favorita), o bloco de choque, os dois caminhos de exportação e três ações por item.
+//  Nenhuma máscara — e o motivo está no cabeçalho do arquivo: as duas atividades da
+//  fixture têm instantes FIXOS, então o horário impresso não muda de um dia para o
+//  outro. Foi a lição da FASE 64 aplicada antes de a imagem nascer, e não depois de
+//  ela piscar.
+//
+//  Os dois modos entram porque esta tela é do PAINEL (segue o cookie `ef_tema`), e a
+//  escala escura é onde uma cor que ficou no token claro, ou uma etiqueta que perdeu o
+//  contraste, só aparece em pixel.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Abre a minha agenda do evento da fixture e AFIRMA o conteúdo antes de fotografar.
+ *
+ * A espera não é cerimônia: uma agenda vazia desenha uma frase e NENHUM dos
+ * componentes que a fase criou — e a linha de base passaria a registrar essa tela
+ * pobre como se fosse a certa. Os quatro números provam que a união e os choques
+ * chegaram à tela; as duas marcas provam que o dado não virou só contador.
+ */
+async function abrirMinhaAgenda(page: Page): Promise<void> {
+  await page.goto(`/t/${tenantSlug}/minha-agenda?evento=${eventoId}`);
+
+  await expect(page.getByRole('heading', { level: 1, name: 'Minha agenda' })).toBeVisible();
+  await expect(page.getByTestId('minha-agenda')).toBeVisible();
+
+  await expect(page.getByTestId('resumo-itens')).toHaveText('2');
+  await expect(page.getByTestId('resumo-inscritas')).toHaveText('1');
+  await expect(page.getByTestId('resumo-favoritas')).toHaveText('1');
+  await expect(page.getByTestId('resumo-choques')).toHaveText('1');
+
+  /**
+   * As duas marcas, uma em cada CARTÃO. O seletor pede `li[data-mark]` de propósito:
+   * o `data-mark` também existe no interior do cartão (o distintivo da marca), e
+   * perguntar pelo atributo solto contaria o cartão e o distintivo — o teste passaria a
+   * medir quantos elementos têm a marca, e não quantos itens da grade são de cada tipo.
+   */
+  await expect(page.locator('li[data-mark="INSCRITO"]')).toHaveCount(1);
+  await expect(page.locator('li[data-mark="FAVORITO"]')).toHaveCount(1);
+
+  /** E o choque, em par: o aviso que informa e não bloqueia nada. */
+  await expect(page.getByTestId('minha-agenda-choques-secao')).toBeVisible();
+  await expect(page.getByTestId('minha-agenda-choques').locator('li')).toHaveCount(1);
+
+  /** Os dois caminhos de exportação da grade — o arquivo e o botão do Google. */
+  await expect(page.getByTestId('minha-agenda-exportacao')).toBeVisible();
+
+  await estabilizar(page);
+}
+
+test.describe('minha agenda', () => {
+  test.use({ viewport: DESKTOP });
+
+  test('17. a minha agenda no claro', async ({ page }) => {
+    await preparar(page, { tema: 'claro' });
+    await abrirMinhaAgenda(page);
+
+    /**
+     * A página inteira, e não um recorte da lista: o rodapé e o cabeçalho da grade
+     * (contadores + exportação) fazem parte do desenho, e um recorte mediria o cartão
+     * bonito mesmo que ele tivesse estourado a largura de `main`.
+     */
+    await expect(page).toHaveScreenshot('minha-agenda-claro.png', {
+      ...TOLERANCIA,
+      fullPage: true,
+      mask: [mascaraDoEndereco(barraLateral(page))],
+    });
+  });
+
+  test('18. a minha agenda no escuro', async ({ page }) => {
+    await preparar(page, { tema: 'escuro' });
+    await abrirMinhaAgenda(page);
+
+    /** A prova de que o escuro veio do SERVIDOR (o cookie é lido na requisição). */
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+
+    await expect(page).toHaveScreenshot('minha-agenda-escuro.png', {
+      ...TOLERANCIA,
+      fullPage: true,
+      mask: [mascaraDoEndereco(barraLateral(page))],
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  A ABA "ACONTECENDO AGORA" (FASE 65) — a única linha de base relativa ao relógio
+//
+//  Ela entra COM QUATRO MÁSCARAS, e o motivo de cada uma está no cabeçalho do arquivo:
+//  o preenchimento da barra, o texto do tempo restante e os dois horários (o do cartão
+//  e o do "a seguir") mudam a cada minuto. Mascarar não é esconder o que importa: o que
+//  a fase AFIRMA sobre o tempo é provado por TEXTO e por ATRIBUTO — no E2E funcional
+//  (`f65-exportacao.spec.ts`, bloco (e): o `aria-valuenow` entre 25 e 45, o
+//  `aria-valuetext` igual ao texto visível, "termina em N min") e no portão de
+//  acessibilidade (o `aria-label` da barra). A imagem mede o DESENHO em volta.
+//
+//  A sessão entra porque a aba desenha DOIS caminhos que só existem para quem tem o
+//  que fazer ali: "Abrir o meu crachá" (sessão) e "Abrir o balcão de credenciamento"
+//  (permissão). Sem sessão, os dois links somem — e a linha de base registraria uma
+//  tela que só o visitante anônimo vê.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function abrirAbaDoAgora(page: Page): Promise<void> {
+  await page.goto(`/t/${tenantSlug}/eventos/${eventoSlug}?aba=agora`);
+
+  /** A aba navegada é a ATIVA (link com `aria-current`, sem estado de cliente). */
+  await expect(page.getByTestId('aba-agora')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('aba-programacao')).not.toHaveAttribute('aria-current', 'page');
+
+  const secao = page.getByTestId('agora');
+
+  await expect(secao).toBeVisible();
+  await expect(page.getByTestId(`agora-sala-${SALA_DO_AGORA}`)).toBeVisible();
+  await expect(secao).toContainText(ATIVIDADE_EM_CURSO_TITULO);
+
+  /**
+   * A barra e o tempo restante: a imagem os MASCARA, e é justamente por isso que eles
+   * são afirmados aqui — sem esta linha, um defeito que apagasse os dois deixaria a
+   * foto verde (a máscara taparia a ausência, e não a mudança).
+   */
+  await expect(page.getByTestId('agora-barra')).toHaveAttribute('role', 'progressbar');
+  await expect(page.getByTestId('agora-restante')).toHaveText(/termina em /);
+
+  /** E os dois caminhos do dia do evento — cada um exatamente uma vez. */
+  await expect(page.locator('[data-testid^="agora-cracha-"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="agora-balcao-"]')).toHaveCount(1);
+
+  /** O que vem depois NA MESMA SALA — sem isso a linha não existe e a máscara sobra. */
+  await expect(page.getByTestId(`agora-proxima-${SALA_DO_AGORA}`)).toBeVisible();
+
+  await estabilizar(page);
+}
+
+test.describe('aba "acontecendo agora"', () => {
+  test.use({ viewport: DESKTOP });
+
+  test('19. a aba "Acontecendo agora" do evento', async ({ page }) => {
+    await preparar(page, { tema: 'claro' });
+    await abrirAbaDoAgora(page);
+
+    await expect(page).toHaveScreenshot('evento-aba-agora.png', {
+      ...TOLERANCIA,
+      fullPage: true,
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  AS QUATRO MÁSCARAS SÃO CONTÊINERES ESTÁVEIS, E ISSO FOI APRENDIDO AQUI
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A primeira versão mascarava o `<dd>` do horário e o PREENCHIMENTO da barra —
+       *  os dois nós cujo CONTEÚDO muda. Medi a diferença entre duas execuções e ela
+       *  estava exatamente ali: 137 px de largura mudaram, e a causa não era o texto
+       *  mascarado aparecendo, era a CAIXA da máscara mudando de largura e EMPURRANDO
+       *  o nome da sala ao lado. Máscara de nó que muda de tamanho é máscara que se
+       *  mexe: ela esconde o dado e denuncia a si mesma.
+       *
+       *  Por isso as quatro máscaras de agora são contêineres de largura FIXA (o
+       *  trilho inteiro da barra, a linha de informação do cartão, o parágrafo do tempo
+       *  e a linha do "a seguir"): o dado sai tapado e a CAIXA continua medindo o
+       *  desenho — uma barra que engordasse, uma linha que quebrasse ou um cartão que
+       *  encolhesse mudam a caixa magenta e reprovam.
+       */
+      mask: [
+        /** 1. A barra INTEIRA (o trilho): o preenchimento muda de largura a cada minuto. */
+        page.getByTestId('agora-barra'),
+        /**
+         * 2. A linha de informação do cartão: o horário é relativo a agora. A SALA
+         * entra na máscara junto (ela divide a mesma linha), e o nome dela continua
+         * medido no cabeçalho do grupo logo acima, que não é mascarado.
+         */
+        page.locator('[data-testid^="agora-item-"] dl'),
+        /** 3. O tempo restante em texto: muda a cada minuto. */
+        page.getByTestId('agora-restante'),
+        /** 4. O "a seguir nesta sala": ele imprime a hora de início da próxima. */
+        page.locator('[data-testid^="agora-proxima-"]'),
+      ],
+    });
   });
 });
