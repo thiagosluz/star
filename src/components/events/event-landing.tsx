@@ -14,6 +14,7 @@ import {
   formatEventPeriod,
 } from '@/domain/events/event-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 import type { PublicEventDetail } from '@/lib/events/event-repository';
 import type { PublicRaffleResult } from '@/lib/raffles/raffle-service';
 import { BlockRenderer } from '@/components/events/block-renderer';
@@ -95,6 +96,7 @@ export function EventLanding({
   happeningNow = EMPTY_HAPPENING_NOW,
   activeTab = 'programacao',
   canOperateCounter = false,
+  onlineRooms = new Map(),
   preview,
 }: {
   event: PublicEventDetail;
@@ -141,6 +143,15 @@ export function EventLanding({
    * do balcão refaz a checagem por conta própria (a autorização nunca é do link).
    */
   canOperateCounter?: boolean;
+  /**
+   * Endereço da sala online por atividade (FASE 68), JÁ filtrado pela visibilidade no
+   * servidor — chega vazio para quem não tem lugar em sala nenhuma.
+   *
+   * Ele não pode viajar em `happeningNow` (aquela visão é serializável e vai para o
+   * cliente) nem no `event` (que é a projeção da página): é este mapa que a aba
+   * "Acontecendo agora" lê, renderizado no servidor.
+   */
+  onlineRooms?: ReadonlyMap<string, string>;
   /** Presente apenas na pré-visualização do rascunho. */
   preview?: EventLandingPreviewInfo;
 }) {
@@ -277,11 +288,14 @@ export function EventLanding({
                           : 'Em breve'}
                 </span>
                 <span className="ef-badge">
-                  {event.modality === 'ONLINE'
-                    ? 'Online'
-                    : event.modality === 'HYBRID'
-                      ? 'Híbrido'
-                      : 'Presencial'}
+                  {/**
+                    * O ternário aninhado que morava AQUI virou a fonte única do domínio
+                    * (FASE 69): `eventModalityLabel`. As três etiquetas de modalidade do
+                    * produto (aqui, na vitrine da instituição e na listagem pública)
+                    * repetiam a mesma cadeia — e é o tipo de código que ninguém lembra de
+                    * atualizar no terceiro lugar.
+                    */}
+                  {eventModalityLabel(event.modality)}
                 </span>
               </div>
 
@@ -402,6 +416,7 @@ export function EventLanding({
                 eventId={event.id}
                 authenticated={agenda.authenticated}
                 canOperateCounter={canOperateCounter}
+                onlineRooms={onlineRooms}
               />
             </div>
           </div>

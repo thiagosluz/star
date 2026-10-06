@@ -74,11 +74,51 @@ export type UnfavoriteOutcome =
   | { ok: true; removed: boolean }
   | { ok: false; code: FavoriteErrorCode; message: string };
 
+/**
+ * O que a grade precisa saber sobre a SALA ONLINE de cada atividade (FASE 69).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O ENDEREÇO CRU SAI DAQUI (e por que isso não é um vazamento)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A pergunta "quem vê este endereço?" NÃO é respondida neste arquivo: ela é da régua do
+ *  domínio (`online-room-rules.ts`) aplicada sobre a PROJEÇÃO (`online-room-service.ts`),
+ *  e quem a aplica é a PÁGINA, que é quem conhece o visitante. O que sai daqui é o mesmo
+ *  que já sai de `getMyAgenda` para a página pública — o dado do banco, no servidor,
+ *  dentro de um retorno que **nunca** é serializado para o cliente (a tela lê o campo e
+ *  decide o que desenhar; o componente de cliente que ela usa recebe outras props).
+ *
+ *  A alternativa — filtrar aqui dentro, sem saber quem está olhando — obrigaria este
+ *  serviço a receber o visitante, e a leitura da grade passaria a depender de uma
+ *  consulta de permissão: duas perguntas de naturezas diferentes na mesma transação.
+ */
+export interface AgendaOnlineRoomFact {
+  /**
+   * O id da ATIVIDADE — o mesmo nome do campo que a projeção da sala online consome
+   * (`OnlineRoomActivityFact.id`), para as duas pontas falarem a mesma língua: a página
+   * da agenda entrega esta lista direto para `visibleOnlineRoomsByActivity`.
+   */
+  id: string;
+  /**
+   * A atividade EXIGE inscrição própria? (FASE 3)
+   *
+   * É o fato que a régua precisa: numa atividade ABERTA, a inscrição no evento dá lugar
+   * na sala; numa fechada, só a inscrição dela. Sem este campo a página chutaria, e o
+   * chute entregaria (ou esconderia) o endereço errado.
+   */
+  requiresRegistration: boolean;
+  /** O endereço GRAVADO — a visibilidade é resolvida na página (ver o bloco acima). */
+  onlineUrl: string | null;
+}
+
 /** A grade pronta, com o evento a que ela pertence. */
 export interface MyAgendaView extends MyAgenda {
   eventId: string;
   eventSlug: string;
   eventTitle: string;
+  /** As salas online das atividades desta grade (FASE 69). */
+  onlineRooms: readonly AgendaOnlineRoomFact[];
+  /** O endereço da sala online do EVENTO — a transmissão que vale para o dia todo. */
+  eventOnlineUrl: string | null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -269,7 +309,7 @@ export async function getMyAgenda(input: {
   return withTenant(input.tenantId, async (tx) => {
     const event = await tx.event.findFirst({
       where: { id: eventId, deletedAt: null },
-      select: { id: true, slug: true, title: true, timezone: true },
+      select: { id: true, slug: true, title: true, timezone: true, onlineUrl: true },
     });
 
     if (!event) return null;
@@ -287,6 +327,12 @@ export async function getMyAgenda(input: {
         type: true,
         workloadMinutes: true,
         room: { select: { name: true } },
+        /**
+         * Os dois fatos da sala online (FASE 69). Eles NÃO entram no `buildMyAgenda`
+         * (a grade não decide visibilidade) — vão para o mapa que a página projeta.
+         */
+        onlineUrl: true,
+        requiresRegistration: true,
       },
     });
 
@@ -328,6 +374,18 @@ export async function getMyAgenda(input: {
       eventId: event.id,
       eventSlug: event.slug,
       eventTitle: event.title,
+      /**
+       * As salas online saem da MESMA leitura das atividades — uma consulta, um
+       * instante. Ler o endereço numa segunda ida ao banco abriria a janela em que o
+       * organizador troca o link entre as duas leituras, e a grade mostraria a sala
+       * de um dado que já não é o que está gravado.
+       */
+      onlineRooms: activities.map((activity) => ({
+        id: activity.id,
+        requiresRegistration: activity.requiresRegistration,
+        onlineUrl: activity.onlineUrl,
+      })),
+      eventOnlineUrl: event.onlineUrl,
       ...agenda,
     };
   });

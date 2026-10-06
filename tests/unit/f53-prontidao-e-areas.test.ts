@@ -39,8 +39,9 @@ const PRONTO: EventReadinessFacts = {
   pendingConfirmations: 0,
   roomsWithoutCapacity: 0,
   roomCount: 2,
-  callWithoutDeadline: false,
+  usesCall: true,
   hasPublishedCall: true,
+  callWithoutDeadline: false,
   registrationHasDeadline: true,
 };
 
@@ -90,9 +91,18 @@ describe('painel de prontidão', () => {
     expect(rascunho.map((item) => item.id)).toEqual([]);
   });
 
-  it('chamada publicada sem prazo avisa; chamada sem prazo e inexistente não', () => {
+  it('chamada publicada sem prazo avisa; evento que NÃO usa chamada não é cobrado', () => {
     expect(ids({ callWithoutDeadline: true })).toContain('chamada-sem-prazo');
     expect(ids({ callWithoutDeadline: false })).not.toContain('chamada-sem-prazo');
+
+    /**
+     * FASE 68 — o interruptor do evento. Sem ele, um evento corporativo (que nunca vai
+     * receber artigo) era cobrado por uma chamada que ninguém publicou: era assim que o
+     * painel mandava o organizador para uma tela vazia. O `callWithoutDeadline` fica
+     * ligado de propósito — o que precisa segurar a pendência é o INTERRUPTOR.
+     */
+    expect(ids({ usesCall: false, callWithoutDeadline: true })).not.toContain('chamada-sem-prazo');
+    expect(ids({ usesCall: false, trackCount: 0 })).not.toContain('chamada-sem-trilha');
   });
 
   it('a trilha só é cobrada quando a chamada científica está publicada', () => {
@@ -100,6 +110,15 @@ describe('painel de prontidão', () => {
 
     /** Evento sem chamada publicada pode não ter trilha nenhuma — e está certo. */
     expect(ids({ trackCount: 0, hasPublishedCall: false })).not.toContain('chamada-sem-trilha');
+
+    /**
+     * FASE 68 — e a chamada publicada só cobra trilha de quem RECEBE trabalhos. A
+     * chamada publicada continua sendo o evento dizendo que recebe, mas o teste prende
+     * a ordem: o interruptor é o primeiro portão.
+     */
+    expect(ids({ trackCount: 0, hasPublishedCall: true, usesCall: false })).not.toContain(
+      'chamada-sem-trilha',
+    );
   });
 
   it('toda pendência aponta para um atalho que EXISTE na tela', () => {

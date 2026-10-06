@@ -16,6 +16,7 @@ import {
 import { formatDuration } from '@/domain/events/event-rules';
 import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
 import { activityTypeLabel } from '@/domain/events/activity-rules';
+import { tracksAnnouncement } from '@/domain/events/call-optional-rules';
 import {
   BLOCK_LABELS,
   SANDBOXED_BLOCK_TYPES,
@@ -319,6 +320,31 @@ export function ActivityCard({
               <div className="flex items-center gap-1.5">
                 <MapPin className="size-3.5 shrink-0" aria-hidden />
                 <dd>{activity.roomName}</dd>
+              </div>
+            ) : null}
+            {/**
+              * ── A SALA ONLINE DA ATIVIDADE (FASE 68) ─────────────────────────────
+              *
+              *  `onlineUrl` só chega aqui para quem tem lugar NESTA atividade (ou para
+              *  a equipe): a projeção que a página entrega já veio com `null` para os
+              *  demais (`applyOnlineRoomVisibility`). Por isso não há condição de
+              *  permissão neste arquivo — e é justamente isso que faz o endereço
+              *  ausente do HTML, e não apenas invisível.
+              */}
+            {activity.onlineUrl ? (
+              <div className="flex items-center gap-1.5">
+                <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+                <dd>
+                  <a
+                    href={activity.onlineUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid={`atividade-sala-online-${activity.id}`}
+                    className="underline underline-offset-4"
+                  >
+                    Entrar na sala online
+                  </a>
+                </dd>
               </div>
             ) : null}
             {activity.speakerNames.length > 0 ? (
@@ -780,6 +806,25 @@ function CountdownBlock({
   );
 }
 
+/**
+ * Local do evento — endereço físico e a SALA ONLINE (FASE 68).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O BLOCO NÃO ANUNCIA O QUE ELE NÃO PODE DIZER
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Aqui havia o VAZAMENTO que a fatia 3 fechou: `event.onlineUrl` era desenhado para
+ *  QUALQUER visitante, inclusive o anônimo, porque a coluna existia e o renderizador
+ *  não perguntava nada. A correção NÃO é uma condição aqui dentro — é a projeção:
+ *  `event` chega com `onlineUrl: null` para quem não tem lugar na sala
+ *  (`applyOnlineRoomVisibility`, em `src/lib/events/online-room-service.ts`), então
+ *  o link não existe no HTML. Não há `hidden`, não há CSS, não há JavaScript: o que
+ *  não se pode mostrar não é renderizado — e por isso não aparece no `Ctrl+U`.
+ *
+ *  Quando o endereço não vem, o bloco também NÃO escreve "Online" nem "transmissão":
+ *  dizer que há uma sala sem dizer onde entrar é pior do que não dizer nada — foi
+ *  exatamente o que o §2.6 do plano da fase mediu ("o visitante lê Online e não sabe
+ *  onde entrar").
+ */
 function VenueBlock({ event }: { event: PublicEventDetail }) {
   const location = [event.venueName, event.venueAddress, event.city, event.state]
     .filter(Boolean)
@@ -802,6 +847,7 @@ function VenueBlock({ event }: { event: PublicEventDetail }) {
             href={event.onlineUrl}
             target="_blank"
             rel="noopener noreferrer"
+            data-testid="evento-sala-online"
             className="flex items-center gap-2 text-sm underline underline-offset-4"
           >
             <ExternalLink className="size-4" aria-hidden />
@@ -895,28 +941,63 @@ function SpeakersBlock({
 }
 
 /**
- * Trilhas temáticas da chamada de trabalhos (FASE 17).
+ * Trilhas temáticas (FASE 17) — a chamada de trabalhos quando ela EXISTE (FASE 68).
  *
  * A contagem de submissões aparece porque é o único sinal público de que a chamada
  * está viva — e é o que um autor procura antes de escrever.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O BLOCO NÃO PODE ANUNCIAR O QUE O EVENTO NÃO FAZ
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Ele dizia "Chamada de trabalhos" e "Submeta seu trabalho na trilha
+ *  correspondente ao tema" para QUALQUER evento com trilha cadastrada — sem janela,
+ *  sem estado e sem link. Num evento que não recebe trabalhos, isso é um convite que
+ *  ninguém vai atender: o visitante escreve o resumo e descobre que não há formulário.
+ *
+ *  A decisão é do DOMÍNIO (`tracksAnnouncement`), e ela tem três saídas:
+ *
+ *    • **não recebe trabalhos** → o bloco INTEIRO sai do HTML. Não é `hidden` nem CSS:
+ *      o que não é renderizado não é lido por ninguém, nem pelo leitor de tela.
+ *    • **recebe trabalhos, sem chamada publicada ainda** → o bloco fica, porque a lista
+ *      de eixos temáticos é informação do evento, mas ele NÃO convida a submeter.
+ *    • **recebe trabalhos com chamada publicada** → o convite é verdadeiro e é o do bloco.
  */
 function TracksBlock({
   tracks,
   content,
+  usesCall,
+  hasPublishedCall,
 }: {
   tracks: PublicEventDetail['tracks'];
   content: unknown;
+  usesCall: boolean;
+  hasPublishedCall: boolean;
 }) {
-  if (tracks.length === 0) return null;
+  const anuncio = tracksAnnouncement({
+    /**
+     * O interruptor do evento OU a chamada publicada: uma chamada no ar é o evento
+     * dizendo que recebe trabalhos com o FATO, e não com a intenção — ver o cabeçalho
+     * de `call-optional-rules.ts`.
+     */
+    receivesSubmissions: usesCall || hasPublishedCall,
+    hasPublishedCall,
+    trackCount: tracks.length,
+  });
+
+  if (anuncio === 'SILENT') return null;
 
   const title = readString(content, 'title');
 
   return (
     <Section id="trilhas">
       <SectionHeading
-        eyebrow="Chamada de trabalhos"
+        eyebrow={anuncio === 'ANNOUNCE' ? 'Chamada de trabalhos' : 'Trilhas temáticas'}
         title={title ?? 'Trilhas temáticas'}
-        description="Submeta seu trabalho na trilha correspondente ao tema."
+        description={
+          anuncio === 'ANNOUNCE'
+            ? 'Submeta seu trabalho na trilha correspondente ao tema.'
+            : 'Os eixos temáticos em que o evento se organiza.'
+        }
       />
       <ul className="grid gap-3 sm:grid-cols-2">
         {tracks.map((track) => (
@@ -1288,7 +1369,14 @@ export function BlockRenderer({
     case 'TEAM':
       return <TeamBlock organizers={event.organizers} teams={event.teams} content={content} />;
     case 'TRACKS':
-      return <TracksBlock tracks={event.tracks} content={content} />;
+      return (
+        <TracksBlock
+          tracks={event.tracks}
+          content={content}
+          usesCall={event.usesCall}
+          hasPublishedCall={publicCalls.length > 0}
+        />
+      );
     case 'CALL_FOR_PROPOSALS':
       return (
         <CallsBlock

@@ -16,6 +16,8 @@ import {
 import { deleteActivityAction, saveActivityAction } from '@/app/actions/admin-actions';
 import { SectionHeading } from '@/components/ui';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
+import { onlineRoomFieldVisibility } from '@/domain/events/event-form-defaults';
+import { EVENT_MODALITY_OPTIONS } from '@/domain/events/event-modality-rules';
 import { ConfirmationFields } from '@/components/admin/confirmation-fields';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 
@@ -40,11 +42,29 @@ const ACTIVITY_STATUS = [
   { value: 'CANCELED', label: 'Cancelada' },
 ];
 
-const MODALITY = [
-  { value: 'IN_PERSON', label: 'Presencial' },
-  { value: 'ONLINE', label: 'Online' },
-  { value: 'HYBRID', label: 'Híbrido' },
-];
+/**
+ * A lista `MODALITY` que morava AQUI virou a fonte única do domínio (FASE 69):
+ * `EVENT_MODALITY_OPTIONS` (`src/domain/events/event-modality-rules.ts`). A mesma lista
+ * estava nas três telas de administração — e a ATIVIDADE e o EVENTO compartilham o enum
+ * `EventModality` do schema, então as duas telas nunca deveriam ter tido cópias.
+ */
+
+/**
+ * A dica do campo do endereço NA ATIVIDADE.
+ *
+ * É diferente da do evento de propósito, e as duas estão certas: no evento, o
+ * endereço é mostrado a quem tem inscrição NO EVENTO; aqui, a quem tem lugar NAQUELA
+ * atividade (o minicurso fechado exige a inscrição dele; a palestra aberta recebe
+ * quem se inscreveu no evento). Uma frase só para os dois mentiria num dos dois.
+ */
+const DICA_SALA_ONLINE_DA_ATIVIDADE =
+  'Só http:// ou https://. Mostrado apenas a quem tem lugar nesta atividade (ou à equipe).';
+
+/** O mesmo campo na CRIAÇÃO — sem endereço gravado, então só a modalidade decide. */
+const SALA_ONLINE_NA_CRIACAO = onlineRoomFieldVisibility({
+  modality: 'IN_PERSON',
+  hint: DICA_SALA_ONLINE_DA_ATIVIDADE,
+});
 
 export const metadata = { title: 'Programação' };
 export const dynamic = 'force-dynamic';
@@ -189,8 +209,51 @@ export default async function EventSchedulePage({
                           <Field label="Título" name="title" required defaultValue={activity.title} />
                           <SelectField label="Tipo" name="type" options={ACTIVITY_TYPES} defaultValue={activity.type} />
                           <SelectField label="Situação" name="status" options={ACTIVITY_STATUS} defaultValue={activity.status} />
-                          <SelectField label="Modalidade" name="modality" options={MODALITY} defaultValue={activity.modality} />
+                          <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue={activity.modality} />
                           <SelectField label="Sala" name="roomId" options={roomOptions} defaultValue={activity.roomId ?? ''} />
+                          {/**
+                            * ───────────────────────────────────────────────────────────
+                            *  O ENDEREÇO DA SALA ONLINE DA ATIVIDADE (FASE 68)
+                            * ───────────────────────────────────────────────────────────
+                            *  A atividade pode REPETIR o endereço do evento — repetir é
+                            *  escolha do organizador, não herança: uma atividade isolada
+                            *  tem a própria sala, e herdar faria esta atividade apontar
+                            *  para o lugar errado no dia em que o evento trocasse o
+                            *  endereço.
+                            *
+                            *  A PRESENÇA do campo é decidida no SERVIDOR, e olha para a
+                            *  modalidade DESTA atividade — nunca a do evento: um evento
+                            *  híbrido pode ter uma oficina presencial, e é a oficina que
+                            *  decide se faz sentido ter sala online. O campo também
+                            *  aparece quando JÁ existe endereço gravado, com a frase que
+                            *  explica por que ele está ali (o organizador precisa poder
+                            *  ver e limpar o que está salvo).
+                            */}
+                          {(() => {
+                            const salaOnline = onlineRoomFieldVisibility({
+                              modality: activity.modality,
+                              existingUrl: activity.onlineUrl,
+                              hint: DICA_SALA_ONLINE_DA_ATIVIDADE,
+                            });
+
+                            /**
+                             * `show` falso = o campo NÃO é desenhado. Não há CSS
+                             * escondendo nada: é a marcação que não existe, e é por isso
+                             * que este formulário funciona igual sem JavaScript — a
+                             * decisão é do servidor.
+                             */
+                            return salaOnline.show ? (
+                              <Field
+                                label="Endereço da sala online desta atividade"
+                                name="onlineUrl"
+                                type="url"
+                                defaultValue={activity.onlineUrl}
+                                placeholder="https://sala.exemplo.com/entrar"
+                                notice={salaOnline.notice}
+                                hint={salaOnline.hint}
+                              />
+                            ) : null;
+                          })()}
                           <Field
                             label="Início"
                             name="startsAt"
@@ -314,8 +377,27 @@ export default async function EventSchedulePage({
               <Field label="Título" name="title" required placeholder="Minicurso: Rust para iniciantes" />
               <SelectField label="Tipo" name="type" options={ACTIVITY_TYPES} defaultValue="LECTURE" />
               <SelectField label="Situação" name="status" options={ACTIVITY_STATUS} defaultValue="SCHEDULED" />
-              <SelectField label="Modalidade" name="modality" options={MODALITY} defaultValue="IN_PERSON" />
+              <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue="IN_PERSON" />
               <SelectField label="Sala" name="roomId" options={roomOptions} />
+              {/**
+                * FASE 68: a sala online da atividade. Em branco = sem sala online
+                * própria (o endereço do EVENTO não é herdado por esta atividade).
+                *
+                * Aqui o formulário CRIA a atividade, e ela nasce PRESENCIAL — o campo
+                * não é desenhado (ver `SALA_ONLINE_NA_CRIACAO`). Quem escolher "Online"
+                * ou "Híbrido" salva e encontra o campo no formulário de EDIÇÃO que abre
+                * logo acima, já com a modalidade que escolheu.
+                */}
+              {SALA_ONLINE_NA_CRIACAO.show ? (
+                <Field
+                  label="Endereço da sala online"
+                  name="onlineUrl"
+                  type="url"
+                  placeholder="https://sala.exemplo.com/entrar"
+                  notice={SALA_ONLINE_NA_CRIACAO.notice}
+                  hint={SALA_ONLINE_NA_CRIACAO.hint}
+                />
+              ) : null}
               <Field label="Início" name="startsAt" type="datetime-local" required defaultValue={toLocalInput(event.startsAt)} />
               <Field label="Término" name="endsAt" type="datetime-local" required defaultValue={toLocalInput(new Date(event.startsAt.getTime() + 3_600_000))} />
               <Field label="Carga horária (min)" name="workloadMinutes" type="number" min={1} required defaultValue={60} />

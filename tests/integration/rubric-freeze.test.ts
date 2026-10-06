@@ -175,10 +175,24 @@ async function withCallReview(input: {
     });
   });
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A SUBMISSÃO NASCE PELA CHAMADA (FASE 68)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até esta fase a fixture criava a submissão pelo caminho da TRILHA e escrevia
+   *  `callId` na mão depois — porque o serviço não tinha portão nenhum e aceitava a
+   *  submissão de um evento que já recebia trabalhos por chamada. Agora os dois
+   *  caminhos deixaram de se cruzar: quem tem `callId` entra por ele (e recebe a
+   *  janela, o limite e a trilha DA CHAMADA), e quem não tem é recusado com
+   *  `CFP_CLOSED`. A fixture passou a fazer o que a pessoa faz.
+   *
+   *  Escrever `callId` depois da criação não é uma opção: seria a fixture contornando
+   *  exatamente a regra que o teste do serviço prende.
+   */
   const created = await createSubmission({
     tenantId,
     eventId,
-    trackId: input.trackId,
+    callId,
     userId: authorId,
     title: 'Proposta de chamada com rubrica própria',
     abstract:
@@ -189,8 +203,6 @@ async function withCallReview(input: {
   if (!created.ok) throw new Error(`Falha ao criar a submissão da chamada: ${created.message}`);
 
   await withTenant(tenantId, async (tx) => {
-    await tx.submission.update({ where: { id: created.id }, data: { callId } });
-
     await tx.review.create({
       data: {
         tenantId,
@@ -255,8 +267,6 @@ beforeAll(async () => {
         timezone: TIME_ZONE,
         startsAt,
         endsAt: new Date(startsAt.getTime() + 2 * 86_400_000),
-        cfpOpensAt: new Date(Date.now() - 86_400_000),
-        cfpClosesAt: new Date(Date.now() + 30 * 86_400_000),
       },
     });
   });

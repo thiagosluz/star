@@ -154,8 +154,6 @@ test.beforeAll(async ({ playwright, baseURL }) => {
           startsAt,
           endsAt: new Date(startsAt.getTime() + 2 * 86_400_000),
           timezone: 'America/Bahia',
-          cfpOpensAt: new Date(Date.now() - 86_400_000),
-          cfpClosesAt: new Date(Date.now() + 30 * 86_400_000),
         },
       });
     });

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, CalendarClock, IdCard, MapPin, Mic, ScanLine } from 'lucide-react';
+import { ArrowRight, CalendarClock, IdCard, MapPin, Mic, ScanLine, Video } from 'lucide-react';
 
 import { tenantPath } from '@/domain/tenancy/resolution';
 import type { HappeningNowView, NowItem } from '@/domain/agenda/now-rules';
@@ -111,6 +111,7 @@ function NowCard({
   eventId,
   showBadgeLink,
   showCounterLink,
+  onlineUrl,
 }: {
   item: NowItem;
   tenantSlug: string;
@@ -118,6 +119,16 @@ function NowCard({
   eventId: string;
   showBadgeLink: boolean;
   showCounterLink: boolean;
+  /**
+   * O endereço da sala desta atividade, quando a pessoa tem lugar nela (FASE 68).
+   *
+   * Ele NÃO vem de `item`: `HappeningNowView` é serializável e vai para o cliente, e
+   * o endereço não pode viajar nela (plano da fase, §4). Vem deste parâmetro, que é
+   * um `ReadonlyMap` montado no servidor — e `Map` é a escolha, não um detalhe: o
+   * React RECUSA serializar um `Map` se algum dia este componente virar Client
+   * Component, então o erro seria alto em vez de um vazamento silencioso.
+   */
+  onlineUrl?: string;
 }) {
   /**
    * O cartão vive SEMPRE dentro do tema do evento (`ThemeScope`), e é por isso que ele
@@ -165,6 +176,26 @@ function NowCard({
       </dl>
 
       <TimeProgressBar item={item} />
+
+      {/**
+        ── A SALA ONLINE DA ATIVIDADE EM CURSO (FASE 68) ─────────────────────────
+        Quem está no evento e assiste de longe precisa do endereço AGORA, e não na
+        programação. Ele é desenhado AQUI, no servidor, e só chega para quem tem lugar
+        na sala: a página resolve a visibilidade ANTES de montar este mapa
+        (`applyOnlineRoomVisibility`), e o endereço não existe no HTML dos demais.
+      */}
+      {onlineUrl ? (
+        <a
+          href={onlineUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={linkClass}
+          data-testid={`agora-sala-online-${item.activityId}`}
+        >
+          <Video className="size-3.5 shrink-0" aria-hidden />
+          Entrar na sala online
+        </a>
+      ) : null}
 
       {/**
         ── O CAMINHO DE CADA PAPEL ──────────────────────────────────────────────
@@ -218,6 +249,7 @@ export function HappeningNowSection({
   eventId,
   authenticated,
   canOperateCounter,
+  onlineRooms = new Map(),
 }: {
   view: HappeningNowView;
   tenantSlug: string;
@@ -227,6 +259,12 @@ export function HappeningNowSection({
   authenticated: boolean;
   /** `registration:checkin` conferida NO SERVIDOR (ver a página do evento). */
   canOperateCounter: boolean;
+  /**
+   * Endereço da sala online por atividade (FASE 68), já filtrado pela visibilidade no
+   * servidor. `ReadonlyMap` de propósito: se este componente virar Client Component,
+   * o React RECUSA serializar em vez de mandar o endereço ao navegador em silêncio.
+   */
+  onlineRooms?: ReadonlyMap<string, string>;
 }) {
   if (view.isEmpty) {
     return (
@@ -283,6 +321,7 @@ export function HappeningNowSection({
                   eventId={eventId}
                   showBadgeLink={authenticated}
                   showCounterLink={canOperateCounter}
+                  onlineUrl={onlineRooms.get(item.activityId)}
                 />
               ))}
             </ul>

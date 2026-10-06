@@ -252,10 +252,22 @@ export async function unsubscribePerson(
  *  O canal é `LINK` e não `EMAIL`: quando a pessoa chega aqui, o e-mail já foi
  *  aberto e ela veio pela PÁGINA — e a operação quer saber se o rodapé funciona.
  *  O `EMAIL` fica reservado ao registro que a própria mensagem faria.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O MOTIVO CHEGA PRONTO, E AQUI NÃO SE JULGA O QUE ELE DIZ (E88)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Quem lê a escolha da pessoa é a AÇÃO, com a regra pura do domínio; este serviço
+ *  recebe texto (ou `null`) e grava. A separação não é preciosismo: o mesmo
+ *  parâmetro atende o caminho `MANUAL`, onde o texto é uma frase escrita pela
+ *  equipe que nenhuma lista de opções conhece. Se a validação morasse aqui, ela
+ *  teria de recusar o motivo do telefone ou aceitar qualquer coisa — e as duas
+ *  respostas estão erradas.
  */
 export async function unsubscribeByToken(input: {
   tenantId: string;
   token: string;
+  /** O motivo já resolvido pelo domínio: frase conhecida, texto escrito ou `null`. */
+  reason?: string | null;
 }): Promise<UnsubscribeResult<UnsubscribePersonOutput & { userId: string }>> {
   const userId = await resolveUnsubscribeUser({ tenantId: input.tenantId, token: input.token });
 
@@ -268,6 +280,7 @@ export async function unsubscribeByToken(input: {
     userId,
     channel: 'LINK',
     token: input.token,
+    reason: input.reason ?? null,
   });
 
   if (!recorded.ok) return recorded;

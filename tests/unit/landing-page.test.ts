@@ -274,39 +274,79 @@ describe('buildEventMetadata()', () => {
     endsAt: new Date('2026-04-03T18:00:00Z'),
   };
 
+  /**
+   * O fuso virou parâmetro OBRIGATÓRIO na FASE 68 (ver `buildEventMetadata`), e o
+   * valor da fixture é o que o chamador real passa: `event.timezone`.
+   */
+  const TZ = 'America/Bahia';
+
   it('usa o resumo quando presente', () => {
-    const meta = buildEventMetadata({ ...base, summary: 'Três dias de imersão.' });
+    const meta = buildEventMetadata({ ...base, summary: 'Três dias de imersão.' }, TZ);
     expect(meta.description).toBe('Três dias de imersão.');
   });
 
   it('cai para o subtítulo quando não há resumo', () => {
-    const meta = buildEventMetadata({ ...base, subtitle: 'Inovação e ensino.' });
+    const meta = buildEventMetadata({ ...base, subtitle: 'Inovação e ensino.' }, TZ);
     expect(meta.description).toBe('Inovação e ensino.');
   });
 
   it('monta descrição com data e local quando não há texto', () => {
-    const meta = buildEventMetadata({
-      ...base,
-      venueName: 'Centro de Convenções',
-      city: 'Salvador',
-    });
+    const meta = buildEventMetadata(
+      {
+        ...base,
+        venueName: 'Centro de Convenções',
+        city: 'Salvador',
+      },
+      TZ,
+    );
     expect(meta.description).toContain('Congresso de Tecnologia 2026');
     expect(meta.description).toContain('Centro de Convenções');
     expect(meta.description).toContain('Salvador');
   });
 
   it('ignora strings só com espaços', () => {
-    const meta = buildEventMetadata({ ...base, summary: '   ', subtitle: 'Válido' });
+    const meta = buildEventMetadata({ ...base, summary: '   ', subtitle: 'Válido' }, TZ);
+    /** O subtítulo cai na descrição COMO VEIO — o que sobra é do resumo em branco. */
     expect(meta.description).toBe('Válido');
   });
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O DEFEITO DE DATA EM UTC (FASE 68 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `2026-04-01T21:00:00-03:00` (= `2026-04-02T00:00:00Z`) é o caso que a fase
+   *  mediu: às 21:00 em Salvador o dia já virou em UTC, e a descrição anunciava
+   *  **02 de abril** para um evento de **1º de abril**. O defeito valia para todo
+   *  evento criado à noite.
+   *
+   *  As DUAS asserções são a prova inteira: a certa (o dia do evento, no fuso dele) e
+   *  a errada (o dia seguinte, que é o que a versão em UTC escrevia). Sem a segunda,
+   *  o teste passaria com qualquer formatação que contivesse "abril".
+   */
+  it('formata a data no fuso do evento — o dia não vira em UTC', () => {
+    const eventoDaNoite = {
+      title: 'Congresso de Tecnologia 2026',
+      startsAt: new Date('2026-04-01T21:00:00-03:00'),
+      endsAt: new Date('2026-04-01T23:00:00-03:00'),
+    };
+
+    const noFusoDoEvento = buildEventMetadata(eventoDaNoite, 'America/Bahia');
+    const emUtc = buildEventMetadata(eventoDaNoite, 'UTC');
+
+    expect(noFusoDoEvento.description).toContain('01 de abril de 2026');
+    expect(noFusoDoEvento.description).not.toContain('02 de abril');
+
+    /** E o valor antigo, para o teste dizer QUAL era o defeito (e não só que sumiu). */
+    expect(emUtc.description).toContain('02 de abril de 2026');
+  });
+
   it('inclui imagem no Open Graph quando houver capa', () => {
-    const meta = buildEventMetadata({ ...base, coverImageUrl: 'https://cdn.test/c.jpg' });
+    const meta = buildEventMetadata({ ...base, coverImageUrl: 'https://cdn.test/c.jpg' }, TZ);
     expect(meta.openGraph.images).toEqual([{ url: 'https://cdn.test/c.jpg' }]);
   });
 
   it('omite imagem quando não há capa', () => {
-    const meta = buildEventMetadata(base);
+    const meta = buildEventMetadata(base, TZ);
     expect(meta.openGraph.images).toBeUndefined();
   });
 });

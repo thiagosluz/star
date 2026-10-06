@@ -1,0 +1,37 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  FASE 68 — O ENDEREÇO DA SALA ONLINE NA ATIVIDADE (fatia 2)
+--
+--  UMA coluna, e ela nasce VAZIA de propósito: `Activity.onlineUrl` é `NULL` para
+--  todas as atividades que já existem. Preencher por herança com o endereço do
+--  evento seria decidir pelo organizador — e a decisão desta fase é explícita: a
+--  atividade PODE repetir o endereço do evento, mas quem repete é quem edita a
+--  atividade. Herdar no backfill criaria atividade apontando para a sala de outro
+--  evento no dia em que o endereço do evento mudasse, e ninguém saberia de onde veio.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE A COLUNA DO EVENTO JÁ EXISTIA E ESTA NÃO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  `Event.onlineUrl` foi criada na primeira migração (`20260916201435_init`) e viveu
+--  com **um leitor e nenhum escritor** até esta fase: o bloco de LOCAL da página
+--  pública mostrava o endereço, e nenhum formulário, nenhum serviço e nenhum seed o
+--  gravava (medido: 0 de 365 eventos no banco de desenvolvimento). A fatia 2 criou o
+--  escritor das DUAS colunas; a fatia 3 fez o leitor respeitar quem tem lugar.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  O QUE A VISIBILIDADE TEM A VER COM A MIGRAÇÃO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Nada — e é por isso que ela está escrita aqui. O endereço não é protegido por
+--  PRIVILÉGIO de banco (a role de runtime lê a coluna como lê o título), porque quem
+--  decide é a REGRA: `src/domain/events/online-room-rules.ts`, derivada de
+--  `registrationIsLive` MENOS a lista de espera, mais a equipe do evento. A coluna
+--  viaja na projeção pública junto do resto da atividade; o que NÃO pode acontecer é
+--  ela chegar ao HTML de quem não tem lugar — e para isso o renderizador simplesmente
+--  não desenha (não há `hidden`, não há CSS, não há JavaScript).
+--
+--  Contrato de banco: coluna nova em `activities` NÃO cria tabela nem RLS nova (a
+--  armadilha 101 vale para tabela nova), e `npm run db:verify` continua conferindo os
+--  privilégios da role de runtime sobre a tabela que já existia.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- AlterTable
+ALTER TABLE "activities" ADD COLUMN     "onlineUrl" VARCHAR(1024);

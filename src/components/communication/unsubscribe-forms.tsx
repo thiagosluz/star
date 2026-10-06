@@ -2,7 +2,7 @@
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  AS DUAS DECISÕES DA PÁGINA DE DESCADASTRO (FASE 67 · fatia 3)
+ *  AS DECISÕES DA PÁGINA DE DESCADASTRO (FASE 67 · fatia 3 · FASE 69 · E88)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE UM COMPONENTE DE CLIENTE, SE A PÁGINA INTEIRA É DO SERVIDOR
@@ -35,6 +35,13 @@ import {
   confirmUnsubscribeAction,
   type UnsubscribeActionState,
 } from '@/app/actions/unsubscribe-actions';
+import {
+  MAX_UNSUBSCRIBE_REASON_LENGTH,
+  UNSUBSCRIBE_REASON_CHOICES,
+  UNSUBSCRIBE_REASON_FIELD,
+  UNSUBSCRIBE_REASON_NOTE_FIELD,
+} from '@/domain/communication/unsubscribe-reason-rules';
+import { Input } from '@/components/ui/form';
 
 function SubmitButton({
   label,
@@ -88,6 +95,25 @@ function Feedback({ state, testId }: { state: UnsubscribeActionState | null; tes
  * O botão diz o que acontece ("Parar de receber os recados") e não "Confirmar":
  * quem chegou até aqui clicou em algo que prometia "cancelar o recebimento", e o
  * rótulo do botão é a última chance de a pessoa perceber que está no lugar certo.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A PERGUNTA DO MOTIVO É DO MESMO FORMULÁRIO — E ISSO É O DESENHO (E88)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O motivo viaja no MESMO `POST` do botão de saída, e não em um segundo passo:
+ *  separar "contar o motivo" de "sair" faria a cortesia virar pedágio — a pessoa
+ *  responderia para só então conseguir sair, ou sairia sem responder e o pedido
+ *  ficaria pela metade. Aqui os dois fatos entram na mesma requisição, e a saída
+ *  não depende do que vier do outro lado (o domínio transforma qualquer valor
+ *  estranho em "saiu sem dizer").
+ *
+ *  A ESCOLHA NÃO TEM ESTADO NO CLIENTE, de propósito: são `<input type="radio">`
+ *  e um `<input type="text">` nativos, sem `useState` e sem `onChange`. É o que
+ *  faz a pergunta funcionar ANTES de o JavaScript carregar — a página inteira é um
+ *  formulário que o navegador sabe enviar sozinho, e nada aqui pode quebrar isso.
+ *
+ *  O campo de texto livre fica SEMPRE visível, e não só quando alguém marca "Outro
+ *  motivo": mostrá-lo condicionalmente exigiria JavaScript, e sem JavaScript a
+ *  pergunta existiria sem o campo. O rótulo diz quando ele serve.
  */
 export function UnsubscribeForm({
   tenantSlug,
@@ -102,9 +128,51 @@ export function UnsubscribeForm({
   );
 
   return (
-    <form action={formAction} className="space-y-3" data-testid="unsubscribe-form">
+    <form action={formAction} className="space-y-4" data-testid="unsubscribe-form">
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="token" value={token} />
+
+      <fieldset className="space-y-2" data-testid="unsubscribe-reason">
+        <legend className="text-sm font-medium">Quer contar por quê? (opcional)</legend>
+        <p className="text-muted-foreground text-xs">
+          A sua saída não depende disto: você sai ao confirmar abaixo, com ou sem motivo. Se
+          preferir não dizer, é só deixar como está.
+        </p>
+
+        <ul className="space-y-1.5">
+          {UNSUBSCRIBE_REASON_CHOICES.map((choice, indice) => (
+            <li key={choice}>
+              {/*
+                O rótulo ENVOLVE o rádio: sem `id`/`htmlFor` para divergir, e o
+                nome acessível do controle passa a ser a própria frase da opção —
+                que é o que o leitor de tela anuncia.
+              */}
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name={UNSUBSCRIBE_REASON_FIELD}
+                  value={choice}
+                  className="accent-primary mt-0.5 size-3.5 shrink-0"
+                  data-testid={`unsubscribe-reason-${indice}`}
+                />
+                <span>{choice}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+
+        <div className="space-y-1">
+          <label className="text-muted-foreground block text-xs" htmlFor="unsubscribe-reason-note">
+            Se escolheu “Outro motivo”, escreva em poucas palavras (opcional)
+          </label>
+          <Input
+            id="unsubscribe-reason-note"
+            name={UNSUBSCRIBE_REASON_NOTE_FIELD}
+            maxLength={MAX_UNSUBSCRIBE_REASON_LENGTH}
+            data-testid="unsubscribe-reason-note"
+          />
+        </div>
+      </fieldset>
 
       <SubmitButton
         label="Parar de receber os recados em massa"

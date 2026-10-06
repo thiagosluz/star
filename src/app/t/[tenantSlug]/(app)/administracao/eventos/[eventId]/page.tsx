@@ -38,6 +38,7 @@ import {
 import { getEventAreaCounts } from '@/lib/events/event-area-counts';
 import { eventReadiness } from '@/domain/events/event-readiness';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { formatEventPeriod } from '@/domain/events/event-rules';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { Card, CardContent, SectionHeading } from '@/components/ui';
 
@@ -107,6 +108,21 @@ export default async function AdminEventDetailPage({
    */
   const areaContext = { tenantSlug, eventId: event.id, eventSlug: event.slug };
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A CHAMADA DE TRABALHOS É OPCIONAL (FASE 68)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Os dois fatos da chamada vêm da ENTIDADE da FASE 33 — chamadas publicadas e
+   *  quantas delas não têm prazo —, e não mais do par `cfpOpensAt`/`cfpClosesAt`, que
+   *  ninguém escrevia. Era isso que produzia o falso alarme: um evento com a janela
+   *  preenchida e ZERO chamadas fazia o painel cobrar uma trilha e mandar o
+   *  organizador para uma tela vazia.
+   *
+   *  O `usesCall` do evento OU a existência de chamada publicada ligam a cobrança: uma
+   *  chamada publicada é, por si só, o evento dizendo que recebe trabalhos.
+   */
+  const usaChamada = event.usesCall || event.calls.published > 0;
+
   const pendencias = eventReadiness({
     status: event.status,
     activityCount: event.activityCount,
@@ -115,8 +131,9 @@ export default async function AdminEventDetailPage({
     pendingConfirmations,
     roomsWithoutCapacity: event.rooms.filter((room) => room.capacity === null).length,
     roomCount: event.rooms.length,
-    callWithoutDeadline: event.cfpOpensAt !== null && event.cfpClosesAt === null,
-    hasPublishedCall: event.cfpOpensAt !== null,
+    usesCall: usaChamada,
+    hasPublishedCall: event.calls.published > 0,
+    callWithoutDeadline: event.calls.withoutDeadline > 0,
     registrationHasDeadline: event.registrationClosesAt !== null,
   });
 
@@ -224,8 +241,19 @@ export default async function AdminEventDetailPage({
           </Link>
         </nav>
         <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
+        {/**
+          * ─────────────────────────────────────────────────────────────────────────
+          *  A MESMA RÉGUA DA PÁGINA PÚBLICA (FASE 68 · fatia 4)
+          * ─────────────────────────────────────────────────────────────────────────
+          *  Aqui havia `toLocaleDateString('pt-BR')` colado dos DOIS lados, e isso
+          *  produzia dois defeitos de uma vez: um evento de um dia virava "05/11/2026
+          *  a 05/11/2026" (duas vezes a mesma data), e a conversão usava o fuso do
+          *  PROCESSO — a família de defeito que já foi consertada duas vezes nesta
+          *  casa. `formatEventPeriod` trata o mesmo dia e formata no fuso do EVENTO,
+          *  que é o que a programação e a vitrine já usam.
+          */}
         <p className="text-xs text-muted-foreground">
-          {event.startsAt.toLocaleDateString('pt-BR')} a {event.endsAt.toLocaleDateString('pt-BR')} ·{' '}
+          {formatEventPeriod(event, event.timezone)} ·{' '}
           {event.registrationCount} inscrição(ões) · {event.activityCount} atividade(s) ·{' '}
           {event.trackCount} trilha(s)
         </p>

@@ -13,9 +13,14 @@ export const dynamic = 'force-dynamic';
 /**
  * Página de criação de submissão.
  *
- * Carrega os eventos com chamada de trabalhos aberta e suas trilhas ativas.
- * A validação de janela acontece também no servidor (`cfpClosesAt`), mas a UI já
- * filtra para não oferecer um caminho que será recusado.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  QUEM APARECE AQUI (FASE 68)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Os eventos com chamada publicada E ABERTA ficam de fora: a proposta deles entra
+ *  pelo formulário da chamada (`/eventos/<slug>/chamada/<callSlug>`), e o serviço
+ *  recusa este atalho com `CFP_CLOSED`. O caminho antigo continua valendo para o
+ *  evento que NÃO tem chamada — e continua SEM PRAZO, porque quem diz se a chamada
+ *  está aberta é a `CallForProposals` (FASE 33), nunca mais a janela do evento.
  */
 export default async function NewSubmissionPage({
   params,
@@ -35,12 +40,21 @@ export default async function NewSubmissionPage({
     redirect('/selecionar-instituicao');
   }
 
+  const agora = new Date();
   const events = await withTenant(context.activeTenant.tenantId, (tx) =>
     tx.event.findMany({
       where: {
         status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] },
         deletedAt: null,
-        OR: [{ cfpClosesAt: null }, { cfpClosesAt: { gt: new Date() } }],
+        /** Ver o comentário de `/submissoes`: as duas condições juntas, no mesmo `none`. */
+        calls: {
+          none: {
+            isPublished: true,
+            deletedAt: null,
+            OR: [{ opensAt: null }, { opensAt: { lte: agora } }],
+            AND: [{ OR: [{ closesAt: null }, { closesAt: { gt: agora } }] }],
+          },
+        },
       },
       orderBy: { startsAt: 'asc' },
       select: {

@@ -1618,15 +1618,37 @@ model Event {
   registrationOpensAt  DateTime? @db.Timestamptz(6)
   registrationClosesAt DateTime? @db.Timestamptz(6)
 
-  /// Janela de submissão de trabalhos.
-  cfpOpensAt  DateTime? @db.Timestamptz(6)
-  cfpClosesAt DateTime? @db.Timestamptz(6)
+  /// Este evento recebe trabalhos? (FASE 68)
+  ///
+  /// A janela de submissão NÃO mora mais aqui: ela é da CHAMADA (`CallForProposals`,
+  /// FASE 33), que tem tipo, texto, cegueira e limite próprios — e um evento pode ter
+  /// várias. As colunas `cfpOpensAt`/`cfpClosesAt` foram REMOVIDAS nesta fase: o
+  /// formulário não as editava mais e o filtro da submissão antiga lia um prazo que
+  /// ninguém escrevia.
+  ///
+  /// O que sobra para o EVENTO é o FATO de primeira classe: ele recebe trabalhos ou
+  /// não. Sem esta coluna, o painel de prontidão (F53) e a vitrine não conseguem
+  /// distinguir "não usa chamada" de "não configurou a chamada" — e o organizador de
+  /// um evento corporativo via o painel cobrando uma trilha que ele nunca vai ter.
+  usesCall Boolean @default(false)
 
   venueName    String?  @db.VarChar(200)
   venueAddress String?  @db.VarChar(300)
   city         String?  @db.VarChar(120)
   state        String?  @db.VarChar(120)
   country      String?  @db.VarChar(2)
+
+  /// Endereço da SALA ONLINE do evento (FASE 68 — o escritor desta coluna).
+  ///
+  /// A coluna existia desde a primeira migração com **um leitor e nenhum escritor**:
+  /// o bloco de LOCAL da página pública mostrava o endereço a qualquer visitante
+  /// anônimo, e nenhuma tela gravava. A fatia 2 criou o escritor; a fatia 3 fechou o
+  /// vazamento.
+  ///
+  /// QUEM VÊ é decidido no SERVIDOR (`src/domain/events/online-room-rules.ts`):
+  /// inscrição viva que NÃO seja de lista de espera, ou a equipe do evento. Para os
+  /// demais o endereço não é renderizado — não há `hidden` nem CSS nesta regra, e o
+  /// valor não viaja em props de Client Component, em metadados nem no `.ics`.
   onlineUrl    String?  @db.VarChar(1024)
   latitude     Decimal? @db.Decimal(10, 7)
   longitude    Decimal? @db.Decimal(10, 7)
@@ -1762,6 +1784,19 @@ model Activity {
   endsAt   DateTime @db.Timestamptz(6)
 
   roomId String? @db.Uuid
+
+  /// Endereço da SALA ONLINE desta atividade (FASE 68).
+  ///
+  /// A atividade PODE repetir o endereço do evento — e repetir é DECISÃO do
+  /// organizador, não herança: uma atividade isolada tem a própria sala, e herdar
+  /// automaticamente faria a atividade apontar para o lugar errado no dia em que o
+  /// evento trocasse o endereço (o mesmo cuidado de "não inventar uma segunda fonte"
+  /// que a página pública já toma com palestrante).
+  ///
+  /// Mesma régua de visibilidade do evento (`online-room-rules.ts`), aplicada
+  /// atividade por atividade: a inscrição que dá lugar NA ATIVIDADE, ou a do evento
+  /// quando a atividade é aberta, ou a equipe.
+  onlineUrl String? @db.VarChar(1024)
 
   /// Lotação. `capacity` null = ILIMITADO; `0` = ESGOTADO.
   /// A distinção entre null e 0 é significativa: tratar 0 como ilimitado

@@ -70,30 +70,85 @@ export default async function MySubmissionsPage({
       ? tenantPath(tenantSlug, '/submissoes')
       : `${tenantPath(tenantSlug, '/submissoes')}?pagina=${target}`;
 
-  /** Eventos que aceitam submissão, para o formulário de criação. */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  OS EVENTOS QUE ACEITAM SUBMISSÃO (FASE 68)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O filtro lia `cfpClosesAt` — o prazo da JANELA DO EVENTO, que o formulário deixou
+   *  de editar e que ninguém mais escrevia. O resultado era uma porta que nunca
+   *  fechava: evento com chamada encerrada continuava oferecendo "Nova submissão".
+   *
+   *  Agora quem decide é a CHAMADA da FASE 33 (a única fonte da verdade sobre "está
+   *  aberta"):
+   *
+   *    • **Com chamada publicada**: o caminho daqui não serve — a proposta entra pelo
+   *      formulário da chamada, e o serviço recusa este atalho com `CFP_CLOSED`. O
+   *      evento só aparece enquanto houver chamada ABERTA, aproveitando a mesma régua
+   *      (`opensAt`/`closesAt`) que a chamada usa na leitura.
+   *    • **Sem chamada publicada**: o caminho antigo sobrevive SEM PRAZO (decisão do
+   *      humano), porque é ele que os testes de revisão por pares exercitam — evento
+   *      sem chamada continua aceitando submissão por trilha.
+   *
+   * A janela é a MESMA da chamada, comparada contra UM instante só (`agora`, lido uma
+   * vez): `closesAt` nulo é "sem prazo" e vale; `opensAt` nulo já abriu.
+   */
+  const agora = new Date();
   const openEvents = await withTenant(tenantId, (tx) =>
     tx.event.findMany({
       where: {
         status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] },
         deletedAt: null,
-        // A chamada de trabalhos precisa estar aberta (ou não ter janela).
-        OR: [
-          { cfpClosesAt: null },
-          { cfpClosesAt: { gt: new Date() } },
-        ],
+        /**
+         * Nenhuma chamada publicada E ABERTA neste instante. As duas condições ficam
+         * no MESMO `none`: separá-las em duas cláusulas erraria os dois lados — uma
+         * chamada agendada (abre amanhã) esconderia o evento hoje sem oferecer caminho
+         * nenhum, e uma encerrada deixaria o atalho antigo em pé.
+         */
+        calls: {
+          none: {
+            isPublished: true,
+            deletedAt: null,
+            OR: [{ opensAt: null }, { opensAt: { lte: agora } }],
+            AND: [{ OR: [{ closesAt: null }, { closesAt: { gt: agora } }] }],
+          },
+        },
       },
       orderBy: { startsAt: 'asc' },
       select: {
         id: true,
         title: true,
         slug: true,
-        cfpClosesAt: true,
         tracks: {
           where: { isActive: true, deletedAt: null },
           orderBy: { name: 'asc' },
           select: { id: true, name: true, requiresBlindReview: true },
         },
       },
+    }),
+  );
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  EXISTE CHAMADA ABERTA? (FASE 68)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Quando o caminho por trilha fica fechado, a tela não pode simplesmente sumir com
+   *  o botão e dizer "não há chamada de trabalhos aberta": o evento PODE ter uma
+   *  chamada no ar, e a proposta entra por ela. Sem esta leitura, o autor lê uma frase
+   *  falsa e não recebe caminho nenhum — a tela vira um beco.
+   *
+   *  `take: 1` porque a pergunta é de existência, e uma ida ao banco basta.
+   */
+  const chamadaAberta = await withTenant(tenantId, (tx) =>
+    tx.callForProposals.findFirst({
+      where: {
+        tenantId,
+        deletedAt: null,
+        isPublished: true,
+        OR: [{ opensAt: null }, { opensAt: { lte: agora } }],
+        AND: [{ OR: [{ closesAt: null }, { closesAt: { gt: agora } }] }],
+        event: { status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] }, deletedAt: null },
+      },
+      select: { id: true },
     }),
   );
 
@@ -125,8 +180,10 @@ export default async function MySubmissionsPage({
             Você ainda não submeteu nenhum trabalho.
           </p>
           {openEvents.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Não há chamada de trabalhos aberta no momento.
+            <p className="text-xs text-muted-foreground" data-testid="no-open-cfp">
+              {chamadaAberta
+                ? 'Há chamada de trabalhos aberta — envie a proposta pela página da chamada.'
+                : 'Não há chamada de trabalhos aberta no momento.'}
             </p>
           ) : null}
         </div>

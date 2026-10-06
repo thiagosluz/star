@@ -8,15 +8,25 @@
  *  A diferença em relação à grade é o SUJEITO — na grade os dois lados são meus; aqui
  *  um lado é um candidato que pode nem estar marcado, e é isso que permite avisar ANTES
  *  do clique. As bordas (encostar, conter, idênticos, cancelada) são as MESMAS da
- *  fatia 1, porque a fórmula é a mesma (`intervalsOverlap`); o que este arquivo prova é
+ *  fatia 1, porque a fórmula é a mesma (`intervalsClash`); o que este arquivo prova é
  *  que a projeção da tela não inventa uma segunda resposta para elas — e que o aviso
  *  não bloqueia nada, porque nada aqui devolve "pode/não pode".
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A MARGEM DE DESLOCAMENTO NÃO APAGOU NENHUMA DESTAS BORDAS (E86 · FASE 69)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Os casos da FASE 65 continuam rodando com a margem ZERO, que é a régua daquela
+ *  fase — e é justamente isso que prova que a margem preserva o comportamento antigo
+ *  em vez de reescrevê-lo. O outro lado (margem do dia a dia) é provado no arquivo da
+ *  margem (`f69-margem-de-deslocamento.test.ts`) e nos casos marcados aqui.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
 
 import { buildMyAgenda, type AgendaActivityFact } from '../../src/domain/agenda/agenda-rules';
+import { ROOM_TRAVEL_MARGIN_MINUTES } from '../../src/domain/agenda/overlap-rules';
 import {
+  agendaClashTitle,
   buildEventAgendaView,
   clashTargetLabel,
   clashesWithAgenda,
@@ -55,12 +65,14 @@ function gradeCom(
   atividades: AgendaActivityFact[],
   favoriteActivityIds: string[],
   registrations: { activityId: string; status: 'CONFIRMED' | 'WAITLISTED' }[] = [],
+  roomTravelMarginMinutes = 0,
 ): AgendaViewerItem[] {
   const grade = buildMyAgenda({
     timezone: 'America/Bahia',
     activities: atividades,
     favoriteActivityIds,
     registrations,
+    roomTravelMarginMinutes,
   });
 
   return buildEventAgendaView({ authenticated: true, agenda: grade }).items as AgendaViewerItem[];
@@ -150,14 +162,24 @@ describe('choque entre o candidato e a minha grade (FASE 65 · fatia 2)', () => 
     expect(choques.map((item) => item.activityId)).toEqual(['longo']);
   });
 
-  it('ENCOSTAR não é choque: quem começa quando a outra termina não gera aviso', () => {
+  /**
+   * ─── ESTE CASO PASSOU A DIZER "MARGEM ZERO" (FASE 69 · E86) ───────────────────
+   *
+   *  Ele nasceu na FASE 65 afirmando "encostar não é choque, ponto". Com a margem,
+   *  encostar PASSA a ser conflito — é exatamente o caso que a dívida descreve (sai
+   *  de uma sala e entra na outra no mesmo minuto). O que continua verdade, e é o que
+   *  este caso prende, é que o DEFAULT ZERO da régua preserva o comportamento antigo:
+   *  a margem foi ACRESCENTADA, não trocada. O caso com a margem do dia a dia
+   *  (encostado = aviso) está no describe da margem, logo abaixo.
+   */
+  it('ENCOSTAR com margem ZERO não é choque: a régua da FASE 65 segue intacta', () => {
     const emendada = candidato({
       activityId: 'emendada',
       startsAt: em('10:00'),
       endsAt: em('11:00'),
     });
 
-    expect(clashesWithAgenda(emendada, minhaGrade)).toEqual([]);
+    expect(clashesWithAgenda(emendada, minhaGrade, 0)).toEqual([]);
   });
 
   it('IDÊNTICOS são choque, e o aviso aponta os dois lados', () => {
@@ -208,5 +230,144 @@ describe('choque entre o candidato e a minha grade (FASE 65 · fatia 2)', () => 
     );
 
     expect(clashTargetLabel(semSalaNemHoraUnica[0]!)).not.toContain('·');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  A MARGEM DE DESLOCAMENTO ENTRE SALAS (E86 · FASE 69 · fatia 1)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('a margem de deslocamento no aviso da escolha (E86)', () => {
+  /** 15:00–16:00 numa sala; a margem é o que decide o resto. */
+  const candidatoDas15 = candidato({ activityId: 'nova' });
+
+  /** Uma atividade das 16:00 às 17:00 — emendada com o candidato. */
+  const gradeEmendada = gradeCom(
+    [atividade({ id: 'depois', title: 'Palestra seguinte', startsAt: em('16:00'), endsAt: em('17:00') })],
+    ['depois'],
+    [],
+    ROOM_TRAVEL_MARGIN_MINUTES,
+  );
+
+  it('MENOS que a margem avisa: encostado é conflito, e o aviso diz por quê', () => {
+    /**
+     * O caso da dívida, palavra por palavra: a Oficina termina 16:00 na sala A e a
+     * Palestra começa 16:00 na sala B. Nenhum horário se sobrepõe — e ninguém
+     * atravessa o campus em zero minuto.
+     */
+    expect(clashesWithAgenda(candidatoDas15, gradeEmendada).map((item) => item.activityId)).toEqual([
+      'depois',
+    ]);
+  });
+
+  it('o que ESTÁ DENTRO da margem avisa, com a distância real (10 < 15)', () => {
+    const gradeDez = gradeCom(
+      [
+        atividade({
+          id: 'dez',
+          title: 'Mesa-redonda',
+          startsAt: em('16:10'),
+          endsAt: em('17:00'),
+        }),
+      ],
+      ['dez'],
+      [],
+      ROOM_TRAVEL_MARGIN_MINUTES,
+    );
+
+    expect(clashesWithAgenda(candidatoDas15, gradeDez).map((item) => item.activityId)).toEqual(['dez']);
+  });
+
+  it('MAIS que a margem não avisa: 16:15 dá tempo de atravessar (15 não é menor que 15)', () => {
+    const gradeQuinze = gradeCom(
+      [
+        atividade({
+          id: 'quinze',
+          title: 'Painel',
+          startsAt: em('16:15'),
+          endsAt: em('17:00'),
+        }),
+      ],
+      ['quinze'],
+      [],
+      ROOM_TRAVEL_MARGIN_MINUTES,
+    );
+
+    expect(clashesWithAgenda(candidatoDas15, gradeQuinze)).toEqual([]);
+  });
+
+  it('a margem é SIMÉTRICA: os dois lados do par apontam um para o outro', () => {
+    const oficina = candidato({ activityId: 'oficina', startsAt: em('15:00'), endsAt: em('16:00') });
+    const palestra = candidato({ activityId: 'palestra', startsAt: em('16:00'), endsAt: em('17:00') });
+
+    /** A grade de cada lado contém o OUTRO item, montada pelo domínio. */
+    const gradeDaPalestra = gradeCom(
+      [atividade({ id: 'oficina', title: 'Oficina', startsAt: em('15:00'), endsAt: em('16:00') })],
+      ['oficina'],
+      [],
+      ROOM_TRAVEL_MARGIN_MINUTES,
+    );
+    const gradeDaOficina = gradeCom(
+      [atividade({ id: 'palestra', title: 'Palestra', startsAt: em('16:00'), endsAt: em('17:00') })],
+      ['palestra'],
+      [],
+      ROOM_TRAVEL_MARGIN_MINUTES,
+    );
+
+    expect(clashesWithAgenda(palestra, gradeDaPalestra).map((item) => item.activityId)).toEqual([
+      'oficina',
+    ]);
+    expect(clashesWithAgenda(oficina, gradeDaOficina).map((item) => item.activityId)).toEqual([
+      'palestra',
+    ]);
+  });
+
+  it('item SEM HORÁRIO não avisa — nem como alvo, nem como candidato', () => {
+    const semHorario = gradeCom(
+      [atividade({ id: 'sem-hora', title: 'A definir', startsAt: null, endsAt: null })],
+      ['sem-hora'],
+      [],
+      ROOM_TRAVEL_MARGIN_MINUTES,
+    );
+
+    expect(semHorario).toHaveLength(1);
+    expect(clashesWithAgenda(candidatoDas15, semHorario)).toEqual([]);
+
+    const candidatoSemHora = candidato({
+      activityId: 'outra',
+      startsAt: null,
+      endsAt: null,
+    });
+
+    expect(clashesWithAgenda(candidatoSemHora, gradeEmendada)).toEqual([]);
+  });
+
+  it('a atividade CANCELADA continua fora do aviso, com ou sem margem', () => {
+    const gradeCancelada = gradeCom(
+      [
+        atividade({
+          id: 'cancelada',
+          title: 'Cancelada',
+          startsAt: em('16:00'),
+          endsAt: em('17:00'),
+          status: 'CANCELED',
+        }),
+      ],
+      ['cancelada'],
+      [],
+      ROOM_TRAVEL_MARGIN_MINUTES,
+    );
+
+    expect(gradeCancelada).toHaveLength(1);
+    expect(clashesWithAgenda(candidatoDas15, gradeCancelada)).toEqual([]);
+  });
+
+  it('o TEXTO do aviso diz que há margem e quantos minutos — o número vem do domínio', () => {
+    const titulo = agendaClashTitle();
+
+    expect(titulo).toContain('deslocamento');
+    expect(titulo).toContain(`${ROOM_TRAVEL_MARGIN_MINUTES} minutos`);
+    // O número é da CONSTANTE, e não um "15" digitado na frase: se a régua mudar,
+    // este caso continua valendo e a frase acompanha.
+    expect(titulo).toContain(String(ROOM_TRAVEL_MARGIN_MINUTES));
   });
 });

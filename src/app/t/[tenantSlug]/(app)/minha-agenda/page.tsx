@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { AlertCircle, ArrowLeft, CalendarCheck, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CalendarCheck, CheckCircle2, Video } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { withTenant } from '@/lib/db/tenant-client';
@@ -14,6 +14,11 @@ import { buildEventAgendaView, clashesWithAgenda } from '@/lib/events/agenda-vie
 import { agendaIcsToken, agendaIcsUrl, activityIcsUrl, nextAgendaItem } from '@/lib/events/agenda-export';
 import { googleCalendarUrl } from '@/lib/calendar/ics';
 import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
+import { seesEventOnlineRoom } from '@/domain/events/online-room-rules';
+import {
+  resolveOnlineRoomViewer,
+  visibleOnlineRoomsByActivity,
+} from '@/lib/events/online-room-service';
 
 export const metadata = { title: 'Minha agenda' };
 export const dynamic = 'force-dynamic';
@@ -149,6 +154,39 @@ export default async function MyAgendaPage({
   const itemById = new Map(agenda.items.map((item) => [item.activityId, item]));
 
   /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A SALA ONLINE — A RÉGUA E O SERVIÇO DA FASE 68, SEM SEGUNDA CÓPIA (FASE 69)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O endereço da sala existia na página do evento e na página da atividade, e faltava
+   *  aqui — na tela que a pessoa abre pouco antes da sessão. A correção NÃO é um `if`
+   *  novo: `resolveOnlineRoomViewer` lê os fatos no BANCO (inscrição viva que não seja
+   *  lista de espera, a inscrição na atividade ou a equipe do evento) e
+   *  `visibleOnlineRoomsByActivity` aplica a MESMA projeção da página pública.
+   *
+   *  O que NÃO se faz aqui, e é o ponto: não há `hidden`, não há CSS e não há condição
+   *  no JSX decidindo se o endereço aparece. Ele chega pelo mapa apenas para quem tem
+   *  lugar — para os demais o valor não existe, e o `page.content()` do E2E prova isso.
+   *
+   *  Uma leitura a mais no banco (a mesma que a página pública faz) é o preço de a
+   *  pergunta "quem vê a sala?" ter UMA resposta no produto. A alternativa — deduzir a
+   *  visibilidade aqui a partir da marca `Inscrito` — erraria os dois casos de verdade:
+   *  a LISTA DE ESPERA, que tem marca de inscrição e não tem lugar, e a EQUIPE, que não
+   *  tem inscrição nenhuma e monta a sala.
+   */
+  const onlineRoomViewer = selectedEventId
+    ? await resolveOnlineRoomViewer({ tenantId, eventId: selectedEventId, userId })
+    : null;
+
+  const salasPorAtividade = onlineRoomViewer
+    ? visibleOnlineRoomsByActivity(onlineRoomViewer, myAgenda?.onlineRooms ?? [])
+    : new Map<string, string>();
+
+  const salaDoEvento =
+    onlineRoomViewer && seesEventOnlineRoom(onlineRoomViewer)
+      ? (myAgenda?.eventOnlineUrl ?? null)
+      : null;
+
+  /**
    * O item do botão do Google: o primeiro que ainda não terminou.
    *
    * A régua é a mesma do "acontecendo agora" (`endsAt > agora`), e ela é decidida no
@@ -250,6 +288,29 @@ export default async function MyAgendaPage({
             </button>
           </form>
 
+          {/**
+            * ── A SALA ONLINE DO EVENTO (FASE 69) ─────────────────────────────────
+            *
+            *  Fica ANTES da grade e vale para o dia inteiro (é a transmissão do
+            *  evento): quem procura o link às pressas não deveria ter de caçar o item
+            *  certo da lista. `salaDoEvento` só existe para quem tem lugar — a decisão
+            *  está tomada acima, no servidor, e não há condição de CSS aqui.
+            */}
+          {salaDoEvento ? (
+            <p className="text-sm">
+              <a
+                href={salaDoEvento}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="minha-agenda-sala-online-evento"
+                className="inline-flex items-center gap-2 underline underline-offset-4"
+              >
+                <Video className="size-4 shrink-0" aria-hidden />
+                Acessar a transmissão online do evento
+              </a>
+            </p>
+          ) : null}
+
           {agenda.items.length === 0 ? (
             /**
              * O EVENTO EXISTE NA LISTA, MAS A GRADE SAIU VAZIA — o caso real é a
@@ -344,6 +405,13 @@ export default async function MyAgendaPage({
                   {agenda.items.map((item) => {
                     const choques = clashesWithAgenda(item, agenda.items);
 
+                    /**
+                     * A SALA ONLINE DESTA SESSÃO (FASE 69) — o mapa só tem o endereço
+                     * de quem tem lugar nela (a decisão é do servidor, acima). Item sem
+                     * sala, ou pessoa sem lugar, não desenham nada.
+                     */
+                    const salaDaAtividade = salasPorAtividade.get(item.activityId) ?? null;
+
                     return (
                       <li
                         key={item.activityId}
@@ -366,6 +434,27 @@ export default async function MyAgendaPage({
                             {item.startsAtLabel} – {item.endsAtLabel}
                             {item.roomName ? ` · ${item.roomName}` : ''}
                           </p>
+
+                          {/**
+                            * A SALA ONLINE DA ATIVIDADE (FASE 69). O rótulo diz que a
+                            * sala é DESTA sessão, porque a do evento (a transmissão do
+                            * dia) já está no topo da tela — duas linhas iguais para
+                            * endereços diferentes seriam a confusão seguinte.
+                            */}
+                          {salaDaAtividade ? (
+                            <p className="text-xs">
+                              <a
+                                href={salaDaAtividade}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-testid={`minha-agenda-sala-online-${item.activityId}`}
+                                className="inline-flex items-center gap-1.5 underline underline-offset-4"
+                              >
+                                <Video className="size-3.5 shrink-0" aria-hidden />
+                                Entrar na sala online desta atividade
+                              </a>
+                            </p>
+                          ) : null}
 
                           {/**
                             * A LISTA DE ESPERA continua sendo uma inscrição VIVA (a vaga

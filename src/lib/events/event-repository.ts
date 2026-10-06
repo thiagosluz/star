@@ -260,6 +260,16 @@ export interface PublicActivitySummary {
   workloadMinutes: number;
   roomName: string | null;
   /**
+   * Endereço da SALA ONLINE da atividade (FASE 68).
+   *
+   * Viaja na projeção pública porque é do SERVIDOR para o renderizador: quem decide
+   * se ele é desenhado é `applyOnlineRoomVisibility` (`online-room-service.ts`), e
+   * para quem não tem lugar na sala ele chega aqui como `null`. O endereço NUNCA é
+   * escondido por CSS, nunca entra em metadados, nunca entra no `.ics` e nunca
+   * atravessa uma fronteira de Client Component.
+   */
+  onlineUrl: string | null;
+  /**
    * LIMITE EFETIVO de vagas: o menor entre o que a atividade declara e o que a SALA
    * comporta (revisão da FASE 3). É este número que a página pública anuncia, porque
    * é ele que o servidor vai aplicar na reserva da vaga.
@@ -355,6 +365,14 @@ export interface PublicEventDetail extends PublicEventSummary {
    * formulário de inscrição precisam saber para não oferecer o que será recusado.
    */
   registrationRequiresMembership: boolean;
+  /**
+   * O evento RECEBE trabalhos? (FASE 68)
+   *
+   * O bloco `TRACKS` precisa do fato para distinguir "não usa chamada" de "não
+   * configurou a chamada": no primeiro caso ele sai do HTML, no segundo ele continua
+   * mostrando os eixos temáticos SEM convidar a submeter.
+   */
+  usesCall: boolean;
   /**
    * Palestrantes do evento, para a vitrine (FASE 25).
    *
@@ -530,6 +548,7 @@ async function loadEventDetail(
         primaryColor: true,
         registrationOpensAt: true,
         registrationClosesAt: true,
+        usesCall: true,
         capacity: true,
         confirmedCount: true,
         theme: true,
@@ -554,6 +573,8 @@ async function loadEventDetail(
             waitlistCount: true,
             checkInEnabled: true,
             isFeatured: true,
+            /** Sala online da atividade (FASE 68) — a visibilidade é do chamador. */
+            onlineUrl: true,
             /** `false` = aberta: quem se inscreveu no evento entra automaticamente. */
             requiresRegistration: true,
             tags: true,
@@ -842,6 +863,8 @@ async function loadEventDetail(
       endsAt: activity.endsAt,
       workloadMinutes: activity.workloadMinutes,
       roomName: activity.room?.name ?? null,
+      /** O endereço da sala online da atividade (FASE 68) — ver a projeção. */
+      onlineUrl: activity.onlineUrl,
       /**
        * A sala é o TETO do limite: anunciar "80 vagas" numa sala de 40 seria prometer
        * o que a reserva de vaga vai recusar. O número efetivo vem da função do
@@ -1014,6 +1037,7 @@ async function loadEventDetail(
     theme,
     themeIsValid,
     registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
+    usesCall: event.usesCall,
     page: page
       ? {
           id: page.id,

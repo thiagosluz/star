@@ -121,6 +121,56 @@ async function clickUntil(
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
+   *  A TROCA DE CATEGORIA ATÉ A TELA MOSTRAR O FATO (FASE 69 · dívida E83)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O cenário 3 troca a categoria de UM crachá e confere, depois de recarregar, que a
+   *  tela mostra a etiqueta nova. A sequência era: `escolherCategoriaAte` (o select,
+   *  com o próprio laço), `clickUntil` (o clique de salvar, com o laço do banco), e
+   *  então **um** `reload` com a asserção se repetindo — a mesma forma que o ADR-327
+   *  corrigiu no `Alt+↑` do quadro de demandas: o GESTO acontecendo uma vez e só a
+   *  espera se repetindo.
+   *
+   *  Aqui o que se repete é a SEQUÊNCIA INTEIRA (escolher → salvar → recarregar →
+   *  conferir a tela), e o motivo é o mecanismo medido: o `select` é controlado pelo
+   *  React, e um `selectOption` que chega antes da hidratação deixa o DOM com o valor
+   *  novo e o ESTADO com o antigo — o laço do select sai satisfeito, o POST leva a
+   *  categoria velha e a etapa seguinte fica presa num valor que ninguém escolheu.
+   *  Repetir o conjunto conserta a corrida; nenhuma asserção foi afrouxada (as mesmas
+   *  comparações, e a do banco continua sendo a primeira).
+   *
+   *  Repetir é seguro porque cada passo é idempotente: escolher de novo a mesma
+   *  categoria, salvar de novo a mesma categoria (o código do crachá não muda — é o
+   *  que o cenário prova) e recarregar uma página que o servidor desenha do banco.
+   */
+  async function trocarCategoriaAte(
+    page: import('@playwright/test').Page,
+    userId: string,
+    categoria: string,
+    rotuloNaTela: string,
+  ): Promise<void> {
+    const select = page.getByTestId(`badge-category-select-${userId}`);
+    const salvar = page.getByTestId(`badge-category-save-${userId}`);
+    const celula = page.getByTestId(`badge-category-${userId}`);
+
+    await expect(async () => {
+      await select.selectOption(categoria);
+      await expect(select).toHaveValue(categoria);
+
+      if ((await salvar.count()) > 0) await salvar.click();
+
+      /** O BANCO primeiro: é ele que diz que o servidor recebeu a categoria pedida. */
+      await expect
+        .poll(async () => (await credentialOf(userId))?.category, { timeout: 10_000 })
+        .toBe(categoria);
+
+      /** E depois a TELA, que é onde a pessoa lê a etiqueta. */
+      await page.reload();
+      await expect(celula).toContainText(rotuloNaTela);
+    }).toPass({ timeout: 60_000 });
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
    *  MARCAR ATÉ O REACT ASSUMIR (FASE 52 · dívida I1)
    * ─────────────────────────────────────────────────────────────────────────────
    *  A caixa é um controle do React, e o formulário monta os `userIds` a partir do
@@ -447,20 +497,17 @@ test.describe('identidade visual do crachá', () => {
 
     await page.goto(badgesUrl());
 
-    await escolherCategoriaAte(page, `badge-category-select-${participantId}`, 'VIP');
-
-    await clickUntil(page, `badge-category-save-${participantId}`, async () => {
-      const credential = await credentialOf(participantId);
-      expect(credential?.category).toBe('VIP');
-    });
+    /**
+     * Escolher, salvar e CONFERIR A TELA num laço só (E83) — o porquê está em
+     * `trocarCategoriaAte`: o select é controlado e o `reload` sozinho não tinha
+     * como se defender de um valor que o React reverteu.
+     */
+    await trocarCategoriaAte(page, participantId, 'VIP', 'Autoridade');
 
     const after = await credentialOf(participantId);
 
     /** O CÓDIGO é o mesmo: o crachá que está na mão da pessoa continua valendo. */
     expect(after?.code).toBe(before?.code);
-
-    await page.reload();
-    await expect(page.getByTestId(`badge-category-${participantId}`)).toContainText('Autoridade');
   });
 
   test('4. o papel obedece: a cor do TEMA e a faixa de CADA categoria', async ({ page }) => {

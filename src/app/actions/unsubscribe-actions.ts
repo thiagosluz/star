@@ -37,6 +37,11 @@ import {
   unsubscribeByToken,
   unsubscribePath,
 } from '@/lib/communication/unsubscribe-service';
+import {
+  UNSUBSCRIBE_REASON_FIELD,
+  UNSUBSCRIBE_REASON_NOTE_FIELD,
+  unsubscribeReasonFor,
+} from '@/domain/communication/unsubscribe-reason-rules';
 
 export interface UnsubscribeActionState {
   ok: boolean;
@@ -77,6 +82,24 @@ function revalidarPagina(tenantSlug: string, token: string): void {
 /**
  * Confirma a saída. Idempotente: sair duas vezes não muda nada e responde a mesma
  * coisa (a pessoa clica duas vezes, ou abre o link em dois aparelhos).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O MOTIVO ENTRA NA MESMA REQUISIÇÃO — E NÃO PODE DERRUBAR NADA (E88)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O que chega do formulário passa pelo DOMÍNIO (`unsubscribeReasonFor`), que
+ *  devolve uma frase conhecida, o texto escrito, ou `null` — nunca uma recusa. A
+ *  pergunta é uma cortesia no fim de uma saída, e uma cortesia que recusa o
+ *  formulário prenderia a pessoa que quer sair: o único valor que este campo pode
+ *  acrescentar é informação, e informação não vale uma saída impedida.
+ *
+ *  Também por isso o motivo NÃO é validado pelo `zod` junto com o token: o token
+ *  precisa de forma (ele é credencial), o motivo não — ele é texto, e quem decide
+ *  o que dele se aproveita é a regra pura do domínio.
+ *
+ *  Quem já estava fora e clica de novo com um motivo novo tem a resposta de sempre
+ *  ("já estava fora") e o motivo da PRIMEIRA saída preservado: regravar a razão de
+ *  uma saída antiga reescreveria a história, e a data da saída — que é o outro
+ *  lado da mesma idempotência — também não muda.
  */
 export async function confirmUnsubscribeAction(
   _prev: UnsubscribeActionState | null,
@@ -93,7 +116,16 @@ export async function confirmUnsubscribeAction(
 
   if (!tenant) return invalidState('Instituição não encontrada.');
 
-  const result = await unsubscribeByToken({ tenantId: tenant.tenantId, token: parsed.data.token });
+  const reason = unsubscribeReasonFor({
+    option: formData.get(UNSUBSCRIBE_REASON_FIELD),
+    note: formData.get(UNSUBSCRIBE_REASON_NOTE_FIELD),
+  });
+
+  const result = await unsubscribeByToken({
+    tenantId: tenant.tenantId,
+    token: parsed.data.token,
+    reason,
+  });
 
   revalidarPagina(parsed.data.tenantSlug, parsed.data.token);
 

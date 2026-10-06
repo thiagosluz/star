@@ -19,6 +19,7 @@ import {
   uniqueEmail,
 } from './helpers';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
+import { ROOM_TRAVEL_MARGIN_MINUTES } from '../../src/domain/agenda/overlap-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -77,12 +78,29 @@ let mesaId: string;
 let oficinaId: string;
 /** A roda de conversa (20:00–21:00 UTC) — a inscrição da dona no caso (e). */
 let rodaId: string;
+/** A oficina da tarde (21:00–22:00 UTC) — a margem de deslocamento, caso (f). */
+let margemPrimeiraId: string;
+/** A palestra que começa QUANDO a primeira termina (22:00–23:00 UTC). */
+let margemSegundaId: string;
+/** A mesa que só começa uma hora depois (23:00–00:00 UTC) — fora da margem. */
+let margemTerceiraId: string;
 
 const TITULO_LONGA = `Minicurso de robótica educacional ${RUN_ID}`;
 const TITULO_INTERNA = `Palestra sobre drones autônomos ${RUN_ID}`;
 const TITULO_MESA = `Mesa-redonda de encerramento ${RUN_ID}`;
 const TITULO_OFICINA = `Oficina de cerâmica ${RUN_ID}`;
 const TITULO_RODA = `Roda de conversa ${RUN_ID}`;
+const TITULO_MARGEM_PRIMEIRA = `Oficina de marcenaria ${RUN_ID}`;
+const TITULO_MARGEM_SEGUNDA = `Palestra sobre clima ${RUN_ID}`;
+const TITULO_MARGEM_TERCEIRA = `Mesa de tecnologia ${RUN_ID}`;
+
+/**
+ * O TEXTO DO AVISO DE DESLOCAMENTO (E86 · FASE 69).
+ *
+ * O número sai da CONSTANTE do domínio, e não de um "15" digitado aqui: o que este
+ * arquivo prende é que a tela diz que existe margem, com o número que a régua usa.
+ */
+const AVISO_DE_DESLOCAMENTO = `Horários próximos demais para o deslocamento (margem de ${ROOM_TRAVEL_MARGIN_MINUTES} minutos)`;
 
 /**
  * A hora FIXA do dia do evento.
@@ -202,6 +220,38 @@ test.beforeAll(async () => {
     title: TITULO_RODA,
     startsAt: naHora(20),
     endsAt: naHora(21),
+    workloadMinutes: 60,
+  });
+
+  /**
+   * ── AS TRÊS ATIVIDADES DA MARGEM (E86 · FASE 69) ──────────────────────────────
+   *
+   *  Encostadas de propósito: a palestra começa no MESMO minuto em que a oficina
+   *  termina (22:00), e a mesa só entra uma hora depois (23:00). Nenhum dos dois
+   *  pares se SOBREPÕE — o que os separa é o deslocamento, e é isso que a tela
+   *  precisa explicar.
+   */
+  margemPrimeiraId = await criarAtividade({
+    slug: `f65-margem-primeira-${RUN_ID}`,
+    title: TITULO_MARGEM_PRIMEIRA,
+    startsAt: naHora(21),
+    endsAt: naHora(22),
+    workloadMinutes: 60,
+  });
+
+  margemSegundaId = await criarAtividade({
+    slug: `f65-margem-segunda-${RUN_ID}`,
+    title: TITULO_MARGEM_SEGUNDA,
+    startsAt: naHora(22),
+    endsAt: naHora(23),
+    workloadMinutes: 60,
+  });
+
+  margemTerceiraId = await criarAtividade({
+    slug: `f65-margem-terceira-${RUN_ID}`,
+    title: TITULO_MARGEM_TERCEIRA,
+    startsAt: naHora(23),
+    endsAt: naHora(0),
     workloadMinutes: 60,
   });
 });
@@ -437,7 +487,20 @@ test.describe('(c) o choque avisa e grava mesmo assim', () => {
       const aviso = page.getByTestId(`choque-${internaId}`);
 
       await expect(aviso).toBeVisible();
-      await expect(aviso).toContainText('Choque de horário');
+      /**
+       * ── O AVISO DIZ QUE HÁ MARGEM DE DESLOCAMENTO (E86 · FASE 69) ─────────────
+       *
+       *  Aqui os dois itens se SOBREPÕEM, e mesmo assim o texto é o novo: o aviso é
+       *  UM só, e a frase que explica o motivo (deslocamento, com o número de minutos)
+       *  serve aos dois casos. Dizer "choque de horário" só neste seria a mesma tela
+       *  com dois nomes para a mesma coisa.
+       *
+       *  O texto ANTIGO não existe mais — e o caso abaixo prende isso: um aviso que
+       *  ainda dissesse "choque de horário" mandaria quem lê comparar dois relógios
+       *  que não se cruzam no caso do deslocamento puro (o cenário (f)).
+       */
+      await expect(aviso).not.toContainText('Choque de horário');
+      await expect(aviso).toContainText(AVISO_DE_DESLOCAMENTO);
       await expect(aviso).toContainText(TITULO_LONGA);
       await expect(aviso).toContainText(rotuloNoEvento(naHora(13)));
       await expect(aviso).toContainText('Você escolhe qual assistir');
@@ -593,6 +656,71 @@ test.describe('(d) minha agenda — as duas marcas e o resumo de choques', () =>
       await expect(page.getByText('Adicionar à minha agenda')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Ver eventos disponíveis' })).toBeVisible();
       await expect(page.getByTestId('minha-agenda')).toHaveCount(0);
+    } finally {
+      await contexto.close();
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  (f) A MARGEM DE DESLOCAMENTO ENTRE SALAS (E86 · FASE 69 · fatia 1)
+// ═══════════════════════════════════════════════════════════════════════════════
+test.describe('(f) o aviso de deslocamento entre salas', () => {
+  test('avisa quem começa quando a outra termina e cala quem tem folga', async ({
+    browser,
+    request,
+  }) => {
+    const pessoa = await criarPessoa(request, `Participante do deslocamento ${RUN_ID}`);
+    const { contexto, page } = await semJavaScript(browser, pessoa);
+
+    try {
+      await page.goto(eventoUrl());
+
+      /** 1) A oficina primeiro — sozinha, ela não conflita com nada. */
+      await expect(page.getByTestId(`choque-${margemPrimeiraId}`)).toHaveCount(0);
+      await submitir(page, margemPrimeiraId);
+
+      /**
+       * ── 2) A PALESTRA QUE ENCOSTA: NENHUM HORÁRIO SE CRUZA, E O AVISO EXISTE ──
+       *
+       *  Antes da margem este cartão ficava mudo (o fim de uma é o início da outra, e
+       *  `intervalosSeSobrepoem` responde `false`). É o caso real da dívida: dá para
+       *  estar nas duas na teoria e em nenhuma na prática.
+       */
+      const aviso = page.getByTestId(`choque-${margemSegundaId}`);
+
+      await expect(aviso).toBeVisible();
+      await expect(aviso).toContainText(AVISO_DE_DESLOCAMENTO);
+      await expect(aviso).toContainText(TITULO_MARGEM_PRIMEIRA);
+      await expect(aviso).toContainText(rotuloNoEvento(naHora(21)));
+
+      /** 3) E MARCA MESMO ASSIM: o aviso informa, não bloqueia. */
+      await submitir(page, margemSegundaId);
+
+      await expect(page.getByTestId(`agenda-favoritar-${margemSegundaId}`)).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await expect.poll(() => temFavorito(pessoa.id, margemSegundaId), { timeout: 15_000 }).toBe(true);
+
+      /** O aviso CONTINUA — o fato não deixou de ser verdade depois do clique. */
+      await expect(page.getByTestId(`choque-${margemSegundaId}`)).toContainText(
+        TITULO_MARGEM_PRIMEIRA,
+      );
+
+      /**
+       * ── 4) A MESA UMA HORA DEPOIS: SILÊNCIO ────────────────────────────────────
+       *
+       *  A folga (60 min) é MAIOR que a margem (15 min), então quem atravessa o campus
+       *  chega. Sem esta metade, "avisar sempre" passaria no teste — e aviso que
+       *  aparece em todo par é o mesmo que aviso nenhum.
+       */
+      await expect(page.getByTestId(`choque-${margemTerceiraId}`)).toHaveCount(0);
+
+      await submitir(page, margemTerceiraId);
+
+      await expect(page.getByTestId(`choque-${margemTerceiraId}`)).toHaveCount(0);
+      await expect(page.getByTestId(`choque-${margemSegundaId}`)).toBeVisible();
     } finally {
       await contexto.close();
     }

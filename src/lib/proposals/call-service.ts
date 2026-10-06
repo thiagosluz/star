@@ -602,6 +602,22 @@ export async function saveCall(
         },
       });
 
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  CRIAR UMA CHAMADA LIGA O INTERRUPTOR DO EVENTO (FASE 68)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  `Event.usesCall` é a declaração do organizador ("este evento recebe
+       *  trabalhos"), e a chamada é o mesmo fato dito com o FATO. Sem esta linha, o
+       *  evento que claramente recebe propostas ficava com a caixa desmarcada no
+       *  formulário — e o painel de prontidão (F53) tratava "recebe trabalhos" como
+       *  "não configurou".
+       *
+       *  Uma direção só: DESLIGAR continua sendo ato do organizador no formulário do
+       *  evento (a chamada publicada nunca desliga o interruptor sozinha), e é por
+       *  isso que nada devolve `false` aqui.
+       */
+      await tx.event.update({ where: { id: input.eventId }, data: { usesCall: true } });
+
       await recordAudit(
         {
           tenantId: input.tenantId,
@@ -658,6 +674,39 @@ export async function setCallPublished(input: {
 
       if (updated.count === 0) {
         return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Chamada não encontrada.' };
+      }
+
+      /**
+       * PUBLICAR também liga o interruptor do evento (FASE 68) — é o fato consumado:
+       * uma chamada no ar é o evento recebendo trabalhos, mesmo que o organizador
+       * tenha esquecido de marcar a caixa. Despublicar NÃO desliga: a declaração é
+       * dele, e apagar a intenção por causa de uma pausa seria decidir por ele.
+       *
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O `eventId` VEM DA CHAMADA, E NÃO DO CHAMADOR (FASE 68 · fatia 5)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A versão original desta linha usava `input.eventId`. O campo existe no tipo,
+       *  mas **um chamador real não o passava** (`tests/integration/rubric-freeze.test.ts`,
+       *  a publicação da chamada que congela): o `event.update` recebia `id: undefined`
+       *  e o Prisma lançava `PrismaClientValidationError` — a publicação da chamada
+       *  devolvia `INTERNAL` e a suíte ficava vermelha por um motivo que não tinha nada
+       *  a ver com a chamada. O `updateMany` acima NÃO pegava isso porque o filtro com
+       *  `eventId: undefined` casa por `id` + `tenantId` e continua achando a linha.
+       *
+       *  A correção não é acrescentar o argumento no teste: é a linha passar a usar o
+       *  `eventId` DA PRÓPRIA CHAMADA, que é o único fato verdadeiro aqui. Assim o
+       *  interruptor é religado no evento certo — e não no que o chamador disse, nem em
+       *  nenhum, quando ele não disse nada.
+       */
+      if (input.isPublished) {
+        const chamada = await tx.callForProposals.findFirst({
+          where: { id: input.callId, tenantId: input.tenantId, deletedAt: null },
+          select: { eventId: true },
+        });
+
+        if (chamada) {
+          await tx.event.update({ where: { id: chamada.eventId }, data: { usesCall: true } });
+        }
       }
 
       await recordAudit(

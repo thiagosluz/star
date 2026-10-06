@@ -277,6 +277,22 @@ export async function createEvent(options: {
   capacity?: number | null;
   startsAtOffsetDays?: number;
   summary?: string;
+  /**
+   * O evento RECEBE trabalhos? (FASE 68)
+   *
+   * O padrão é `false` — a mesma leitura do `DEFAULT false` da coluna e a escolha
+   * conservadora: um evento de fixture não passa a anunciar chamada que ninguém
+   * publicou. Quem precisa do contrário liga explicitamente.
+   */
+  usesCall?: boolean;
+  /**
+   * Endereço da sala online do EVENTO (FASE 68).
+   *
+   * A partir desta fase o campo tem ESCRITOR, e o E2E precisa montar a fixture que
+   * prova quem vê e quem não vê — o endereço é `null` quando não informado, como no
+   * `DEFAULT` da coluna.
+   */
+  onlineUrl?: string | null;
 }) {
   const startsAt = new Date(Date.now() + (options.startsAtOffsetDays ?? 30) * 86_400_000);
 
@@ -302,6 +318,8 @@ export async function createEvent(options: {
         // Inscrições já abertas: o E2E não deve depender de relógio.
         registrationOpensAt: new Date(Date.now() - 86_400_000),
         registrationClosesAt: new Date(Date.now() + 20 * 86_400_000),
+        usesCall: options.usesCall ?? false,
+        onlineUrl: options.onlineUrl ?? null,
       },
     });
   });
@@ -322,6 +340,8 @@ export async function createActivity(options: {
   /** `false` = atividade ABERTA: entra pela inscrição no evento (revisão da FASE 3). */
   requiresRegistration?: boolean;
   type?: 'LECTURE' | 'MINI_COURSE' | 'WORKSHOP' | 'ROUND_TABLE';
+  /** Endereço da sala online DESTA atividade (FASE 68) — não é herdado do evento. */
+  onlineUrl?: string | null;
 }) {
   const startsAt = new Date(Date.now() + (options.startsAtOffsetDays ?? 30) * 86_400_000);
 
@@ -348,6 +368,7 @@ export async function createActivity(options: {
         waitlistCount: 0,
         roomId: options.roomId ?? null,
         requiresRegistration: options.requiresRegistration ?? true,
+        onlineUrl: options.onlineUrl ?? null,
       },
     });
   });

@@ -48,7 +48,11 @@
  *  a tela não mudar de ordem entre duas visitas com os mesmos dados.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { findOverlapPairs, type AgendaInterval } from '@/domain/agenda/overlap-rules';
+import {
+  findClashPairs,
+  ROOM_TRAVEL_MARGIN_MINUTES,
+  type AgendaInterval,
+} from '@/domain/agenda/overlap-rules';
 import { registrationIsLive, type RegistrationStatus } from '@/domain/events/registration-rules';
 import { formatZonedDateTime, isValidTimeZone } from '@/domain/events/scheduling-rules';
 
@@ -92,6 +96,14 @@ export interface BuildMyAgendaInput {
   favoriteActivityIds: readonly string[];
   /** Inscrições da pessoa NESTE evento (inclusive as automáticas). */
   registrations: readonly AgendaRegistrationFact[];
+  /**
+   * Margem de deslocamento entre salas, em MINUTOS (E86).
+   *
+   * O default é a régua declarada do domínio (`ROOM_TRAVEL_MARGIN_MINUTES`), e não
+   * um número solto: quem quiser outra régua (o teste da margem ZERO, por exemplo)
+   * a passa explicitamente e o resto do produto segue a mesma.
+   */
+  roomTravelMarginMinutes?: number;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -262,13 +274,24 @@ export function buildMyAgenda(input: BuildMyAgendaInput): MyAgenda {
    * O par carrega os títulos porque é ISSO que a tela mostra — devolver só ids
    * obrigaria cada consumidor a procurar os dois na lista de novo, e um deles
    * acharia o índice errado.
+   *
+   * A MARGEM DE DESLOCAMENTO entra aqui (E86): dois itens em sequência, em salas
+   * diferentes, com menos de `roomTravelMarginMinutes` entre o fim de um e o
+   * início do outro, são um par em conflito. Com margem zero, esta chamada responde
+   * exatamente o que respondia antes da FASE 69.
    */
   const clashable = entries.filter((entry) => entry.status !== 'CANCELED');
 
-  const pairs = findOverlapPairs<AgendaEntry>(clashable, (entry): AgendaInterval => ({
-    startsAt: entry.startsAt,
-    endsAt: entry.endsAt,
-  }));
+  const marginMinutes = input.roomTravelMarginMinutes ?? ROOM_TRAVEL_MARGIN_MINUTES;
+
+  const pairs = findClashPairs<AgendaEntry>(
+    clashable,
+    (entry): AgendaInterval => ({
+      startsAt: entry.startsAt,
+      endsAt: entry.endsAt,
+    }),
+    marginMinutes,
+  );
 
   const clashIds = new Set<string>();
 

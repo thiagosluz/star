@@ -47,6 +47,7 @@ import {
 import { parseRubric, type RubricCriterion } from '@/domain/review/review-rules';
 import { assertRubricShapeFree } from '@/lib/review/rubric-guard';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
+import { parseOnlineRoomUrl } from '@/domain/events/online-room-rules';
 
 export type AdminErrorCode =
   | 'NOT_FOUND'
@@ -120,12 +121,41 @@ export interface EventInput {
   venueName?: string | null;
   city?: string | null;
   state?: string | null;
+  /**
+   * Endereço da SALA ONLINE do evento (FASE 68) — o escritor que a coluna não tinha.
+   *
+   * Vazio/ausente = o evento não tem sala online (e o bloco de LOCAL não anuncia
+   * transmissão nenhuma). A forma é validada pelo DOMÍNIO (`parseOnlineRoomUrl`): só
+   * `http`/`https` pode virar link — `javascript:` e `data:` são recusados com o
+   * motivo, porque este valor vira `href` na página pública.
+   *
+   * QUEM VÊ o endereço é outra pergunta, e ela é respondida no SERVIDOR
+   * (`online-room-service.ts`): inscrição viva que não seja de espera, ou a equipe.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AUSENTE ≠ VAZIO (FASE 68 · ajuste do humano sobre a modalidade)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `undefined` é "este formulário não fala sobre isso" e **preserva o que está
+   *  gravado**; `null` (ou a string vazia, que vira `null`) é "o organizador limpou o
+   *  campo". A distinção passou a importar quando o campo da tela deixou de ser
+   *  desenhado em evento PRESENCIAL: sem ela, editar o título de um evento que tem
+   *  endereço gravado o apagaria em silêncio — o mesmo modo de falha do interruptor
+   *  da chamada (`usesCall`, logo abaixo).
+   */
+  onlineUrl?: string | null;
   primaryColor?: string | null;
   theme?: unknown;
   registrationOpensAt?: Date | null;
   registrationClosesAt?: Date | null;
-  cfpOpensAt?: Date | null;
-  cfpClosesAt?: Date | null;
+  /**
+   * O evento RECEBE trabalhos? (FASE 68)
+   *
+   * Opcional para não obrigar os chamadores que só editam identidade (os testes de
+   * outros assuntos montam o input mínimo): **ausente = falso**, que é a mesma leitura
+   * do `DEFAULT false` da coluna. A janela de submissão NÃO mora mais aqui — quem tem
+   * janela é a chamada da FASE 33, em `/chamadas`.
+   */
+  usesCall?: boolean;
   /**
    * Restringe a inscrição à comunidade da instituição (FASE 12, item I3).
    *
@@ -153,6 +183,19 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
       };
     }
 
+    /**
+     * O endereço da sala online é validado AQUI, e não no formulário.
+     *
+     * `saveEvent` é o único caminho de escrita do evento — a tela, o seed e os testes
+     * passam por ele —, então a allowlist de protocolo vale para todos. Validação
+     * apenas no formulário deixaria a porta aberta para o próximo cliente que
+     * conhecesse o campo.
+     */
+    const onlineUrl = parseOnlineRoomUrl(input.onlineUrl);
+    if (!onlineUrl.ok) {
+      return { ok: false as const, code: 'INVALID_INPUT' as const, message: onlineUrl.message };
+    }
+
     return await withTenant(input.tenantId, async (tx) => {
       const data = {
         slug: input.slug,
@@ -169,12 +212,24 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
         venueName: input.venueName ?? null,
         city: input.city ?? null,
         state: input.state ?? null,
+        /**
+         * Já normalizado e validado pelo domínio logo acima.
+         *
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O `?? undefined` DISTINGUE "LIMPAR" DE "NÃO FALAR SOBRE ISSO"
+         * ─────────────────────────────────────────────────────────────────────────
+         *  `parseOnlineRoomUrl` devolve `url: null` para o campo vazio — e vazio é uma
+         *  edição legítima ("a sala deixou de existir"), que precisa GRAVAR `null`. O
+         *  `?? undefined` NÃO reescreve esse caso: quando o chamador mandou o campo
+         *  (`input.onlineUrl !== undefined`), o valor de `url` é gravado como veio,
+         *  `null` incluído. Só o chamador que NÃO falou do campo é que sai daqui sem
+         *  mexer na coluna — e o `undefined` do Prisma é exatamente "não mexa".
+         */
+        onlineUrl: input.onlineUrl === undefined ? undefined : onlineUrl.url,
         primaryColor: input.primaryColor ?? resolved.theme.primaryColor,
         theme: resolved.theme as unknown as object,
         registrationOpensAt: input.registrationOpensAt ?? null,
         registrationClosesAt: input.registrationClosesAt ?? null,
-        cfpOpensAt: input.cfpOpensAt ?? null,
-        cfpClosesAt: input.cfpClosesAt ?? null,
       };
 
       if (input.eventId) {
@@ -211,6 +266,16 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
           where: { id: before.id },
           data: {
             ...data,
+            /**
+             * O INTERRUPTOR DA CHAMADA SÓ MUDA QUANDO ALGUÉM O DECIDE (FASE 68).
+             *
+             * `undefined` é "este formulário não fala sobre isso" e `false` é "o
+             * organizador desmarcou a caixa". Gravar o ausente como `false` faria
+             * qualquer edição de título DESLIGAR a chamada de um evento que a usa — e o
+             * modo de falha seria silencioso: o painel pararia de cobrar a trilha e a
+             * vitrine pararia de anunciar a submissão, sem ninguém ter pedido.
+             */
+            ...(input.usesCall === undefined ? {} : { usesCall: input.usesCall }),
             settings: {
               ...previousSettings,
               registrationRequiresMembership: input.registrationRequiresMembership === true,
@@ -275,6 +340,8 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
           tenantId: input.tenantId,
           confirmedCount: 0,
           ...data,
+          /** Ausente = não recebe trabalhos, a mesma leitura do default da coluna. */
+          usesCall: input.usesCall === true,
           settings: {
             registrationRequiresMembership: input.registrationRequiresMembership === true,
           } as unknown as object,
@@ -369,12 +436,25 @@ export interface AdminEventDetail extends AdminEventRow {
   venueName: string | null;
   city: string | null;
   state: string | null;
+  /** Endereço da sala online do evento (FASE 68) — o que o formulário reabre. */
+  onlineUrl: string | null;
   primaryColor: string | null;
   theme: unknown;
   registrationOpensAt: Date | null;
   registrationClosesAt: Date | null;
-  cfpOpensAt: Date | null;
-  cfpClosesAt: Date | null;
+  /**
+   * O evento RECEBE trabalhos? (FASE 68) — o interruptor que a tela de dados edita.
+   */
+  usesCall: boolean;
+  /**
+   * Os fatos da CHAMADA, medidos na fonte da verdade (FASE 68).
+   *
+   * Substituem o par `cfpOpensAt`/`cfpClosesAt`, que era a janela do evento e não
+   * descrevia chamada nenhuma. `published` é o que a prontidão (F53) e o bloco de
+   * trilhas da vitrine precisam saber; `withoutDeadline` é o que faz o painel avisar
+   * que a chamada aceita proposta para sempre.
+   */
+  calls: { published: number; withoutDeadline: number };
   /** A inscrição está restrita à comunidade? (FASE 12, item I3) */
   registrationRequiresMembership: boolean;
   rooms: { id: string; name: string; capacity: number | null }[];
@@ -397,6 +477,13 @@ export interface AdminEventDetail extends AdminEventRow {
     waitlistEnabled: boolean;
     roomId: string | null;
     roomName: string | null;
+    /**
+     * Endereço da sala online DESTA atividade (FASE 68).
+     *
+     * A atividade pode repetir o endereço do evento — repetir é decisão do
+     * organizador, e a tela reabre o formulário com o que está gravado.
+     */
+    onlineUrl: string | null;
     isFeatured: boolean;
     checkInEnabled: boolean;
     /** `false` = aberta a todos os inscritos no evento (revisão da FASE 3). */
@@ -459,12 +546,12 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
         venueName: true,
         city: true,
         state: true,
+        onlineUrl: true,
         primaryColor: true,
         theme: true,
         registrationOpensAt: true,
         registrationClosesAt: true,
-        cfpOpensAt: true,
-        cfpClosesAt: true,
+        usesCall: true,
         settings: true,
         rooms: { orderBy: { name: 'asc' }, select: { id: true, name: true, capacity: true } },
         activities: {
@@ -488,6 +575,7 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
             waitlistEnabled: true,
             roomId: true,
             isFeatured: true,
+            onlineUrl: true,
             checkInEnabled: true,
             requiresRegistration: true,
             /** Confirmação de vaga (FASE 34) — a tela reabre o formulário com isto. */
@@ -551,6 +639,31 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
     }),
   );
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  OS FATOS DA CHAMADA (FASE 68)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A prontidão (F53) e o bloco de trilhas da vitrine não podem mais deduzir "há
+   *  chamada" da janela do evento: quem responde é a entidade da FASE 33. UMA leitura
+   *  agregada resolve os dois números — chamadas publicadas e quantas delas não têm
+   *  prazo de encerramento —, e ela é do EVENTO, não da instituição.
+   *
+   *  `deletedAt: null` porque chamada excluída não está no ar: contá-la faria o painel
+   *  anunciar uma chamada que não existe em tela nenhuma.
+   */
+  const [publishedCalls, callsWithoutDeadline] = await withTenant(tenantId, (tx) =>
+    Promise.all([
+      tx.callForProposals.count({
+        where: { tenantId, eventId, isPublished: true, deletedAt: null },
+      }),
+      tx.callForProposals.count({
+        where: { tenantId, eventId, isPublished: true, deletedAt: null, closesAt: null },
+      }),
+    ]),
+  );
+
+  const calls = { published: publishedCalls, withoutDeadline: callsWithoutDeadline };
+
   const pendingByActivity = new Map(
     pendingRows.map((row) => [row.activityId ?? '', row._count._all]),
   );
@@ -572,12 +685,13 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
     venueName: event.venueName,
     city: event.city,
     state: event.state,
+    onlineUrl: event.onlineUrl,
     primaryColor: event.primaryColor,
     theme: event.theme,
     registrationOpensAt: event.registrationOpensAt,
     registrationClosesAt: event.registrationClosesAt,
-    cfpOpensAt: event.cfpOpensAt,
-    cfpClosesAt: event.cfpClosesAt,
+    usesCall: event.usesCall,
+    calls,
     registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
     activityCount: event._count.activities,
     trackCount: event._count.tracks,
@@ -607,6 +721,7 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       waitlistEnabled: activity.waitlistEnabled,
       roomId: activity.roomId,
       roomName: activity.room?.name ?? null,
+      onlineUrl: activity.onlineUrl,
       isFeatured: activity.isFeatured,
       checkInEnabled: activity.checkInEnabled,
       requiresRegistration: activity.requiresRegistration,
@@ -886,6 +1001,18 @@ export interface ActivityInput {
   capacity?: number | null;
   waitlistEnabled: boolean;
   roomId?: string | null;
+  /**
+   * Endereço da sala online da atividade (FASE 68).
+   *
+   * Ausente/vazio = não há sala online para esta atividade. A atividade NÃO herda o
+   * endereço do evento: ver o comentário da coluna em `prisma/schema.prisma`.
+   *
+   * **Ausente ≠ vazio**: `undefined` preserva o que está gravado (o campo não é
+   * desenhado na atividade PRESENCIAL e o formulário sai sem ele); `null`/`''` LIMPA.
+   * É a mesma régua do `EventInput.onlineUrl` — e a razão é a mesma: sem ela, editar
+   * qualquer outro campo da atividade apagaria o endereço em silêncio.
+   */
+  onlineUrl?: string | null;
   isFeatured?: boolean;
   checkInEnabled?: boolean;
   /**
@@ -930,6 +1057,12 @@ export async function saveActivity(input: ActivityInput): Promise<
         code: 'INVALID_INPUT',
         message: 'O término da atividade precisa ser depois do início.',
       };
+    }
+
+    /** A MESMA allowlist de protocolo do evento — o valor vira link na página pública. */
+    const onlineUrl = parseOnlineRoomUrl(input.onlineUrl);
+    if (!onlineUrl.ok) {
+      return { ok: false as const, code: 'INVALID_INPUT' as const, message: onlineUrl.message };
     }
 
     const saved = await withTenant(input.tenantId, async (tx) => {
@@ -1070,6 +1203,16 @@ export async function saveActivity(input: ActivityInput): Promise<
         capacity: input.capacity ?? null,
         waitlistEnabled: input.waitlistEnabled,
         roomId: input.roomId ?? null,
+        /**
+         * Já normalizado e validado pelo domínio logo acima.
+         *
+         * A MESMA distinção do `saveEvent` (ver o bloco lá): `undefined` é "este
+         * formulário não fala do endereço" e **preserva** o que está gravado; `null` é
+         * "o organizador limpou o campo" e grava `null`. A distinção passou a valer
+         * quando o campo saiu da tela das atividades PRESENCIAIS — sem ela, editar a
+         * carga horária de um minicurso online apagaria o endereço da sala.
+         */
+        onlineUrl: input.onlineUrl === undefined ? undefined : onlineUrl.url,
         isFeatured: input.isFeatured ?? false,
         checkInEnabled: input.checkInEnabled ?? true,
         /**

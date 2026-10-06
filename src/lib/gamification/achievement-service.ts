@@ -36,10 +36,12 @@ import { recordAudit } from '@/lib/admin/audit';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { evaluateFullAttendance } from '@/domain/events/attendance-rules';
+import { leaderboardIdentity } from '@/domain/gamification/leaderboard-rules';
 import {
   MIN_REVIEWS_FOR_TOP,
   rankReviewers,
   type ReviewerRanking,
+  type ReviewerScore,
 } from '@/domain/review/review-rules';
 
 export type AchievementResult<T> =
@@ -209,11 +211,49 @@ export interface ReviewerRankingView extends ReviewerRanking {
 }
 
 /**
+ * Como este ranking CITA uma pessoa que tem pareceres no evento (FASE 69 · dívida E82).
+ *
+ * ─── POR QUE A RÉGUA VEM DE FORA, E NÃO DE UM `if (publicProfileHiddenAt)` AQUI ──
+ *
+ *  A moderação da plataforma (FASE 56 · E62) grava `User.publicProfileHiddenAt`, e a
+ *  FASE 60 fixou que a medida vale em TODA superfície que cita a pessoa. Este ranking
+ *  nasceu lendo `reviewer.name` direto e ficou de fora — é a dívida **E82**. A resposta
+ *  para "como citar alguém sem identificá-lo" já existe no domínio, no lugar em que o
+ *  ranking de XP a usa desde a E80 (`leaderboardIdentity`, FASE 62): a régua é
+ *  **MASCARAR** — a pessoa continua na lista, com a posição e a contagem dela —, e não
+ *  removê-la. Escrever a condição aqui de novo repetiria o defeito que a E79 descreve:
+ *  a régua copiada nasce sem a checagem na superfície seguinte.
+ *
+ *  `publicHandle` e `image` vão NULOS porque este ranking não publica nem `@handle` nem
+ *  foto: não há identidade dessas duas a esconder — o que a régua tira daqui é o NOME.
+ *  Sem pessoa (a FK é obrigatória; o `null` é defesa de runtime) não há identidade
+ *  nenhuma a citar, e vale o rótulo neutro que a tela já usava.
+ */
+function citedReviewerName(
+  person: { name: string; publicProfileHiddenAt: Date | null } | null,
+): string {
+  if (!person) return 'Revisor';
+
+  return leaderboardIdentity({
+    name: person.name,
+    publicHandle: null,
+    image: null,
+    publicProfileHiddenAt: person.publicProfileHiddenAt,
+  }).name;
+}
+
+/**
  * Ranking de revisores do evento, com o piso que as cartas do gatilho exigem.
  *
- * O piso é o MAIOR entre `MIN_REVIEWS_FOR_TOP` e o `triggerCondition.threshold` de
- * cada carta de `REVIEWER_TOP` — a carta é a fonte da regra quando ela é mais
- * exigente, e o padrão cobre o caso de a carta não declarar nada.
+ * O piso é o **MAIOR `threshold` entre as cartas de `REVIEWER_TOP`** do evento; e
+ * `MIN_REVIEWS_FOR_TOP` é só o **padrão de quem não declarou nada** — ele NÃO é um piso
+ * somado ao da carta (`Math.max(...thresholds)`, e a constante apenas quando não há
+ * threshold nenhum; a FASE 16 prende esse comportamento no E2E dos sorteios).
+ *
+ * A correção é da FASE 69: o texto anterior dizia "o MAIOR entre `MIN_REVIEWS_FOR_TOP` e
+ * o threshold" e descrevia um código que nunca existiu — o comentário tinha envelhecido
+ * e passou a mentir sobre a régua. O código NÃO foi tocado: o teste da FASE 16 é o
+ * contrato.
  */
 export async function getReviewerRanking(input: {
   tenantId: string;
@@ -229,7 +269,17 @@ export async function getReviewerRanking(input: {
             status: 'SUBMITTED',
             submission: { eventId: input.eventId, deletedAt: null },
           },
-          select: { reviewerId: true, reviewer: { select: { name: true } } },
+          /**
+           * `publicProfileHiddenAt` é pedido DE PROPÓSITO: é o campo que a fonte única
+           * da ocultação lê. Um `select` que o esqueça entrega `undefined`, e a fonte
+           * única trata isso como "não visível" (fail-closed) — gente abreviada numa
+           * lista que mostrava o nome, que se investiga; o contrário publicaria a
+           * identidade de quem a moderação tirou do ar, que não se investiga.
+           */
+          select: {
+            reviewerId: true,
+            reviewer: { select: { name: true, publicProfileHiddenAt: true } },
+          },
         }),
         tx.cardTemplate.findMany({
           where: { tenantId: input.tenantId, trigger: 'REVIEWER_TOP', isActive: true, deletedAt: null },
@@ -240,20 +290,37 @@ export async function getReviewerRanking(input: {
       return { reviews, cards };
     });
 
-    const counts = new Map<string, { reviewerName: string; completedReviews: number }>();
+    /**
+     * ─── DOIS NOMES, PORQUE SÃO DUAS PERGUNTAS DIFERENTES (E82) ──────────────────
+     *
+     *  O desempate do `rankReviewers` é ALFABÉTICO pelo `reviewerName`, e a premiação
+     *  é auditada: precisa ser reproduzível. Se o nome MASCARADO fosse o que entra no
+     *  ranking, dois revisores ocultos com o mesmo número de pareceres e o mesmo
+     *  prenome (`Ana Souza` e `Ana Silva` — os dois viram `Ana S.`) empatariam também
+     *  no nome e o `localeCompare` devolveria `0`: a ordem passaria a ser a que o banco
+     *  devolveu, que não é determinística, e o corte do `top` premiaria por sorteio.
+     *  Por isso o ranking ORDENA pelo nome do cadastro e PUBLICA o nome que a régua da
+     *  ocultação manda citar — a posição e a contagem não mudam de lado nenhum.
+     */
+    const tallies = new Map<
+      string,
+      { realName: string; citedName: string; completedReviews: number }
+    >();
 
     for (const review of data.reviews) {
-      const current = counts.get(review.reviewerId) ?? {
-        reviewerName: review.reviewer?.name ?? 'Revisor',
+      const person = review.reviewer ?? null;
+      const current = tallies.get(review.reviewerId) ?? {
+        realName: person?.name ?? 'Revisor',
+        citedName: citedReviewerName(person),
         completedReviews: 0,
       };
       current.completedReviews += 1;
-      counts.set(review.reviewerId, current);
+      tallies.set(review.reviewerId, current);
     }
 
-    const scores = [...counts.entries()].map(([reviewerId, value]) => ({
+    const scores: ReviewerScore[] = [...tallies.entries()].map(([reviewerId, value]) => ({
       reviewerId,
-      reviewerName: value.reviewerName,
+      reviewerName: value.realName,
       completedReviews: value.completedReviews,
     }));
 
@@ -273,9 +340,22 @@ export async function getReviewerRanking(input: {
     const minReviews = thresholds.length > 0 ? Math.max(...thresholds) : MIN_REVIEWS_FOR_TOP;
     const ranking = rankReviewers(scores, { top: input.top ?? 1, minReviews });
 
+    /**
+     * O que SAI do serviço carrega o nome como a régua manda citá-lo. A troca acontece
+     * sobre a lista JÁ ordenada, e só no nome: posição, contagem e elegibilidade são as
+     * que o ranking decidiu (esconder o nome não é apagar a pessoa do ranking).
+     */
+    const cited = (rows: readonly ReviewerScore[]): ReviewerScore[] =>
+      rows.map((row) => ({
+        ...row,
+        reviewerName: tallies.get(row.reviewerId)?.citedName ?? row.reviewerName,
+      }));
+
     return {
       ok: true as const,
       ...ranking,
+      ranked: cited(ranking.ranked),
+      awarded: cited(ranking.awarded),
       minReviews,
       cardNames: cards.map((card) => card.name),
     };

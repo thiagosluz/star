@@ -15,6 +15,11 @@ import {
 } from './helpers';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import {
+  addPageBlock,
+  ensureHomePage,
+  savePageSettings,
+} from '../../src/lib/admin/landing-service';
+import {
   publishTenantPublicPage,
   saveTenantPublicPageDraft,
 } from '../../src/lib/tenancy/tenant-public-page-write-service';
@@ -44,7 +49,7 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *  encolheu, o item de menu que sumiu, o contraste que ficou lavado no escuro).
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O CONJUNTO É PEQUENO DE PROPÓSITO: DEZENOVE SNAPSHOTS, SETE SUPERFÍCIES
+ *  O CONJUNTO É PEQUENO DE PROPÓSITO: VINTE E DOIS SNAPSHOTS, OITO SUPERFÍCIES
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Quarenta telas dariam quarenta linhas de base para revisar a cada mudança de
  *  design — e uma linha de base que ninguém revisa é pior que nenhuma. A escolha
@@ -82,6 +87,12 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *       progresso, o tempo restante e os horários mudam a cada minuto. Ela entra com
  *       essas quatro peças MASCARADAS e o motivo declarado (ver a mesma seção) — o que
  *       resta medido é o que a fase desenhou em volta delas.
+ *    8. **O bloco de LOCAL da página do evento** (`evento-bloco-de-local`) — **a linha
+ *       de base da FASE 69**, e a única do arquivo que nasceu de uma AUSÊNCIA: a aba
+ *       "Acontecendo agora" não renderiza blocos, então o `VenueBlock` — o bloco que
+ *       desenha o endereço físico e o da SALA ONLINE para quem tem lugar — nunca teve
+ *       pixel medido, e o vazamento que a FASE 68 fechou passou por todas as catracas
+ *       de imagem sem tocar nenhuma. Ver a seção própria no fim do arquivo.
  *
  *  Cada uma das duas telas autenticadas entra nos DOIS modos (claro e escuro, pelo cookie
  *  `ef_tema` — a mesma fiação da FASE 61) e nos DOIS tamanhos (desktop e celular,
@@ -328,6 +339,21 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *  PLATAFORMA — a raiz, que é estática e é de todo mundo. A página do evento carrega a
  *  identidade visual que o ORGANIZADOR escolheu, e por isso mediria a cor de outra
  *  pessoa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A EXCEÇÃO DECLARADA: O BLOCO DE LOCAL DO EVENTO (FASE 69)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 69 abriu UMA exceção a esse parágrafo, e ela é estreita de propósito: entra o
+ *  **bloco de LOCAL** de um evento da FIXTURE (item 8), e não a página do evento. As
+ *  três condições que a tornam honesta:
+ *
+ *    • **a identidade é a padrão** — o evento da fixture não tem `theme` próprio, então
+ *      a imagem mede o desenho do bloco na paleta padrão, e não a cor de outra pessoa;
+ *    • **o que está em volta é determinístico** — o evento antigo tem janela FIXA
+ *      (`JANELA_ANTIGA`) e nada do bloco é relativo ao relógio;
+ *    • **a superfície é NOVA** — até aqui o bloco não existia em imagem nenhuma, e um
+ *      vazamento medido (o `onlineUrl` desenhado para qualquer visitante) atravessou
+ *      todas as catracas de pixel justamente por isso.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  A PÁGINA DA INSTITUIÇÃO: POR QUE ELA ENTRA, E COMO ELA FICOU DETERMINÍSTICA
@@ -645,6 +671,35 @@ const TEXTO_DE_SOBRE =
 const TEXTO_DE_CONTATO =
   'Rua das Artes Visuais, 240 — Santo Amaro/BA';
 
+/**
+ * O endereço da sala online da atividade EM CURSO (FASE 68 · fatia 5).
+ *
+ * Ele é o que o `NowCard` desenha no cartão do "acontecendo agora" — e o que a linha
+ * de base `evento-aba-agora.png` passou a medir. O host é `.test` de propósito, como
+ * o resto das fixtures: nada aqui resolve por DNS, o que importa é o `href`.
+ */
+const ENDERECO_DO_AGORA = 'https://sala.exemplo.test/a11y-visual';
+
+/**
+ * O endereço da sala online do EVENTO e o endereço FÍSICO do bloco de LOCAL (FASE 69).
+ *
+ * São os dois dados que o `VenueBlock` desenha — e é a imagem DELES que faltava. O
+ * endereço físico é o mesmo texto que a página da instituição publica no bloco de
+ * contato (`TEXTO_DE_CONTATO`): é texto de fixture, escrito à mão, e não carrega o
+ * `RUN_ID` — sem isso a linha de base mudaria a cada execução.
+ */
+const ENDERECO_DO_LOCAL = 'https://sala.exemplo.test/local-do-evento';
+const ENDERECO_FISICO_DO_EVENTO = 'Rua das Artes Visuais, 240 — Santo Amaro/BA';
+
+/**
+ * O `id` da atividade EM CURSO — o `agora-item-<id>`/`agora-sala-online-<id>` do cartão.
+ *
+ * É o único `id` desta fixture que precisa viver fora do `beforeAll`: as asserções da
+ * aba do agora o usam para ESCOPAR a barra e o link ao cartão certo (a contagem por
+ * prefixo não bastaria se o evento tivesse duas atividades em curso).
+ */
+let atividadeDoAgoraId: string;
+
 async function signUpVia(
   api: APIRequestContext,
   name: string,
@@ -788,13 +843,15 @@ async function criarEventoComJanela(input: {
   title: string;
   startsAt: Date;
   endsAt: Date;
-}): Promise<void> {
+}): Promise<string> {
+  const id = randomUUID();
+
   await e2eDb.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
 
     await tx.event.create({
       data: {
-        id: randomUUID(),
+        id,
         tenantId: input.tenantId,
         slug: input.slug,
         title: input.title,
@@ -811,6 +868,38 @@ async function criarEventoComJanela(input: {
         registrationOpensAt: new Date('1999-01-01T00:00:00.000Z'),
         registrationClosesAt: new Date('2099-12-31T00:00:00.000Z'),
       },
+    });
+  });
+
+  /** O `id` sai daqui porque a FASE 69 manda publicar a PÁGINA dele (o bloco de LOCAL). */
+  return id;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O ENDEREÇO FÍSICO E A SALA ONLINE DO EVENTO (FASE 69)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O `VenueBlock` lê os dois do EVENTO (não do conteúdo do bloco), e a fixture os
+ *  escreve depois que o evento existe — o mesmo caminho de `fixarJanela`.
+ *
+ *  `venueName` NÃO é tocado de propósito: o cartão da vitrine da instituição imprime
+ *  `venueName, cidade/UF` quando ele existe, e escrevê-lo mudaria DUAS linhas de base
+ *  (`pagina-da-instituicao-claro/escuro`) por um motivo que não é do assunto desta
+ *  imagem. `venueAddress` não aparece em cartão nenhum — só no bloco de LOCAL, que é
+ *  exatamente onde ele deve aparecer.
+ */
+async function fixarLocalDoEvento(input: {
+  tenantId: string;
+  eventId: string;
+  venueAddress: string;
+  onlineUrl: string;
+}): Promise<void> {
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${input.tenantId}, true)`;
+
+    await tx.event.update({
+      where: { id: input.eventId },
+      data: { venueAddress: input.venueAddress, onlineUrl: input.onlineUrl },
     });
   });
 }
@@ -866,13 +955,86 @@ test.beforeAll(async ({ playwright, baseURL }) => {
      */
     await fixarJanela({ tenantId: tenant.id, eventId: event.id, ...JANELA_FUTURA });
 
-    await criarEventoComJanela({
+    const eventoAntigoId = await criarEventoComJanela({
       tenantId: tenant.id,
       slug: `antigo-${RUN_ID}`,
       title: EVENTO_ANTIGO_TITULO,
       ...JANELA_ANTIGA,
     });
 
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *  O BLOCO DE LOCAL GANHA LINHA DE BASE (FASE 69 · os quatro pontos da F68)
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  O QUE FALTAVA, E POR QUE O BURACO ERA ESTRUTURAL
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  O `VenueBlock` (`block-renderer.tsx`) é o bloco de LOCAL da página do evento — o
+     *  lugar onde o endereço da sala online aparece para quem tem lugar. Ele **não
+     *  tinha linha de base visual**, e não por esquecimento: a única superfície do
+     *  evento que esta suíte fotografava é a aba "Acontecendo agora" (`?aba=agora`), e
+     *  essa aba **não renderiza blocos** — o bloco não existia em imagem nenhuma. O
+     *  defeito que ele já teve (a FASE 68 mediu o vazamento: `Event.onlineUrl` desenhado
+     *  para QUALQUER visitante) passou por todas as catracas de pixel justamente porque
+     *  não havia pixel dele.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  POR QUE A PÁGINA DESTE EVENTO, E NÃO A DO EVENTO DA VITRINE
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  Publicar uma página com blocos no evento que "minha agenda" e a aba do "agora"
+     *  medem mudaria o desenho delas (a agenda passaria a desenhar o link da sala do
+     *  evento, porque a dona da conta é a EQUIPE e vê tudo) — as três linhas de base
+     *  pagariam por uma imagem só. É a lição que a FASE 67 pagou duas vezes ("o
+     *  conserto é de FIXTURE"), e ela vale aqui inteira.
+     *
+     *  O evento ANTIGO serve porque já está na vitrine como cartão de "Edições
+     *  anteriores" e o conteúdo do cartão NÃO depende da página nem de `venueAddress`
+     *  (o cartão imprime `venueName, cidade/UF`, e `venueName` fica `null` — ver
+     *  `fixarLocalDoEvento`). As duas linhas de base da vitrine continuam medindo o
+     *  mesmo desenho.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  A PÁGINA E O BLOCO NASCEM PELOS SERVIÇOS REAIS
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  `ensureHomePage` + `addPageBlock` + `savePageSettings` são o caminho do EDITOR
+     *  (validação de tema, trilha de auditoria e versão da página). Inserir as linhas
+     *  por `e2eDb` mediria uma página que o editor nunca produziria — a mesma razão do
+     *  E2E da FASE 23.
+     */
+    await fixarLocalDoEvento({
+      tenantId: tenant.id,
+      eventId: eventoAntigoId,
+      venueAddress: ENDERECO_FISICO_DO_EVENTO,
+      onlineUrl: ENDERECO_DO_LOCAL,
+    });
+
+    const paginaDoLocal = await ensureHomePage({
+      tenantId: tenant.id,
+      eventId: eventoAntigoId,
+      actorId: idDaConta,
+      title: EVENTO_ANTIGO_TITULO,
+    });
+
+    if (!paginaDoLocal.ok) throw new Error(`Falha ao criar a página: ${paginaDoLocal.message}`);
+
+    const blocoDeLocal = await addPageBlock({
+      tenantId: tenant.id,
+      eventId: eventoAntigoId,
+      actorId: idDaConta,
+      type: 'VENUE_MAP',
+    });
+
+    if (!blocoDeLocal.ok) throw new Error(`Falha ao criar o bloco: ${blocoDeLocal.message}`);
+
+    const paginaPublicada = await savePageSettings({
+      tenantId: tenant.id,
+      eventId: eventoAntigoId,
+      actorId: idDaConta,
+      title: EVENTO_ANTIGO_TITULO,
+      isPublished: true,
+    });
+
+    if (!paginaPublicada.ok) throw new Error(`Falha ao publicar: ${paginaPublicada.message}`);
     /**
      * ─────────────────────────────────────────────────────────────────────────────
      *  A PÁGINA PÚBLICA DA INSTITUIÇÃO É PUBLICADA PELO SERVIÇO REAL (FASE 64)
@@ -1108,7 +1270,36 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       capacity: 120,
     });
 
-    await createActivity({
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A ATIVIDADE EM CURSO GANHOU SALA ONLINE (FASE 68 · fatia 5)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A linha de base da aba "Acontecendo agora" (`evento-aba-agora.png`) media um
+     *  cartão SEM o link da sala online, porque o `NowCard` só o desenha para quem tem
+     *  lugar NA ATIVIDADE (`seesActivityOnlineRoom`: a inscrição dela, ou a do evento
+     *  quando a atividade é aberta, ou a equipe).
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  QUEM ABRE A PORTA AQUI É A EQUIPE — E ISSO É ESCOLHA, NÃO DESCUIDO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A dona da conta é `OWNER` da instituição, e o endereço do evento e o da
+     *  atividade chegam até ela pela EQUIPE (`event:update`/`event:manage`). A prova de
+     *  que o PARTICIPANTE também vê — e de que o anônimo e a lista de espera NÃO veem —
+     *  vive no teste dela (`tests/e2e/f68-sala-online.spec.ts`, os blocos (a) a (e)), e
+     *  a de que o cartão do agora desenha o link para quem tem inscrição, no portão de
+     *  acessibilidade.
+     *
+     *  Inscrever esta conta aqui TAMBÉM funcionaria, e foi tentado: o efeito colateral é
+     *  que ela passaria a ter TRÊS itens na "minha agenda" e a aparecer com duas
+     *  inscrições no diretório de participantes — mudando o desenho de DUAS outras
+     *  linhas de base (17, 18, 6 e 7) por um motivo que não é do assunto desta imagem.
+     *  A régua de visibilidade não precisa de quatro fotos para valer: precisa de uma
+     *  prova por estado, e ela existe no spec da fase.
+     *
+     *  O efeito na imagem foi MEDIDO antes de qualquer regeração: ver o comentário do
+     *  teste 19, que traz a caixa dos pixels que mudaram.
+     */
+    const atividadeDoAgora = await createActivity({
       tenantId: tenant.id,
       eventId: event.id,
       slug: `agora-${RUN_ID}`,
@@ -1116,7 +1307,10 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       roomId: salaDoAgora.id,
       startsAtOffsetDays: -20 / (24 * 60),
       workloadMinutes: 60,
+      onlineUrl: ENDERECO_DO_AGORA,
     });
+
+    atividadeDoAgoraId = atividadeDoAgora.id;
 
     /**
      * A PRÓXIMA da mesma sala: é ela que dá conteúdo ao "a seguir nesta sala" — a
@@ -1820,6 +2014,30 @@ async function abrirAbaDoAgora(page: Page): Promise<void> {
   await expect(page.locator('[data-testid^="agora-cracha-"]')).toHaveCount(1);
   await expect(page.locator('[data-testid^="agora-balcao-"]')).toHaveCount(1);
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O LINK NOVO DA FASE 68 TAMBÉM É AFIRMADO AQUI — EXATAMENTE UM (fatia 5)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A linha de base desta tela passou a MEDIR o link da sala online na FASE 68, e a
+   *  máscara da imagem não o tapa: uma tela que perdesse o link (ou que o desenhasse
+   *  duas vezes) deixaria a foto verde se ninguém o afirmasse.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  OS DOIS PREFIXOS QUE COMEÇAM IGUAL, E POR QUE A CONTAGEM É EXPLÍCITA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A aba usa dois nomes parecidos: `agora-sala-<sala>` é o GRUPO da sala e
+   *  `agora-sala-online-<atividade>` é o LINK do cartão. Os dois são afirmados
+   *  separadamente, um por prefixo — um prefixo novo que casasse com os dois quebraria
+   *  estas linhas, que é o aviso do §4 do plano da fase ("nome novo com prefixo
+   *  parecido quebra a contagem"). O `href` fecha a prova: o endereço do cartão é o DA
+   *  ATIVIDADE, e um vazamento do endereço do evento apareceria aqui.
+   */
+  await expect(page.locator('[data-testid^="agora-sala-online-"]')).toHaveCount(1);
+  await expect(page.getByTestId(`agora-sala-online-${atividadeDoAgoraId}`)).toHaveAttribute(
+    'href',
+    ENDERECO_DO_AGORA,
+  );
+
   /** O que vem depois NA MESMA SALA — sem isso a linha não existe e a máscara sobra. */
   await expect(page.getByTestId(`agora-proxima-${SALA_DO_AGORA}`)).toBeVisible();
 
@@ -2018,6 +2236,86 @@ test.describe('comunicação segmentada e descadastro', () => {
       ...TOLERANCIA,
       fullPage: true,
       mask: [mascaraDoEndereco(barraLateral(page))],
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  O BLOCO DE LOCAL DA PÁGINA DO EVENTO (FASE 69 · os quatro pontos da F68)
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  A LINHA DE BASE QUE NÃO EXISTIA — E POR QUE O BURACO ERA ESTRUTURAL
+//  ─────────────────────────────────────────────────────────────────────────────
+//  O `VenueBlock` é o bloco de LOCAL da página pública do evento: o endereço físico e
+//  o endereço da SALA ONLINE, que a FASE 68 fez aparecer só para quem tem lugar. Ele
+//  não tinha imagem, e a causa não era esquecimento: a única superfície do evento que
+//  esta suíte fotografava era a aba "Acontecendo agora" (`?aba=agora`), e **essa aba
+//  não renderiza blocos** — o bloco não existia em pixel nenhum. O vazamento que a
+//  FASE 68 fechou (`Event.onlineUrl` desenhado para qualquer visitante) atravessou
+//  todas as catracas de pixel porque não havia pixel dele para atravessar.
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  O QUE A IMAGEM MEDE, E O QUE ELA NÃO PODE MEDIR
+//  ─────────────────────────────────────────────────────────────────────────────
+//  Mede o DESENHO do bloco: o cartão, o ícone, a linha do endereço físico, o link com
+//  o `ExternalLink` e o espaçamento entre eles. Não mede o `href` — quem o prende é a
+//  asserção abaixo (e o E2E da FASE 68, que prova quem vê e quem não vê). É a divisão
+//  de sempre: pixel mede desenho, asserção mede fato.
+//
+//  A imagem é da PÁGINA INTEIRA (`fullPage`) com o bloco no lugar dele, e não um
+//  recorte do cartão: foi um recorte que escondeu o contexto no defeito que abriu esta
+//  suíte, e um bloco que estoure a largura de `main` só aparece na página inteira.
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  QUEM OLHA, E POR QUE ISSO IMPORTA PARA A IMAGEM
+//  ─────────────────────────────────────────────────────────────────────────────
+//  A dona da conta é `OWNER` da instituição, e é por isso que o endereço da sala
+//  ONLINE aparece no bloco: ele é resolvido no servidor pela régua da FASE 68
+//  (`seesEventOnlineRoom`: equipe do evento ou inscrição que dá lugar). Sem sessão, o
+//  mesmo bloco desenharia só o endereço físico — e a linha de base registraria uma
+//  tela que não é a que o organizador vê.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A página do evento ANTIGO, com o bloco de LOCAL publicado.
+ *
+ * O slug é derivado do `RUN_ID` no `beforeAll` (`antigo-<RUN_ID>`) e é escrito aqui do
+ * mesmo jeito — a constante do slug não existe porque nenhuma outra asserção do
+ * arquivo precisa dela.
+ */
+async function abrirBlocoDeLocal(page: Page): Promise<void> {
+  await page.goto(`/t/${tenantSlug}/eventos/antigo-${RUN_ID}`);
+
+  /** O bloco está renderizado — sem isto a foto mediria a ausência dele. */
+  await expect(page.getByRole('heading', { name: 'Local' })).toBeVisible();
+
+  const secao = page.locator('section#local');
+
+  await expect(secao).toContainText(ENDERECO_FISICO_DO_EVENTO);
+
+  /**
+   * O link da sala online, com o `href` conferido: é a peça que a FASE 68 pôs aqui e
+   * que a imagem passa a medir. Um link com o endereço de OUTRA sala passaria por
+   * "existe" — por isso o atributo entra.
+   */
+  const link = page.getByTestId('evento-sala-online');
+
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute('href', ENDERECO_DO_LOCAL);
+
+  await estabilizar(page);
+}
+
+test.describe('bloco de local da página do evento', () => {
+  test.use({ viewport: DESKTOP });
+
+  test('22. o bloco de local com a sala online', async ({ page }) => {
+    await preparar(page, { tema: 'claro' });
+    await abrirBlocoDeLocal(page);
+
+    await expect(page).toHaveScreenshot('evento-bloco-de-local.png', {
+      ...TOLERANCIA,
+      fullPage: true,
     });
   });
 });

@@ -20,7 +20,7 @@
  */
 import { z } from 'zod';
 
-import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
+import { formatZonedDateTime, isValidTimeZone } from '@/domain/events/scheduling-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cores
@@ -921,8 +921,25 @@ export interface EventSeoInput {
  * `description` cai em cascata: resumo → subtítulo → frase montada com data e
  * local. Uma landing page sem descrição perde muito em compartilhamento, e o
  * organizador nem sempre preenche o resumo.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O FUSO É PARÂMETRO OBRIGATÓRIO — E O DEFEITO QUE ISSO CONSERTA (FASE 68)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A frase de reserva formatava a data em **UTC**, fixo. Um evento das 21:00 em
+ *  Salvador (`-03:00`) tem `startsAt` no dia SEGUINTE em UTC, então a descrição que
+ *  aparece no Google e no cartão de compartilhamento anunciava **o dia errado**. Não
+ *  era um caso exótico: valia para TODO evento criado à noite — e o padrão de criação
+ *  herdava o minuto do render, então evento criado depois das 21h nascia assim.
+ *
+ *  `timeZone` NÃO é opcional de propósito: com valor padrão, o próximo chamador
+ *  repetiria o defeito em silêncio. Obrigatório, o `tsc` obriga cada chamador a
+ *  dizer de que fuso está falando — e o único chamador real (a página pública do
+ *  evento) já tem o fuso do evento em mãos.
  */
-export function buildEventMetadata(input: EventSeoInput): {
+export function buildEventMetadata(
+  input: EventSeoInput,
+  timeZone: string,
+): {
   title: string;
   description: string;
   openGraph: Record<string, unknown>;
@@ -930,7 +947,7 @@ export function buildEventMetadata(input: EventSeoInput): {
   const description =
     input.summary?.trim() ||
     input.subtitle?.trim() ||
-    fallbackDescription(input);
+    fallbackDescription(input, timeZone);
 
   const location = [input.venueName, input.city, input.country]
     .filter(Boolean)
@@ -949,12 +966,21 @@ export function buildEventMetadata(input: EventSeoInput): {
   };
 }
 
-function fallbackDescription(input: EventSeoInput): string {
+/**
+ * A frase de reserva, no fuso do EVENTO.
+ *
+ * Fuso inválido cai em `UTC` — a mesma leitura conservadora de
+ * `formatZonedDateTime`: é melhor anunciar o dia em UTC do que derrubar a geração
+ * dos metadados de uma página que já está no ar.
+ */
+function fallbackDescription(input: EventSeoInput, timeZone: string): string {
+  const zone = isValidTimeZone(timeZone) ? timeZone : 'UTC';
+
   const period = new Intl.DateTimeFormat('pt-BR', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
-    timeZone: 'UTC',
+    timeZone: zone,
   }).format(input.startsAt);
 
   const local = [input.venueName, input.city].filter(Boolean).join(', ');

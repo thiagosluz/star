@@ -20,10 +20,12 @@
  *  ─────────────────────────────────────────────────────────────────────────────
  *  A FÓRMULA NÃO É RECOPIADA AQUI
  *  ─────────────────────────────────────────────────────────────────────────────
- *  `intervalsOverlap` é a régua do domínio (`src/domain/agenda/overlap-rules.ts`), e
- *  ela já decidiu as bordas: **encostar não é choque, conter é, sem horário não
- *  choca**. Uma segunda comparação de datas neste arquivo criaria duas respostas para
- *  a mesma pergunta — e a que ficasse para trás passaria a avisar choque onde não há.
+ *  `intervalsClash` é a régua do domínio (`src/domain/agenda/overlap-rules.ts`), e
+ *  ela já decidiu as bordas: **encostar não é choque quando não há margem, conter é,
+ *  sem horário não choca — e dois itens separados por menos que a margem de
+ *  deslocamento entre salas conflitam** (E86 · FASE 69). Uma segunda comparação de
+ *  datas neste arquivo criaria duas respostas para a mesma pergunta — e a que ficasse
+ *  para trás passaria a avisar choque onde não há.
  *  Aqui só se ESCOLHE o par (o candidato contra a minha grade) e se monta o rótulo.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -49,7 +51,7 @@ import {
   type AgendaMark,
   type MyAgenda,
 } from '@/domain/agenda/agenda-rules';
-import { intervalsOverlap } from '@/domain/agenda/overlap-rules';
+import { intervalsClash, ROOM_TRAVEL_MARGIN_MINUTES } from '@/domain/agenda/overlap-rules';
 import type { RegistrationStatus } from '@/domain/events/registration-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -171,7 +173,8 @@ export interface AgendaCandidate {
 }
 
 /**
- * Os itens da MINHA grade que disputam o mesmo tempo com o candidato.
+ * Os itens da MINHA grade que disputam o mesmo tempo com o candidato — ou que estão
+ * perto demais para dar tempo de atravessar até lá.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  *  AS DUAS EXCLUSÕES, E POR QUE CADA UMA EXISTE
@@ -185,12 +188,16 @@ export interface AgendaCandidate {
  *    "chocando consigo próprio" (o intervalo sobrepõe a si mesmo), e o aviso viraria
  *    ruído em toda atividade já marcada.
  *
- *  O resto é do DOMÍNIO: quem responde "sobrepõe?" é `intervalsOverlap`, com as
- *  bordas já decididas lá (encostar não é choque; conter é; sem horário não choca).
+ *  O resto é do DOMÍNIO: quem responde "conflita?" é `intervalsClash`, com as bordas
+ *  já decididas lá (encostar não é choque SEM margem; conter é; sem horário não
+ *  choca; e dois itens separados por menos que a margem de deslocamento conflitam).
+ *  A margem tem default declarado no domínio (`ROOM_TRAVEL_MARGIN_MINUTES`) e é
+ *  parâmetro aqui para o teste poder provar o outro lado (margem zero = FASE 65).
  */
 export function clashesWithAgenda(
   candidate: AgendaCandidate,
   items: readonly AgendaViewerItem[],
+  roomTravelMarginMinutes: number = ROOM_TRAVEL_MARGIN_MINUTES,
 ): AgendaViewerItem[] {
   if (candidate.status === 'CANCELED') return [];
 
@@ -198,7 +205,7 @@ export function clashesWithAgenda(
     (item) =>
       item.status !== 'CANCELED' &&
       item.activityId !== candidate.activityId &&
-      intervalsOverlap(candidate, item),
+      intervalsClash(candidate, item, roomTravelMarginMinutes),
   );
 }
 
@@ -212,6 +219,33 @@ export function clashesWithAgenda(
 export function clashTargetLabel(item: AgendaViewerItem): string {
   const room = item.roomName ? ` · ${item.roomName}` : '';
   return `${item.title} (${item.startsAtLabel} – ${item.endsAtLabel}${room})`;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O TEXTO DO AVISO — O NÚMERO SAI DO DOMÍNIO (E86 · FASE 69 · fatia 1)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A FRASE MUDOU, E POR QUE ELA NÃO PODE VOLTAR A SER "CHOQUE DE HORÁRIO"
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Com a margem, o aviso passou a aparecer em um caso que a pessoa NÃO enxerga
+ *  sozinha: dois itens que não se sobrepõem e que, lado a lado na grade, parecem
+ *  perfeitamente compatíveis. Um aviso que dissesse só "choque de horário" mandaria
+ *  quem lê conferir os dois relógios, não achar nada errado e concluir que o sistema
+ *  está errado — o aviso morre no terceiro caso desses.
+ *
+ *  Por isso a frase diz QUAL é o problema (o tempo é curto para o DESLOCAMENTO) e
+ *  POR QUANTO (o número de minutos). O número NÃO é digitado aqui: ele sai da
+ *  constante do domínio, e é por isso que este texto é uma função — uma frase
+ *  escrita à mão na tela continuaria dizendo "15" no dia em que a régua mudasse.
+ *
+ *  O TÍTULO nasce aqui porque é o mesmo nas duas telas que mostram o aviso; a DICA
+ *  que fecha o aviso continua sendo de quem chama, porque ela é do CONTEXTO ("marcar
+ *  as duas é permitido" na escolha, "a agenda não bloqueia" na grade).
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export function agendaClashTitle(): string {
+  return `Horários próximos demais para o deslocamento (margem de ${ROOM_TRAVEL_MARGIN_MINUTES} minutos) com`;
 }
 
 /**

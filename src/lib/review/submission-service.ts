@@ -31,6 +31,7 @@ import { ensureStorageRoom } from '@/lib/storage/storage-quota';
 import { isScanningEnabled } from '@/lib/storage/scan-service';
 import { canServeFile, initialScanStatus } from '@/domain/review/file-scan-rules';
 import { canSubmitToCall, type ProposalKind } from '@/domain/proposals/call-rules';
+import { legacySubmissionPermission } from '@/domain/events/call-optional-rules';
 import { formatBytes } from '@/domain/events/image-rules';
 import {
   BUCKETS,
@@ -87,6 +88,13 @@ export type SubmissionErrorCode =
   | 'HAS_ASSIGNMENTS'
   | 'NOT_DRAFT'
   | 'INVALID_TRACK'
+  /**
+   * O evento recebe trabalhos por uma CHAMADA, e este é o caminho por trilha — o
+   * alternativo, que não passa pela janela, pelo limite por autor nem pela rubrica
+   * dela. Era declarado e NUNCA devolvido até a FASE 68: a barreira que existia
+   * olhava a janela do evento, coluna que ninguém escrevia. Quem decide agora é
+   * `legacySubmissionPermission` (domínio).
+   */
   | 'CFP_CLOSED'
   | 'NOT_READY'
   /**
@@ -234,6 +242,33 @@ export async function createSubmission(
     }
 
     return await withTenant(input.tenantId, async (tx) => {
+      /**
+       * ── O CAMINHO ANTIGO X A CHAMADA DA F33 (FASE 68) ───────────────────────
+       * Roda ANTES de carregar a chamada, porque só vale quando NÃO há chamada: quem
+       * vem com `callId` já passa pelo portão próprio dela (`canSubmitToCall`).
+       *
+       * A janela do evento (`cfpOpensAt`/`cfpClosesAt`) foi REMOVIDA nesta fase — era
+       * ela que este comentário citava —, então o portão passa a ser o fato que
+       * sobreviveu: o evento tem chamada publicada? Se tem, este atalho não é o
+       * caminho, e `CFP_CLOSED` finalmente é devolvido de verdade.
+       */
+      if (!input.callId) {
+        const publishedCalls = await tx.callForProposals.count({
+          where: {
+            tenantId: input.tenantId,
+            eventId: input.eventId,
+            isPublished: true,
+            deletedAt: null,
+          },
+        });
+
+        const legado = legacySubmissionPermission({ eventHasPublishedCall: publishedCalls > 0 });
+
+        if (!legado.ok) {
+          throw new SubmissionError(legado.code, legado.message);
+        }
+      }
+
       /**
        * ── A CHAMADA DE ORIGEM (FASE 33) ───────────────────────────────────────
        * Carregada ANTES da trilha porque ela pode TRAZER a trilha (`call.trackId`) —

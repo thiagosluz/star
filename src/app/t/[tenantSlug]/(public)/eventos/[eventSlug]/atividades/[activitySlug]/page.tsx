@@ -9,6 +9,7 @@ import {
   Users,
   AlertCircle,
   LogIn,
+  Video,
 } from 'lucide-react';
 
 /**
@@ -44,6 +45,10 @@ import {
 import { ActivityMaterials } from '@/components/events/activity-materials';
 import { listActivityMaterials, resolveActivityViewer } from '@/lib/speakers/material-service';
 import { loadActivityNotes } from '@/lib/speakers/speaker-service';
+import {
+  resolveOnlineRoomViewer,
+} from '@/lib/events/online-room-service';
+import { seesActivityOnlineRoom } from '@/domain/events/online-room-rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -216,6 +221,30 @@ export default async function ActivityPage({
 
   const { materials, lockedCount } = materialList;
 
+  /**
+   * ── A SALA ONLINE DESTA ATIVIDADE (FASE 68 · fatia 3) ─────────────────────────
+   *
+   *  Mesma pergunta da página do evento, e a mesma resposta resolvida no BANCO
+   *  (`resolveOnlineRoomViewer`): a inscrição que dá lugar NESTA atividade, ou a do
+   *  evento quando a atividade é aberta, ou a equipe. Aqui a régua é a da ATIVIDADE
+   *  porque é ela que tem (ou não) endereço próprio — a atividade não herda o do evento.
+   *
+   *  Para quem não tem lugar, a variável é `null` e o link NÃO é renderizado: o
+   *  endereço não entra no HTML, e não é escondido por CSS.
+   */
+  const onlineRoomViewer = await resolveOnlineRoomViewer({
+    tenantId: tenant.tenantId,
+    eventId: event.id,
+    userId: user?.id ?? null,
+  });
+
+  const onlineUrl = seesActivityOnlineRoom(onlineRoomViewer, {
+    id: activity.id,
+    requiresRegistration: activity.requiresRegistration,
+  })
+    ? activity.onlineUrl
+    : null;
+
   const loginHref = `/login?redirectTo=${encodeURIComponent(
     tenantPath(tenantSlug, `/eventos/${eventSlug}/atividades/${activitySlug}`),
   )}`;
@@ -227,7 +256,7 @@ export default async function ActivityPage({
           <nav className="mb-6">
             <Link
               href={tenantPath(tenantSlug, `/eventos/${eventSlug}`)}
-              className="text-xs opacity-60 underline underline-offset-4"
+              className="ef-muted text-xs underline underline-offset-4"
             >
               ← {event.title}
             </Link>
@@ -252,12 +281,47 @@ export default async function ActivityPage({
                 {activity.title}
               </h1>
 
-              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              {/**
+                * ═══════════════════════════════════════════════════════════════════
+                *  A FICHA DA ATIVIDADE DEIXOU DE SER UMA `<dl>` (FASE 68 · fatia 5)
+                *
+                *  ───────────────────────────────────────────────────────────────────
+                *  O DEFEITO QUE O PORTÃO ACHOU, E POR QUE ELE ERA ESTRUTURAL
+                *  ───────────────────────────────────────────────────────────────────
+                *  Isto era `<dl>` com `<div>` no meio: `dl > div > div > dt/dd`. O
+                *  `definition-list` do `axe` exige que `dt`/`dd` sejam filhos DIRETOS
+                *  do `dl` (ele sobe no máximo um `div` sem `role`), e a varredura
+                *  reprovava **1 nó de `definition-list` e 10 de `dlitem`** — a marcação
+                *  afirmava "lista de definições" e não entregava uma.
+                *
+                *  ───────────────────────────────────────────────────────────────────
+                *  POR QUE NÃO "CONSERTAR O `<dl>`"
+                *  ───────────────────────────────────────────────────────────────────
+                *  Consertar significaria tirar o `div` que agrupa o ÍCONE com o rótulo
+                *  — e o desenho desta ficha é exatamente esse par. Dava para trocar o
+                *  `dt`/`dd` por `span` dentro de um `div` com `role="term"`/
+                *  `role="definition"`… o que é a mesma lista de definições escrita
+                *  à mão, com `role` inventado num lugar onde o produto NÃO tem pares
+                *  termo/definição: são RÓTULOS DE FICHA ("Data e horário", "Vagas",
+                *  "Local"). Um `div` com rótulo e valor é o que isto sempre foi.
+                *
+                *  ───────────────────────────────────────────────────────────────────
+                *  E O `opacity-60` SAIU JUNTO (`ef-muted`)
+                *  ───────────────────────────────────────────────────────────────────
+                *  Os rótulos usavam `opacity-60`, que COMPÕE o texto com o fundo em vez
+                *  de escolher uma cor — a família exata do defeito da FASE 66 (o
+                *  `eyebrow` que media 4,44:1). O papel do tema que resolve isto sobre
+                *  a `--ef-background` é `.ef-muted` (5,08:1 no claro e 5,91:1 no
+                *  escuro, medidos e presos em `tests/unit/f66-contraste-do-rotulo.test.ts`),
+                *  e é ele que os rótulos E os ícones usam agora.
+                * ═══════════════════════════════════════════════════════════════════
+                */}
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
                 <div className="flex items-center gap-2">
-                  <CalendarDays className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <CalendarDays className="ef-muted size-4 shrink-0" aria-hidden />
                   <div>
-                    <dt className="text-xs opacity-60">Data e horário</dt>
-                    <dd data-testid="activity-schedule">
+                    <span className="ef-muted block text-xs">Data e horário</span>
+                    <span className="block" data-testid="activity-schedule">
                       {new Intl.DateTimeFormat('pt-BR', {
                         weekday: 'long',
                         day: '2-digit',
@@ -276,36 +340,62 @@ export default async function ActivityPage({
                         minute: '2-digit',
                         timeZone: event.timezone,
                       }).format(activity.endsAt)}
-                    </dd>
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Clock className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <Clock className="ef-muted size-4 shrink-0" aria-hidden />
                   <div>
-                    <dt className="text-xs opacity-60">Carga horária</dt>
-                    <dd>{formatDuration(activity.workloadMinutes)}</dd>
+                    <span className="ef-muted block text-xs">Carga horária</span>
+                    <span className="block">{formatDuration(activity.workloadMinutes)}</span>
                   </div>
                 </div>
 
                 {activity.roomName ? (
                   <div className="flex items-center gap-2">
-                    <MapPin className="size-4 shrink-0 opacity-60" aria-hidden />
+                    <MapPin className="ef-muted size-4 shrink-0" aria-hidden />
                     <div>
-                      <dt className="text-xs opacity-60">Local</dt>
-                      <dd>{activity.roomName}</dd>
+                      <span className="ef-muted block text-xs">Local</span>
+                      <span className="block">{activity.roomName}</span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/**
+                  * A SALA ONLINE (FASE 68): só existe para quem tem lugar nela — a
+                  * decisão veio resolvida do banco logo acima. O rótulo usa o MESMO
+                  * papel dos vizinhos (`ef-muted`): um rótulo com mecanismo próprio
+                  * seria a inconsistência seguinte.
+                  */}
+                {onlineUrl ? (
+                  <div className="flex items-center gap-2">
+                    <Video className="ef-muted size-4 shrink-0" aria-hidden />
+                    <div>
+                      <span className="ef-muted block text-xs">Sala online</span>
+                      <span className="block">
+                        <a
+                          href={onlineUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="atividade-sala-online"
+                          className="underline underline-offset-4"
+                        >
+                          Entrar na sala online
+                        </a>
+                      </span>
                     </div>
                   </div>
                 ) : null}
 
                 {activity.speakers.length > 0 ? (
                   <div className="flex items-center gap-2">
-                    <Mic className="size-4 shrink-0 opacity-60" aria-hidden />
+                    <Mic className="ef-muted size-4 shrink-0" aria-hidden />
                     <div>
-                      <dt className="text-xs opacity-60">
+                      <span className="ef-muted block text-xs">
                         {activity.speakers.length === 1 ? 'Palestrante' : 'Palestrantes'}
-                      </dt>
-                      <dd className="flex flex-wrap gap-x-2">
+                      </span>
+                      <span className="flex flex-wrap gap-x-2">
                         {activity.speakers.map((speaker, index) => (
                           <span key={speaker.id}>
                             <Link
@@ -321,28 +411,28 @@ export default async function ActivityPage({
                             {index < activity.speakers.length - 1 ? ',' : ''}
                           </span>
                         ))}
-                      </dd>
+                      </span>
                     </div>
                   </div>
                 ) : activity.speakerNames.length > 0 ? (
                   <div className="flex items-center gap-2">
-                    <Mic className="size-4 shrink-0 opacity-60" aria-hidden />
+                    <Mic className="ef-muted size-4 shrink-0" aria-hidden />
                     <div>
-                      <dt className="text-xs opacity-60">
+                      <span className="ef-muted block text-xs">
                         {activity.speakerNames.length === 1
                           ? 'Palestrante'
                           : 'Palestrantes'}
-                      </dt>
-                      <dd>{activity.speakerNames.join(', ')}</dd>
+                      </span>
+                      <span className="block">{activity.speakerNames.join(', ')}</span>
                     </div>
                   </div>
                 ) : null}
 
                 <div className="flex items-center gap-2">
-                  <Users className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <Users className="ef-muted size-4 shrink-0" aria-hidden />
                   <div>
-                    <dt className="text-xs opacity-60">Vagas</dt>
-                    <dd data-testid="activity-seats">
+                    <span className="ef-muted block text-xs">Vagas</span>
+                    <span className="block" data-testid="activity-seats">
                       {activity.capacity === null
                         ? 'Ilimitadas'
                         : `${activity.confirmedCount} de ${activity.capacity} preenchidas`}
@@ -350,7 +440,7 @@ export default async function ActivityPage({
                         ? ` · ${activity.remainingSeats} restantes`
                         : ''}
                       {roomLimits ? ` · a sala comporta ${activity.roomCapacity}` : ''}
-                    </dd>
+                    </span>
                     {/**
                      * DIAGNÓSTICO PARA OS TESTES, EM ATRIBUTOS — nunca em texto.
                      *
@@ -363,7 +453,7 @@ export default async function ActivityPage({
                      * se entrega em atributos, que não renderizam nada. A tela não é lugar
                      * de diagnóstico.
                      */}
-                    <dd
+                    <span
                       data-testid="activity-flags"
                       hidden
                       data-capacity={String(activity.capacity)}
@@ -381,7 +471,7 @@ export default async function ActivityPage({
                     />
                   </div>
                 </div>
-              </dl>
+              </div>
 
               {activity.description ? (
                 <div className="whitespace-pre-line text-pretty leading-relaxed opacity-80">
@@ -639,8 +729,18 @@ export default async function ActivityPage({
                 </>
               )}
 
+              {/**
+                * O RÓTULO DA INSCRIÇÃO TAMBÉM USA O PAPEL DO TEMA (FASE 68 · fatia 5).
+                *
+                * Era `opacity-60` — o mesmo mecanismo que reprovava os rótulos da ficha
+                * acima: a opacidade COMPÕE o texto com a `--ef-background` que o
+                * organizador escolheu, em vez de escolher uma cor. O portão mediu este
+                * nó (`.text-center`, **1 violação de `color-contrast`**) na varredura da
+                * página da atividade, e a correção é o papel que já existe para esta
+                * superfície (`.ef-muted`, 5,08:1 no tema padrão claro).
+                */}
               {myRegistrationId && alreadyRegistered ? (
-                <p className="text-center text-xs opacity-60">
+                <p className="ef-muted text-center text-xs">
                   Inscrição #{myRegistrationId.slice(0, 8)} · pode ser cancelada em
                   “Minhas inscrições”.
                 </p>

@@ -376,6 +376,86 @@ const SALA_EM_CURSO = `Auditório A11y ${RUN_ID}`;
 let atividadeLongaId: string;
 let atividadeInternaId: string;
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  AS TRÊS SUPERFÍCIES DO ENDEREÇO DA SALA ONLINE (FASE 68 · fatia 5)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A fase criou o ESCRITOR da coluna e desenhou o endereço em três lugares. Cada um
+ *  tem um `data-testid` próprio, e os três entram na varredura:
+ *
+ *   • `evento-sala-online`  — o bloco de LOCAL da página pública (`VenueBlock`);
+ *   • `agora-sala-online-<id>` — o cartão do "acontecendo agora" (`NowCard`);
+ *   • `atividade-sala-online`  — a página da atividade.
+ *
+ *  Os endereços são DISTINTOS de propósito: se um vazasse para o lugar do outro, a
+ *  asserção diria QUAL vazou em vez de só acusar "tem um link ali".
+ */
+const ENDERECO_DO_EVENTO = `https://sala.exemplo.test/evento-${RUN_ID}`;
+const ENDERECO_DA_ATIVIDADE = `https://sala.exemplo.test/atividade-${RUN_ID}`;
+/** A sala em curso do evento dedicado — o grupo dela na aba é o nome desta constante. */
+const SALA_ONLINE = `Sala virtual A11y ${RUN_ID}`;
+const ATIVIDADE_ONLINE_TITULO = 'Oficina transmitida ao vivo';
+/**
+ * O EVENTO DEDICADO a estas três superfícies — em curso, com página PUBLICADA.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UM EVENTO SÓ PARA ISSO (e não pendurar no evento em curso da F65)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O bloco de LOCAL (`VenueBlock`) só é renderizado quando o evento tem PÁGINA
+ *  PUBLICADA com o bloco `VENUE_MAP`: sem página, a landing cai na composição padrão
+ *  (Sobre + Programação) e o bloco nem existe no DOM — a varredura passaria verde
+ *  medindo uma tela em que o nó da fase não está. Publicar a página do evento da F65
+ *  mudaria o layout das OUTRAS duas varreduras dele (a aba "Programação" da F66, por
+ *  exemplo, mede a composição padrão) e quebraria catracas alheias ao assunto.
+ *
+ *  Um evento próprio, com a própria página, resolve os dois: o bloco existe, e
+ *  nenhuma outra varredura muda de desenho. Ele é um SEGUNDO evento em curso na
+ *  vitrine da instituição, e é por isso que os casos que contam cartões por grupo
+ *  continuam presos ao evento da F65.
+ */
+let eventoDaSalaSlug: string;
+/** A atividade em curso DESTE evento — o `agora-item-<id>` que o portão mede. */
+let atividadeDaSalaId: string;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O EVENTO DE TEMA ESCURO (FASE 69 · a quitação da E84)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A COBERTURA QUE FALTAVA — E POR QUE ELA FALTAVA EM SILÊNCIO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Todas as varreduras de tela do EVENTO deste arquivo mediam o **tema padrão**
+ *  (`colorMode: 'light'`) com o visitante no claro — as duas metades claras. O par que
+ *  a dívida E84 registrava desabava exatamente na combinação que ninguém media:
+ *  **organizador escuro** com o visitante claro, onde o token de texto da PLATAFORMA
+ *  (claro) era desenhado sobre a superfície escura que o organizador escolheu —
+ *  **2,10:1** na `--ef-background` e **1,86:1** no `.ef-card`, contra os 4,5:1 do AA.
+ *
+ *  A FASE 69 consertou isso pela causa (o escopo do evento passou a republicar os papéis
+ *  semânticos no modo do TEMA) e mediu o antes e o depois com o `axe`. Este caso é a
+ *  metade que faltava do PORTÃO: sem ele, o defeito poderia voltar amanhã e a varredura
+ *  continuaria verde, porque nenhum dos 26 casos abria um evento escuro.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UM EVENTO PRÓPRIO (a terceira vez que esta suíte faz isso)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Trocar o tema do evento que a F65/F66/F68 medem mudaria o desenho de QUATRO
+ *  varreduras alheias ao assunto (as duas abas, o bloco de local e o "agora com sala
+ *  online") — e uma delas mede justamente o contraste do rótulo de seção sobre a
+ *  `--ef-background` do organizador. Um evento próprio muda UM caso e nenhum outro.
+ *
+ *  O evento nasce EM CURSO (de ontem a amanhã) porque a aba do "agora" só desenha
+ *  atividade cuja janela contém o instante: um evento futuro desenharia o estado vazio,
+ *  e o nó que a dívida media (`agora-legenda`) nem existiria no DOM.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+let eventoEscuroSlug: string;
+/** A atividade em curso do evento escuro — o cartão que a varredura precisa encontrar. */
+let atividadeEscuraId: string;
+/** A sala dela: é o nome do grupo na aba. */
+const SALA_ESCURA = `Auditório Noturno A11y ${RUN_ID}`;
+const ATIVIDADE_ESCURA_TITULO = 'Mesa redonda noturna sobre avaliação';
+
 async function signUpVia(
   api: import('@playwright/test').APIRequestContext,
   name: string,
@@ -422,6 +502,15 @@ async function criarEventoComJanela(input: {
   title: string;
   startsAt: Date;
   endsAt: Date;
+  /** O endereço da sala online do EVENTO (FASE 68) — sem ele o bloco de LOCAL não anuncia nada. */
+  onlineUrl?: string | null;
+  /**
+   * O TEMA do organizador (FASE 69 · E84): o `colorMode` é o que decide a rampa.
+   *
+   * Ele existe porque a dívida E84 só se manifesta num modo — e a varredura precisa
+   * poder montar a fixture do modo que ninguém media (ver `eventoEscuroSlug`).
+   */
+  theme?: object;
 }): Promise<string> {
   const id = randomUUID();
 
@@ -444,8 +533,10 @@ async function criarEventoComJanela(input: {
         state: 'BA',
         capacity: null,
         confirmedCount: 0,
+        onlineUrl: input.onlineUrl ?? null,
         registrationOpensAt: new Date(Date.now() - 86_400_000),
         registrationClosesAt: new Date(Date.now() + 30 * 86_400_000),
+        theme: input.theme,
       },
     });
   });
@@ -703,6 +794,173 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     });
 
     /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O EVENTO DEDICADO AO ENDEREÇO DA SALA ONLINE (FASE 68 · fatia 5)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A fase deu ESCRITOR à coluna `Event.onlineUrl` e pôs o endereço em TRÊS
+     *  superfícies novas: o bloco de LOCAL da página pública (`VenueBlock`), o cartão
+     *  do "acontecendo agora" (`NowCard`) e a página da atividade. Nenhuma das três
+     *  tinha histórico de varredura, e as três são LINKS dentro de cartão — a família
+     *  exata do defeito da FASE 66 (o rótulo que media 4,44:1 sobre a
+     *  `--ef-background` do organizador e sobreviveu porque a tela onde ele mora não
+     *  era medida).
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  POR QUE UM EVENTO PRÓPRIO, E NÃO PENDURAR ISTO NO EVENTO EM CURSO DA F65
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  Duas razões, e a primeira é a que reprovou a varredura:
+     *
+     *   1. o bloco de LOCAL só existe quando o evento tem PÁGINA PUBLICADA com o bloco
+     *      `VENUE_MAP` (sem página, a landing cai na composição padrão). Publicar a
+     *      página do evento da F65 trocaria o desenho das OUTRAS duas varreduras dele
+     *      — o caso "aba Programação" da F66 mede justamente a composição padrão;
+     *   2. duas atividades em curso no MESMO evento multiplicam os `agora-barra`
+     *      (um por cartão) e os `agora-cracha-*`/`agora-balcao-*`, e as catracas do
+     *      portão e da regressão visual afirmam contagens EXATAS. Uma segunda atividade
+     *      aqui quebraria asserções alheias ao assunto desta fase.
+     *
+     *  O evento nasce EM CURSO (de ontem a amanhã) porque a aba do "agora" e o cartão
+     *  dela só desenham atividade cuja janela contém o instante: um evento futuro
+     *  desenharia o estado vazio e a varredura mediria menos do que a tela mostra.
+     */
+    const eventoDaSalaId = await criarEventoComJanela({
+      tenantId: tenant.id,
+      slug: `acessivel-sala-${RUN_ID}`,
+      title: 'Jornada de transmissão ao vivo',
+      startsAt: new Date(hoje.getTime() - 86_400_000),
+      endsAt: new Date(hoje.getTime() + 86_400_000),
+      onlineUrl: ENDERECO_DO_EVENTO,
+    });
+
+    eventoDaSalaSlug = `acessivel-sala-${RUN_ID}`;
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A PÁGINA PUBLICADA COM OS DOIS BLOCOS QUE A VARREDURA PRECISA
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `SCHEDULE` desenha o CARTÃO DA ATIVIDADE (onde o endereço da atividade
+     *  aparece) e `VENUE_MAP` é o bloco de LOCAL (o `VenueBlock`). Uma página
+     *  configurada SUBSTITUI a composição padrão, então os dois entram: publicar só o
+     *  `VENUE_MAP` deixaria a programação de fora.
+     */
+    await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+
+      const page = await tx.eventPage.create({
+        data: {
+          id: randomUUID(),
+          tenantId: tenant.id,
+          eventId: eventoDaSalaId,
+          slug: 'principal',
+          title: 'Página do evento',
+          isHome: true,
+          isPublished: true,
+        },
+      });
+
+      for (const [ordem, tipo] of (['SCHEDULE', 'VENUE_MAP'] as const).entries()) {
+        await tx.pageBlock.create({
+          data: {
+            id: randomUUID(),
+            tenantId: tenant.id,
+            pageId: page.id,
+            type: tipo,
+            content: {},
+            style: {},
+            displayOrder: ordem,
+            isVisible: true,
+          },
+        });
+      }
+    });
+
+    const salaOnline = await createRoom({
+      tenantId: tenant.id,
+      eventId: eventoDaSalaId,
+      name: SALA_ONLINE,
+      capacity: 40,
+    });
+
+    atividadeDaSalaId = (
+      await createActivity({
+        tenantId: tenant.id,
+        eventId: eventoDaSalaId,
+        slug: `acessivel-online-${RUN_ID}`,
+        title: ATIVIDADE_ONLINE_TITULO,
+        roomId: salaOnline.id,
+        startsAtOffsetDays: -15 / (24 * 60),
+        workloadMinutes: 60,
+        onlineUrl: ENDERECO_DA_ATIVIDADE,
+      })
+    ).id;
+
+    /** E a inscrição CONFIRMADA da administradora NESTA atividade: o "quem tem direito". */
+    await inscreverNaAtividade({
+      tenantId: tenant.id,
+      eventId: eventoDaSalaId,
+      activityId: atividadeDaSalaId,
+      userId: admin.id,
+    });
+
+    /**
+     * A PRÓXIMA da MESMA sala do evento dedicado — sem ela o grupo desenha só o cartão
+     * em curso e a tela mede menos do que mostra.
+     */
+    await createActivity({
+      tenantId: tenant.id,
+      eventId: eventoDaSalaId,
+      slug: `acessivel-sala-proxima-${RUN_ID}`,
+      title: 'Oficina de transmissão',
+      roomId: salaOnline.id,
+      startsAtOffsetDays: 1 / 24,
+      workloadMinutes: 60,
+    });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O EVENTO DE TEMA ESCURO (FASE 69 · E84) — a combinação que o portão não media
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O organizador declara `colorMode: 'dark'` e o visitante entra no CLARO (o padrão
+     *  de quem nunca escolheu): é exatamente o par que media **2,10:1** sobre a
+     *  `--ef-background` e **1,86:1** sobre o `.ef-card` antes do conserto da FASE 69, e
+     *  é o par em que ele era invisível para este arquivo — todos os outros casos de
+     *  evento abrem o tema PADRÃO (claro).
+     *
+     *  A cor primária entra junto para o tema ser o do ORGANIZADOR de verdade (e não
+     *  só o modo trocado): a página do evento publica a identidade dele, e é sobre ela
+     *  que os papéis semânticos da plataforma precisam se ajeitar.
+     */
+    eventoEscuroSlug = `acessivel-escuro-${RUN_ID}`;
+
+    const eventoEscuroId = await criarEventoComJanela({
+      tenantId: tenant.id,
+      slug: eventoEscuroSlug,
+      title: 'Mostra noturna de avaliação',
+      startsAt: new Date(hoje.getTime() - 86_400_000),
+      endsAt: new Date(hoje.getTime() + 86_400_000),
+      theme: { colorMode: 'dark', primaryColor: '#7c3aed', accentColor: '#0f766e' },
+    });
+
+    const salaEscura = await createRoom({
+      tenantId: tenant.id,
+      eventId: eventoEscuroId,
+      name: SALA_ESCURA,
+      capacity: 40,
+    });
+
+    atividadeEscuraId = (
+      await createActivity({
+        tenantId: tenant.id,
+        eventId: eventoEscuroId,
+        slug: `acessivel-escuro-atividade-${RUN_ID}`,
+        title: ATIVIDADE_ESCURA_TITULO,
+        roomId: salaEscura.id,
+        startsAtOffsetDays: -15 / (24 * 60),
+        workloadMinutes: 60,
+      })
+    ).id;
+
+    /**
      * (2) "MINHA AGENDA" precisa das DUAS marcas e de um CHOQUE. As duas atividades
      * nascem no MESMO instante (o mesmo deslocamento de dias) com durações
      * diferentes: a palestra cai DENTRO do minicurso, e `intervalsOverlap` responde
@@ -830,13 +1088,33 @@ test.describe('telas públicas', () => {
       `Instituição Acessível ${RUN_ID}`,
     );
 
-    /** Os TRÊS grupos, com um evento em cada — nenhum deles vazio. */
+    /**
+     * Os TRÊS grupos, com conteúdo em cada — nenhum deles vazio.
+     *
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O GRUPO "ACONTECENDO AGORA" TEM TRÊS CARTÕES DESDE A FASE 69
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A contagem subiu DUAS vezes, e cada uma por um evento que precisa estar EM CURSO
+     *  para a varredura medir o que quer medir:
+     *
+     *    • **FASE 68 (fatia 5)** — o evento dedicado ao endereço da sala online
+     *      (`eventoDaSalaSlug`) nasce em curso porque é a janela que faz a aba do "agora"
+     *      e o cartão dela desenharem: 1 → 2;
+     *    • **FASE 69 (E84)** — o evento de TEMA ESCURO (`eventoEscuroSlug`) nasce em
+     *      curso pelo mesmo motivo, e é o único jeito de o portão medir a combinação que
+     *      a dívida registrava (organizador escuro × visitante claro): 2 → 3.
+     *
+     *  Os outros dois grupos continuam com um. A contagem explícita é o que mantém esta
+     *  asserção útil: um grupo que esvaziasse continuaria "passando" se a régua fosse só
+     *  `> 0`, e um evento novo que ninguém contasse reprova aqui — que foi exatamente o
+     *  que aconteceu quando a fixture do tema escuro entrou.
+     */
     await expect(
       page.getByTestId('tenant-group-upcoming').getByTestId('tenant-event-card'),
     ).toHaveCount(1);
     await expect(
       page.getByTestId('tenant-group-ongoing').getByTestId('tenant-event-card'),
-    ).toHaveCount(1);
+    ).toHaveCount(3);
     await expect(page.getByTestId('tenant-group-past').getByTestId('tenant-event-card')).toHaveCount(
       1,
     );
@@ -1246,12 +1524,19 @@ test.describe('telas autenticadas', () => {
     );
 
     /**
-     * A BARRA ACESSÍVEL — o motivo de esta tela entrar no portão. Os atributos são
-     * afirmados antes da varredura porque `role="progressbar"` SEM `aria-label` é
-     * exatamente o defeito que passa despercebido no olho e reprova no leitor de tela
-     * (o `axe` também reprova, e a mensagem fica com o diagnóstico junto).
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A BARRA ACESSÍVEL — ESCOPADA AO CARTÃO DELA (FASE 68 · fatia 5)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `role="progressbar"` SEM `aria-label` é exatamente o defeito que passa
+     *  despercebido no olho e reprova no leitor de tela, e é o motivo de esta tela
+     *  entrar no portão. A asserção é feita DENTRO do cartão (`agora-item-<id>`) e não
+     *  na página: a aba pode ter MAIS de um cartão em curso, e `agora-barra` solto
+     *  resolveria para o primeiro — ou, com dois, para nenhum (o `strict mode` do
+     *  Playwright reprova, que foi como este caso nasceu vermelho quando a fixture
+     *  ganhou uma segunda atividade).
      */
-    const barra = page.getByTestId('agora-barra');
+    const cartao = page.getByTestId(`agora-item-${atividadeEmCursoId}`);
+    const barra = cartao.getByTestId('agora-barra');
 
     await expect(barra).toHaveAttribute('role', 'progressbar');
     await expect(barra).toHaveAttribute('aria-valuemin', '0');
@@ -1260,11 +1545,11 @@ test.describe('telas autenticadas', () => {
       'aria-label',
       'Tempo restante da atividade Mesa redonda sobre avaliação por pares',
     );
-    await expect(page.getByTestId('agora-restante')).toHaveText(/termina em /);
+    await expect(cartao.getByTestId('agora-restante')).toHaveText(/termina em /);
 
     /** E os DOIS caminhos do dia do evento: o crachá e o balcão. */
-    await expect(page.getByTestId(`agora-cracha-${atividadeEmCursoId}`)).toBeVisible();
-    await expect(page.getByTestId(`agora-balcao-${atividadeEmCursoId}`)).toBeVisible();
+    await expect(cartao.getByTestId(`agora-cracha-${atividadeEmCursoId}`)).toBeVisible();
+    await expect(cartao.getByTestId(`agora-balcao-${atividadeEmCursoId}`)).toBeVisible();
 
     /** O que vem depois NA MESMA SALA — o "a seguir" que a visão por sala existe para dar. */
     await expect(page.getByTestId(`agora-proxima-${SALA_EM_CURSO}`)).toBeVisible();
@@ -1273,6 +1558,236 @@ test.describe('telas autenticadas', () => {
       page,
       `aba "acontecendo agora" (/t/${tenantSlug}/eventos/<slug>?aba=agora)`,
     );
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  O ENDEREÇO DA SALA ONLINE NAS TRÊS SUPERFÍCIES (FASE 68 · fatia 5)
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ESTES CASOS EXISTEM
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A fase criou o ESCRITOR da coluna `Event.onlineUrl` e desenhou o endereço em
+   *  TRÊS lugares, todos novos e nenhum com histórico de varredura:
+   *
+   *    • `evento-sala-online`      — o bloco de LOCAL da página pública (`VenueBlock`);
+   *    • `agora-sala-online-<id>`  — o cartão do "acontecendo agora" (`NowCard`);
+   *    • `atividade-sala-online`   — a página da atividade.
+   *
+   *  Os três são LINKS de texto pequeno — a família exata do defeito da FASE 66, onde
+   *  um rótulo media 4,44:1 sobre a `--ef-background` e sobreviveu porque a tela onde
+   *  ele mora não era medida. Nenhuma isenção nova entra por causa deles.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O CASO AFIRMA O CONTEÚDO ANTES DE VARRER
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O `axe` mede o que está no DOM, e "o link sumiu" não é violação de regra
+   *  nenhuma: uma tela que perdesse o endereço passaria IGUAL. As asserções prendem
+   *  o `href` e a presença de cada nó — e o `href` de cada um é DIFERENTE (o do
+   *  evento e o da atividade), então a falha diz QUAL vazou para o lugar do outro.
+   *
+   *  A página do evento precisa de PÁGINA PUBLICADA com os blocos `SCHEDULE` e
+   *  `VENUE_MAP`: sem ela a landing cai na composição padrão e o bloco de LOCAL nem
+   *  existe. É por isso que a fixture tem um evento dedicado (`eventoDaSalaSlug`).
+   */
+  test('o bloco de local com a sala online não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoDaSalaSlug}`);
+
+    /**
+     * A administradora vê o endereço do EVENTO por ser EQUIPE dele
+     * (`event:update`/`event:manage`, a régua de `seesEventOnlineRoom`) — ela é
+     * `ADMIN` nesta instituição. É a metade da régua que o cartão do agora NÃO exercita:
+     * lá quem abriu a porta foi a INSCRIÇÃO na atividade; aqui, a permissão.
+     */
+    const bloco = page.getByTestId('evento-sala-online');
+
+    await expect(bloco).toBeVisible();
+    await expect(bloco).toHaveAttribute('href', ENDERECO_DO_EVENTO);
+
+    /** O bloco é o do LOCAL: o endereço físico continua ao lado, não no lugar dele. */
+    await expect(page.locator('#local')).toContainText('Salvador');
+
+    await expectNoCriticalViolations(
+      page,
+      `bloco de local com a sala online (/t/${tenantSlug}/eventos/<slug>)`,
+    );
+  });
+
+  test('a aba "Acontecendo agora" com a sala online não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoDaSalaSlug}?aba=agora`);
+
+    const cartao = page.getByTestId(`agora-item-${atividadeDaSalaId}`);
+
+    await expect(cartao).toContainText(ATIVIDADE_ONLINE_TITULO);
+
+    /**
+     * O LINK NOVO DO CARTÃO, e a prova de que ele está no DOM. O endereço é o DA
+     * ATIVIDADE — as duas projeções (`seesEventOnlineRoom` × `seesActivityOnlineRoom`)
+     * são caminhos diferentes, e é isto que diz qual delas o cartão desenha.
+     */
+    const linkDaSala = cartao.getByTestId(`agora-sala-online-${atividadeDaSalaId}`);
+
+    await expect(linkDaSala).toBeVisible();
+    await expect(linkDaSala).toHaveAttribute('href', ENDERECO_DA_ATIVIDADE);
+    await expect(linkDaSala).toHaveText(/Entrar na sala online/);
+
+    /**
+     * E o GRUPO da sala aparece na aba: `agora-sala-*` (o grupo) e
+     * `agora-sala-online-*` (o cartão) são prefixos que se parecem, e afirmar os dois
+     * separadamente é o que impede um de ser lido como o outro — o §4 do plano da fase
+     * avisou que nome novo com prefixo parecido quebra a contagem da regressão visual.
+     */
+    await expect(page.getByTestId(`agora-sala-${SALA_ONLINE}`)).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `aba "acontecendo agora" com a sala online (/t/${tenantSlug}/eventos/<slug>?aba=agora)`,
+    );
+  });
+
+  test('a página da atividade com a sala online não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(
+      `/t/${tenantSlug}/eventos/${eventoDaSalaSlug}/atividades/acessivel-online-${RUN_ID}`,
+    );
+
+    /**
+     * O link é o nó novo, e ele só existe porque a administradora tem lugar nesta
+     * atividade (inscrição CONFIRMADA, criada na fixture). É a mesma régua do cartão
+     * do agora, noutro desenho.
+     */
+    const link = page.getByTestId('atividade-sala-online');
+
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', ENDERECO_DA_ATIVIDADE);
+
+    await expectNoCriticalViolations(
+      page,
+      `página da atividade com a sala online (/t/${tenantSlug}/eventos/<slug>/atividades/<slug>)`,
+    );
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  O TEMA ESCURO DO ORGANIZADOR ENTRA NO PORTÃO (FASE 69 · a quitação da E84)
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A DÍVIDA QUE O PORTÃO NÃO ALCANÇAVA — E ISSO É O ACHADO, NÃO O CONSERTO
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A E84 registrava que o token de texto da PLATAFORMA desenhado dentro do tema do
+   *  organizador desabava no modo escuro dele: **2,10:1** sobre a `--ef-background` e
+   *  **1,86:1** sobre o `.ef-card`. O portão tinha 26 casos e passava — porque **todos
+   *  os casos do evento abriam o tema PADRÃO (claro)** com o visitante no claro. É a
+   *  mesma forma do defeito da FASE 66 ("o defeito não sobreviveu por ser sutil:
+   *  sobreviveu porque a tela onde ele mora não era medida"), agora na dimensão do
+   *  MODO.
+   *
+   *  Os dois casos abaixo cobrem as DUAS metades do par, uma por evento:
+   *
+   *    • **organizador ESCURO × visitante CLARO** — o par da medição original (2,10:1),
+   *      no evento de tema escuro da fixture;
+   *    • **organizador CLARO × visitante ESCURO** — o outro lado, medido em 1,62:1 e
+   *      1,35:1 na mesma fase. Ele reusa o evento EM CURSO da FASE 65 e troca só o
+   *      cookie do visitante: `ef_tema` é do CONTEXTO, e é o que faz a rampa da
+   *      plataforma ser a escura dentro de um escopo de evento claro.
+   *
+   *  Nenhuma isenção nova, e nenhuma asserção de cor aqui: quem mede o número é a
+   *  catraca de unidade da fase (`tests/unit/f69-contraste-do-tema-do-evento.test.ts`,
+   *  18 casos). O que este portão prende é o que só o navegador sabe — que o nó existe,
+   *  que ele herdou a rampa certa e que o `axe` não acha violação no par real.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O `agora-legenda` É AFIRMADO ANTES DE VARRER
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  Ele é o nó que a fase usou para MEDIR (o `<p class="text-sm text-muted-foreground">`
+   *  do cabeçalho da aba): um token de TEXTO da plataforma dentro do escopo do evento.
+   *  Sem afirmá-lo, uma aba que perdesse a legenda passaria verde — o `axe` não reprova
+   *  a ausência de um nó, e a varredura mediria uma tela mais pobre do que a que a
+   *  dívida descreve.
+   */
+  test('a aba "Acontecendo agora" num evento de tema ESCURO não tem violação crítica', async ({
+    page,
+  }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoEscuroSlug}?aba=agora`);
+
+    /**
+     * O modo do TEMA chegou ao servidor. O atributo vive no ESCOPO do evento
+     * (`.ef-theme`, `theme-scope.tsx`) e não no `<html>`: é ele que faz o CSS reagir ao
+     * claro/escuro do ORGANIZADOR sem lógica de cliente.
+     */
+    const escopo = page.locator('[data-theme-mode]');
+
+    await expect(escopo).toHaveCount(1);
+    await expect(escopo).toHaveAttribute('data-theme-mode', 'dark');
+
+    const secao = page.getByTestId('agora');
+
+    await expect(secao).toBeVisible();
+    await expect(page.getByTestId(`agora-item-${atividadeEscuraId}`)).toContainText(
+      ATIVIDADE_ESCURA_TITULO,
+    );
+
+    /**
+     * O nó que a dívida media. Ele é `text-muted-foreground` (token da PLATAFORMA)
+     * desenhado sobre a superfície do organizador — o par exato da E84.
+     */
+    const legenda = page.getByTestId('agora-legenda');
+
+    await expect(legenda).toBeVisible();
+    await expect(legenda).toContainText('em curso neste momento');
+
+    await expect(page.getByTestId(`agora-sala-${SALA_ESCURA}`)).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `aba "acontecendo agora" com tema ESCURO do organizador (/t/${tenantSlug}/eventos/<slug>?aba=agora)`,
+    );
+  });
+
+  test('a aba "Acontecendo agora" com o VISITANTE no escuro não tem violação crítica', async ({
+    page,
+    baseURL,
+  }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * A escolha do visitante entra ANTES da navegação (o layout raiz lê o cookie no
+     * servidor): a página chega com a rampa escura da plataforma desde a primeira
+     * resposta, e não aplicada depois por JavaScript — que é o que não queremos.
+     */
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'escuro', url: baseURL ?? 'http://localhost:3000' },
+    ]);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoEmCursoSlug}?aba=agora`);
+
+    /** A prova de que o SERVIDOR entregou o escuro do visitante. */
+    await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
+
+    await expect(page.getByTestId('agora')).toBeVisible();
+    await expect(page.getByTestId('agora-legenda')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `aba "acontecendo agora" com VISITANTE no escuro (/t/${tenantSlug}/eventos/<slug>?aba=agora · ef_tema=escuro)`,
+    );
+
+    /**
+     * O cookie volta ao CLARO para o resto do arquivo: ele é do CONTEXTO do navegador, e
+     * um caso seguinte mediria o escuro sem ter pedido. `claro` é escolha explícita de
+     * propósito — sem cookie o modo é o do SISTEMA, e a suíte passaria a depender da
+     * preferência da máquina que a roda (a mesma nota do caso do painel escuro da F61).
+     */
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'claro', url: baseURL ?? 'http://localhost:3000' },
+    ]);
   });
 
   /**

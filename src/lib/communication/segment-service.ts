@@ -43,6 +43,7 @@ import { errorMessage } from '@/lib/db/prisma-errors';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { localDayKey } from '@/domain/events/demand-rules';
 import { isValidTimeZone, zonedWallTimeToInstant } from '@/domain/events/scheduling-rules';
+import { summarizeUnsubscribeReasons } from '@/domain/communication/unsubscribe-reason-rules';
 import {
   SEGMENT_CATALOG,
   SEGMENT_CONDITION_IDS,
@@ -639,6 +640,16 @@ export interface SegmentEvaluation {
   count: number;
   /** Quantos do segmento saíram e foram pulados (o "N de M" da tela). */
   unsubscribed: number;
+  /**
+   * POR QUE essas pessoas saíram, em UMA frase — `null` quando ninguém saiu ou
+   * quando quem perguntou não pediu o dado (ver `withUnsubscribeReasons`).
+   *
+   * A frase é montada no DOMÍNIO (`summarizeUnsubscribeReasons`), e chega pronta
+   * aqui de propósito: "quantos motivos cabem", "em que ordem" e "o que dizer de
+   * quem saiu sem responder" são regras de leitura, com teste próprio — dentro do
+   * JSX da tela elas ficariam presas ao desenho.
+   */
+  unsubscribeReasons: string | null;
   /** A lista, limitada por `limit` — `count` é a verdade do banco. */
   people: readonly SegmentPerson[];
   truncated: boolean;
@@ -657,6 +668,15 @@ export interface EvaluateSegmentInput {
    * é o que será percorrido). A contagem nunca é limitada.
    */
   limit?: number | null;
+  /**
+   * Pede também o MOTIVO agregado de quem saiu (E88).
+   *
+   * É opt-in porque as duas perguntas são diferentes: o DISPARO precisa de quem
+   * recebe (a lista), e a TELA precisa entender por que alguém não recebe. Fazer o
+   * disparo pagar a agregação de motivos seria uma consulta a mais por campanha
+   * para produzir um texto que ninguém lê no meio do envio.
+   */
+  withUnsubscribeReasons?: boolean;
 }
 
 const DEFAULT_LIST_LIMIT = 200;
@@ -784,10 +804,38 @@ export async function evaluateSegment(
         ...segmentRecipientIdentity({ name: row.name, publicProfileHiddenAt: row.publicProfileHiddenAt }),
       }));
 
+      const unsubscribed = Math.max(baseCount - count, 0);
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  POR QUE A AGREGAÇÃO DE MOTIVOS É UMA CONSULTA SÓ, E DO BANCO (E88)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O "N de M" da tela já sabia QUANTOS saíram; o que faltava era POR QUÊ. A
+       *  resposta não pode sair da lista de quem recebe (essas pessoas não estão
+       *  nela), e carregar os descadastros um a um para contar em memória seria uma
+       *  leitura por pessoa numa tela que já lê o segmento inteiro. O `groupBy`
+       *  fecha a conta no banco, e o filtro é o MESMO do "quem não recebe": a linha
+       *  vigente (`resubscribedAt` nulo) de gente que casa com o segmento — assim a
+       *  soma dos motivos é exatamente o número que a tela já mostra ao lado.
+       */
+      const unsubscribeReasons =
+        input.withUnsubscribeReasons && unsubscribed > 0
+          ? summarizeUnsubscribeReasons(
+              (
+                await tx.communicationUnsubscribe.groupBy({
+                  by: ['reason'],
+                  where: { tenantId: input.tenantId, resubscribedAt: null, user: baseWhere },
+                  _count: { _all: true },
+                })
+              ).map((row) => ({ reason: row.reason, count: row._count._all })),
+            )
+          : null;
+
       return {
         ok: true as const,
         count,
-        unsubscribed: Math.max(baseCount - count, 0),
+        unsubscribed,
+        unsubscribeReasons,
         people,
         truncated: count > people.length,
         explanation: composition.explanation,

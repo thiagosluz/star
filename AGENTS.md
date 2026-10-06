@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 67** (**F56 a F67 entregues**)
-Testes ................. 3350 (Vitest: unit + integração) + 352 (Playwright E2E)
-ADRs ................... 340 (numeração GLOBAL e sequencial — a próxima é ADR-341)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 69** (**F56 a F69 entregues**)
+Testes ................. 3498 (Vitest: unit + integração) + **375** (Playwright E2E) + 1 skip
+ADRs ................... 346 (numeração GLOBAL e sequencial — a próxima é ADR-347)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -77,6 +77,14 @@ O projeto é construído em **fases numeradas**, com um contrato rígido:
 Depois de criar/atualizar uma fase, **atualizar o `README.md`**: índice da
 documentação, capacidades e contagens.
 
+**O teto deste arquivo: ~64.800 bytes.** O harness corta o `AGENTS.md` em **65.244 bytes** — e
+o corte **apaga conteúdo em silêncio** (aconteceu na FASE 68: uma linha da tabela de fases
+desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso quem atualiza o
+estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto,
+**condensa linhas históricas da tabela da §9** — corte em ~300 caracteres, num limite de
+palavra, fechando a linha com ` … | ✅ |` — em vez de deixar o corte escolher o que sai. O
+registro completo do que foi condensado vive no documento de cada fase e no `README.md`.
+
 ---
 
 ## 3. Convenções de código
@@ -114,7 +122,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 339 passando + 1 skip (340 no total)
+npm run test:e2e      # esperado: 375 passando + 1 skip (376 no total)
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -182,7 +190,7 @@ aplicando RLS + FORCE e concessões em cada partição nova. A CLI `npm run db:p
 MESMO serviço. Retenção é `DROP TABLE audit_logs_<AAAA_MM>` — decisão em aberto (dívida B8): a
 manutenção **cria** e nunca **apaga**.
 
-### Inspeção antivírus dos arquivos (FASE 36)
+### Inspeção antivírus (FASE 36)
 
 O arquivo de terceiro passa por inspeção antes de ser servido ao comitê, **quando a inspeção está
 ligada**. O driver padrão é `none` — **não inspecionar** —, e aí o arquivo nasce `SKIPPED` ("não
@@ -199,7 +207,7 @@ honesto é `SKIPPED`); e **inspeção indisponível NÃO é veredito** — o arq
 a próxima passada. O portão vale onde a aplicação media os bytes (submissão e material de
 palestrante) e **não** em `media_assets`, bucket público (ADR-187).
 
-### Tarefas automáticas e painel de rotinas (FASE 36)
+### Rotinas automáticas (FASE 36)
 
 As cinco rotinas — prazos de parecer, presenças em aberto, confirmação de vaga, inspeção de
 arquivos e partições — abrem e fecham um registro em `job_runs`.
@@ -266,7 +274,7 @@ arquivo substituído no rascunho — código `QUOTA_EXCEEDED`.
 action recusaria.
 
 
-### Credenciamento por crachá (FASE 31)
+### Crachá
 
 O crachá passou a existir de verdade — a coluna `registrations.badgeToken` era **lida por todos
 e escrita por ninguém** (não havia emissão) — e o sistema separou dois fatos que estavam
@@ -292,7 +300,7 @@ desaparecia; **os minutos têm teto no fim da ATIVIDADE** (ADR-150); **leitura f
 registra e AVISA** (ADR-151) — a presença existe, o XP não; e **o QR carrega só o código**
 (ADR-152), sem dado pessoal.
 
-### Central do participante (FASE 32)
+### Central do participante
 
 A instituição só via pessoas **por evento**; esta fase deu a visão da PESSOA — e um canal de
 comunicação com ela dentro da plataforma.
@@ -349,7 +357,7 @@ não desfaz a decisão (vira aviso) — ADR-165/166. O convite por e-mail quita 
 A página pública lê a chamada na RENDERIZAÇÃO (o bloco guarda só decoração e o filtro
 "incluir encerradas") — copiá-la para o bloco mentiria sobre o prazo no dia seguinte (ADR-168).
 
-### Confirmação de vaga com prazo (FASE 34)
+### Vaga com prazo
 
 A inscrição deixou de ser um ato único: quando a atividade cobra algo para valer (taxa,
 doação, item), a vaga fica **RETIDA** até a equipe registrar a confirmação — e vence sozinha.
@@ -618,14 +626,9 @@ usá-las na interface: crie uma conta em `/signup`, vincule-a (`user_tenant_prof
 ACTIVE`, com `tenantId`) e conceda um papel (`role_assignments`) — o caminho rápido é
 `tests/e2e/helpers.ts`.
 
-### Contas de teste com senha — o caminho rápido para testar a interface
+### Contas de teste com senha
 
-`npm run db:seed:dev` cria **16 contas** `@eventflow.test` (uma por perfil, mais os estados de
-borda; nomes e papéis em `docs/contas-de-teste.md`), com a senha de `SEED_TEST_PASSWORD` no
-`.env`. O script é idempotente, **regrava a senha** em cada execução e **recusa rodar com
-`NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por
-`reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
-
+`npm run db:seed:dev` cria **16 contas** `@eventflow.test` (uma por perfil, mais os estados de borda; nomes e papéis em `docs/contas-de-teste.md`), com a senha de `SEED_TEST_PASSWORD` no `.env`. O script é idempotente, **regrava a senha** em cada execução e **recusa rodar com `NODE_ENV=production`**. Ele apaga e recria as PRÓPRIAS concessões (marcadas por `reason`), então mudar um escopo no script não deixa a concessão antiga vigente.
 Sobre a senha: ela vive em `account.password` (scrypt do Better Auth); `user.passwordHash` é
 **legado e não é usado**.
 
@@ -700,7 +703,7 @@ tests/{unit,integration,e2e}
 |---|---|---|
 | 1 | Infraestrutura, modelagem, RLS | ✅ |
 | 2 | Autenticação, RBAC, multi-tenancy | ✅ |
-| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ duas revisões pós-entrega**: inscrição no EVENTO incluindo as atividades abertas (`EVENT_AUTO`), editar/excluir atividade e **ciclo de vida da SALA** (capacidade opcional = sem limite; a sala é o teto das vagas, aplicado na reserva atômica) — ADR-124/125/126, 134/135/136 | ✅ |
+| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ duas revisões pós-entrega**: inscrição no EVENTO incluindo as atividades abertas (`EVENT_AUTO`), editar/excluir atividade e **ciclo de vida da SALA** (capacidade opcional = sem … | ✅ |
 | 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: o rascunho cai direto na página da submissão, não nasce inválido e pode ser editado/excluído | ✅ |
 | 5 | Gamificação (XP, cartas, missões) | ✅ |
 | 6 | Certificação (PDF assinado, QR, fila) | ✅ |
@@ -728,45 +731,47 @@ tests/{unit,integration,e2e}
 | 33 | Chamadas de propostas (**chamada como entidade** com tipo, janela, cegueira, **rubrica própria** — CHAMADA → TRILHA → PADRÃO — e limite por autor POR CHAMADA; a proposta **é uma submissão** com campos por tipo e **formulário público**; bloco posicionado pelo organizador; **protocolo de aceite** com a decisão do comitê e criar a atividade/convidar o palestrante como escolhas — o convite quita **E25**) — escopo definido pelo humano | ✅ |
 | 34 | Confirmação de vaga com prazo (**escolha do organizador** por atividade: automática × exige confirmação, com prazo, o que é preciso e onde confirmar; a inscrição nasce **retendo a vaga**; **avisos por e-mail e na plataforma**; vencido o prazo a vaga é **liberada**, o próximo da lista de espera é promovido e os dois são avisados; **fila** ordenada pela urgência) — escopo definido pelo humano | ✅ |
 | 35 | Resiliência de balcão e palco (**operação sem rede** no credenciamento, **sentido da leitura** no balcão — entrada × saída × alternar —, prêmio e patrocinador da rodada corrigíveis pela tela e **controles do palco** com pausa/replay/atalhos; quitou **E38, E39, E40 e E43**) — escopo definido pelo humano | ✅ |
-| 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), **lote de certificados em ZIP** montado em fluxo e **aviso de decisão ao proponente** da chamada; quitou **A3, B7 e E47**) — escopo definido pelo humano | ✅ |
+| 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), … | ✅ |
 | 37 | Crachá em **etiqueta adesiva** (PDF com grade configurável) e em **impressora térmica** (ZPL II configurável), e **confirmação de vaga por ITEM** (checklist snapshot da inscrição, com a vaga confirmada quando as obrigatórias acabam); quitou **E41** e **E48**) — escopo definido pelo humano | ✅ |
 | 38 | **Quadro de demandas internas do evento** (Kanban por evento com colunas configuráveis, equipes com líder, prazo no fuso do evento, comentários com menção avisando por e-mail e caixa de entrada, e o cartão movido por arrastar **ou** por formulário — o quadro funciona sem JavaScript); quitou a METADE da **E50** e declarou **E51** e **E52**) — escopo definido pelo humano | ✅ |
 | 39 | **Rubrica com número livre de critérios** (1 a 12 critérios, com a chave **derivada do rótulo**; a **edição de trilha**, que não existia; e a rubrica **congelada a partir do primeiro parecer** — só rótulo, descrição e ordem seguem livres); declarou **E53**) — escopo definido pelo humano | ✅ |
 | 40 | **Editor visual do certificado** (arte de fundo da instituição, texto por **variáveis**, posicionamento **arrastando ou digitando milímetros** — funciona sem JavaScript —, cinco modelos prontos, prévia pelo mesmo renderizador do PDF e bloco probatório obrigatório; o desenho **congela no certificado** e sem modelo vale o desenho antigo); declarou **E54** e **E55**) — escopo definido pelo humano | ✅ |
 | 41 | **Vitrine do patrocínio** (a cota define **cor** e **tamanho da logo** na página pública — Pequena · Média · Grande · Destaque —, com **prévia do cartão** no cadastro e amostras de cor como atalho; a página desenha uma faixa por cota com **cartões tingidos**; a coluna de cor existia desde a FASE 17 e **não tinha leitor**); não declarou dívida) — escopo definido pelo humano | ✅ |
-| 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe **autorizar** ou não, com o MESMO crédito (LGPD art. 8º §3º); lead de **nome e e-mail** com prazo e **revogação**; painel com QR, equipe e **CSV** dos contatos vigentes); declarou **E56/E57** e achou a **armadilha 97**) — escopo definido pelo humano | ✅ |
-| 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não moviam nada: **inscrição confirmada** (30 XP, chave no ALVO contra farm), **certificado emitido** (50 XP), **sorteio ganho** (0 XP + carta, só o ganhador) e **proposta de chamada**; achou o defeito que impedia **criar missão pela tela**; declarou **E58/E59**) | ✅ |
-| 44 | **Perfil público do participante** — `/u/<handle>` com **quinze campos** em três níveis (internet · quem participa da instituição · só eu), pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa** (o `user` é global: a RLS não o protege); `@handle` global sem caixa, com reservadas e 30 dias entre trocas; **publicar não dá XP**; quitou a **E35**; declarou **E60/E61/E62**) — detalhe no documento da fase | ✅ |
-| 45 | **Equipe do evento na página pública** (bloco **"Equipe do evento"** que o organizador adiciona ou não — o corpo é a equipe REAL do evento, a mesma das demandas internas, lida na renderização; a **etiqueta é o nome da equipe** e quem está em duas equipes aparece uma vez com as duas; **líder primeiro**; **nome e equipe são do evento, foto e contato são da pessoa** — … | ✅ |
-| 46 | **Imagens em WebP e a foto do palestrante sem conta** (toda imagem é **reconvertida no servidor** na confirmação — o **original é apagado**, foto com perda calibrada, **logotipo sem perda**, metadados descartados e orientação do EXIF assentada —, e a decodificação virou a **validação de conteúdo**: HTML disfarçado de PNG deixou de ser aceito; imagem **animada** é … | ✅ |
-| 47 | **Área de conta e segurança da identidade** (`/conta` **GLOBAL** — a identidade vale em qualquer instituição e existe sem vínculo: **dados** (nome, e-mail com confirmação no endereço novo e a senha atual como prova), **foto** (o escritor que `user.image` não tinha, em WebP), **senha** (trocar encerrando as outras sessões ou **criar** para quem entrou por convite), … | ✅ |
-| 48 | **Carta colecionável premium e compartilhamento** (palco **3D** — arrastar gira, brilho holográfico seguindo o ponteiro, **Virar** com o verso e **Luz e brilho** — com a geometria no DOMÍNIO e tilt leve no álbum; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e a **variante foil acende o brilho sozinha**; o verso é a … | ✅ |
-| 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de **24 h**: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no download**, com **autor e validade em CADA linha**; o download exige **sessão** e reconfere a … | ✅ |
+| 42 | **Experiência do patrocinador** (área de **só leitura** aberta por **vínculo** — convite hasheado ou vínculo direto pela equipe — e não pelo papel; **QR do estande** com **imagem pronta para imprimir** (PNG/SVG), XP e/ou carta **uma vez por pessoa por QR**; na leitura a pessoa escolhe … | ✅ |
+| 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não … | ✅ |
+| 44 | **Perfil público do participante** — `/u/<handle>` com **quinze campos** em três níveis (internet · quem participa da instituição · só eu), pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa** (o `user` é global: a … | ✅ |
+| 45 | **Equipe do evento na página pública** — bloco que o organizador adiciona ou não, com o corpo lido das equipes REAIS do evento na renderização; a etiqueta é o nome da equipe (quem está em duas aparece uma vez com as duas), líder … | ✅ |
+| 46 | **Imagens em WebP e a foto do palestrante sem conta** — toda imagem é **reconvertida no servidor** na confirmação (o original é apagado, perda calibrada na foto e nenhuma no logotipo, metadados descartados e orientação EXIF … | ✅ |
+| 47 | **Área de conta e segurança da identidade** — `/conta` é **GLOBAL** (a identidade vale em qualquer instituição e existe sem vínculo): dados com confirmação no endereço novo e a senha atual como prova, foto em WebP, troca de senha … | ✅ |
+| 48 | **Carta colecionável premium e compartilhamento** — palco **3D** com brilho holográfico e verso, geometria no DOMÍNIO; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e o foil acende o brilho sozinho; o link é **POR … | ✅ |
+| 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de 24 h: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no … | ✅ |
 | 50 | **Mutirão de dívidas II** — onze dívidas (**C7, E26, E49, E50, E51, E52, E53, E55, E59, E71 e H5**), com **cinco defeitos reais** no caminho. Detalhe em `docs/fase-50-mutirao-de-dividas-ii.md` | ✅ |
 | 51 | **Mutirão de dívidas III** — onze dívidas (**E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**) e um **defeito real de INTEGRIDADE** (a assinatura entrou no veredito público e no download). Detalhe em `docs/fase-51-mutirao-de-dividas-iii.md` | ✅ |
-| 52 | **"Fechar o que abrimos"** — a **dívida que nós criamos**: o **token de aviso** separado em claro × escuro com o contraste **medido** e preso por catraca que lê o CSS (6,44:1 / 7,09:1 no claro; 9,17:1 no telão), deixando o **portão WCAG AA sem isenções**; **um único <main> por tela** (a casca deixou de ser landmark e as 4 telas … | ✅ |
-| 53 | **Painel de prontidão e áreas do evento** — a raiz do evento diz **o que falta para o evento ficar pronto** (pendências com efeito, gravidade, ordem e o caminho que resolve, e a régua do que NÃO é pendência), e a faixa de links virou **grade de cartões nos quatro grupos do trabalho**, preservando todos os `data-testid`; **+ trilhas unificadas** em `/chamadas` e seções no grupo a que pertencem; **+ lição de produto**: o casco lateral foi rejeitado no uso e desfeito (ADR-297) | ✅ |
-| 54 | **O selo de contagem nos cartões** — cada área da raiz diz **quanto há lá dentro** ("3 chamadas", "nenhuma vaga retida", "publicada"), contado **por evento** e só sobre o que vale, em **uma leitura**. A frase é regra de domínio: **zero aparece** e **`null` é "não sei" e vira SEM SELO**; as vagas retidas **não … | ✅ |
+| 52 | **"Fechar o que abrimos"** — a **dívida que nós criamos**: o **token de aviso** separado em claro × escuro com o contraste **medido** e preso por catraca que lê o CSS (6,44:1 / 7,09:1 no claro; 9,17:1 no telão), deixando o **portão WCAG AA sem isenções**; **um único `<main>` por tela** (a … | ✅ |
+| 53 | **Painel de prontidão e áreas do evento** — a raiz do evento diz **o que falta para o evento ficar pronto** (pendências com efeito, gravidade, ordem e o caminho que resolve, e a régua do que NÃO é pendência), e a faixa de links virou **grade de cartões nos quatro grupos do trabalho**, … | ✅ |
+| 54 | **O selo de contagem nos cartões** — cada área da raiz diz **quanto há lá dentro** ("3 chamadas", "nenhuma vaga retida"), contado **por evento** e só sobre o que vale, em **uma leitura**. A frase é regra de domínio: **zero aparece** e **`null` é "não sei" e vira SEM SELO**; as vagas retidas são o número que a tela já calculou (o serviço devolve `null`, com teste) | ✅ |
 | 55 | **As seções da raiz viram páginas com cartão** — as quatro sanfonas da raiz do evento viraram **páginas com cartão** e a raiz ficou **prontidão + mapa**: 341 linhas (eram 955) e **ZERO `<details>`**, preso no E2E. `data-testid` preservados, 7 specs reapontados | ✅ |
-| 56 | **Mutirão de dívidas da Jornada do participante** — nove dívidas do tema E, em 4 fatias, **TODAS ENTREGUES**: fila de espera no EVENTO + promoção com prazo e aceite da pessoa (E33/E1); paginação das listas públicas + retirada da submissão pelo autor (E2/E31); miniatura do acervo, reprocessamento em WebP e … | ✅ |
-| 57 | **Gantt e calendário das demandas** — duas vistas novas no quadro da F38 (`?vista=kanban\|gantt\|calendario`): eixo de dias no fuso do evento, barra começando em `startAt` ou na criação (**marcada como estimada**), calendário com as demandas no dia do PRAZO. Uma leitura, três vistas, navegação por link, fora do … | ✅ |
-| 58 | **As telas novas no portão de acessibilidade** — `/demandas` (as três vistas) e `/superadmin/denuncias` varridas pelo `axe` WCAG AA, com fixtures de conteúdo; o **contraste do calendário (2,9:1)** foi **corrigido**, sem isenção nova. ADR-317/318 | ✅ |
-| 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (permissão do pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie lido no … | ✅ |
-| 60 | **O que se oculta fica oculto · toda tela tem landmark · a suíte E2E para de mentir** — **E79**: a ocultação passou a valer em toda superfície que cita a pessoa (bloco Equipe, link selado da carta e o **sorteio público**, que publicava o nome inteiro), por fonte única no domínio; **I2** (as 14 telas sem `<main>`), com catraca … | ✅ |
-| 61 | **Modo noturno (dívida H3)** — a escala escura redefinindo **só a camada de tokens**, com **três estados** (Claro · Escuro · Sistema), a preferência do sistema valendo **sem cookie e sem JavaScript**, a escolha de Claro vencendo o sistema escuro e o controle no menu de conta e em `/conta`. Contraste **medido nos dois modos** (35 … | ✅ |
-| 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido** — o padrão 0,2 era cego ao escuro); **I3**: espera que repete o gesto, `workers: 1` **com número** e `npm run e2e:clean`; **E80** e **E81**. A catraca nova … | ✅ |
-| 63 | **A aparência do visitante** — o visitante **anônimo** escolhe a aparência no **rodapé** das páginas públicas da plataforma (`/`, `/organizacoes`, `/validar/<código>`, `/validar/lote`): **um componente só**, funcionando **sem JavaScript**, no **mesmo cookie** `ef_tema` (a escolha **sobrevive ao login**). A **página do evento ficou … | ✅ |
-| 64 | **A página pública da instituição** — `/t/<slug>` deixou de ser um `redirect` e virou a **vitrine da casa** (capa, identidade, os **três grupos por DATA** lidos na renderização e blocos do editor; sem página publicada, o endereço segue servindo a listagem). Rascunho × publicado é SNAPSHOT na mesma linha (`tenant_public_pages`, RLS … | ✅ |
-| 65 | **O dia do evento na mão do participante** — favoritar é **INTENÇÃO** e inscrever-se é **LUGAR** (`activity_favorites`, RLS + FORCE, não consome vaga); a **"minha agenda"** une as duas marcas com o **aviso de choque que nunca bloqueia**; a grade sai em **`.ics`** (dobra de 75 octetos em BYTES) e no **Google** — a assinatura … | ✅ |
-| 66 | **O rótulo que ficou fora do portão** — o `eyebrow` do `SectionHeading` media **4,44:1** sobre a `--ef-background` do organizador e sobreviveu à F65 porque a aba **"Programação"** não estava no portão WCAG AA: agora ele usa o papel do tema (`.ef-muted`, **5,08:1** no claro e **5,91:1** no escuro), a família da `opacity` foi … | ✅ |
-| 67 | **Mala direta por fatos reais** — comunicação segmentada por **fatos do banco**: catálogo de **15 condições** com frase explicativa, composição que **recusa** em vez de falhar aberto (o `E` vazio selecionaria a instituição inteira) e **catraca** catálogo↔construtor que morde nos dois sentidos; aba **"Segmentos"** com contagem antes do envio, prévia mascarada pela F60 e disparo em lotes pelo outbox da F15 (`dedupeKey = campaign:<id>:<pessoa>`). O **descadastro de ponta a ponta**: token **determinístico** por (instituição, pessoa) com HMAC e rótulo próprio (a linha só nasce quando a pessoa sai, então o rodapé não pode depender dela), página **sem login** que diz o que para e o que **continua chegando**, envio que **pula** quem saiu e o caminho de volta; **marcadores por destinatário** (`{nome}`, `{instituicao}`, `{evento}`) com o desconhecido **literal**. Portão WCAG AA a **23 casos** (sem isenção — e ele achou **3 nós de `color-contrast`** na página nova, por `opacity`), regressão visual a **21 linhas de base** (com a medição de estabilidade) e as **15 condições com prova dos dois lados e de isolamento entre instituições**. ADR-338/339/340 | ✅ |
+| 56 | **Mutirão de dívidas da Jornada do participante** — nove dívidas do tema E, em 4 fatias, **TODAS ENTREGUES**: fila de espera no EVENTO + promoção com prazo e aceite da pessoa (E33/E1); paginação das listas públicas + retirada da submissão pelo autor (E2/E31); miniatura do acervo e reprocessamento em WebP; e os demais itens de alcance | ✅ |
+| 57 | **Gantt e calendário das demandas** — duas vistas novas no quadro da F38 (`?vista=kanban\|gantt\|calendario`): eixo de dias no fuso do evento, barra começando em `startAt` ou na criação (**marcada como estimada**) e calendário com as demandas no dia do PRAZO. Uma leitura, três vistas, navegação por link | ✅ |
+| 58 | **As telas novas no portão de acessibilidade** — `/demandas` (três vistas) e `/superadmin/denuncias` no `axe` WCAG AA, com fixtures; o **contraste do calendário (2,9:1)** foi corrigido, sem isenção nova. ADR-317/318 | ✅ |
+| 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (permissão do pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie lido no servidor** | ✅ |
+| 60 | **O que se oculta fica oculto · toda tela tem landmark · a suíte E2E para de mentir** — **E79**: a ocultação passou a valer em toda superfície que cita a pessoa (bloco Equipe, link selado da carta e o **sorteio público**, que publicava o nome inteiro), por fonte única no domínio; e **I2** … | ✅ |
+| 61 | **Modo noturno (dívida H3)** — a escala escura troca **só a camada de tokens**, com **três estados** (Claro · Escuro · Sistema), o sistema valendo **sem cookie e sem JavaScript** e a escolha de Claro vencendo o escuro; controle no menu de conta e em `/conta`, com contraste **medido nos dois … | ✅ |
+| 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido**); **I3**: espera que repete o gesto, `workers: 1` **com número** e `npm run e2e:clean`; **E80** e **E81** | ✅ |
+| 63 | **A aparência do visitante** — o visitante **anônimo** escolhe a aparência no **rodapé** das páginas públicas da plataforma (`/`, `/organizacoes`, `/validar/<código>`, `/validar/lote`): **um componente só**, **sem JavaScript**, no **mesmo cookie** `ef_tema` (a escolha **sobrevive ao login**). A **página do evento ficou de fora** (o modo é do organizador) e um teste prende isso | ✅ |
+| 64 | **A página pública da instituição** — `/t/<slug>` deixou de ser `redirect` e virou a **vitrine da casa** (capa, identidade, os **três grupos por DATA** na renderização e blocos do editor; sem página publicada o endereço segue servindo a listagem). Rascunho × publicado é SNAPSHOT na mesma … | ✅ |
+| 65 | **O dia do evento na mão do participante** — favoritar é **INTENÇÃO** e inscrever-se é **LUGAR** (`activity_favorites`, RLS + FORCE, não consome vaga); a **"minha agenda"** une as duas marcas com o **aviso de choque que nunca bloqueia**; a grade sai em **`.ics`** (dobra em BYTES) e no … | ✅ |
+| 66 | **O rótulo que ficou fora do portão** — o `eyebrow` do `SectionHeading` media **4,44:1** sobre a `--ef-background` do organizador e sobreviveu à F65 porque a aba **"Programação"** não estava no portão: passou a usar o papel do tema (`.ef-muted`, **5,08:1** no claro e **5,91:1** no escuro), a … | ✅ |
+| 67 | **Mala direta por fatos reais** — catálogo de **15 condições** de domínio com frase explicativa, composição que **recusa** em vez de falhar aberto e catraca catálogo↔construtor nos dois sentidos; aba **"Segmentos"** com a contagem antes do envio, prévia mascarada pela F60 e disparo em lotes pelo outbox da F15; e **descadastro** com token próprio e envio que pula quem saiu. Portão 20 → **23**; visual 19 → **21**. ADR-338 … 340 | ✅ |
+| 68 | **O evento que não era de três dias** — a chamada vira **interruptor do evento** (`usesCall`; ausente **não** desliga) e as **duas colunas da janela são REMOVIDAS**; a chamada da F33 passa a ser a única fonte da verdade e o **`CFP_CLOSED`, declarado e nunca devolvido, passa a ser devolvido … | ✅ |
+| 69 | **Mutirão dos pequenos** — cinco dívidas quitadas por inteiro: **E86** (a **margem de deslocamento** entre salas virou parâmetro da regra pura, com **15 min** declarados no domínio e **margem zero ≡ régua da F65**, presa em 9 pares — e **sem configuração por evento**), **E82** (o **ranking de revisores** deixou de citar quem a moderação ocultou: lê o nome pela fonte única e **mascara DEPOIS de ordenar**, preservando posição, contagem e elegibilidade), **E84 por inteiro** (o escopo do evento passou a **republicar os papéis semânticos da plataforma no modo do TEMA** — o texto secundário saiu de **2,10:1** / **1,86:1** para **11,59:1** / **10,28:1** —, e o portão ganhou **2 casos** novos com **mutação provada**), **E83** (os quatro pontos da família repetem o **GESTO** até o fato) e **E88** (o **descadastro pergunta o motivo** — quatro opções, nenhuma obrigatória, e a saída **nunca atrasa**). Os **quatro pontos da FASE 68**: o seed cria o evento que publica chamadas com **`usesCall: true`**, os **rótulos de modalidade** ganharam **fonte única no domínio** (fallback preservado e provado pelo ternário antigo como oráculo), o **endereço da sala online apareceu na "minha agenda"** reusando a régua e o serviço da F68 (a **lista de espera e o anônimo não o recebem**: `page.content()` prova nos dois sentidos) e o **bloco de LOCAL** ganhou **linha de base visual**. Portão WCAG AA de 26 → **28 casos** (sem isenção); visual de 21 → **22 linhas de base**, com a do `descadastro` regerada **depois de medir** (38.174 px). A fatia 5 **morreu sem escrever nada** e foi absorvida pelo fechamento. ADR-344 … 346 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**43 itens abertos**; A=3, B=4, C=1, D=3, E=26, F=5, H=1, I=0 — contagem **medida linha por linha na FASE 67**, que declarou **E87** e **E88** e reescreveu **D9**; a F66 havia medido 41 e corrigido o anúncio anterior) está em **`docs/dividas-tecnicas.md`**.
-Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**) e **F64** (**E84 quitada para a PÁGINA DA INSTITUIÇÃO** — o claro/escuro é do visitante; **segue aberta para a página do EVENTO**, onde o modo é do organizador). A **F66** não quitou nem declarou item nenhum: fechou o rótulo de seção (que não estava no levantamento) e corrigiu a contagem.
-Seguem abertas: **E76, E77, E78, E82, E83**, **E84 (só para a página do evento — a F66 mediu o resto da família: o token da plataforma sobre o tema escuro do organizador dá 2,10:1 sobre o fundo e 1,86:1 sobre o cartão)**, **E85** (assinatura `webcal` + revogação individual do endereço de exportação — FASE 65) e **E86** (margem de deslocamento entre salas no choque — FASE 65).
+**Dívidas técnicas:** o levantamento consolidado (**38 itens abertos**; A=3, B=4, C=1, D=3, E=21, F=5, H=1, I=0) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento passou a bater com ela (a defasagem que vinha da FASE 51 foi corrigida na FASE 69).
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (**E84 para a PÁGINA DA INSTITUIÇÃO**) e **F69** (**E86, E82, E83, E88 e E84 por inteiro** — o claro/escuro do visitante dentro do tema do organizador). A **F66** não quitou nem declarou item: fechou o rótulo de seção (que não estava no levantamento) e corrigiu a contagem.
+Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65) e **E87** (sem revogação individual do endereço de descadastro — FASE 67).
 
 ---
 
@@ -774,7 +779,7 @@ Seguem abertas: **E76, E77, E78, E82, E83**, **E84 (só para a página do evento
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-67-mala-direta-por-fatos.md`; antes, F66, F65, F64 e F63; a
+   fase entregue** (`docs/fase-69-mutirao-dos-pequenos.md`; antes, F68, F67, F66, F65 e F64; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

@@ -15,15 +15,25 @@ import { Checkbox, Input, Select } from '@/components/ui';
 function AdminFieldShell({
   label,
   hint,
+  notice,
   children,
 }: {
   label: string;
   hint?: string;
+  notice?: string | null;
   children: React.ReactNode;
 }) {
   return (
     <label className="block space-y-1.5 text-sm font-medium text-foreground">
       <span>{label}</span>
+      {notice ? (
+        <span
+          className="block text-xs font-normal text-muted-foreground"
+          data-testid="field-notice"
+        >
+          {notice}
+        </span>
+      ) : null}
       {children}
       {hint ? <span className="block text-xs font-normal text-muted-foreground">{hint}</span> : null}
     </label>
@@ -147,6 +157,7 @@ export function Field({
   required = false,
   placeholder,
   hint,
+  notice,
   min,
   max,
   step,
@@ -158,12 +169,27 @@ export function Field({
   required?: boolean;
   placeholder?: string;
   hint?: string;
+  /**
+   * A frase que explica POR QUE o campo está na tela (FASE 68).
+   *
+   * Existe para o campo do endereço da sala online: ele aparece quando a modalidade é
+   * Online/Híbrido **ou** quando já existe endereço gravado, e neste segundo caso o
+   * organizador precisa entender por que um campo de sala online está num evento
+   * presencial — e que o valor ainda vale. Renderizado no SERVIDOR, como o resto do
+   * formulário: sem JavaScript envolvido, a decisão de mostrar/esconder o campo é do
+   * servidor e não há estado de cliente para divergir dele.
+   *
+   * Vem ANTES do controle, ao contrário da `hint`: o aviso é sobre a PRESENÇA do
+   * campo (a pergunta "por que isto está aqui?" precede a leitura), enquanto a dica é
+   * sobre o que digitar nele.
+   */
+  notice?: string | null;
   min?: number | string;
   max?: number | string;
   step?: number | string;
 }) {
   return (
-    <AdminFieldShell label={label} hint={hint}>
+    <AdminFieldShell label={label} hint={hint} notice={notice}>
       <Input
         name={name}
         aria-label={label}

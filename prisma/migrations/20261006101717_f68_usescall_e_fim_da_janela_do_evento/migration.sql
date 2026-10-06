@@ -1,0 +1,54 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  FASE 68 — A CHAMADA DE TRABALHOS VIRA INTERRUPTOR (fatia 1)
+--
+--  Duas mudanças em `events`, e elas são a MESMA decisão:
+--
+--    • SAI o par `cfpOpensAt`/`cfpClosesAt` — a janela de submissão do EVENTO.
+--    • ENTRA `usesCall` — o evento recebe trabalhos, sim ou não.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE A JANELA SAI
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Desde a FASE 33 a chamada é uma ENTIDADE (`call_for_proposals`) com tipo, texto,
+--  janela, cegueira, rubrica e limite por autor PRÓPRIOS — e um evento pode ter
+--  várias. A janela do evento continuou existindo como um segundo caminho, e o preço
+--  ficou visível na tela de edição: ela mostrava os dois campos, logo abaixo de um
+--  aviso dizendo que a janela da chamada mora em `/chamadas`.
+--
+--  O estado medido no banco de desenvolvimento antes desta migração: **1 evento de
+--  365 com a janela preenchida, e 2 chamadas da F33 publicadas** — cada caminho com
+--  exatamente o que o outro não tinha. Ninguém escrevia a janela pela tela nova, e o
+--  filtro da submissão antiga recusava proposta por um prazo que ninguém configurava.
+--
+--  A `cfpClosesAt` era lida em QUATRO lugares (medidos com grep antes desta
+--  migração): os dois formulários do painel, o filtro de `/submissoes` e o de
+--  `/submissoes/nova`. Os dois primeiros deixaram de existir nesta fatia; os dois
+--  filtros passaram a decidir por `usesCall` e pela trilha. **Nenhum leitor e nenhum
+--  escritor sobra** — é o que separa uma coluna removida de uma coluna esquecida.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE O INTERRUPTOR ENTRA
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Sem ele, "não usa chamada" e "não configurou a chamada" são o MESMO estado no
+--  banco — e o painel de prontidão (F53) tratava os dois como falta de configuração.
+--  O organizador de um congresso corporativo via "a chamada está publicada e não há
+--  trilha cadastrada" para um evento que nunca vai receber trabalho nenhum.
+--
+--  Ficou uma COLUNA, e não uma chave em `settings`: o fato é de primeira classe —
+--  ele decide o que a prontidão cobra, o que a vitrine anuncia e o que o formulário
+--  oferece. Guardá-lo num JSON opaco faria toda leitura passar por um parser e
+--  nenhuma consulta poder filtrar por ele.
+--
+--  ⚠ O `DEFAULT false` é a escolha conservadora e consciente: o evento que já
+--  existia não passa a anunciar chamada que ninguém publicou. Quem quiser receber
+--  trabalhos liga o interruptor — ou cria a chamada da F33, que liga junto.
+--
+--  Contrato de banco: coluna nova em `events` NÃO cria tabela nem RLS nova (a
+--  armadilha 101 vale para tabela nova), e `npm run db:verify` continua conferindo
+--  os privilégios da role de runtime sobre a tabela que já existia.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- AlterTable
+ALTER TABLE "events" DROP COLUMN "cfpClosesAt",
+DROP COLUMN "cfpOpensAt",
+ADD COLUMN     "usesCall" BOOLEAN NOT NULL DEFAULT false;

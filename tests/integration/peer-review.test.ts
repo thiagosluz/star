@@ -239,8 +239,6 @@ beforeAll(async () => {
         endsAt: new Date(startsAt.getTime() + 3 * 86_400_000),
         capacity: null,
         confirmedCount: 0,
-        cfpOpensAt: new Date(Date.now() - 86_400_000),
-        cfpClosesAt: new Date(Date.now() + 30 * 86_400_000),
       },
     });
 

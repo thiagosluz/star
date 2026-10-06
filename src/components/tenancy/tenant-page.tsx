@@ -26,6 +26,7 @@ import {
   type TenantPageBlock,
 } from '@/domain/tenancy/tenant-public-page';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 import type {
   PublicTenantEventCard,
   PublicTenantPageView,
@@ -310,11 +311,8 @@ function CartaoDeEvento({
               </Badge>
             ) : null}
             <span className="text-xs text-muted-foreground">
-              {event.modality === 'ONLINE'
-                ? 'Online'
-                : event.modality === 'HYBRID'
-                  ? 'Híbrido'
-                  : 'Presencial'}
+              {/** A etiqueta de modalidade vem da fonte única do domínio (FASE 69). */}
+              {eventModalityLabel(event.modality)}
             </span>
           </div>
 

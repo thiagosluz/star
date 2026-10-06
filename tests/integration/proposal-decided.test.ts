@@ -43,6 +43,16 @@ const TIME_ZONE = 'America/Bahia';
 let tenantId: string;
 let eventId: string;
 let trackId: string;
+/**
+ * Um SEGUNDO evento, sem chamada nenhuma (FASE 68).
+ *
+ * O caminho científico antigo (submissão por trilha, sem `callId`) só existe onde o
+ * evento não recebe trabalhos por chamada: no evento principal há uma chamada
+ * publicada, e o serviço recusa o atalho com `CFP_CLOSED` — que é justamente a regra
+ * nova. Misturar os dois no mesmo evento faria este teste medir a regra errada.
+ */
+let legacyEventId: string;
+let legacyTrackId: string;
 let organizerId: string;
 let authorId: string;
 let callId: string;
@@ -83,6 +93,8 @@ beforeAll(async () => {
   tenantId = randomUUID();
   eventId = randomUUID();
   trackId = randomUUID();
+  legacyEventId = randomUUID();
+  legacyTrackId = randomUUID();
 
   await adminPrisma.tenant.create({
     data: {
@@ -122,6 +134,36 @@ beforeAll(async () => {
         eventId,
         slug: `trilha-decisao-${RUN}`,
         name: 'Extensão universitária',
+        requiresBlindReview: false,
+        requiredReviews: 1,
+      },
+    });
+
+    /**
+     * O evento do fluxo ACADÊMICO antigo (FASE 68): sem chamada nenhuma e com a
+     * própria trilha, que é a condição para o caminho por trilha continuar valendo.
+     */
+    await tx.event.create({
+      data: {
+        id: legacyEventId,
+        tenantId,
+        slug: `evento-fluxo-antigo-${RUN}`,
+        title: 'Seminário do Fluxo Antigo',
+        status: 'REGISTRATION_OPEN',
+        modality: 'IN_PERSON',
+        timezone: TIME_ZONE,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 3 * 86_400_000),
+      },
+    });
+
+    await tx.track.create({
+      data: {
+        id: legacyTrackId,
+        tenantId,
+        eventId: legacyEventId,
+        slug: `trilha-fluxo-antigo-${RUN}`,
+        name: 'Trilha do fluxo antigo',
         requiresBlindReview: false,
         requiredReviews: 1,
       },
@@ -311,9 +353,10 @@ describe('o limite declarado da fase: artigo do fluxo acadêmico não é avisado
   it('submissão SEM chamada muda de status em silêncio (e isso é intencional)', async () => {
     const created = await createSubmission({
       tenantId,
-      eventId,
+      /** O evento SEM chamada: é o caminho antigo que este teste prende (FASE 68). */
+      eventId: legacyEventId,
       userId: authorId,
-      trackId,
+      trackId: legacyTrackId,
       title: 'Artigo do fluxo antigo',
       abstract:
         'Este artigo entra pelo caminho acadêmico, sem chamada de propostas, e por isso não recebe o aviso de decisão desta fase — o limite está declarado no documento da FASE 36.',

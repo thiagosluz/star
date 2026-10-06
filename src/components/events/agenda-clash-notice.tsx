@@ -1,11 +1,12 @@
 import { AlertTriangle } from 'lucide-react';
 
 import type { AgendaMarksVariant } from '@/components/events/agenda-marks';
-import { clashTargetLabel, type AgendaViewerItem } from '@/lib/events/agenda-view';
+import { agendaClashTitle, clashTargetLabel, type AgendaViewerItem } from '@/lib/events/agenda-view';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  O AVISO DE CHOQUE DE HORÁRIO (FASE 65 · fatia 2)
+ *  O AVISO DE CHOQUE DE HORÁRIO (FASE 65 · fatia 2) — COM A MARGEM DE DESLOCAMENTO
+ *  ENTRE SALAS (E86 · FASE 69 · fatia 1)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O AVISO **INFORMA**; ELE NÃO IMPEDE
@@ -16,11 +17,25 @@ import { clashTargetLabel, type AgendaViewerItem } from '@/lib/events/agenda-vie
  *  (decisão do humano, no plano da fase) — e a Server Action grava de qualquer jeito.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TEXTO DIZ QUE HÁ MARGEM — E DIZ QUANTOS MINUTOS
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A frase NÃO é mais "Choque de horário" (E86). Com a margem, o aviso aparece em
+ *  dois casos que a pessoa vê de formas diferentes: o item que se SOBREPÕE (o
+ *  relógio denuncia sozinho) e o item que apenas está PERTO DEMAIS para dar tempo de
+ *  atravessar até a outra sala (o relógio NÃO denuncia). No segundo, "choque de
+ *  horário" mandaria a pessoa comparar dois horários que não se cruzam, não achar
+ *  nada e concluir que o sistema está errado.
+ *
+ *  O título vem PRONTO de `agendaClashTitle()` — a mesma frase nas duas telas — e o
+ *  número de minutos sai da constante do domínio (`ROOM_TRAVEL_MARGIN_MINUTES`), para
+ *  o texto não continuar dizendo "15" no dia em que a régua mudar.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
  *  NÃO É SÓ COR: ÍCONE + PALAVRA + OS DOIS TÍTULOS
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Quem não distingue o tom (ou usa leitor de tela) recebe a mesma informação: o
  *  ícone de atenção (com `aria-hidden`, porque é decoração de um texto que já diz
- *  tudo), a palavra "Choque de horário" e o alvo por extenso — título e horário. A
+ *  tudo), a frase que explica o motivo e o alvo por extenso — título e horário. A
  *  cor é reforço, nunca o recado; é a regra que o portão WCAG AA cobra e que este
  *  aviso cumpre sem isenção nenhuma.
  *
@@ -77,7 +92,7 @@ export function AgendaClashNotice({
 
       <div className="space-y-0.5">
         <p className="font-medium">
-          Choque de horário com{' '}
+          {agendaClashTitle()}{' '}
           {targets.map((target, index) => (
             <span key={target.activityId}>
               {index > 0 ? ' e ' : ''}

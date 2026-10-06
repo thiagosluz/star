@@ -1,15 +1,14 @@
-import {
-  themeToCssVariables,
-  type ResolvedEventTheme,
-} from '@/domain/events/landing-page';
+import type { ResolvedEventTheme } from '@/domain/events/landing-page';
+import { buildEventThemeScope } from '@/domain/events/event-page-theme-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Aplicador de tema do evento
  *
- *  Injeta as CSS custom properties do tema (`--ef-*`) em um wrapper. Todos os
- *  componentes da página pública leem essas variáveis, então trocar o tema muda
- *  a página inteira sem tocar em nenhum componente.
+ *  Injeta as CSS custom properties do tema (`--ef-*`) — e os apelidos da plataforma
+ *  que os componentes leem lá dentro (`--muted-foreground`, `--card`, …) — em um
+ *  wrapper. Todos os componentes da página pública leem essas variáveis, então trocar
+ *  o tema muda a página inteira sem tocar em nenhum componente.
  *
  *  O tema já chega VALIDADO e normalizado: `resolveTheme()` garante que cores
  *  só existem em hexadecimal ou `oklch()`. Isso é o que impede que um valor de
@@ -24,7 +23,7 @@ import {
  *      Error: The `style` prop expects a mapping from style properties to
  *      values, not a string.
  *
- *  Por isso usamos `themeToCssVariables()`, que devolve um objeto. A
+ *  Por isso usamos `buildEventThemeScope()`, que devolve um objeto. A
  *  serialização em string (`themeToStyleString`) existe apenas para contextos
  *  de HTML puro, não para JSX.
  *
@@ -53,6 +52,26 @@ import {
  *  Por isso a `ThemeScope` também publica `--theme-primary`, que nasce na marca da
  *  plataforma (`globals.css`) e aqui recebe a cor do evento. Um token só, e o
  *  componente que o usa (`Badge` com `tone="event"`) não sabe de onde ele veio.
+ *  Desde a FASE 69 esse papel é montado em `buildEventThemeScope`, junto do resto do
+ *  escopo: a página tem UM lugar que decide o que o tema publica.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O ESCOPO PUBLICA TAMBÉM OS PAPÉIS DA PLATAFORMA (FASE 69 · fatia 3 · E84)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Os `--ef-*` não bastavam. Os componentes do sistema desenhados DENTRO do tema
+ *  (o cartão do "acontecendo agora", a galeria de palestrantes, a marca de agenda, o
+ *  botão de favorito) leem os apelidos SEM prefixo — `text-muted-foreground`,
+ *  `bg-card`, `border-border` —, e o `globals.css` resolve esses apelidos na RAIZ:
+ *  sobrescrever um `--ef-*` num descendente não os re-resolve. Resultado medido na
+ *  FASE 66: a tinta clara da PLATAFORMA sobre a superfície escura do ORGANIZADOR —
+ *  **2,10:1** sobre o fundo e **1,86:1** sobre o cartão, contra os 4,5:1 do AA.
+ *
+ *  O modo desta página é do organizador (ADR-325), então os apelidos que ele não
+ *  escolhe passam a ser publicados aqui no modo DELE — o mesmo movimento que a FASE
+ *  64 fez na página da instituição, onde eles continuam vindo da plataforma porque
+ *  lá o modo da página já É o do visitante. O porquê de cada escolha, o que fica de
+ *  fora e a catraca que prende os valores estão em
+ *  `src/domain/events/event-page-theme-rules.ts`.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function ThemeScope({
@@ -62,16 +81,13 @@ export function ThemeScope({
   theme: ResolvedEventTheme;
   children: React.ReactNode;
 }) {
-  // As chaves são custom properties (`--ef-*`), que o tipo CSSProperties não
-  // declara. O objeto é montado a partir de uma allowlist validada.
-  const style = themeToCssVariables(theme) as React.CSSProperties;
-
-  if (theme.primaryColor) {
-    (style as Record<string, string>)['--theme-primary'] = theme.primaryColor;
-  }
+  // As chaves são custom properties (`--ef-*` e os apelidos da plataforma), que o tipo
+  // CSSProperties não declara. O objeto é montado a partir de uma allowlist validada.
+  const { variables, mode } = buildEventThemeScope({ theme });
+  const style = variables as React.CSSProperties;
 
   return (
-    <div style={style} data-theme-mode={theme.colorMode} className="ef-theme min-h-screen">
+    <div style={style} data-theme-mode={mode} className="ef-theme min-h-screen">
       {children}
     </div>
   );

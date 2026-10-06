@@ -256,6 +256,23 @@ async function main() {
           'O Congresso de Tecnologia e Educação reúne pesquisadores, docentes e profissionais para discutir inovação, inclusão digital e o futuro do ensino superior.\n\nA programação inclui palestras internacionais, minicursos práticos e sessões de apresentação de trabalhos avaliados por pares.',
         status: 'REGISTRATION_OPEN',
         modality: 'HYBRID',
+        /**
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  O CONGRESSO RECEBE TRABALHOS — E O DADO DE DEMONSTRAÇÃO TEM DE DIZER ISSO
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  `usesCall` nasceu na FASE 68 como o INTERRUPTOR do evento ("esta casa recebe
+         *  propostas"), e `setCallPublished` o liga quando uma chamada é publicada — o
+         *  que acontece mais abaixo, nesta mesma execução, para as duas chamadas do
+         *  congresso. O que aquele caminho NÃO resolve é o dado JÁ GRAVADO: quem semeou o
+         *  banco antes da FASE 68 tem `usesCall = false` num evento que publica chamadas,
+         *  e nenhuma migração tem como adivinhar quais eventos são esses.
+         *
+         *  Declarar o interruptor AQUI é o que faz a demonstração nascer coerente com a
+         *  história que ela conta (o único evento do seed com chamada é justamente este),
+         *  e é o que o `prisma/seed.ts` promete desde a FASE 3: o dado de demonstração
+         *  nasce do fato, e não do acaso da ordem em que as linhas rodaram.
+         */
+        usesCall: true,
         startsAt: days(30),
         endsAt: days(33),
         timezone: 'America/Bahia',

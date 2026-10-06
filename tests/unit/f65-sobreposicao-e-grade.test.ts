@@ -15,10 +15,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   containsInterval,
-  findOverlapPairs,
+  findClashPairs,
   intervalsOverlap,
   intervalsTouch,
   isPointInTime,
+  ROOM_TRAVEL_MARGIN_MINUTES,
 } from '../../src/domain/agenda/overlap-rules';
 import {
   AGENDA_MARK_LABELS,
@@ -49,16 +50,40 @@ const atividade = (
   ...patch,
 });
 
+/**
+ * A fixture das duas réguas (E86 · FASE 69): um minicurso de 14:00 às 18:00, uma
+ * palestra DENTRO dele e um encerramento que começa quando ele TERMINA (18:00).
+ *
+ * Ela nasceu na FASE 65 (onde o encerramento era "emendado, não colidido") e passou a
+ * rodar nos dois sentidos quando a margem de deslocamento chegou: com a régua
+ * declarada o encerramento avisa; com margem ZERO a resposta é a da fase original.
+ */
+const atividadesDoChoque = [
+  atividade({ id: 'longo', title: 'Minicurso', startsAt: em('14:00'), endsAt: em('18:00') }),
+  atividade({ id: 'dentro', title: 'Palestra', startsAt: em('15:00'), endsAt: em('16:00') }),
+  atividade({ id: 'sequencia', title: 'Encerramento', startsAt: em('18:00'), endsAt: em('19:00') }),
+];
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Sobreposição
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('sobreposição de horários (FASE 65)', () => {
-  it('ENCOSTAR não é choque: quem termina quando o outro começa está em sequência', () => {
+  it('ENCOSTAR não é SOBREPOSIÇÃO: quem termina quando o outro começa está em sequência', () => {
     const primeira = intervalo('10:00', '11:00');
     const segunda = intervalo('11:00', '12:00');
 
+    /**
+     * ─── SOBREPOSIÇÃO ≠ CONFLITO (o que a E86 separou) ─────────────────────────
+     *
+     *  Este caso é da RÉGUA PURA, e a resposta dele não mudou: os dois intervalos não
+     *  se sobrepõem, e `intervalsTouch` continua sabendo que estão emendados — "não
+     *  sobrepõe" e "está emendado" são informações DIFERENTES para quem lê a grade.
+     *
+     *  O que a margem de deslocamento (FASE 69) acrescentou é a segunda pergunta, e ela
+     *  é outra função: `intervalsClash` responde "dá tempo de chegar?" e trata o
+     *  emendado como conflito quando há margem. Está preso no arquivo da margem.
+     */
     expect(intervalsOverlap(primeira, segunda)).toBe(false);
-    // ...mas o sistema SABE que estão emendadas: são informações diferentes.
     expect(intervalsTouch(primeira, segunda)).toBe(true);
   });
 
@@ -130,7 +155,7 @@ describe('sobreposição de horários (FASE 65)', () => {
       { id: 'abertura', ...intervalo('09:00', '10:00') },
     ];
 
-    const pares = findOverlapPairs(itens, (item) => item);
+    const pares = findClashPairs(itens, (item) => item, ROOM_TRAVEL_MARGIN_MINUTES);
 
     expect(pares).toHaveLength(3);
     expect(pares.map((par) => [par.first.id, par.second.id])).toEqual([
@@ -147,7 +172,14 @@ describe('sobreposição de horários (FASE 65)', () => {
       { id: 'c', ...intervalo('11:00', '12:00') },
     ];
 
-    expect(findOverlapPairs(itens, (item) => item)).toEqual([]);
+    /**
+     * Aqui a margem é ZERO DE PROPÓSITO, e é o que dá sentido ao caso: as três
+     * atividades estão emendadas (09:00→10:00→11:00), que é a grade normal de um
+     * evento. Sem margem, emendar continua não sendo choque — a régua da FASE 65
+     * segue valendo palavra por palavra. Com a margem do dia a dia, as três
+     * conflitam, e é isso que o teste da margem (`f69-...`) prende no outro lado.
+     */
+    expect(findClashPairs(itens, (item) => item, 0)).toEqual([]);
   });
 });
 
@@ -285,16 +317,56 @@ describe('"minha grade" — união, marcas e choques (FASE 65)', () => {
     expect(grade.entries[0]!.startsAtLabel).toBe('01/12/2026, 21:00');
   });
 
+  /**
+   * ─── ESTE CASO PASSOU A TER DOIS LADOS (E86 · FASE 69) ────────────────────────
+   *
+   *  A fixture é a MESMA nos dois: um minicurso de 14:00 às 18:00, uma palestra
+   *  DENTRO dele e um encerramento que COMEÇA quando ele termina (18:00). O que muda
+   *  é a régua — e é essa mudança que prova que a margem foi ACRESCENTADA, não trocada:
+   *
+   *    • com margem ZERO (a régua da FASE 65), o par é UM: só quem se sobrepõe;
+   *    • com a margem DECLARADA, o encerramento entra no aviso — ele é o caso real
+   *      "termino numa sala e começo em outra no mesmo minuto".
+   */
   it('os CHOQUES saem em pares, com os dois títulos, e marcam os dois itens', () => {
     const grade = buildMyAgenda({
       timezone: 'UTC',
-      activities: [
-        atividade({ id: 'longo', title: 'Minicurso', startsAt: em('14:00'), endsAt: em('18:00') }),
-        atividade({ id: 'dentro', title: 'Palestra', startsAt: em('15:00'), endsAt: em('16:00') }),
-        atividade({ id: 'sequencia', title: 'Encerramento', startsAt: em('18:00'), endsAt: em('19:00') }),
-      ],
+      activities: atividadesDoChoque,
       favoriteActivityIds: ['longo', 'dentro', 'sequencia'],
       registrations: [],
+    });
+
+    expect(grade.clashes).toEqual([
+      {
+        firstActivityId: 'longo',
+        secondActivityId: 'dentro',
+        firstTitle: 'Minicurso',
+        secondTitle: 'Palestra',
+      },
+      {
+        firstActivityId: 'longo',
+        secondActivityId: 'sequencia',
+        firstTitle: 'Minicurso',
+        secondTitle: 'Encerramento',
+      },
+    ]);
+    expect(grade.counts.clashPairs).toBe(2);
+
+    const porId = new Map(grade.entries.map((item) => [item.activityId, item]));
+    expect(porId.get('longo')!.hasClash).toBe(true);
+    expect(porId.get('dentro')!.hasClash).toBe(true);
+    // 18:00 é o FIM do minicurso e o INÍCIO do encerramento: EMENDADO. Não é
+    // sobreposição — é deslocamento, e com a margem declarada ele avisa.
+    expect(porId.get('sequencia')!.hasClash).toBe(true);
+  });
+
+  it('os MESMOS itens com margem ZERO: só a sobreposição avisa (a régua da FASE 65)', () => {
+    const grade = buildMyAgenda({
+      timezone: 'UTC',
+      activities: atividadesDoChoque,
+      favoriteActivityIds: ['longo', 'dentro', 'sequencia'],
+      registrations: [],
+      roomTravelMarginMinutes: 0,
     });
 
     expect(grade.clashes).toEqual([
@@ -308,9 +380,6 @@ describe('"minha grade" — união, marcas e choques (FASE 65)', () => {
     expect(grade.counts.clashPairs).toBe(1);
 
     const porId = new Map(grade.entries.map((item) => [item.activityId, item]));
-    expect(porId.get('longo')!.hasClash).toBe(true);
-    expect(porId.get('dentro')!.hasClash).toBe(true);
-    // 18:00 é o FIM do minicurso e o INÍCIO do encerramento: emendado, não colidido.
     expect(porId.get('sequencia')!.hasClash).toBe(false);
   });
 

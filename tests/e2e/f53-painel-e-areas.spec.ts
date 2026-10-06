@@ -101,6 +101,20 @@ test.describe('painel de prontidão e áreas do evento', () => {
 
     /** Programação vazia é uma das pendências, e ela aponta para a seção da tela. */
     await expect(page.getByTestId('event-readiness-sem-programacao')).toBeVisible();
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O FALSO ALARME DA CHAMADA (FASE 68)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Até esta fase a prontidão deduzia "tem chamada" da janela do evento
+     *  (`cfpOpensAt`), que NINGUÉM escrevia. O evento deste cenário não tem chamada
+     *  nenhuma — e o painel cobrava trilha temática dele, apontando para uma tela vazia.
+     *
+     *  Com o interruptor, "não usa chamada" e "não configurou a chamada" deixaram de ser
+     *  o mesmo estado: as duas pendências da chamada não podem aparecer aqui.
+     */
+    await expect(page.getByTestId('event-readiness-chamada-sem-prazo')).toHaveCount(0);
+    await expect(page.getByTestId('event-readiness-chamada-sem-trilha')).toHaveCount(0);
   });
 
   test('2. as áreas aparecem nos quatro grupos, com os atalhos de sempre', async ({ page }) => {

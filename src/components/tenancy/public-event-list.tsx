@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, CalendarDays, MapPin, Users } from 'lucide-react';
 
 import { formatEventPeriod, type EventStatus } from '@/domain/events/event-rules';
+import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import type { PublicEventSummary, PublicEventsPage } from '@/lib/events/event-repository';
 
@@ -94,11 +95,8 @@ export function PublicEventCard({
               {STATUS_LABEL[event.status] ?? event.status}
             </span>
             <span className="text-xs text-muted-foreground">
-              {event.modality === 'ONLINE'
-                ? 'Online'
-                : event.modality === 'HYBRID'
-                  ? 'Híbrido'
-                  : 'Presencial'}
+              {/** A etiqueta de modalidade vem da fonte única do domínio (FASE 69). */}
+              {eventModalityLabel(event.modality)}
             </span>
           </div>
 

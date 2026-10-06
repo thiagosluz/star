@@ -116,6 +116,106 @@ function layoutOf(template: { layout: unknown } | null) {
   };
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  OS DOIS GESTOS DO PALCO ATÉ O FATO (FASE 69 · dívida E83)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A RÉGUA DA FASE 62, APLICADA ONDE ELA AINDA NÃO TINHA CHEGADO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O ADR-327 decidiu: **a espera é o FATO, e o gesto que não tem rede se repete**.
+ *  Ele nasceu do `Alt+↑` do quadro de demandas, onde o teste apertava a tecla UMA
+ *  vez e repetia só a asserção — e nenhum `toPass`, por maior que fosse, faz uma
+ *  tecla engolida antes da hidratação gravar alguma coisa.
+ *
+ *  O palco do editor de certificado tinha a MESMA forma em dois gestos, e os dois
+ *  dependem do bundle: o `onKeyDown` da caixa e os eventos de ponteiro do arrastar.
+ *  Antes destes helpers, os três pontos mediam a CONSEQUÊNCIA de um gesto que podia
+ *  não ter acontecido (`await expect(async () => expect(campo)…).toPass()`), e o
+ *  vermelho apontava para o teste em vez de apontar para o produto.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  REPETIR SÓ É SEGURO COM A GUARDA — E A GUARDA LÊ O MESMO CAMPO QUE O TESTE MEDE
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Aqui o movimento é RELATIVO (1 mm por seta, 10 mm com Shift; o arrastar anda
+ *  +64 px), e repetir às cegas andaria duas casas e faria o teste medir a repetição
+ *  em vez da regra. Então cada laço:
+ *
+ *    1. lê o campo numérico (a posição é do FORMULÁRIO — não há estado paralelo);
+ *    2. só repete o gesto ENQUANTO o fato não aconteceu;
+ *    3. depois de gesto, espera o campo MUDAR, com teto curto — é o que impede um
+ *       segundo gesto sobre um valor que ainda não voltou do render.
+ *
+ *  O teto do laço é o número de tentativas, não a asserção: nenhuma comparação
+ *  afrouxou (as mesmas igualdades de antes, com a mesma precisão), e o relógio só
+ *  cobre as vezes em que o gesto se perdeu no caminho.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+async function teclarAte(input: {
+  page: import('@playwright/test').Page;
+  alvo: import('@playwright/test').Locator;
+  campo: import('@playwright/test').Locator;
+  tecla: string;
+  destino: number;
+}): Promise<void> {
+  await expect(async () => {
+    const atual = Number(await input.campo.inputValue());
+
+    if (Math.abs(atual - input.destino) > 0.05) {
+      await input.alvo.focus();
+      await input.page.keyboard.press(input.tecla);
+
+      await expect
+        .poll(async () => Number(await input.campo.inputValue()), { timeout: 1_000 })
+        .not.toBe(atual);
+    }
+
+    expect(Number(await input.campo.inputValue())).toBeCloseTo(input.destino, 1);
+  }).toPass({ timeout: 15_000 });
+}
+
+async function arrastarAte(input: {
+  page: import('@playwright/test').Page;
+  caixa: import('@playwright/test').Locator;
+  campoX: import('@playwright/test').Locator;
+  partida: number;
+}): Promise<void> {
+  await expect(async () => {
+    const atual = Number(await input.campoX.inputValue());
+
+    if (!(atual > input.partida)) {
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  ROLAR ANTES DE ARRASTAR (o `page.mouse` NÃO rola sozinho)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O palco fica na bancada, no alto da página, mas em janela de 720 px de altura
+       *  ele ainda começa ABAIXO da dobra (a página tem cabeçalho, avisos e a galeria
+       *  antes do editor). `locator.hover()` traz o elemento para a área visível
+       *  sozinho; `page.mouse.move` não — e o gesto caía fora da página (o alvo do
+       *  `pointerdown` era o `html`, e por isso nada acontecia). Medir o alvo foi o que
+       *  mostrou isso, em vez de "o arrastar não funciona".
+       */
+      await input.caixa.scrollIntoViewIfNeeded();
+
+      const caixa = await input.caixa.boundingBox();
+      if (!caixa) throw new Error('A caixa do elemento não tem medidas na tela.');
+
+      const centro = { x: caixa.x + caixa.width / 2, y: caixa.y + caixa.height / 2 };
+
+      await input.page.mouse.move(centro.x, centro.y);
+      await input.page.mouse.down();
+      await input.page.mouse.move(centro.x + 64, centro.y + 32, { steps: 8 });
+      await input.page.mouse.up();
+
+      await expect
+        .poll(async () => Number(await input.campoX.inputValue()), { timeout: 1_500 })
+        .not.toBe(atual);
+    }
+
+    expect(Number(await input.campoX.inputValue())).toBeGreaterThan(input.partida);
+  }).toPass({ timeout: 20_000 });
+}
+
 test.afterAll(async () => {
   await cleanupRun();
   await e2eDb.$disconnect();
@@ -256,30 +356,11 @@ test.describe('editor visual do certificado', () => {
     const before = Number(await xField.inputValue());
 
     /**
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  ROLAR ANTES DE ARRASTAR (o `page.mouse` NÃO rola sozinho)
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  O palco fica na bancada, no alto da página, mas em janela de 720 px de altura
-     *  ele ainda começa ABAIXO da dobra (a página tem cabeçalho, avisos e a galeria
-     *  antes do editor). `locator.hover()` traz o elemento
-     *  para a área visível sozinho; `page.mouse.move` não — e o gesto caía fora da
-     *  página (o alvo do `pointerdown` era o `html`, e por isso nada acontecia).
-     *  Medir o alvo foi o que mostrou isso, em vez de "o arrastar não funciona".
+     * O arrastar é um gesto do BUNDLE (os eventos de ponteiro são do React), então
+     * ele se repete até o campo mudar — a régua do ADR-327, com a guarda explicada
+     * em `arrastarAte` (o movimento é relativo e não pode ser repetido às cegas).
      */
-    await box.scrollIntoViewIfNeeded();
-
-    const boxBounds = await box.boundingBox();
-    if (!boxBounds) throw new Error('A caixa do elemento não tem medidas na tela.');
-
-    await page.mouse.move(boxBounds.x + boxBounds.width / 2, boxBounds.y + boxBounds.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(boxBounds.x + boxBounds.width / 2 + 64, boxBounds.y + boxBounds.height / 2 + 32, { steps: 8 });
-    await page.mouse.up();
-
-    // O arrastar ESCREVE no formulário: o campo numérico mudou junto.
-    await expect(async () => {
-      expect(Number(await xField.inputValue())).toBeGreaterThan(before);
-    }).toPass({ timeout: 10_000 });
+    await arrastarAte({ page, caixa: box, campoX: xField, partida: before });
 
     const movedX = Number(await xField.inputValue());
     const movedY = Number(await page.getByLabel('Y do elemento 2').inputValue());
@@ -429,25 +510,38 @@ test.describe('editor visual do certificado', () => {
      *  cenário 3 deixou a caixa encostada na borda direita: mover para a direita não
      *  tem para onde ir. O teste anda para a ESQUERDA e para BAIXO — e a borda vira uma
      *  asserção própria, logo abaixo, em vez de um movimento que não acontece.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  AS TRÊS TECLAS SE REPETEM ATÉ O NÚMERO MUDAR (dívida E83)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O `onKeyDown` da caixa vive no bundle: uma tecla apertada antes de o React
+     *  assumir não grava e não avisa. Antes, o `press` acontecia UMA vez e só a
+     *  asserção se repetia — a mesma forma que o ADR-327 corrigiu no `Alt+↑` do quadro
+     *  de demandas, e que aqui deixava o vermelho apontando para o teste. A guarda que
+     *  torna a repetição segura (o movimento é relativo) está em `teclarAte`.
      */
-    await page.keyboard.press('ArrowLeft');
-    await page.keyboard.press('ArrowDown');
-
-    await expect(async () => {
-      expect(Number(await xField.inputValue())).toBe(antes.x - 1);
-      expect(Number(await yField.inputValue())).toBeCloseTo(antes.y + 1, 1);
-    }).toPass({ timeout: 10_000 });
+    await teclarAte({ page, alvo: box, campo: xField, tecla: 'ArrowLeft', destino: antes.x - 1 });
+    await teclarAte({ page, alvo: box, campo: yField, tecla: 'ArrowDown', destino: antes.y + 1 });
 
     /** 10 mm com Shift — e o anúncio diz onde a caixa ficou. */
-    await page.keyboard.press('Shift+ArrowLeft');
-
-    await expect(async () => {
-      expect(Number(await xField.inputValue())).toBe(antes.x - 11);
-    }).toPass({ timeout: 10_000 });
+    await teclarAte({
+      page,
+      alvo: box,
+      campo: xField,
+      tecla: 'Shift+ArrowLeft',
+      destino: antes.x - 11,
+    });
 
     await expect(page.getByTestId('template-stage-announce')).toContainText('Elemento 2 em');
 
-    /** Encostada na borda, o movimento é RECUSADO com o motivo — nada sai da folha. */
+    /**
+     * Encostada na borda, o movimento é RECUSADO com o motivo — nada sai da folha.
+     *
+     * As 14 teclas são um caminho repetido de propósito (até a borda), e a negação
+     * abaixo só roda DEPOIS de o teclado ter provado, três vezes, que o React ouve:
+     * "não moveu" é uma prova fraca enquanto não se sabe que o mecanismo está vivo
+     * (regra 3 do `helpers.ts`).
+     */
     for (let passo = 0; passo < 14; passo += 1) {
       await page.keyboard.press('Shift+ArrowRight');
     }

@@ -27,6 +27,9 @@ let otherTenantId: string;
 let tenantSlug: string;
 let eventId: string;
 let trackId: string;
+/** O evento SEM chamada, onde o caminho anterior (por trilha) continua valendo (FASE 68). */
+let legacyEventId: string;
+let legacyTrackId: string;
 let organizerId: string;
 let authorId: string;
 
@@ -116,6 +119,8 @@ beforeAll(async () => {
   otherTenantId = randomUUID();
   eventId = randomUUID();
   trackId = randomUUID();
+  legacyEventId = randomUUID();
+  legacyTrackId = randomUUID();
   tenantSlug = `f33-${RUN}`;
 
   await adminPrisma.tenant.createMany({
@@ -167,6 +172,49 @@ beforeAll(async () => {
         eventId,
         slug: `trilha-${RUN}`,
         name: 'Extensão universitária',
+        requiresBlindReview: true,
+        requiredReviews: 2,
+        reviewRubric: [{ key: 'relevance', label: 'Relevância', weight: 1, maxScore: 10 }],
+      },
+    });
+
+    /**
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O EVENTO DO CAMINHO ANTERIOR (FASE 68)
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O caminho por TRILHA — sem `callId` — deixou de ser oferecido onde o evento
+     *  recebe trabalhos por chamada: o serviço recusa com `CFP_CLOSED`, e a razão é
+     *  que ele criaria um segundo caminho para o mesmo fato, sem passar pela janela,
+     *  pelo limite por autor nem pela rubrica da chamada.
+     *
+     *  Como o evento principal deste arquivo nasce com chamadas publicadas, o caminho
+     *  anterior precisa do próprio evento — com a própria trilha — para continuar
+     *  sendo exercitado. Sem isto, o teste mediria a regra nova achando que mede a
+     *  antiga.
+     */
+    await tx.event.create({
+      data: {
+        id: legacyEventId,
+        tenantId,
+        slug: `evento-sem-chamada-${RUN}`,
+        title: 'Seminário sem chamada',
+        status: 'REGISTRATION_OPEN',
+        modality: 'IN_PERSON',
+        timezone: TIME_ZONE,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 3 * 86_400_000),
+        capacity: null,
+        confirmedCount: 0,
+      },
+    });
+
+    await tx.track.create({
+      data: {
+        id: legacyTrackId,
+        tenantId,
+        eventId: legacyEventId,
+        slug: `trilha-sem-chamada-${RUN}`,
+        name: 'Extensão sem chamada',
         requiresBlindReview: true,
         requiredReviews: 2,
         reviewRubric: [{ key: 'relevance', label: 'Relevância', weight: 1, maxScore: 10 }],
@@ -579,8 +627,9 @@ describe('caminho anterior (submissão científica sem chamada)', () => {
   it('continua criando a submissão e não oferece protocolo de aceite', async () => {
     const created = await createSubmission({
       tenantId,
-      eventId,
-      trackId,
+      /** O evento SEM chamada publicada: é a condição do caminho anterior (FASE 68). */
+      eventId: legacyEventId,
+      trackId: legacyTrackId,
       userId: authorId,
       title: 'Artigo sem chamada',
       abstract: 'Um artigo submetido pelo caminho anterior às chamadas de propostas existirem. O texto detalha a motivacao, o publico esperado e os resultados ja observados na pratica, para que a avaliacao tenha o que julgar.',
@@ -598,7 +647,7 @@ describe('caminho anterior (submissão científica sem chamada)', () => {
     );
 
     expect(row.callId).toBeNull();
-    expect(row.trackId).toBe(trackId);
+    expect(row.trackId).toBe(legacyTrackId);
 
     const context = await getAcceptanceContext({ tenantId, submissionId: created.id });
     expect(context.ok, context.ok ? 'ok' : context.message).toBe(true);
@@ -606,6 +655,36 @@ describe('caminho anterior (submissão científica sem chamada)', () => {
 
     // Sem chamada não há protocolo de aceite: o painel do comitê segue o caminho dele.
     expect(context.context).toBeNull();
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  O PORTÃO QUE FALTAVA (FASE 68)
+   *
+   *  `CFP_CLOSED` existia declarado no serviço desde a FASE 4 e **nunca era
+   *  devolvido**: a única barreira era o filtro da consulta, que olhava a janela do
+   *  evento — a coluna que ninguém escrevia. Aqui ele é devolvido DE VERDADE, e a
+   *  prova é este teste: no evento que tem chamada publicada, a submissão por trilha
+   *  é recusada; no evento sem chamada, ela continua entrando.
+   */
+  it('recusa o caminho por trilha quando o evento tem chamada publicada', async () => {
+    const recusado = await createSubmission({
+      tenantId,
+      eventId,
+      trackId,
+      userId: authorId,
+      title: 'Artigo pelo atalho da trilha',
+      abstract:
+        'Um artigo tentado pelo caminho por trilha num evento que recebe trabalhos por chamada — o atalho não passa pela janela, pelo limite por autor nem pela rubrica dela, e por isso é recusado.',
+      keywords: ['chamada', 'atalho', 'trilha'],
+    });
+
+    expect(recusado.ok).toBe(false);
+    if (recusado.ok) return;
+
+    expect(recusado.code).toBe('CFP_CLOSED');
+    /** A mensagem diz ONDE a chamada vive — sem isso o autor procura o prazo no lugar errado. */
+    expect(recusado.message).toContain('chamada');
   });
 });
 

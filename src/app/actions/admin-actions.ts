@@ -230,12 +230,20 @@ export async function saveEventAction(
     venueName: nullable(formData.get('venueName')),
     city: nullable(formData.get('city')),
     state: nullable(formData.get('state')),
+    /**
+     * FASE 68: o endereço da sala online do EVENTO. O campo chega CRU — a validação
+     * (só http/https, porque isto vira `href` na página pública) é do domínio, dentro
+     * de `saveEvent`, que é o único caminho de escrita e por isso vale para todo
+     * chamador.
+     */
+    onlineUrl: nullable(formData.get('onlineUrl')),
     primaryColor: nullable(formData.get('primaryColor')),
     theme: nullable(formData.get('primaryColor')) ? { primaryColor: nullable(formData.get('primaryColor')) } : {},
     registrationOpensAt: toDate(formData.get('registrationOpensAt')),
     registrationClosesAt: toDate(formData.get('registrationClosesAt')),
-    cfpOpensAt: toDate(formData.get('cfpOpensAt')),
-    cfpClosesAt: toDate(formData.get('cfpClosesAt')),
+    // FASE 68: o interruptor da chamada. A caixa vem do formulário; a JANELA da
+    // chamada não é mais do evento — ela é da chamada, em `/chamadas`.
+    usesCall: formData.get('usesCall') === 'on',
     // FASE 12 (item I3): sem marcar, a inscrição segue aberta a qualquer conta —
     // o padrão desde a FASE 10. A caixa vem do formulário do painel.
     registrationRequiresMembership: formData.get('registrationRequiresMembership') === 'on',
@@ -484,6 +492,8 @@ export async function saveActivityAction(
     capacity: nullable(formData.get('capacity')) ? toInt(formData.get('capacity')) : null,
     waitlistEnabled: formData.get('waitlistEnabled') === 'on',
     roomId: nullable(formData.get('roomId')),
+    /** FASE 68: a atividade pode ter a PRÓPRIA sala online (ou repetir a do evento). */
+    onlineUrl: nullable(formData.get('onlineUrl')),
     isFeatured: formData.get('isFeatured') === 'on',
     checkInEnabled: formData.get('checkInEnabled') !== 'off',
     /**

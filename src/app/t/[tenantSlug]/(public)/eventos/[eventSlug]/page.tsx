@@ -14,6 +14,10 @@ import { agendaIcsUrl, agendaIcsToken } from '@/lib/events/agenda-export';
 import { buildHappeningNow, type NowActivityFact } from '@/domain/agenda/now-rules';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
+import {
+  applyOnlineRoomVisibility,
+  resolveOnlineRoomViewer,
+} from '@/lib/events/online-room-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +64,10 @@ async function canOperateCheckIn(input: {
  * (`EventPage.metaTitle`/`metaDescription`); quando não o faz, montamos uma
  * descrição a partir de resumo, subtítulo, data e local — uma landing page sem
  * descrição perde muito em compartilhamento.
+ *
+ * O FUSO DO EVENTO entra junto (FASE 68): a frase de reserva formatava em UTC e um
+ * evento das 21:00 em Salvador era anunciado no dia SEGUINTE — no Google e no cartão
+ * de compartilhamento.
  */
 export async function generateMetadata({
   params,
@@ -74,7 +82,7 @@ export async function generateMetadata({
   const event = await getPublicEvent(tenant.tenantId, eventSlug);
   if (!event) return { title: 'Evento não encontrado' };
 
-  const meta = buildEventMetadata(event);
+  const meta = buildEventMetadata(event, event.timezone);
   const title = event.page?.metaTitle ?? meta.title;
   const description = event.page?.metaDescription ?? meta.description;
 
@@ -112,8 +120,8 @@ export default async function PublicEventPage({
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) notFound();
 
-  const event = await getPublicEvent(tenant.tenantId, eventSlug);
-  if (!event) notFound();
+  const publicEvent = await getPublicEvent(tenant.tenantId, eventSlug);
+  if (!publicEvent) notFound();
 
   /**
    * Instante da renderização, resolvido UMA vez e passado adiante.
@@ -124,14 +132,14 @@ export default async function PublicEventPage({
    */
   const now = new Date();
 
-  const publicRaffles = await listPublicRaffleResults(tenant.tenantId, event.id);
+  const publicRaffles = await listPublicRaffleResults(tenant.tenantId, publicEvent.id);
 
   /**
    * As chamadas PUBLICADAS (FASE 33). A leitura é do servidor e traz o estado de cada
    * uma já decidido — o bloco da página só desenha, e por isso a chamada encerrada não
    * continua anunciando prazo.
    */
-  const calls = await listPublicCalls({ tenantId: tenant.tenantId, eventId: event.id, now });
+  const calls = await listPublicCalls({ tenantId: tenant.tenantId, eventId: publicEvent.id, now });
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -162,6 +170,38 @@ export default async function PublicEventPage({
    * ═══════════════════════════════════════════════════════════════════════════════
    */
   const viewer = await getAuthenticatedUser();
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  A SALA ONLINE: QUEM TEM LUGAR, VÊ (FASE 68 · fatia 3)
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A DECISÃO É DO SERVIDOR, E ELA ACONTECE ANTES DA RENDERIZAÇÃO
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A pergunta "esta pessoa pode ver o endereço da sala?" é respondida no BANCO
+   *  (`resolveOnlineRoomViewer`: inscrição viva que não seja de espera, ou a equipe
+   *  do evento) e o resultado é aplicado à PROJEÇÃO — para quem não tem lugar, o
+   *  `onlineUrl` do evento e o de cada atividade chegam `null` ao renderizador.
+   *
+   *  É por isso que o endereço não aparece no HTML de quem não é inscrito: não há
+   *  `hidden`, não há CSS, não há JavaScript escondendo nada — não há o que esconder,
+   *  porque o valor não foi entregue a nenhum componente. O E2E desta fatia prova
+   *  exatamente isso (`page.content()` não contém o endereço).
+   *
+   *  A VISIBILIDADE POR ATIVIDADE é resolvida no mesmo passo e sai daqui como um
+   *  MAPA (`onlineRooms`) — o caminho para o cartão do "acontecendo agora", que é
+   *  renderizado neste servidor mas cuja visão (`HappeningNowView`) é serializável e
+   *  vai para o cliente. O endereço não pode viajar nela.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const { event, byActivity: onlineRooms } = applyOnlineRoomVisibility(
+    publicEvent,
+    await resolveOnlineRoomViewer({
+      tenantId: tenant.tenantId,
+      eventId: publicEvent.id,
+      userId: viewer?.id ?? null,
+    }),
+  );
 
   const minhaAgenda = viewer
     ? await getMyAgenda({
@@ -246,6 +286,7 @@ export default async function PublicEventPage({
       happeningNow={happeningNow}
       activeTab={parseTab(aba)}
       canOperateCounter={canOperateCounter}
+      onlineRooms={onlineRooms}
     />
   );
 }

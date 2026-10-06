@@ -565,6 +565,8 @@ async function SegmentsPanel({
           eventId: state.eventId,
           definition: composition.definition,
           limit: PREVIEW_LIMIT,
+          /** A TELA quer entender por que alguém não recebe; o disparo não pergunta. */
+          withUnsubscribeReasons: true,
         })
       : null;
 
@@ -831,11 +833,27 @@ async function SegmentsPanel({
             </p>
 
             {evaluation.unsubscribed > 0 ? (
-              <p className="text-sm text-muted-foreground" data-testid="segment-unsubscribed">
-                {evaluation.unsubscribed} de {evaluation.count + evaluation.unsubscribed} saíram do canal
-                desta instituição e <strong className="font-medium">não recebem</strong> — a contagem
-                acima já é sem elas.
-              </p>
+              <div className="space-y-1" data-testid="segment-unsubscribed">
+                <p className="text-sm text-muted-foreground">
+                  {evaluation.unsubscribed} de {evaluation.count + evaluation.unsubscribed} saíram do canal
+                  desta instituição e <strong className="font-medium">não recebem</strong> — a contagem
+                  acima já é sem elas.
+                </p>
+                {/**
+                 * O MOTIVO DE QUEM SAIU (E88).
+                 *
+                 * A frase vem pronta do domínio: quantos motivos cabem, em que ordem e
+                 * o que dizer de quem saiu sem responder são regras de LEITURA, com
+                 * teste próprio. Ela só aparece quando alguém saiu, e o texto livre do
+                 * pedido por telefone entra na mesma linha — é o dado que a equipe veio
+                 * buscar, e ele nasce de dois caminhos diferentes.
+                 */}
+                {evaluation.unsubscribeReasons ? (
+                  <p className="text-sm text-muted-foreground" data-testid="segment-unsubscribe-reasons">
+                    Motivos de quem saiu: {evaluation.unsubscribeReasons}.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             <div className="space-y-1.5">
