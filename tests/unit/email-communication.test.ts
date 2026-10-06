@@ -246,6 +246,19 @@ const PAYLOADS: { [K in EmailTemplateKey]: EmailPayloads[K] } = {
     daysLate: 3,
     demandUrl: 'http://localhost:3000/t/ufba/administracao/eventos/e1/demandas/d2',
   },
+  /**
+   * FASE 67 — a campanha segmentada. O assunto e o corpo são do ORGANIZADOR: o
+   * template só monta, e o texto passa pelo escape (é ele que impede a campanha de
+   * virar HTML no cliente de e-mail de outra pessoa).
+   */
+  CAMPAIGN_MESSAGE: {
+    recipientName: 'Ana Souza',
+    tenantName: 'Universidade Federal da Bahia',
+    subject: 'Sua vaga no minicurso ainda está reservada',
+    body: 'Falta pouco para o prazo de confirmação.\n\nPasse na secretaria com o comprovante.',
+    eventTitle: 'Congresso de Tecnologia 2026',
+    senderName: 'Administradora do Evento',
+  },
 };
 
 const CONTEXT = { brandName: 'Universidade Federal da Bahia' };
@@ -254,7 +267,8 @@ describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', ()
   it('cobre todos os templates do catálogo (enumeração exaustiva)', () => {
     /**
      * 11 da FASE 15/33 + 5 da confirmação de vaga (FASE 34) + 1 da decisão da proposta
-     * (FASE 36) + 4 das demandas internas (FASE 38) + 1 da troca de e-mail (FASE 47).
+     * (FASE 36) + 4 das demandas internas (FASE 38) + 1 da troca de e-mail (FASE 47)
+     * + 1 da campanha segmentada (FASE 67).
      *
      * ─────────────────────────────────────────────────────────────────────────────
      *  A LISTA É EXPLÍCITA, E O `tests/**` NÃO PASSA PELO `typecheck`
@@ -266,7 +280,7 @@ describe('templates de e-mail — todo tipo renderiza assunto, HTML e texto', ()
      *  passou despercebido até alguém contar os templates. Por isso a contagem é
      *  afirmada aqui, explicitamente.
      */
-    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(22);
+    expect(EMAIL_TEMPLATE_KEYS).toHaveLength(23);
 
     for (const key of EMAIL_TEMPLATE_KEYS) {
       expect(EMAIL_TEMPLATE_LABELS[key], `rótulo ausente para ${key}`).toBeTruthy();

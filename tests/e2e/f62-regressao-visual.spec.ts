@@ -18,6 +18,9 @@ import {
   publishTenantPublicPage,
   saveTenantPublicPageDraft,
 } from '../../src/lib/tenancy/tenant-public-page-write-service';
+import { unsubscribeUrlFor } from '../../src/lib/communication/unsubscribe-service';
+import { createCampaign, dispatchCampaign } from '../../src/lib/communication/campaign-service';
+import { composeSegment } from '../../src/domain/communication/segments';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -440,6 +443,45 @@ import {
  *
  *  Registrado aqui porque "regerar porque mudou o número" é indistinguível de "regerar
  *  para esconder uma regressão" sem esta frase.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O PREÇO PAGO NAS LINHAS DE BASE QUE JÁ EXISTIAM — FASE 67 (medido, item a item)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A fixture da FASE 67 acrescentou à MESMA instituição **uma atividade** (a "Oficina
+ *  dos segmentos") e **duas contas** (a organizadora da fixture e a participante do
+ *  descadastro). Três telas já existentes CONTAM esse dado, e a medição encontrou cada
+ *  diferença — nenhuma delas é de desenho:
+ *
+ *    • **painel** (claro e escuro) — o cartão "Atividades" foi de **1 para 6**: **23
+ *      pixels** diferentes no claro e **15** no escuro, na caixa do dígito. Foram as
+ *      duas linhas de base regeradas;
+ *    • **diretório de participantes** (claro e escuro) — a lista é a UNIÃO de vínculo e
+ *      inscrição, então as duas contas novas ganharam linha: **989** e **1004** pixels,
+ *      na região da tabela. Também regeradas;
+ *    • **aba "Acontecendo agora"** — o rodapé do evento conta as atividades do EVENTO:
+ *      "5 atividades · 9h de programação" virou **"6 atividades · 10h"** — **781
+ *      pixels** medidos. Aqui o conteúdo mudou e o PIXEL não: com a oficina em outro
+ *      evento, o rodapé voltou ao que era e o arquivo da linha de base saiu **idêntico**
+ *      da regeração (o `git status` não o lista como modificado) — a linha de base não
+ *      foi tocada.
+ *
+ *  E **duas linhas de base foram DEFENDIDAS em vez de regeradas** — as duas por
+ *  fixture, e não por teste:
+ *
+ *    • **"minha agenda"** (claro e escuro) — a primeira versão da fixture pendurou a
+ *      oficina no evento da vitrine, e a agenda passou a medi-la (3 itens, 2 inscritas
+ *      e 3 choques). Ajustar horários para o número voltar virou caça ao resultado: o
+ *      conserto foi a oficina ir para um **evento só dela**, e os números da FASE 65
+ *      ficaram intactos (**zero pixel**);
+ *    • **página pública da instituição** (claro e escuro) — com o evento dos segmentos
+ *      publicado, ele entrava em "Em breve" (ou, com janela fixa, em "Edições
+ *      anteriores") ao lado do evento da vitrine, e a imagem piscava **1.886 pixels**
+ *      (os dois títulos começam por "Mostra de"). O evento dos segmentos nasce
+ *      **RASCUNHO**, e rascunho não aparece em grupo nenhum: **zero pixel**.
+ *
+ *  As **8 linhas de base** tocadas foram medidas com a caixa dos pixels diferentes, e a
+ *  conferência de estabilidade — duas execuções seguidas com **zero pixel** de
+ *  diferença nas 21 — está no documento da fase. O que NÃO mudou: o desenho.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -512,6 +554,17 @@ let idDaConta: string;
 let eventoId: string;
 /** O `slug` do mesmo evento: a aba do "agora" é uma URL pública, sem `evento=<id>`. */
 let eventoSlug: string;
+/**
+ * A atividade e o token da FASE 67.
+ *
+ * A atividade é da MESMA instituição e o titular da conta fica inscrito nela: é o que
+ * faz a aba "Segmentos" ter RESULTADO (contagem 1 e uma pessoa na prévia) em vez do
+ * estado vazio. O token é o endereço de descadastro do titular — derivado, e não
+ * inventado: é o mesmo que o rodapé do e-mail leva.
+ */
+let atividadeDosSegmentosId: string;
+let eventoDosSegmentosId: string;
+let TOKEN_DE_DESCADASTRO: string;
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -558,9 +611,27 @@ const GRADE_INTERNA = {
   endsAt: new Date('2099-03-10T14:00:00.000Z'),
 } as const;
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A ATIVIDADE DA FASE 67 NÃO ENTRA NA GRADE — E ESSA É A LIÇÃO (FASE 67)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A primeira versão da fixture da FASE 67 pendurou a "Oficina dos segmentos" no
+ *  evento da vitrine, e a "minha agenda" passou a medi-la: o resumo foi para 3 itens,
+ *  2 inscritas e **3 choques** (a grade longa contém a oficina E a palestra, e a
+ *  palestra contém a oficina). Ajustar horários para o número voltar a 1 virou uma
+ *  caça ao resultado: o problema não era o horário, era a atividade estar no evento
+ *  que a linha de base mede. O conserto é de FIXTURE — a oficina nasce num **evento só
+ *  dela** (ver `eventoSegmentos` no `beforeAll`) —, e nenhuma asserção de agenda, de
+ *  choque ou de contagem do evento precisou mudar.
+ *
+ *  Por isso NÃO existe constante de janela para ela aqui: os instantes da oficina são
+ *  do evento dela, e nenhuma tela desta suíte imprime data desse evento.
+ */
+
 /** Os títulos são fixos (sem `RUN_ID`): é o que permite a linha de base não ter máscara. */
 const EVENTO_FUTURO_TITULO = 'Mostra de Arte e Ciência';
 const EVENTO_ANTIGO_TITULO = 'Bienal do Recôncavo';
+const EVENTO_DOS_SEGMENTOS_TITULO = 'Mostra de Extensão';
 /** A sala da grade — o nome dela é impresso no item, então ele também é fixo. */
 const SALA_DA_GRADE = 'Sala de oficinas';
 /** A sala da atividade em curso, na aba do agora (é o nome do grupo). */
@@ -847,6 +918,128 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       slug: `abertura-${RUN_ID}`,
       title: 'Mesa de abertura',
     });
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A FIXTURE DA FASE 67 (fatias 2 e 3) — o segmento com resultado e o token
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A atividade é do MESMO evento da vitrine, e o titular da conta fica inscrito
+     *  nela com `status: CONFIRMED` (o estado que o construtor `inscrito-na-atividade`
+     *  seleciona). É o que faz a aba "Segmentos" desenhar a CONTAGEM, as FRASES e a
+     *  PRÉVIA com uma pessoa — uma aba sem resultado desenharia o estado vazio e a
+     *  linha de base registraria uma tela que ninguém usa.
+     *
+     *  A inscrição vai pelo banco dentro do contexto da instituição, como o resto das
+     *  fixtures de inscrição deste arquivo (o caminho da tela tem spec próprio).
+     */
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A ATIVIDADE DA FASE 67 MORA NUM EVENTO SÓ DELA — E ISSO FOI MEDIDO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A aba "Segmentos" precisa de UMA atividade com UMA pessoa inscrita, e a
+     *  primeira versão desta fixture pendurou essa atividade no evento da vitrine. Duas
+     *  linhas de base pagaram por isso, e cada uma ensinou uma coisa:
+     *
+     *    • **"minha agenda"** — a oficina passou a aparecer na grade, e com ela o
+     *      resumo foi para 3 itens, 2 inscritas e **3 choques** (a grade longa contém a
+     *      oficina E a palestra, e a palestra contém a oficina). Ajustar horários para
+     *      não chocar virou uma caça ao número: o problema não era o horário, era a
+     *      atividade estar NO evento que a linha de base mede;
+     *    • **"acontecendo agora"** — o rodapé do evento conta as atividades dele
+     *      ("6 atividades · 10h de programação" no lugar de "5 · 9h").
+     *
+     *  O conserto é de FIXTURE, não de teste: a atividade (e o evento dela) nasce fora
+     *  do evento da vitrine, e a linha de base volta a medir exatamente o que media —
+     *  sem mexer em nenhuma asserção de agenda, de choque ou de contagem do evento.
+     *  O que a fase precisava provar (um segmento com resultado e um histórico com uma
+     *  campanha) continua provado: a aba "Segmentos" aponta para este evento.
+     */
+    const eventoSegmentos = await createEvent({
+      tenantId: tenant.id,
+      slug: `segmentos-${RUN_ID}`,
+      title: EVENTO_DOS_SEGMENTOS_TITULO,
+      /**
+       * ───────────────────────────────────────────────────────────────────────────
+       *  RASCUNHO DE PROPÓSITO — É O QUE MANTÉM A VITRINE INTACTA (ver o cabeçalho)
+       * ───────────────────────────────────────────────────────────────────────────
+       *  Rascunho não aparece em grupo nenhum da página da instituição, e a aba
+       *  "Segmentos" não exige evento publicado: o recorte dela é por FATOS. Assim este
+       *  evento existe só para hospedar a atividade e a inscrição que a fase prova, e
+       *  as duas linhas de base da vitrine continuam medindo os mesmos cartões.
+       */
+      status: 'DRAFT',
+      capacity: 50,
+    });
+
+    await fixarJanela({ tenantId: tenant.id, eventId: eventoSegmentos.id, ...JANELA_ANTIGA });
+
+    const atividadeDosSegmentos = await createActivity({
+      tenantId: tenant.id,
+      eventId: eventoSegmentos.id,
+      slug: `oficina-${RUN_ID}`,
+      title: 'Oficina dos segmentos',
+      startsAtOffsetDays: 30,
+      workloadMinutes: 60,
+    });
+
+    atividadeDosSegmentosId = atividadeDosSegmentos.id;
+    eventoDosSegmentosId = eventoSegmentos.id;
+
+    await inscreverNaAtividade({
+      tenantId: tenant.id,
+      eventId: eventoSegmentos.id,
+      activityId: atividadeDosSegmentosId,
+      userId: idDaConta,
+    });
+
+    /**
+     * ── UMA CAMPANHA JÁ DISPARADA ─────────────────────────────────────────────────
+     *  O HISTÓRICO é metade do desenho da aba, e uma lista vazia desenharia o
+     *  `EmptyState`. A campanha nasce pelos serviços REAIS (`composeSegment` +
+     *  `createCampaign` + `dispatchCampaign`) — o mesmo caminho da tela —, e o
+     *  segmento é o mesmo da URL do teste 20: assim o que a imagem mede é coerente
+     *  com o que ela afirma.
+     *
+     *  O limitador de ritmo é injetado porque o padrão é o Redis da FASE 13, e o que
+     *  este arquivo quer é o DESENHO da linha do histórico, não o comportamento do
+     *  limitador (esse tem prova própria no E2E da fase).
+     */
+    const definicao = composeSegment({
+      conditions: [{ id: 'inscrito-na-atividade', params: { atividade: atividadeDosSegmentosId } }],
+    });
+
+    if (!definicao.ok) throw new Error(`Segmento inválido na fixture: ${definicao.message}`);
+
+    const campanha = await createCampaign({
+      tenantId: tenant.id,
+      actorId: idDaConta,
+      eventId: eventoDosSegmentosId,
+      definition: definicao.definition,
+      subject: 'Material da oficina dos segmentos',
+      body: 'O material já está no portal do participante.',
+    });
+
+    if (!campanha.ok) throw new Error(`Falha ao criar a campanha da fixture: ${campanha.message}`);
+
+    const disparo = await dispatchCampaign({
+      tenantId: tenant.id,
+      campaignId: campanha.campaignId,
+      actorId: idDaConta,
+      rateLimit: { async consume() { return { allowed: true, retryAfter: null }; } },
+      wait: async () => {},
+    });
+
+    if (!disparo.ok) throw new Error(`Falha ao disparar a campanha da fixture: ${disparo.message}`);
+
+    const endereco = unsubscribeUrlFor({
+      tenantSlug: tenant.slug,
+      tenantId: tenant.id,
+      userId: idDaConta,
+    });
+
+    if (!endereco) throw new Error('Não foi possível derivar o endereço de descadastro.');
+
+    TOKEN_DE_DESCADASTRO = endereco.split('/').pop() ?? '';
 
     /**
      * ─────────────────────────────────────────────────────────────────────────────
@@ -1419,7 +1612,22 @@ async function abrirPaginaDaInstituicao(page: Page, tema: 'claro' | 'escuro'): P
   await expect(page.getByTestId('tenant-events-fallback')).toHaveCount(0);
   await expect(page.getByTestId('tenant-page-title')).toHaveText(TENANT_NAME);
 
-  /** O cartão de evento dos DOIS grupos que têm conteúdo — e o período, já escrito. */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A VITRINE CONTINUA COM OS MESMOS CARTÕES — E O EVENTO DOS SEGMENTOS NÃO ENTRA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O evento que hospeda a atividade da aba "Segmentos" nasce **RASCUNHO** (ver o
+   *  `beforeAll`), e é por isso que a vitrine não muda: rascunho não aparece em grupo
+   *  nenhum. As duas tentativas anteriores pagaram por esta linha, e cada uma ensinou
+   *  uma coisa: com a janela "daqui a N dias" do helper, o evento caía em "Em breve" e
+   *  a imagem piscava (1.886 pixels, com os dois títulos começando por "Mostra de"); com
+   *  a janela fixa de 2000, ele caía em "Edições anteriores" e o grupo passava a ter
+   *  dois cartões.
+   *
+   *  A régua desta linha de base é a mesma de sempre: **um cartão por grupo que tem
+   *  conteúdo** — o de cima com o título do evento da vitrine e o de baixo com o da
+   *  edição passada.
+   */
   await expect(
     page.getByTestId('tenant-group-upcoming').getByTestId('tenant-event-card'),
   ).toContainText(EVENTO_FUTURO_TITULO);
@@ -1498,16 +1706,30 @@ async function abrirMinhaAgenda(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { level: 1, name: 'Minha agenda' })).toBeVisible();
   await expect(page.getByTestId('minha-agenda')).toBeVisible();
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  ESTA LINHA DE BASE NÃO FOI REGERADA NA FASE 67 — E ISSO É O RESULTADO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A primeira versão da fixture da FASE 67 pendurou a atividade da aba "Segmentos"
+   *  NESTE evento, e a agenda passou a medi-la: 3 itens, 2 inscritas e 3 choques. O
+   *  conserto foi de FIXTURE — a oficina foi para um **evento só dela** (ver
+   *  `eventoSegmentos`) —, e é por isso que os números abaixo continuam sendo os da
+   *  FASE 65: a linha de base desta tela mede o MESMO desenho de antes.
+   */
   await expect(page.getByTestId('resumo-itens')).toHaveText('2');
   await expect(page.getByTestId('resumo-inscritas')).toHaveText('1');
   await expect(page.getByTestId('resumo-favoritas')).toHaveText('1');
   await expect(page.getByTestId('resumo-choques')).toHaveText('1');
 
   /**
-   * As duas marcas, uma em cada CARTÃO. O seletor pede `li[data-mark]` de propósito:
-   * o `data-mark` também existe no interior do cartão (o distintivo da marca), e
-   * perguntar pelo atributo solto contaria o cartão e o distintivo — o teste passaria a
-   * medir quantos elementos têm a marca, e não quantos itens da grade são de cada tipo.
+   * As duas marcas na grade. O seletor pede `li[data-mark]` de propósito: o
+   * `data-mark` também existe no interior do cartão (o distintivo da marca), e
+   * perguntar pelo atributo solto contaria o cartão E o distintivo — o teste passaria
+   * a medir quantos elementos têm a marca, e não quantos itens da grade são de cada
+   * tipo.
+   *
+   * Com a oficina da FASE 67 em OUTRO evento, os inscritos continuam sendo **um** (o
+   * minicurso) e o favorito, **um** — os números da FASE 65, intactos.
    */
   await expect(page.locator('li[data-mark="INSCRITO"]')).toHaveCount(1);
   await expect(page.locator('li[data-mark="FAVORITO"]')).toHaveCount(1);
@@ -1645,6 +1867,157 @@ test.describe('aba "acontecendo agora"', () => {
         /** 4. O "a seguir nesta sala": ele imprime a hora de início da próxima. */
         page.locator('[data-testid^="agora-proxima-"]'),
       ],
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  A ABA "SEGMENTOS" E A PÁGINA DE DESCADASTRO (FASE 67) — duas linhas de base
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  O QUE ELAS MEDEM, E POR QUE CADA UMA ENTRA
+//  ─────────────────────────────────────────────────────────────────────────────
+//    • **a aba "Segmentos"** — o formulário `GET` com os campos que o catálogo
+//      declara (os `fieldset` por condição, o `grid` de duas colunas por parâmetro),
+//      o cartão do resultado com a contagem, as frases e a prévia, o bloco da
+//      mensagem e o HISTÓRICO de campanhas com as frases congeladas. É a tela mais
+//      DENSA da fase, e densidade é onde o layout quebra primeiro (o mesmo argumento
+//      que trouxe o diretório de participantes para esta suíte);
+//    • **a página de descadastro** — a única tela da fase que a PESSOA abre de um
+//      e-mail, sem sessão. Ela desenha dois cartões de promessa, o bloco de situação
+//      e os dois formulários de ação; nem a página nem a aba tinham imagem.
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  AS MÁSCARAS, E A MEDIÇÃO QUE DECIDIU CADA UMA
+//  ─────────────────────────────────────────────────────────────────────────────
+//  A regra do arquivo é separar DADO de DESENHO, e as duas telas têm dado que muda:
+//
+//    • o NOME de quem recebe (o titular da conta, cujo nome carrega o `RUN_ID`) —
+//      mascarado onde ele aparece desenhado (o cartão da prévia da lista);
+//    • a DATA de cada campanha no histórico — e é ela que quase excluiu esta tela,
+//      pela régua que o arquivo já usa ("data que muda todo dia não é regressão
+//      visual"). O que a salvou foi a máscara ser de CAIXA ESTÁVEL: a célula da data
+//      tem a mesma largura em toda execução, então tapá-la esconde o dia e continua
+//      medindo o desenho da linha (a lição das quatro máscaras da aba do "agora":
+//      máscara de nó que muda de tamanho empurra o vizinho e denuncia a si mesma);
+//    • o ENDEREÇO de descadastro do formulário é `hidden` — não desenha pixel nenhum,
+//      então não há o que mascarar (e o token não aparece no HTML renderizado).
+//
+//  A MEDIÇÃO ESTÁ NO DOCUMENTO DA FASE (`docs/fase-67-mala-direta-por-fatos.md`): as
+//  duas linhas de base foram geradas e conferidas com `maxDiffPixelRatio: 0` — duas
+//  execuções seguidas deram ZERO pixel de diferença. Sem isso elas não entrariam: o
+//  que este arquivo não aceita é linha de base que pisca.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** O endereço de descadastro da dona da conta — o mesmo caminho que o e-mail leva. */
+async function abrirDescadastro(page: Page): Promise<void> {
+  await page.goto(`/t/${tenantSlug}/descadastro/${TOKEN_DE_DESCADASTRO}`);
+
+  await expect(page.getByTestId('unsubscribe-state')).toBeVisible();
+  await expect(page.getByTestId('unsubscribe-state-value')).toHaveAttribute('data-out', 'false');
+  await expect(page.getByTestId('unsubscribe-keeps-list')).toContainText('Certificado');
+
+  await estabilizar(page);
+}
+
+/** A aba "Segmentos" com um segmento MONTADO e COM RESULTADO (a definição vai na URL). */
+async function abrirSegmentos(page: Page): Promise<void> {
+  const query = new URLSearchParams({
+    aba: 'segmentos',
+    segmento: '1',
+    evento: eventoDosSegmentosId,
+    c0: 'inscrito-na-atividade',
+    p0_atividade: atividadeDosSegmentosId,
+  });
+
+  await page.goto(`/t/${tenantSlug}/administracao/comunicacao?${query.toString()}`);
+
+  await expect(page.getByTestId('communication-tab-segmentos')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(page.getByTestId('segment-count')).toHaveText('1');
+  await expect(page.getByTestId('segment-explanation')).toContainText('Quem está inscrito');
+  await expect(page.getByTestId('segment-people')).toBeVisible();
+
+  await estabilizar(page);
+}
+
+test.describe('comunicação segmentada e descadastro', () => {
+  test.use({ viewport: DESKTOP });
+
+  test('20. a aba "Segmentos" com um segmento montado', async ({ page }) => {
+    await preparar(page, { tema: 'claro' });
+    await abrirSegmentos(page);
+
+    await expect(page).toHaveScreenshot('comunicacao-segmentos.png', {
+      ...TOLERANCIA,
+      fullPage: true,
+      mask: [
+        /** 1. O e-mail de quem está logado, na barra lateral (carrega o `RUN_ID`). */
+        mascaraDoEndereco(barraLateral(page)),
+        /** 2. O bloco do nome na PRÉVIA da lista. */
+        page.getByTestId('segment-people'),
+        /**
+         * 3. A LINHA INTEIRA do carimbo da campanha no histórico (`campaign-meta`).
+         *
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  POR QUE A MÁSCARA CRESCEU ATÉ A LINHA — E ISSO FOI MEDIDO (FASE 67)
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  A primeira versão mascarava só o `<span>` da data, e ela **piscava**: o texto
+         *  do carimbo tem largura variável (`10/03/2126, 14:05` e `…
+         *  09:05` não medem o mesmo), a CAIXA da máscara acompanhava, e a linha de base
+         *  acusava 1.143 a 2.041 pixels de diferença entre execuções — sempre dentro do
+         *  carimbo. É a lição das quatro máscaras da aba do "agora" cobrada de novo:
+         *  **máscara de nó que muda de tamanho é máscara que se mexe**.
+         *
+         *  A linha inteira é uma caixa ESTÁVEL (quem manda na altura e na largura é o
+         *  `text-xs` do parágrafo, não o conteúdo), então o desenho da linha continua
+         *  medido e o dado sai tapado. O que ela esconde junto é o AUTOR — nome de
+         *  fixture, fixo, e que aparece na imagem apenas como caixa magenta.
+         */
+        page.getByTestId('campaign-meta'),
+        /**
+         * 4. A FRASE CONGELADA da campanha (`campaign-explanation`) — a única linha da
+         *    imagem que ainda piscava depois da máscara 3 (medido: **31 pixels**, uma
+         *    faixa de ~1 px de altura no meio do texto). O que sobra de variável ali é a
+         *    quebra de linha do próprio texto do organizador, e o que a imagem mede de
+         *    valor na linha da campanha é o DESENHO dela — a etiqueta de situação, os
+         *    números e o botão de reenvio, que continuam fora da máscara.
+         */
+        page.getByTestId('campaign-explanation'),
+        /**
+         * 5. A LINHA DOS NÚMEROS da campanha (`campaign-counts`) — e a decisão aqui é
+         *    declarada, porque ela custa medição.
+         *
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  POR QUE ESTA MÁSCARA CRESCEU ATÉ A LINHA INTEIRA (FASE 67 · medido)
+         * ─────────────────────────────────────────────────────────────────────────────
+         *  A primeira versão mascarava só o `<li>` do instante da última passada, e a
+         *  linha de base continuou acusando **44 pixels** — sempre depois do fim do
+         *  `<li>` mascarado. Em vez de mascarar mais um nó e continuar caçando pixel, a
+         *  leitura é feita: o que esta linha imprime é **número de fixture mais carimbo
+         *  de relógio**, e o carimbo muda a cada execução. Os NÚMEROS dessa linha são
+         *  provados por asserção (o E2E da fase prende "Selecionados: N" e "No outbox: N"
+         *  no histórico, e o portão de acessibilidade varre a mesma linha), então o que
+         *  a imagem perde aqui é um número — e o que ela MANTÉM é a linha, a altura e o
+         *  desenho da campanha.
+         *
+         *  É a mesma separação de sempre (dado × desenho), aplicada com o número à mão.
+         */
+        page.getByTestId('campaign-counts'),
+      ],
+    });
+  });
+
+  test('21. a página de descadastro', async ({ page }) => {
+    await preparar(page, { tema: 'claro' });
+    await abrirDescadastro(page);
+
+    await expect(page).toHaveScreenshot('descadastro.png', {
+      ...TOLERANCIA,
+      fullPage: true,
+      mask: [mascaraDoEndereco(barraLateral(page))],
     });
   });
 });

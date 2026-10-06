@@ -64,6 +64,10 @@ import {
   publishTenantPublicPage,
   saveTenantPublicPageDraft,
 } from '../../src/lib/tenancy/tenant-public-page-write-service';
+import {
+  unsubscribePerson,
+  unsubscribeUrlFor,
+} from '../../src/lib/communication/unsubscribe-service';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'acessibilidade';
@@ -322,7 +326,17 @@ async function expectNoCriticalViolations(page: Page, tela: string): Promise<{ i
 //  vínculo E papel — vínculo sem papel não chega ao painel; lição da FASE 25).
 // ───────────────────────────────────────────────────────────────────────────────
 let tenantSlug: string;
+/**
+ * O `id` da instituição da fixture.
+ *
+ * O `createTenant` do helper devolve o `id`, mas o endereço de descadastro precisa
+ * dele FORA do `beforeAll` — e guardá-lo aqui evita uma segunda leitura do banco (e
+ * uma consulta a `tenant` fora do contexto de instituição) no meio do caso.
+ */
+let tenantId: string;
 let adminEmail: string;
+/** O `id` da administradora — é ela que a fixture da FASE 67 inscreve na atividade. */
+let adminId: string;
 /** O evento do quadro de demandas (FASE 57) e a pessoa que o administra. */
 let eventId: string;
 /** A conta de PLATAFORMA: a fila de denúncias só abre para SuperAdmin (FASE 56 · E62). */
@@ -480,9 +494,11 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     });
 
     tenantSlug = tenant.slug;
+    tenantId = tenant.id;
 
     const admin = await signUpVia(api, 'Administradora Acessível');
     adminEmail = admin.email;
+    adminId = admin.id;
 
     await linkUser({ userId: admin.id, tenantId: tenant.id, kind: 'MEMBER' });
     await grantRole({ userId: admin.id, tenantId: tenant.id, role: 'ADMIN', scope: 'TENANT' });
@@ -1259,8 +1275,160 @@ test.describe('telas autenticadas', () => {
     );
   });
 
-  test('o diretório de participantes não tem violação crítica', async ({ page }) => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A ABA "SEGMENTOS" E A PÁGINA DE DESCADASTRO ENTRAM NO PORTÃO (FASE 67)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A fase entregou duas superfícies novas, e nenhuma das duas tinha varredura:
+   *
+   *    • **a aba "Segmentos"** (`?aba=segmentos`) — o formulário `GET` com os campos
+   *      que o CATÁLOGO declara (seleção, data, hora, número), o resultado com as
+   *      frases explicativas, a prévia da lista e o passo de confirmação. É a tela
+   *      mais densa da fase, e é onde rótulo ausente e contraste fora do token
+   *      aparecem;
+   *    • **a página de descadastro** (`/t/<slug>/descadastro/<token>`, SEM LOGIN) —
+   *      a tela que a pessoa abre de um e-mail. É pública e é acessível por qualquer
+   *      um que tenha o endereço, então ela é a superfície mais exposta da fase.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE OS CASOS AFIRMAM O CONTEÚDO ANTES DE VARRER
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O `axe` mede o que está no DOM, e "a tela esvaziou" não é violação de regra
+   *  nenhuma. Sem as asserções, uma aba que perdesse o resultado — ou uma página que
+   *  não desenhasse os dois blocos da promessa — passaria IGUAL, e o portão estaria
+   *  medindo uma tela que ninguém usa.
+   *
+   *  O segmento entra MONTADO (a definição vai na URL, que é como a tela funciona) e
+   *  COM RESULTADO: a administradora está inscrita na atividade da fixture, então a
+   *  contagem é 1 e a lista tem uma pessoa. Um segmento sem resultado desenharia o
+   *  estado vazio e nenhuma das frases.
+   */
+  test('a aba "Segmentos" da comunicação não tem violação crítica', async ({ page }) => {
     await signInAs(page, adminEmail);
+
+    const query = new URLSearchParams({
+      aba: 'segmentos',
+      segmento: '1',
+      evento: eventId,
+      c0: 'inscrito-na-atividade',
+      p0_atividade: atividadeInternaId,
+    });
+
+    await page.goto(`/t/${tenantSlug}/administracao/comunicacao?${query.toString()}`);
+
+    /** A aba certa está ativa, e a caixa de saída continua ao lado. */
+    await expect(page.getByTestId('communication-tab-segmentos')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+
+    /** O formulário com os campos que o CATÁLOGO declara — e o resultado com frases. */
+    await expect(page.getByTestId('segment-form')).toBeVisible();
+    await expect(page.locator('select[name="p0_atividade"]')).toBeVisible();
+    await expect(page.getByTestId('segment-count')).toHaveText('1');
+    await expect(page.getByTestId('segment-explanation')).toContainText(
+      'Quem está inscrito na atividade',
+    );
+    await expect(page.getByTestId('segment-people')).toBeVisible();
+
+    /**
+     * O bloco dos MARCADORES é a peça de texto novo da fatia 3 (`{nome}`,
+     * `{instituicao}`, `{evento}`), e ele só existe porque o formulário está na tela.
+     */
+    await expect(page.getByTestId('segment-marker-note')).toContainText('{nome}');
+    await expect(page.getByTestId('segment-template-note')).toContainText('descadastro');
+
+    await expectNoCriticalViolations(
+      page,
+      `aba "segmentos" da comunicação (/t/${tenantSlug}/administracao/comunicacao?aba=segmentos)`,
+    );
+  });
+
+  /**
+   * A PÁGINA DE DESCADASTRO, NOS DOIS ESTADOS (FASE 67 · fatia 3).
+   *
+   * É a tela SEM LOGIN: quem a abre vem de um e-mail, muitas vezes sem nunca ter
+   * entrado na plataforma. Ela desenha o bloco de situação, os DOIS blocos da
+   * promessa (o que para e o que continua) e os formulários — o de saída e o de
+   * volta. Nada disso tinha histórico de varredura.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE SÃO DOIS CASOS, E NÃO UM
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Os dois estados desenham DOM DIFERENTE, e a diferença não é cosmética: quem
+   *  está DENTRO vê o formulário de saída e o caminho de volta avulso; quem está
+   *  FORA vê a data em que saiu (`unsubscribe-since`) e o bloco "Voltar a receber"
+   *  no lugar do de confirmação. Um caso só mediria metade dos nós que a fase criou
+   *  — e o estado "fora" é justamente o que a pessoa encontra quando volta ao
+   *  endereço, que é o uso mais comum de uma página de descadastro.
+   *
+   * O endereço é DERIVADO pelo serviço (`unsubscribeUrlFor`), com o token de
+   * verdade: é o mesmo endereço que o rodapé do e-mail leva, porque o token é
+   * determinístico por (instituição, pessoa).
+   */
+  test('a página de descadastro (recebendo) não tem violação crítica', async ({ page }) => {
+    const endereco = unsubscribeUrlFor({ tenantSlug, tenantId, userId: adminId });
+
+    if (!endereco) throw new Error('Não foi possível derivar o endereço de descadastro.');
+
+    await page.goto(endereco);
+
+    await expect(page.getByTestId('unsubscribe-state')).toBeVisible();
+    await expect(page.getByTestId('unsubscribe-state-value')).toHaveAttribute('data-out', 'false');
+
+    /** Os dois blocos da promessa — o que a página existe para dizer. */
+    await expect(page.getByTestId('unsubscribe-what-stops')).toContainText('recados em massa');
+    await expect(page.getByTestId('unsubscribe-keeps-list')).toContainText('Certificado');
+
+    /** E os dois formulários, os dois no DOM: sair e voltar a receber. */
+    await expect(page.getByTestId('unsubscribe-form')).toBeVisible();
+    await expect(page.getByTestId('resubscribe-form')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `página de descadastro, recebendo (/t/${tenantSlug}/descadastro/<token>)`,
+    );
+  });
+
+  test('a página de descadastro (fora da lista) não tem violação crítica', async ({ page }) => {
+    const saida = await unsubscribePerson({
+      tenantId,
+      userId: adminId,
+      channel: 'MANUAL',
+      reason: 'Fixture da varredura de acessibilidade da FASE 67.',
+    });
+
+    if (!saida.ok) throw new Error(`Falha ao descadastrar a fixture: ${saida.message}`);
+
+    const endereco = unsubscribeUrlFor({ tenantSlug, tenantId, userId: adminId });
+    if (!endereco) throw new Error('Não foi possível derivar o endereço de descadastro.');
+
+    await page.goto(endereco);
+
+    await expect(page.getByTestId('unsubscribe-state-value')).toHaveAttribute('data-out', 'true');
+    await expect(page.getByTestId('unsubscribe-since')).toBeVisible();
+    await expect(page.getByTestId('resubscribe-form')).toBeVisible();
+    await expect(page.getByTestId('unsubscribe-confirm-submit')).toHaveCount(0);
+
+    await expectNoCriticalViolations(
+      page,
+      `página de descadastro, fora da lista (/t/${tenantSlug}/descadastro/<token>)`,
+    );
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A ADMINISTRADORA FICA FORA DA LISTA ATÉ O FIM DO ARQUIVO — E ISSO É INÓCUO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O que o descadastro muda é só o que uma CAMPANHA alcança; nenhuma das outras
+     *  telas deste arquivo consulta essa condição (nem a caixa de saída, nem o
+     *  painel, nem o diretório). A varredura anterior, que mediria a aba "Segmentos"
+     *  com a pessoa fora, roda ANTES desta — e é isso que dá aos dois casos a
+     *  cobertura dos dois estados.
+     */
+    await expect(page.getByTestId('unsubscribe-state')).toBeVisible();
+  });
+
+  test('o diretório de participantes não tem violação crítica', async ({ page }) => {    await signInAs(page, adminEmail);
 
     await page.goto(`/t/${tenantSlug}/participantes`);
     await expect(page.getByRole('main').last()).toBeVisible();

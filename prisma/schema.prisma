@@ -588,6 +588,27 @@ enum InvitationStatus {
   REVOKED
 }
 
+/// Estado do ATO de uma campanha de comunicação segmentada (FASE 67 · fatia 1).
+///
+/// São três, e não mais: o que a operação precisa saber é "ainda não saiu", "está
+/// saindo" e "saiu". `SENDING` acumula duas funções, e as duas importam — é o
+/// estado que a tela mostra enquanto o disparo corre E é a exclusão mútua entre
+/// dois disparos da mesma campanha (a transição é um UPDATE condicional, não um
+/// lock; a mesma decisão do `job_runs` da FASE 36).
+///
+/// O que deu errado NÃO é um estado: é a coluna `error` (falha do disparo inteiro)
+/// e `failedCount` (destinatários que não entraram no outbox). Um quarto estado
+/// `FAILED` faria a campanha parcialmente enviada ter de escolher entre dizer
+/// "enviada" e "falhou" — e as duas seriam mentira.
+enum CampaignStatus {
+  /// Criada, ainda não disparada.
+  DRAFT
+  /// Disparo em andamento.
+  SENDING
+  /// Disparo concluído (com `failedCount`/`error` dizendo o que não saiu).
+  SENT
+}
+
 enum SponsorTierKey {
   DIAMOND
   GOLD
@@ -1055,6 +1076,10 @@ model Tenant {
   /// FASE 65 — favoritos do participante (a agenda pessoal do dia do evento).
   activityFavorites ActivityFavorite[]
 
+  /// FASE 67 — campanhas de comunicação segmentada e descadastros desta casa.
+  communicationCampaigns    CommunicationCampaign[]
+  communicationUnsubscribes CommunicationUnsubscribe[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -1317,6 +1342,11 @@ model User {
   invitationsSent      TenantInvitation[] @relation("TenantInvitationInvitedBy")
   /// Convites de equipe que esta pessoa aceitou — FASE 15.
   invitationsAccepted  TenantInvitation[] @relation("TenantInvitationAcceptedBy")
+
+  /// FASE 67 — campanhas de comunicação segmentada que esta pessoa disparou.
+  campaignsCreated CommunicationCampaign[] @relation("CampaignCreatedBy")
+  /// FASE 67 — descadastros desta pessoa (um por instituição).
+  communicationUnsubscribes CommunicationUnsubscribe[]
 
   /// Demandas internas que esta pessoa criou — FASE 38.
   demandsCreated       Demand[]          @relation("DemandCreatedBy")  /// Demandas atribuídas a esta pessoa — FASE 38.
@@ -1665,6 +1695,9 @@ model Event {
   demands              Demand[]
   /// Equipes que executam as demandas deste evento — FASE 38.
   eventTeams           EventTeam[]
+
+  /// FASE 67 — campanhas de comunicação segmentada deste evento.
+  communicationCampaigns CommunicationCampaign[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -3945,6 +3978,157 @@ model TenantInvitation {
   @@index([tokenHash])
   @@index([email])
   @@map("tenant_invitations")
+}
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  CAMPANHA DE COMUNICAÇÃO SEGMENTADA (FASE 67 · fatia 1)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  A CAMPANHA É O REGISTRO DO ATO, E NÃO A LISTA DE QUEM RECEBEU
+///  ─────────────────────────────────────────────────────────────────────────────
+///  Quem recebeu está no OUTBOX (`email_messages`), uma linha por destinatário —
+///  é lá que a entrega acontece e é de lá que a caixa de saída da instituição
+///  lê. Esta tabela guarda o ATO: quem disparou, quando, com que definição de
+///  segmento, com que texto e com que resultado.
+///
+///  `definition` é o SNAPSHOT DOS FATOS (`{ conditions: [{ id, params }], except }`),
+///  **nunca a lista de ids**. A diferença decide o que se consegue responder seis
+///  meses depois: com os fatos, a pergunta "por que esta pessoa recebeu?" tem
+///  resposta ("estava com a vaga retida na atividade X"); com a lista de ids, ela
+///  viraria arqueologia — e a lista ainda seria dado pessoal parado no banco.
+///
+///  `explanation` guarda as FRASES que o organizador leu antes de enviar,
+///  congeladas. O catálogo é código e vai mudar; sem o congelamento, a mesma
+///  campanha passaria a se explicar com o texto de outra versão do produto —
+///  a mesma razão do `bodyText` congelado do certificado (FASE 6).
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE O TEXTO MORA AQUI, SE A TELA É DE OUTRA FATIA
+///  ─────────────────────────────────────────────────────────────────────────────
+///  O disparo precisa de assunto e corpo para gravar a mensagem no outbox, e o
+///  outbox grava o HTML renderizado no momento do enfileiramento. Guardar o texto
+///  aqui é o que faz o reenvio de uma campanha reproduzir o que foi enviado em vez
+///  do rascunho de hoje.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model CommunicationCampaign {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+
+  /// Evento da campanha. NULO na campanha da instituição inteira — e é erro
+  /// avaliar uma condição que recorta por evento sem evento (`requiresEvent` no
+  /// catálogo de segmentos).
+  eventId String? @db.Uuid
+
+  /// Quem disparou. NULO quando a conta foi excluída: o ATO sobrevive a quem o
+  /// praticou (mesma escolha de `registrations.confirmedById`).
+  createdById String? @db.Uuid
+
+  /// O texto escrito pelo organizador, já validado no domínio.
+  subject String @db.VarChar(200)
+  body    String @db.Text
+
+  /// Os FATOS do segmento: `{ conditions, except }` com os parâmetros usados.
+  definition  Json     @default("{}")
+  /// As frases explicativas, congeladas no momento do disparo.
+  explanation String[] @default([])
+
+  status CampaignStatus @default(DRAFT)
+
+  /// A CONTAGEM do momento do envio — a mesma que a tela mostrou antes de enviar.
+  recipientCount Int @default(0)
+  /// Quantos entraram no outbox, quantos falharam e quantos saíram por descadastro.
+  reachedCount   Int @default(0)
+  failedCount    Int @default(0)
+  skippedCount   Int @default(0)
+
+  /// Falha do disparo INTEIRO (definição inválida, banco fora). A falha de UM
+  /// destinatário não é erro da campanha: ela vive no outbox, na linha dele.
+  error String? @db.VarChar(500)
+
+  startedAt  DateTime? @db.Timestamptz(6)
+  finishedAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event     Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("CampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// Descadastros que apontam para esta campanha ("por qual campanha a pessoa saiu").
+  unsubscribes CommunicationUnsubscribe[]
+
+  /// O HISTÓRICO da instituição: o que ela mandou, em ordem.
+  @@index([tenantId, createdAt])
+  /// "As campanhas deste evento" — a listagem da fatia 2 e a checagem de contexto.
+  @@index([tenantId, eventId, status])
+  /// Excluir a conta que criou não pode varrer a tabela (FK com SET NULL).
+  @@index([createdById])
+  @@map("communication_campaigns")
+}
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  DESCADASTRO DE UMA PESSOA NUMA INSTITUIÇÃO (FASE 67 · fatia 1)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  O DESCADSATRO É POR INSTITUIÇÃO, E NÃO DA PLATAFORMA
+///  ─────────────────────────────────────────────────────────────────────────────
+///  Quem sai da lista de uma casa continua recebendo o que é das outras: o vínculo
+///  com a instituição é o que dá contexto à mensagem, e "não quero mais receber da
+///  UFBA" não é "não quero mais receber de ninguém". É também o que faz a linha
+///  caber na RLS como qualquer outro dado de tenant.
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  UMA LINHA POR (INSTITUIÇÃO, PESSOA), COM O CAMINHO DE VOLTA
+///  ─────────────────────────────────────────────────────────────────────────────
+///  O índice único é TOTAL e a volta não apaga nada: `resubscribedAt` marca a
+///  volta e a linha continua contando a história (sair → voltar → sair de novo
+///  grava por cima, porque o que interessa à operação é o estado VIGENTE).
+///  Apagar a linha faria "quem já saiu alguma vez?" deixar de ter resposta.
+///
+///  `tokenHash` é SHA-256 do endereço da página sem login (fatia 3), pelo mesmo
+///  motivo do convite de equipe: o banco não guarda o segredo em claro, e o
+///  endereço é exibido uma vez, a quem acabou de sair.
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  POR QUE O TOKEN NÃO ENTRA NO RODAPÉ DO E-MAIL
+///  ─────────────────────────────────────────────────────────────────────────────
+///  A linha NASCE quando a pessoa sai — antes disso não há token a colocar numa
+///  mensagem enviada. O endereço do rodapé é decisão da fatia 3 (link assinado ou
+///  selado, gerado no disparo); o que esta tabela entrega é o FATO do descadastro,
+///  o canal por onde veio e o caminho de volta.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model CommunicationUnsubscribe {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  userId   String @db.Uuid
+
+  /// SHA-256 do token da página sem login que desfaz o descadastro (fatia 3).
+  tokenHash String @unique @db.Char(64)
+
+  /// Quando saiu, por qual campanha e por qual canal (`EMAIL` | `LINK` | `MANUAL`).
+  unsubscribedAt DateTime @default(now()) @db.Timestamptz(6)
+  campaignId     String?  @db.Uuid
+  channel        String   @default("EMAIL") @db.VarChar(16)
+  /// Motivo declarado pela pessoa, quando ela escreve um.
+  reason         String?  @db.VarChar(300)
+
+  /// O CAMINHO DE VOLTA: quando ela pediu para voltar a receber.
+  resubscribedAt DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign CommunicationCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  /// O estado VIGENTE de uma pessoa numa instituição é UMA linha.
+  @@unique([tenantId, userId])
+  /// A pergunta do disparo: "quem desta instituição está fora agora?".
+  @@index([tenantId, unsubscribedAt])
+  @@index([campaignId])
+  @@map("communication_unsubscribes")
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

@@ -185,6 +185,23 @@ export const TENANT_SCOPED_TABLES = [
    * `registrations` — favoritar não reserva vaga (ver o modelo no schema).
    */
   'activity_favorites',
+  /**
+   * FASE 67 — comunicação segmentada. As duas são dado da instituição, e por
+   * motivos diferentes:
+   *
+   *   • `communication_campaigns` guarda o ATO de enviar, com a definição do
+   *     segmento (os fatos e os parâmetros). A campanha de uma casa não pode ser
+   *     lida — nem disparada — a partir do contexto de outra;
+   *   • `communication_unsubscribes` guarda a decisão de uma PESSOA sobre receber
+   *     daquela instituição, com o hash do token que desfaz o descadastro. É dado
+   *     pessoal: vazá-lo entre casas diria a um organizador quem saiu da lista do
+   *     vizinho.
+   *
+   * Nenhuma das duas escreve no outbox por caminho próprio: o disparo usa o
+   * `email_messages` da FASE 15, que já está aqui.
+   */
+  'communication_campaigns',
+  'communication_unsubscribes',
 ];
 
 /**

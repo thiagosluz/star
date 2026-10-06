@@ -327,6 +327,42 @@ export interface EmailPayloads {
     daysLate: number;
     demandUrl: string;
   };
+
+  /**
+   * FASE 67 — a campanha segmentada: o texto é escrito pelo ORGANIZADOR.
+   *
+   * O assunto e o corpo chegam como DADO (validados no domínio, com tamanho
+   * limitado) e o corpo vai como parágrafo comum — `paragraph()` escapa. Isso é a
+   * diferença entre uma campanha e um vetor de injeção no e-mail de terceiros:
+   * quem escreve é a instituição, mas quem LÊ é gente de fora, e HTML de autoria
+   * livre não sai daqui.
+   *
+   * `eventTitle` é nulo na campanha da instituição inteira, e `senderName` é o
+   * nome de quem disparou (nulo quando a conta foi excluída) — os dois aparecem no
+   * rodapé da mensagem, que é onde a pessoa descobre de onde aquilo veio.
+   */
+  CAMPAIGN_MESSAGE: {
+    recipientName: string;
+    tenantName: string;
+    subject: string;
+    body: string;
+    eventTitle: string | null;
+    senderName: string | null;
+    /**
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O ENDEREÇO DE DESCADASTRO DESTA PESSOA (FASE 67 · fatia 3)
+     * ───────────────────────────────────────────────────────────────────────────
+     *  Obrigatório no TIPO e nulável no valor, de propósito: o campo faz parte do
+     *  contrato de quem monta a campanha (um `payload` que o esqueça não compila),
+     *  e o `null` declarado é o caminho legítimo de quem NÃO tem segredo
+     *  configurado no servidor — ou do teste que o organizador manda para si mesmo,
+     *  que não é uma campanha e não descadastraria ninguém.
+     *
+     *  Quando ele é nulo, o rodapé fala de descadastro SEM link e diz que o envio
+     *  está fora do ar — em vez de mostrar um botão que não abre.
+     */
+    unsubscribeUrl: string | null;
+  };
 }
 
 export type EmailTemplateKey = keyof EmailPayloads;
@@ -357,6 +393,8 @@ export const EMAIL_TEMPLATE_KEYS: readonly EmailTemplateKey[] = Object.freeze([
   'DEMAND_MENTION',
   'DEMAND_DUE_SOON',
   'DEMAND_OVERDUE',
+  // FASE 67 — a campanha segmentada (texto do organizador, um e-mail por pessoa).
+  'CAMPAIGN_MESSAGE',
 ] as const);
 
 export interface RenderedEmail {
@@ -396,6 +434,19 @@ interface LayoutInput {
   callToAction?: { label: string; url: string };
   notice?: string;
   footerNote: string;
+  /**
+   * A MESMA linha do rodapé, quando ela carrega MARCAÇÃO (um link).
+   *
+   * Existe separado de `footerNote` porque os dois não podem ser a mesma string:
+   * `footerNote` é TEXTO e o layout o escapa, e passar o link por lá imprimiria
+   * `&lt;a href=…&gt;` no lugar do endereço clicável — o defeito silencioso do
+   * negrito visível, que já custou um teste nesta casa.
+   *
+   * Quando ela existe, ela é o rodapé (o layout desenha a marcada e ignora a de
+   * texto) — e a de texto continua obrigatória porque a versão sem HTML de todo
+   * e-mail é montada a partir dela.
+   */
+  footerNoteMarkup?: string;
 }
 
 /**
@@ -459,7 +510,7 @@ ${input.paragraphs.map((paragraph) => `              <p style="margin:0 0 14px;f
               ${details}
               ${notice}
               ${button}
-              <p style="margin:0;font:400 12px/18px ${EMAIL_FONT_STACK};color:${P.muted};">${input.footerNote}</p>
+              <p style="margin:0;font:400 12px/18px ${EMAIL_FONT_STACK};color:${P.muted};">${input.footerNoteMarkup ?? input.footerNote}</p>
             </td>
           </tr>
         </table>
@@ -1433,6 +1484,76 @@ export function renderEmail<K extends EmailTemplateKey>(
         ].join('\n'),
       };
     }
+
+    case 'CAMPAIGN_MESSAGE': {
+      const data = payload as EmailPayloads['CAMPAIGN_MESSAGE'];
+
+      /**
+       * O corpo vai em parágrafos: o organizador escreve texto, e cada quebra de
+       * linha dele vira um `<p>`. É `paragraph()` (e não `markup()`) porque este
+       * texto é de autoria livre — o escape é o que impede a campanha de virar
+       * injeção no cliente de e-mail de terceiros.
+       *
+       * A personalização por marcador ({nome}, {instituicao}, {evento}) NÃO acontece
+       * aqui: ela é resolvida no disparo, um corpo por destinatário, antes de o HTML
+       * ser gravado no outbox. Este template continua sendo uma função pura do
+       * payload — a mesma disciplina que permite gravar o que saiu como registro.
+       */
+      const body = data.body
+        .split(/\n{2,}/)
+        .map((chunk) => chunk.trim())
+        .filter((chunk) => chunk.length > 0)
+        .map((chunk) => paragraph(chunk));
+
+      const origin = data.eventTitle ? `${data.tenantName} · ${data.eventTitle}` : data.tenantName;
+      const from = data.senderName ? `Enviada por ${escapeHtml(data.senderName)}.` : '';
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  A LINHA DO RODAPÉ É UMA SÓ, MESMO QUANDO ELA CARREGA UM LINK
+       * ─────────────────────────────────────────────────────────────────────────
+       *  `footerNoteMarkup` é o MESMO texto de `footerNote`, com a marcação — e o
+       *  layout desenha a marcada quando ela existe. Publicar as duas faria o e-mail
+       *  dizer "você recebe esta mensagem porque participa de…" DUAS vezes, uma
+       *  embaixo da outra: foi o que a primeira versão deste template fazia.
+       */
+      const footerNote = `Você recebe esta mensagem porque participa de ${escapeHtml(origin)}. ${from}`.trim();
+
+      const unsubscribeFooter = data.unsubscribeUrl
+        ? `${footerNote}<br />Para parar de receber os <strong style="color:${P.foreground};font-weight:600;">recados em massa</strong> desta instituição, abra <a href="${escapeHtml(data.unsubscribeUrl)}" style="color:${P.primaryText};">este endereço de descadastro</a> — ou copie e cole no navegador:<br /><span style="word-break:break-all;">${escapeHtml(data.unsubscribeUrl)}</span><br />Os avisos da sua vaga, os prazos, o material das atividades e o certificado <strong style="color:${P.foreground};font-weight:600;">continuam chegando</strong> — são obrigação da instituição com você.`
+        : `${footerNote}<br />O descadastro está indisponível neste ambiente (sem segredo de servidor configurado), e nada é enviado para fora daqui.`;
+
+      return {
+        subject: data.subject,
+        html: renderLayout({
+          brandName: brand,
+          preheader: data.subject,
+          title: data.subject,
+          paragraphs: [paragraph(greeting(data.recipientName)), ...body],
+          footerNote,
+          footerNoteMarkup: markup(unsubscribeFooter),
+        }),
+        text: [
+          greeting(data.recipientName),
+          '',
+          data.body,
+          '',
+          `Você recebe esta mensagem porque participa de ${origin}.`,
+          from,
+          ...(data.unsubscribeUrl
+            ? [
+                '',
+                'Para parar de receber os recados em massa desta instituição, abra:',
+                data.unsubscribeUrl,
+                'Os avisos da sua vaga, os prazos, o material das atividades e o certificado continuam chegando.',
+              ]
+            : []),
+          `— ${brand}`,
+        ]
+          .filter((line) => line.length > 0)
+          .join('\n'),
+      };
+    }
   }
 }
 
@@ -1463,4 +1584,4 @@ export const EMAIL_TEMPLATE_LABELS: Record<EmailTemplateKey, string> = {
   DEMAND_MENTION: 'Menção em demanda',
   DEMAND_DUE_SOON: 'Prazo de demanda próximo',
   DEMAND_OVERDUE: 'Demanda atrasada',
-};
+  CAMPAIGN_MESSAGE: 'Campanha segmentada',};
