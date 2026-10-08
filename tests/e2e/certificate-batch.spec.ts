@@ -134,9 +134,35 @@ test.describe('lote de certificados em ZIP', () => {
      *
      * Montar isso no banco é deliberado: o que este cenário mede é o LOTE. Passar
      * pelo balcão de credenciamento mediria a FASE 31 de novo, mais devagar.
+     *
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O CREDENCIAMENTO NO EVENTO É DA LINHA DO EVENTO (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  São DUAS linhas, e a distinção não é burocracia: `activityId: null` é "chegou
+     *  ao evento" e a linha da ATIVIDADE é "esteve na oficina". A FASE 70 separou as
+     *  duas no certificado — antes, a presença na OFICINA valia como credenciamento no
+     *  evento, e o documento de participação saía sem CPF para quem só fez uma oficina
+     *  (o CPF é lido da linha do evento, que não existia). Este cenário é de
+     *  PARTICIPAÇÃO NO EVENTO: sem a linha do evento, a emissão é recusada com o
+     *  motivo — e é isso que o `certificate-feedback` mostraria.
      */
     await e2eDb.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+
+      await tx.registration.create({
+        data: {
+          id: randomUUID(),
+          tenantId: tenant.id,
+          eventId: event.id,
+          activityId: null,
+          userId: participant.id,
+          status: 'CONFIRMED',
+          origin: 'EVENT_AUTO',
+          consentData: true,
+          badgeToken: `BADGE-${randomUUID().slice(0, 12)}`,
+          checkedInAt: new Date(),
+        },
+      });
 
       await tx.registration.create({
         data: {
@@ -147,8 +173,6 @@ test.describe('lote de certificados em ZIP', () => {
           userId: participant.id,
           status: 'CONFIRMED',
           consentData: true,
-          badgeToken: `BADGE-${randomUUID().slice(0, 12)}`,
-          checkedInAt: new Date(),
         },
       });
     });

@@ -37,6 +37,12 @@ import { resolveTheme } from '@/domain/events/landing-page';
 import { evaluateEventQuota } from '@/domain/platform/platform-rules';
 import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
 import {
+  readRegistrationForm,
+  type FormSpecProblem,
+  type RegistrationFormField,
+  type RegistrationFormSource,
+} from '@/domain/events/registration-form-spec-rules';
+import {
   checkScheduleConflict,
   evaluateRoomCapacityChange,
   evaluateRoomFit,
@@ -457,6 +463,20 @@ export interface AdminEventDetail extends AdminEventRow {
   calls: { published: number; withoutDeadline: number };
   /** A inscrição está restrita à comunidade? (FASE 12, item I3) */
   registrationRequiresMembership: boolean;
+  /**
+   * O formulário de inscrição que o organizador montou (FASE 70 · fatia 3).
+   *
+   * Passa pelo leitor TOLERANTE do domínio (`readRegistrationForm`), como a política
+   * de inscrição logo acima: a tela recebe campos, a origem e os problemas — nunca o
+   * JSON cru de `Event.settings`. `source: 'DEFAULT'` com `problems` preenchido é o
+   * estado em que a configuração gravada está torta e o participante vê o formulário
+   * de sempre; a tela mostra os problemas, com a mensagem do domínio.
+   */
+  registrationForm: {
+    fields: readonly RegistrationFormField[];
+    source: RegistrationFormSource;
+    problems: readonly FormSpecProblem[];
+  };
   rooms: { id: string; name: string; capacity: number | null }[];
   activities: {
     id: string;
@@ -693,6 +713,8 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
     usesCall: event.usesCall,
     calls,
     registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
+    /** O mesmo leitor tolerante da política acima — a tela não vê o JSON cru. */
+    registrationForm: readRegistrationForm(event.settings),
     activityCount: event._count.activities,
     trackCount: event._count.tracks,
     roomCount: event._count.rooms,

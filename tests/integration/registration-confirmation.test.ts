@@ -683,20 +683,66 @@ describe('a varredura libera o que venceu', () => {
     expect(depois).toEqual(antes);
   });
 
-  it('o contador do EVENTO fecha a conta: a vaga devolvida foi reocupada', async () => {
+  it('o contador do EVENTO fecha a conta com as linhas do EVENTO (uma reserva por pessoa)', async () => {
     /**
-     * O evento conta TODA inscrição confirmada (inclusive de atividade). A liberação
-     * devolve o lugar e a promoção precisa retomá-lo — se só um dos lados mexesse no
-     * contador, o evento passaria a mentir sobre a própria lotação (defeito real
-     * encontrado nesta fase).
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O QUE ESTA CATRACA PASSOU A MEDIR (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Antes, a vaga do EVENTO era reservada pela linha da ATIVIDADE, e por isso a
+     *  conta fechava somando TODAS as inscrições vivas do evento (atividade + evento).
+     *
+     *  Agora a reserva é da LINHA DO EVENTO: `events.confirmedCount` é o espelho das
+     *  inscrições vivas de `activityId IS NULL`. Somar as linhas de atividade aqui
+     *  mediria a coisa errada — e é justamente essa confusão de níveis que a fase veio
+     *  desfazer (o painel contava linhas misturando atividade e evento).
+     *
+     *  A força da asserção é a mesma: o contador denormalizado tem de BATER com as
+     *  linhas, linha por linha. O que mudou foi QUAIS linhas ele conta.
      */
-    const total = await withTenant(tenantId, (tx) =>
-      tx.registration.count({
-        where: { eventId, deletedAt: null, status: { in: ['PENDING', 'CONFIRMED', 'ATTENDED'] } },
+    const linhasDoEvento = await withTenant(tenantId, (tx) =>
+      tx.registration.findMany({
+        where: {
+          eventId,
+          activityId: null,
+          deletedAt: null,
+          status: { in: ['PENDING', 'CONFIRMED', 'ATTENDED'] },
+        },
+        select: { userId: true },
       }),
     );
 
-    expect((await counters(activityId)).event).toBe(total);
+    const contador = (await counters(activityId)).event;
+
+    expect(linhasDoEvento.length).toBeGreaterThan(0);
+    expect(contador).toBe(linhasDoEvento.length);
+
+    /**
+     * E é UMA reserva por pessoa: o contador é o número de PESSOAS com linha viva no
+     * evento, não o número de linhas. Duas linhas para a mesma pessoa (uma por
+     * atividade, por exemplo) significariam duas vagas cobradas — o defeito que o
+     * índice `registrations_live_event_user_key` existe para impedir.
+     */
+    const pessoas = new Set(linhasDoEvento.map((row) => row.userId));
+    expect(contador).toBe(pessoas.size);
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A VAGA DEVOLVIDA FOI RECOBRADA (o fato que este caso sempre prendeu)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A promoção da fila da ATIVIDADE não devolve nem cobra lugar no evento: a linha
+     *  do evento de quem foi promovido já existia (nasceu junto com a inscrição na
+     *  atividade) e continua viva. É isso que mantém o contador do evento estável
+     *  quando a vaga da oficina troca de dono.
+     */
+    const linhaDaPromovida = await withTenant(tenantId, (tx) =>
+      tx.registration.findFirst({
+        where: { eventId, userId: segundaPessoa, activityId: null, deletedAt: null },
+        select: { status: true },
+      }),
+    );
+
+    expect(linhaDaPromovida).not.toBeNull();
+    expect(['CONFIRMED', 'PENDING']).toContain(linhaDaPromovida?.status);
   });
 });
 

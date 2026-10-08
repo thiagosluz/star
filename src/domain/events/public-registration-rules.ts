@@ -60,6 +60,20 @@ export interface ParticipantLinkDecision {
 export const PUBLIC_REGISTRATION_ROLE = 'PARTICIPANT' as const;
 
 /**
+ * Mensagem para quem chegou a um evento restrito à comunidade (FASE 12).
+ *
+ * Declarada AQUI EM CIMA, e não no fim do arquivo, porque `evaluateParticipantLink`
+ * passou a devolvê-la (FASE 70): a recusa do SERVIDOR e o aviso da TELA têm de ser o
+ * mesmo texto — duas frases para o mesmo fato fariam a pessoa procurar duas causas.
+ */
+export function restrictedEventNotice(tenantName: string): string {
+  return (
+    `Este evento é restrito à comunidade de ${tenantName}. ` +
+    'Se você participa da instituição, peça à organização que ative o seu vínculo.'
+  );
+}
+
+/**
  * Situações de evento em que a inscrição pública é legítima.
  *
  * É a MESMA lista que o repositório público usa para decidir o que é visível
@@ -91,6 +105,31 @@ export function evaluateParticipantLink(input: {
   /** Vínculo apagado (soft delete) é tratado como removido. */
   deleted?: boolean;
   eventIsPublic: boolean;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A INSTITUIÇÃO FECHOU O EVENTO À PRÓPRIA COMUNIDADE (FASE 70)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `Event.settings.registrationRequiresMembership` existia desde a FASE 12 e era
+   *  conferido SÓ NA TELA: quem chamasse a Server Action direto — ou o serviço —
+   *  entrava num evento restrito sem vínculo nenhum. A regra mora aqui porque é a
+   *  MESMA pergunta que a tela faz ("esta pessoa pode entrar?"), e duas cópias dela
+   *  divergiriam na primeira manutenção (armadilha 55).
+   *
+   *  Ela vem DEPOIS do bloqueio, e a ordem não é estilo: quem foi suspenso ou
+   *  removido pela instituição recebe o motivo verdadeiro ("acesso bloqueado"), e
+   *  não um convite para pedir vínculo a quem o tirou dele.
+   *
+   *  `INVITED` também é recusado: convite pendente é promessa, e quem exige vínculo
+   *  exige o vínculo ACEITO — a inscrição não pode ser o aceite de um convite que a
+   *  instituição reservou para outra porta.
+   *
+   *  A mensagem, quando o nome da instituição não chega, é a do SERVIDOR — e ela fala
+   *  do evento, não de um nome genérico. O aviso da tela continua sendo o de sempre
+   *  (`restrictedEventNotice`), que já traz o nome.
+   */
+  requiresMembership?: boolean;
+  /** Nome da instituição — quando ausente, a recusa usa o texto genérico. */
+  tenantName?: string;
 }): ParticipantLinkDecision {
   if (input.membershipStatus === 'SUSPENDED' || input.membershipStatus === 'REMOVED' || input.deleted) {
     return {
@@ -102,6 +141,15 @@ export function evaluateParticipantLink(input: {
 
   if (input.membershipStatus === 'ACTIVE') {
     return { action: 'ALREADY_MEMBER', message: null };
+  }
+
+  if (input.requiresMembership) {
+    return {
+      action: 'BLOCKED',
+      message: input.tenantName
+        ? restrictedEventNotice(input.tenantName)
+        : 'Este evento é restrito à comunidade da instituição. Peça à organização que ative o seu vínculo.',
+    };
   }
 
   if (input.membershipStatus === 'INVITED') {
@@ -187,10 +235,3 @@ export function isOpenToPublicEvent(input: {
   );
 }
 
-/** Mensagem para o visitante de um evento restrito à comunidade. */
-export function restrictedEventNotice(tenantName: string): string {
-  return (
-    `Este evento é restrito à comunidade de ${tenantName}. ` +
-    'Se você participa da instituição, peça à organização que ative o seu vínculo.'
-  );
-}

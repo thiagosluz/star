@@ -8,6 +8,8 @@ import {
   registerForEventAction,
   type RegistrationActionState,
 } from '@/app/actions/registration-actions';
+import type { RegistrationFormField } from '@/domain/events/registration-form-spec-rules';
+import { RegistrationDeclaredFields } from '@/components/events/registration-declared-fields';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -41,6 +43,7 @@ export function EventRegistrationForm({
   eventSlug,
   openActivities,
   individualActivities,
+  fields = [],
 }: {
   tenantSlug: string;
   eventSlug: string;
@@ -48,6 +51,8 @@ export function EventRegistrationForm({
   openActivities: readonly string[];
   /** Atividades que continuam exigindo inscrição própria. */
   individualActivities: readonly string[];
+  /** Os campos DECLARADOS pelo organizador (FASE 70) — vazios no formulário de sempre. */
+  fields?: readonly RegistrationFormField[];
 }) {
   const [state, formAction] = useActionState<RegistrationActionState | null, FormData>(
     registerForEventAction,
@@ -191,6 +196,19 @@ export function EventRegistrationForm({
           </span>
         </label>
       </fieldset>
+
+      {/**
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  AS PERGUNTAS DO EVENTO VÊM DEPOIS DOS CONSENTIMENTOS — E DEPOIS É O LUGAR
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  Quem responde lê primeiro o que o sistema pede (CPF, necessidades) e o que
+        *  autoriza; as perguntas do organizador vêm em seguida, com a finalidade
+        *  declarada ao lado de cada uma. O `values` que a action devolve volta para o
+        *  `defaultValue` de cada campo: o React 19 zera o formulário depois da
+        *  resposta, e uma recusa (campo obrigatório em branco, opção fora da lista)
+        *  apagaria tudo o que a pessoa digitou — a lição da E54.
+        */}
+      <RegistrationDeclaredFields fields={fields} values={state?.values?.declaredFields} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <p className="ef-muted-on-card text-xs">

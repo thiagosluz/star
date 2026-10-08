@@ -88,6 +88,22 @@ export const EVENT_AREAS: readonly EventArea[] = [
     permission: PERMISSIONS.EVENT_UPDATE,
   },
   {
+    /**
+     * ─── O FORMULÁRIO QUE O ORGANIZADOR MONTA (FASE 70 · fatia 3) ─────────────
+     *
+     *  A área entra logo depois de "Dados do evento" porque as duas respondem a
+     *  mesma pergunta de quem organiza — "o que o evento é" —, e porque os PRAZOS de
+     *  inscrição moram lá: quem acabou de declarar até quando aceita inscrição é
+     *  quem quer decidir o que perguntar a quem se inscreve.
+     */
+    id: 'formulario',
+    label: 'Formulário de inscrição',
+    purpose: 'Os campos que o participante preenche ao se inscrever — tipo, limites e finalidade.',
+    group: 'CONFIGURAR',
+    href: (context) => route(context, '/formulario'),
+    permission: PERMISSIONS.EVENT_UPDATE,
+  },
+  {
     id: 'programacao',
     label: 'Programação',
     purpose: 'As atividades do evento: horário, sala, vagas e o que a presença vale.',
@@ -266,6 +282,15 @@ export interface EventAreaCounts {
   credentials: number | null;
   certificates: number | null;
   speakers: number | null;
+  /**
+   * Campos DECLARADOS no formulário de inscrição do evento (FASE 70).
+   *
+   * `null` aqui não é "não contei": é "não sei", e o cartão sai sem selo. A leitura
+   * tolerante da configuração devolve lista VAZIA quando o que está gravado é torto —
+   * e afirmar "nenhum campo declarado" sobre uma configuração inválida seria o selo
+   * mentindo exatamente no caso em que o organizador precisa olhar para ela.
+   */
+  formFields: number | null;
   /** `null` quando a página do evento nunca foi criada. */
   pagePublished: boolean | null;
 }
@@ -296,6 +321,15 @@ export function eventAreaMetric(areaId: string, counts: EventAreaCounts): string
         : quantidade(counts.activities, 'atividade', 'atividades', 'nenhuma atividade');
     case 'salas':
       return counts.rooms === null ? null : quantidade(counts.rooms, 'sala', 'salas', 'nenhuma sala');
+    case 'formulario':
+      /**
+       * A frase fala do que o PARTICIPANTE encontra: o evento sem formulário declarado
+       * faz a pergunta de sempre, e é isso que "nenhum campo declarado" diz — sem
+       * prometer que a inscrição não pergunta nada.
+       */
+      return counts.formFields === null
+        ? null
+        : quantidade(counts.formFields, 'campo declarado', 'campos declarados', 'nenhum campo declarado');
     case 'chamadas':
       return counts.calls === null ? null : quantidade(counts.calls, 'chamada', 'chamadas', 'nenhuma chamada');
     case 'equipes':
@@ -356,5 +390,6 @@ export const EMPTY_EVENT_AREA_COUNTS: EventAreaCounts = {
   credentials: null,
   certificates: null,
   speakers: null,
+  formFields: null,
   pagePublished: null,
 };

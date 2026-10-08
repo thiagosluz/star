@@ -258,4 +258,64 @@ describe('contagens das áreas do evento', () => {
     expect(resultado.counts.sponsors).toBe(0);
     expect(resultado.counts.teams).toBe(0);
   });
+
+  /**
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  O SELO DA ÁREA `formulario` (FASE 70)
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  Os campos declarados não são linha de tabela: vivem em
+   *  `Event.settings.registrationForm`, e o serviço os lê pela MESMA projeção que a
+   *  tela do participante usa (`readRegistrationForm`). Os casos prendem as três
+   *  respostas possíveis: o evento sem formulário (zero, que APARECE), o evento com
+   *  campos (o número) e a configuração que o sistema não consegue ler (`null` — sem
+   *  selo, porque "nenhum campo declarado" ali seria mentira).
+   */
+  it('o evento sem formulário declarado conta ZERO campos — e zero é resposta', async () => {
+    const resultado = await getEventAreaCounts({ tenantId, eventId: eventoVizinhoId });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+
+    expect(resultado.counts.formFields).toBe(0);
+  });
+
+  it('conta os campos DECLARADOS — e a configuração torta vira `null`, não zero', async () => {
+    await withTenant(tenantId, (tx) =>
+      tx.event.update({
+        where: { id: eventId },
+        data: {
+          settings: {
+            registrationForm: [
+              { key: 'instituicao', label: 'Instituição', type: 'SHORT_TEXT', required: false },
+              { key: 'turma', label: 'Turma', type: 'SHORT_TEXT', required: false },
+            ],
+          },
+        },
+      }),
+    );
+
+    const comCampos = await getEventAreaCounts({ tenantId, eventId });
+
+    expect(comCampos.ok).toBe(true);
+    if (!comCampos.ok) return;
+    expect(comCampos.counts.formFields).toBe(2);
+
+    /** Tipo proibido: o leitor tolerante cai no formulário de sempre, e o selo some. */
+    await withTenant(tenantId, (tx) =>
+      tx.event.update({
+        where: { id: eventId },
+        data: {
+          settings: {
+            registrationForm: [{ key: 'doc', label: 'Documento', type: 'CPF', required: true }],
+          },
+        },
+      }),
+    );
+
+    const torto = await getEventAreaCounts({ tenantId, eventId });
+
+    expect(torto.ok).toBe(true);
+    if (!torto.ok) return;
+    expect(torto.counts.formFields).toBeNull();
+  });
 });

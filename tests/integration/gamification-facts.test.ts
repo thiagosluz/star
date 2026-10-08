@@ -323,36 +323,56 @@ describe('inscrição confirmada', () => {
      *
      *  O teste prende a ESCOLHA no próprio livro-razão: a chave gravada cita a atividade
      *  (ou o evento), e não o id da inscrição.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  DUAS PESSOAS, UM CAMINHO CADA (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Antes, a MESMA pessoa podia se inscrever na atividade E no evento, e o crédito
+     *  saía duas vezes (chaves diferentes: uma cita a atividade, a outra o evento). Desde
+     *  a FASE 70 a inscrição na atividade MATERIALIZA a do evento — a segunda porta
+     *  responde `DUPLICATE`, e com razão: não há segunda vaga para pagar.
+     *
+     *  Cada ALVO é medido com quem o produziu: uma pessoa entra pela atividade (a chave
+     *  cita a atividade) e outra entra pelo evento (a chave cita o evento). A força da
+     *  asserção é a mesma — o que ela prende é a chave gravada, não a rota.
      */
-    const pessoa = await createUser('Chave por Alvo F43');
+    const pelaAtividade = await createUser('Chave por Alvo F43 (atividade)');
 
     const inscricao = await registerForActivity({
       tenantId,
       eventSlug: OPEN_EVENT_SLUG,
       activitySlug: 'oficina-aberta',
-      userId: pessoa,
+      userId: pelaAtividade,
     });
 
     expect(inscricao.ok, inscricao.ok ? 'ok' : inscricao.message).toBe(true);
     if (!inscricao.ok) return;
 
-    const rows = await xpRows(pessoa, 'REGISTRATION_CONFIRMED');
+    const rows = await xpRows(pelaAtividade, 'REGISTRATION_CONFIRMED');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.idempotencyKey).toContain(activityId);
     expect(rows[0]?.idempotencyKey).not.toContain(inscricao.registrationId);
 
-    /** E no evento a chave cita o EVENTO. */
+    /**
+     * E a inscrição no evento veio de CARONA (é o que a fase garante) — sem um segundo
+     * crédito: o alvo é a VAGA da atividade, e ela já pagou.
+     */
+    expect(await xpRows(pelaAtividade, 'REGISTRATION_CONFIRMED')).toHaveLength(1);
+
+    /** Agora quem entra pela porta do EVENTO: a chave cita o evento. */
+    const peloEvento = await createUser('Chave por Alvo F43 (evento)');
+
     const noEvento = await registerForEvent({
       tenantId,
       eventSlug: OPEN_EVENT_SLUG,
-      userId: pessoa,
+      userId: peloEvento,
     });
 
     expect(noEvento.ok, noEvento.ok ? 'ok' : noEvento.message).toBe(true);
     if (!noEvento.ok) return;
 
-    const rowsEvento = await xpRows(pessoa, 'REGISTRATION_CONFIRMED');
-    expect(rowsEvento).toHaveLength(2);
+    const rowsEvento = await xpRows(peloEvento, 'REGISTRATION_CONFIRMED');
+    expect(rowsEvento).toHaveLength(1);
     expect(rowsEvento.some((row) => row.idempotencyKey.includes(openEventId))).toBe(true);
   });
 

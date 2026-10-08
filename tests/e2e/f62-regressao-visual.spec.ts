@@ -14,6 +14,7 @@ import {
   uniqueEmail,
 } from './helpers';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
+import { applyRegistrationFormOperationOnEvent } from '../../src/lib/admin/registration-form-service';
 import {
   addPageBlock,
   ensureHomePage,
@@ -700,6 +701,114 @@ const ENDERECO_FISICO_DO_EVENTO = 'Rua das Artes Visuais, 240 — Santo Amaro/BA
  */
 let atividadeDoAgoraId: string;
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A PÁGINA DE INSCRIÇÃO COM OS CAMPOS DECLARADOS (FASE 70 · a linha de base 23)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ELA ENTRA, E O QUE FOI MEDIDO ANTES DE DECIDIR
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 70 deu à página de inscrição uma superfície nova: os campos que o
+ *  ORGANIZADOR declara (seis tipos, seis controles) com a ajuda e a finalidade ao
+ *  lado. A decisão de medir pixel aqui NÃO foi tomada no olho — ela foi medida, e a
+ *  medição é esta:
+ *
+ *    • a página é **DETERMINÍSTICA**: duas execuções seguidas da MESMA fixture deram
+ *      **0 pixel** de diferença em 1440×1467 (2.112.480 pixels). Não há máscara
+ *      nenhuma, e nenhuma é necessária — o `RUN_ID` da execução vive no SLUG, e o
+ *      slug não é desenhado;
+ *    • o ÚNICO pixel que depende do relógio é o rótulo do PERÍODO: deslocar a janela
+ *      do evento em UM dia mudou **1.662 pixels**, na caixa `x 238..474 · y 317..330`
+ *      — exatamente a linha que imprime "10 de março de 2099 – 12 de março de 2099".
+ *      É o mesmo problema que a vitrine da instituição já tinha (FASE 64) e que
+ *      `JANELA_FUTURA` resolve: a janela do evento é um INSTANTE FIXO, e o rótulo
+ *      passa a ser o mesmo em qualquer dia em que a suíte rodar.
+ *
+ *  Com as duas coisas medidas — determinismo provado e a única fonte de variação
+ *  identificada e neutralizada pela fixture —, a linha de base VALE: ela é a única
+ *  catraca que pega o que o `axe` não vê (rótulo que quebra a linha, ajuda que empurra
+ *  o controle, largura do campo que muda com o tipo, o cartão que estoura).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UMA INSTITUIÇÃO PRÓPRIA, E NÃO A DA VITRINE
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A vitrine (`pagina-da-instituicao-*.png`) desenha TODOS os eventos visíveis da
+ *  instituição da fixture, agrupados por data: publicar mais um evento em 2099
+ *  mudaria as DUAS linhas de base dela (a FASE 67 pagou essa conta — 1.886 pixels por
+ *  causa de um segundo cartão em "Em breve"). Uma instituição própria para esta
+ *  superfície custa uma fixture a mais e **zero pixel** nas 22 linhas de base que já
+ *  existiam — e é a MESMA escolha que as fases 65, 68 e 69 fizeram quando a superfície
+ *  nova era de outro assunto (o evento dedicado da sala online, o do tema escuro).
+ *
+ *  A identidade é a PADRÃO (o evento não tem `theme` próprio) e o evento NÃO tem
+ *  página publicada: a imagem mede o desenho da plataforma, e não a cor de outra
+ *  pessoa — a condição que a exceção da FASE 69 já declarou.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  OS TÍTULOS SÃO FIXOS, E A CONTA É A MESMA DA VITRINE
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O título do evento aparece na página (o link de volta), e o nome da instituição
+ *  aparece no cabeçalho: os dois são escritos à mão, sem o `RUN_ID`. A conta que entra
+ *  é a dona da fixture, VINCULADA à segunda instituição como `PARTICIPANT` — sem
+ *  vínculo e sem papel ela não veria o formulário, e a imagem mediria o cartão "Entre
+ *  para se inscrever" em vez dos campos que esta fase criou.
+ */
+const TENANT_INSCRICAO_LABEL = 'f62-inscricao';
+const TENANT_INSCRICAO_NAME = 'Escola de Extensão do Recôncavo';
+const EVENTO_DA_INSCRICAO_TITULO = 'Seminário de Práticas Extensionistas';
+const ATIVIDADE_ABERTA_TITULO = 'Mesa de abertura';
+const ATIVIDADE_PROPRIA_TITULO = 'Oficina de escrita acadêmica';
+const CAPACIDADE_DO_EVENTO = 100;
+
+/**
+ * Os SEIS tipos da allowlist, um de cada — cada um vira um controle diferente, e é
+ * isso que a imagem mede. A ordem é a da tela, e ela é o conteúdo do bloco.
+ */
+const CAMPOS_DECLARADOS = [
+  {
+    key: 'instituicao',
+    label: 'Instituição de origem',
+    type: 'SHORT_TEXT',
+    required: true,
+    help: 'Onde você estuda ou trabalha hoje.',
+  },
+  {
+    key: 'observacoes',
+    label: 'Observações para a organização',
+    type: 'LONG_TEXT',
+    required: false,
+    purpose: 'Registrar pedidos que não cabem nas outras perguntas.',
+  },
+  {
+    key: 'chegada',
+    label: 'Horário previsto de chegada',
+    type: 'SINGLE_CHOICE',
+    required: false,
+    options: ['Manhã', 'Tarde', 'Noite'],
+  },
+  { key: 'libras', label: 'Precisa de intérprete de Libras?', type: 'YES_NO', required: false },
+  {
+    key: 'acompanhantes',
+    label: 'Quantos acompanhantes virão com você',
+    type: 'NUMBER',
+    required: false,
+    min: 0,
+    max: 5,
+  },
+  { key: 'chegada_em', label: 'Data prevista de chegada', type: 'DATE', required: false },
+] as const;
+
+/** O `slug` da instituição da página de inscrição — o endereço que a varredura abre. */
+let tenantInscricaoSlug: string;
+/**
+ * A conta da página de inscrição: ela SÓ existe nesta instituição.
+ *
+ * É o que evita o painel de escolha de contexto (ver o comentário na fixture) e o que
+ * dispensa máscara na imagem — o endereço de quem entrou não é desenhado na página
+ * pública de inscrição.
+ */
+let emailDaInscricao: string;
+
 async function signUpVia(
   api: APIRequestContext,
   name: string,
@@ -1327,6 +1436,119 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       startsAtOffsetDays: 40 / (24 * 60),
       workloadMinutes: 60,
     });
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *  A FIXTURE DA PÁGINA DE INSCRIÇÃO (FASE 70 · a linha de base 23)
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  INSTITUIÇÃO PRÓPRIA, E O MOTIVO ESTÁ MEDIDO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A vitrine da instituição da fixture desenha TODOS os eventos visíveis dela: um
+     *  evento a mais em 2099 mudaria as DUAS linhas de base da vitrine. Uma segunda
+     *  instituição custa uma fixture e deixa as 22 linhas de base existentes com ZERO
+     *  pixel — e é o que a FASE 70 mediu e declarou antes de decidir (ver o bloco
+     *  "A PÁGINA DE INSCRIÇÃO COM OS CAMPOS DECLARADOS", no alto do arquivo).
+     *
+     *  A conta da fixture entra VINCULADA a esta instituição como `PARTICIPANT`: sem
+     *  vínculo e sem papel ela não veria o formulário, e a imagem mediria o cartão "Entre
+     *  para se inscrever" — a tela errada.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  A CONTA É PRÓPRIA, E ISSO FOI MEDIDO (a primeira versão não era)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A primeira versão vinculou a MESMA dona da conta à segunda instituição — e as 16
+     *  linhas de base das telas autenticadas REPROVARAM: com dois vínculos, o painel
+     *  passa a exigir a ESCOLHA de contexto ("Você tem acesso a 2 instituições…") e
+     *  `/t/<slug>/dashboard` deixa de renderizar a tela que a imagem mede. Uma conta
+     *  que só existe nesta instituição não muda o contexto de ninguém.
+     */
+    const tenantDaInscricao = await createTenant({
+      label: TENANT_INSCRICAO_LABEL,
+      name: TENANT_INSCRICAO_NAME,
+    });
+
+    tenantInscricaoSlug = tenantDaInscricao.slug;
+
+    const donaDaInscricao = await signUpVia(api, 'Dona da Página de Inscrição');
+
+    emailDaInscricao = donaDaInscricao.email;
+
+    await linkUser({
+      tenantId: tenantDaInscricao.id,
+      userId: donaDaInscricao.id,
+      kind: 'PARTICIPANT',
+    });
+    await grantRole({
+      tenantId: tenantDaInscricao.id,
+      userId: donaDaInscricao.id,
+      role: 'PARTICIPANT',
+    });
+
+    /**
+     * A JANELA É UM INSTANTE FIXO (`JANELA_FUTURA`): o rótulo do período é o ÚNICO
+     * pixel da página que depende do relógio — deslocá-lo em um dia mudou 1.662
+     * pixels, medidos, na caixa `x 238..474 · y 317..330`.
+     */
+    const eventoDaInscricaoId = await criarEventoComJanela({
+      tenantId: tenantDaInscricao.id,
+      slug: `inscricao-${RUN_ID}`,
+      title: EVENTO_DA_INSCRICAO_TITULO,
+      ...JANELA_FUTURA,
+    });
+
+    /** A capacidade entra depois: o helper da janela fixa cria o evento sem lotação. */
+    await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantDaInscricao.id}, true)`;
+      await tx.event.update({
+        where: { id: eventoDaInscricaoId },
+        data: { capacity: CAPACIDADE_DO_EVENTO },
+      });
+    });
+
+    /**
+     * As duas listas da página, cada uma com uma atividade: a ABERTA (que a inscrição
+     * no evento inclui) e a de INSCRIÇÃO PRÓPRIA. Elas desenham a contagem de vagas ao
+     * lado do título — o texto pequeno que a página mostra antes do formulário.
+     */
+    await createActivity({
+      tenantId: tenantDaInscricao.id,
+      eventId: eventoDaInscricaoId,
+      slug: `aberta-${RUN_ID}`,
+      title: ATIVIDADE_ABERTA_TITULO,
+      capacity: 80,
+      requiresRegistration: false,
+      workloadMinutes: 60,
+    });
+
+    await createActivity({
+      tenantId: tenantDaInscricao.id,
+      eventId: eventoDaInscricaoId,
+      slug: `propria-${RUN_ID}`,
+      title: ATIVIDADE_PROPRIA_TITULO,
+      capacity: 20,
+      requiresRegistration: true,
+      workloadMinutes: 120,
+    });
+
+    /**
+     * O FORMULÁRIO ENTRA PELO SERVIÇO REAL DO ORGANIZADOR — o mesmo caminho da tela,
+     * que grava a lista JÁ VALIDADA em `Event.settings`. Escrever o JSON à mão mediria
+     * uma configuração que o produto não tem como produzir.
+     */
+    for (const campo of CAMPOS_DECLARADOS) {
+      const salvo = await applyRegistrationFormOperationOnEvent({
+        tenantId: tenantDaInscricao.id,
+        actorId: idDaConta,
+        eventId: eventoDaInscricaoId,
+        operation: { kind: 'SAVE', originalKey: null, field: { ...campo } },
+      });
+
+      if (!salvo.ok) {
+        throw new Error(`Falha ao declarar o campo ${campo.key}: ${salvo.message}`);
+      }
+    }
   } finally {
     await api.dispose();
   }
@@ -2314,6 +2536,60 @@ test.describe('bloco de local da página do evento', () => {
     await abrirBlocoDeLocal(page);
 
     await expect(page).toHaveScreenshot('evento-bloco-de-local.png', {
+      ...TOLERANCIA,
+      fullPage: true,
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  A PÁGINA DE INSCRIÇÃO COM OS CAMPOS DECLARADOS (FASE 70) — a linha de base 23
+//
+//  Os números da medição que autorizou esta linha de base (0 pixel entre duas
+//  execuções; 1.662 pixels, na caixa `x 238..474 · y 317..330`, ao deslocar a janela
+//  em um dia) estão no bloco do alto do arquivo, junto das constantes da fixture.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Abre a página de inscrição e AFIRMA o que a fase criou antes de fotografar.
+ *
+ * Sem estas asserções, uma página que perdesse o bloco inteiro — ou que desenhasse só
+ * o primeiro campo — passaria IGUAL: o `toHaveScreenshot` compara com a linha de base,
+ * e não com a intenção. É a régua que a FASE 65 declarou ("o que a imagem não prova, a
+ * asserção prova"), aplicada a uma tela em que os seis controles são o sujeito.
+ */
+async function abrirInscricaoComCampos(page: Page): Promise<void> {
+  await page.goto(`/t/${tenantInscricaoSlug}/eventos/inscricao-${RUN_ID}/inscricao`);
+
+  await expect(page.getByTestId('event-registration-form')).toBeVisible();
+  await expect(page.getByTestId('event-declared-fields')).toBeVisible();
+
+  for (const campo of CAMPOS_DECLARADOS) {
+    await expect(page.getByTestId(`event-declared-field-${campo.key}`)).toBeVisible();
+  }
+
+  /** A contagem de vagas do evento: o texto pequeno que a fase pôs em `.ef-muted`. */
+  await expect(page.getByTestId('event-registration-summary')).toContainText(
+    `${CAPACIDADE_DO_EVENTO} restantes`,
+  );
+
+  await estabilizar(page);
+}
+
+test.describe('página de inscrição do evento com os campos declarados', () => {
+  test.use({ viewport: DESKTOP });
+
+  test('23. a página de inscrição com os campos declarados', async ({ page }) => {
+    /**
+     * A CONTA é a da instituição da fixture, e não a dona da conta da vitrine: com dois
+     * vínculos o painel pede a escolha de contexto antes de servir a tela.
+     */
+    await signInAs(page, emailDaInscricao);
+    await page.context().addCookies([{ name: 'ef_tema', value: 'claro', url: BASE }]);
+
+    await abrirInscricaoComCampos(page);
+
+    await expect(page).toHaveScreenshot('evento-inscricao.png', {
       ...TOLERANCIA,
       fullPage: true,
     });

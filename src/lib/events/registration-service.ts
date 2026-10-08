@@ -72,11 +72,17 @@ import {
   PUBLIC_REGISTRATION_ROLE,
   evaluateParticipantLink,
   isOpenToPublicEvent,
+  readEventRegistrationPolicy,
   shouldGrantParticipantRole,
   type MembershipStatusName,
   type ParticipantLinkDecision,
 } from '@/domain/events/public-registration-rules';
 import { recordAudit } from '@/lib/admin/audit';
+import {
+  erasePersonalFormResponses,
+  readRegistrationForm,
+  type RegistrationFormField,
+} from '@/domain/events/registration-form-spec-rules';
 import { rewardRegistrationConfirmedById } from '@/lib/gamification/hooks';
 import { revertRegistrationReward } from '@/lib/gamification/xp-reversal';
 import {
@@ -109,6 +115,14 @@ export type RegistrationErrorCode =
   | 'ACTIVITY_OPEN'
   /** A instituição suspendeu ou removeu o vínculo desta pessoa. */
   | 'MEMBERSHIP_BLOCKED'
+  /**
+   * O evento é restrito à comunidade e esta pessoa não tem vínculo ATIVO (FASE 70).
+   *
+   * Código próprio, e não `MEMBERSHIP_BLOCKED`: "você foi bloqueado" e "este evento
+   * pede vínculo" mandam a pessoa fazer coisas diferentes — uma fala com a
+   * organização, a outra pede o vínculo. Juntar as duas esconderia o caminho.
+   */
+  | 'MEMBERSHIP_REQUIRED'
   | 'INVALID_TRANSITION'
   | 'NOT_REGISTERED'
   /** Conflito transitório do banco: a operação merece nova tentativa. */
@@ -333,6 +347,11 @@ async function attemptRegistration(
             settings: true,
             /** O prazo de confirmação é calculado no FUSO DO EVENTO (FASE 34). */
             timezone: true,
+            /**
+             * O NOME da instituição entra na recusa de evento restrito (FASE 70) — a
+             * mensagem diz de QUAL comunidade a pessoa precisa participar.
+             */
+            tenant: { select: { name: true } },
           },
         });
 
@@ -422,11 +441,19 @@ async function attemptRegistration(
           tenantId,
           userId,
           eventIsPublic: isOpenToPublicEvent({ eventStatus: event.status, settings: event.settings }),
+          requiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
+          tenantName: event.tenant.name,
         });
 
         if (linkDecision.action === 'BLOCKED') {
           throw new RegistrationError(
-            'MEMBERSHIP_BLOCKED',
+            /**
+             * O evento restrito tem código PRÓPRIO (FASE 70): a pessoa precisa saber
+             * que o caminho é pedir o vínculo, e não que a conta dela foi barrada.
+             */
+            readEventRegistrationPolicy(event.settings).requiresMembership
+              ? 'MEMBERSHIP_REQUIRED'
+              : 'MEMBERSHIP_BLOCKED',
             linkDecision.message ?? 'Inscrição não permitida para esta conta.',
           );
         }
@@ -506,26 +533,64 @@ async function attemptRegistration(
         }
 
         /**
-         * ── `PENDING` TAMBÉM OCUPA LUGAR NO EVENTO (FASE 34) ────────────────────
+         * ── A INSCRIÇÃO NA ATIVIDADE MATERIALIZA A INSCRIÇÃO NO EVENTO (FASE 70) ─
          *
-         *  A inscrição que aguarda confirmação retém a vaga da ATIVIDADE — e retém
-         *  também o lugar no EVENTO, porque é a mesma pessoa viajando, almoçando e
-         *  ocupando espaço. Tratar `PENDING` diferente aqui criaria uma contagem que
-         *  só existe de um lado: o cancelamento (manual, do participante, ou
-         *  automático, por prazo) decrementa o contador do evento sempre que a
-         *  inscrição ocupava vaga — e `cancelReleasesSeat` inclui `PENDING` desde a
-         *  FASE 1. Sem reservar aqui, o contador do evento afundaria a cada prazo
-         *  vencido, e a lotação do evento passaria a permitir superlotação.
+         *  Aqui ficava a reserva do lugar no EVENTO — feita na linha da ATIVIDADE.
+         *  O efeito medido era um buraco: quem só entrou numa oficina não tinha
+         *  inscrição no evento, e ainda assim podia emitir o certificado de
+         *  participação do evento (sem CPF, porque o CPF só é lido da linha do
+         *  evento), enquanto o painel contava linhas misturando os dois.
+         *
+         *  Agora a reserva mudou de dono: a vaga do evento é da LINHA DO EVENTO, e é
+         *  `ensureEventRegistration` quem a reserva — uma vez por pessoa por evento.
+         *  Manter as duas cobraria DUAS vagas por pessoa (o invariante é uma).
+         *
+         *  O evento lotado NÃO recusa a atividade: a pessoa entra na FILA do evento e
+         *  a atividade segue. Recusar aqui seria dizer que a oficina está cheia quando
+         *  o que está cheio é o evento.
          */
-        if (attempt.status === 'CONFIRMED' || attempt.status === 'PENDING') {
-          const reservedEventSeat = await reserveEventSeat(tx, event.id);
-          if (!reservedEventSeat) {
-            // Evento lotado embora a atividade tivesse vaga.
-            throw new RegistrationError(
-              'FULL',
-              'A lotação total do evento foi atingida.',
-            );
-          }
+        const eventRegistration = await ensureEventRegistration(tx, {
+          tenantId,
+          userId,
+          event: {
+            id: event.id,
+            title: event.title,
+            capacity: event.capacity,
+            settings: event.settings,
+            tenantName: event.tenant.name,
+          },
+          linkDecision,
+          consentImage: input.consentImage ?? false,
+          consentData: input.consentData ?? false,
+          accessibilityNotes: input.accessibilityNotes ?? null,
+          formResponses: (input.formResponses ?? {}) as object,
+        });
+
+        if (eventRegistration.created) {
+          /**
+           * A TRILHA registra o que a ATIVIDADE provocou de novo. Sem esta linha, a
+           * inscrição no evento apareceria do nada para quem audita: a pessoa só
+           * pediu a oficina.
+           */
+          await recordAudit(
+            {
+              tenantId,
+              userId,
+              action: 'CREATE',
+              entityType: 'registration',
+              entityId: eventRegistration.registrationId,
+              changes: {
+                evento: { from: null, to: event.title },
+                tipo: {
+                  from: null,
+                  to: eventRegistration.waitlisted
+                    ? 'fila do evento (aberta pela inscrição em atividade)'
+                    : 'inscrição no evento (aberta pela inscrição em atividade)',
+                },
+              },
+            },
+            tx,
+          );
         }
 
         const linkedAsParticipant = await applyParticipantLink(tx, {
@@ -577,7 +642,18 @@ async function attemptRegistration(
  */
 export async function linkParticipantIfEligible(
   tx: TxClient,
-  input: { tenantId: string; userId: string; eventIsPublic: boolean },
+  input: {
+    tenantId: string;
+    userId: string;
+    eventIsPublic: boolean;
+    /**
+     * O evento é restrito à comunidade (FASE 70). Sem esta chave o caminho da PROPOSTA
+     * (F33) aceitaria quem a inscrição recusa, e a chamada de um evento fechado seria
+     * uma porta lateral para o vínculo que a instituição não quis dar.
+     */
+    requiresMembership: boolean;
+    tenantName: string;
+  },
 ): Promise<{ linked: boolean; blocked: boolean; message: string | null }> {
   const decision = await decideParticipantLink(tx, input);
 
@@ -605,7 +681,21 @@ export async function linkParticipantIfEligible(
  */
 async function decideParticipantLink(
   tx: TxClient,
-  input: { tenantId: string; userId: string; eventIsPublic: boolean },
+  input: {
+    tenantId: string;
+    userId: string;
+    eventIsPublic: boolean;
+    /**
+     * O evento é restrito à comunidade? (FASE 12, conferido no SERVIDOR na FASE 70)
+     *
+     * Quem responde é `readEventRegistrationPolicy(settings)`, sobre o MESMO evento
+     * que a transação já leu — sem consulta nova e sem chance de a tela e o serviço
+     * lerem coisas diferentes.
+     */
+    requiresMembership: boolean;
+    /** Nome da instituição para a mensagem da recusa. */
+    tenantName: string;
+  },
 ): Promise<ParticipantLinkDecision> {  const membership = await tx.userTenantProfile.findFirst({
     where: { tenantId: input.tenantId, userId: input.userId },
     select: { status: true, deletedAt: true },
@@ -616,6 +706,8 @@ async function decideParticipantLink(
     // Vínculo apagado (soft delete) é "removido" para todos os efeitos.
     deleted: Boolean(membership?.deletedAt),
     eventIsPublic: input.eventIsPublic,
+    requiresMembership: input.requiresMembership,
+    tenantName: input.tenantName,
   });
 }
 
@@ -1001,6 +1093,26 @@ async function reserveEventSeat(tx: TxClient, eventId: string): Promise<boolean>
 }
 
 /**
+ * Devolve um lugar no evento (FASE 70).
+ *
+ * Existe como função, e não como SQL solto em cada ponto, porque o contador do evento
+ * é o par do `reserveEventSeat` acima: quem RESERVA e quem DEVOLVE têm de mexer no
+ * MESMO contador e sob a MESMA condição — e havia quatro cópias do `UPDATE` espalhadas
+ * pelo serviço, cada uma com a sua leitura de quando o lugar saía.
+ *
+ * `GREATEST(..., 0)` impede contador negativo por dado inconsistente; as linhas
+ * afetadas não interessam ao chamador (devolver lugar que não existia é inofensivo, e
+ * falhar aqui deixaria o evento travado).
+ */
+async function openEventSeat(tx: TxClient, eventId: string): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE events
+       SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
+     WHERE id = ${eventId}::uuid
+  `;
+}
+
+/**
  * Põe a inscrição do evento na FILA (dívida E33), com a posição do fim.
  *
  * ─────────────────────────────────────────────────────────────────────────────
@@ -1029,6 +1141,26 @@ async function enqueueEventRegistration(
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < MAX_POSITION_ATTEMPTS; attempt += 1) {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A CORRIDA DA MESMA PESSOA TEM DE VIRAR IDEMPOTÊNCIA, NÃO ERRO (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Duas requisições simultâneas da MESMA pessoa (as duas atividades dela num
+     *  clique duplo) chegam aqui com o evento lotado e nenhuma linha do evento visível
+     *  para as duas. Sem esta releitura, as duas tentariam inserir e o índice
+     *  `registrations_live_event_user_key` recusaria a segunda — com erro de banco para
+     *  quem só queria se inscrever. A releitura dentro do laço (e ANTES do INSERT)
+     *  devolve a fila que a outra transação acabou de criar.
+     */
+    const alreadyQueued = await tx.registration.findFirst({
+      where: { eventId: input.eventId, activityId: null, userId: input.userId, deletedAt: null },
+      select: { id: true, status: true, waitlistPosition: true },
+    });
+
+    if (alreadyQueued && alreadyQueued.status !== 'CANCELED') {
+      return { id: alreadyQueued.id, position: alreadyQueued.waitlistPosition ?? 0 };
+    }
+
     await tx.$executeRawUnsafe('SAVEPOINT event_waitlist_pos');
 
     try {
@@ -1179,6 +1311,396 @@ export async function registerForEvent(
   };
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  O CAMINHO COMUM DA INSCRIÇÃO NO EVENTO (FASE 70)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O evento, resolvido, como as duas portas o entregam ao caminho comum.
+ *
+ * `tenantName` entra porque a recusa de evento restrito é uma frase com o nome da
+ * instituição — e quem já leu o evento tem esse nome à mão, sem consulta nova.
+ */
+interface EventAdmissionContext {
+  id: string;
+  title: string;
+  capacity: number | null;
+  settings: unknown;
+  tenantName: string;
+}
+
+/**
+ * O essencial de uma admissão no evento, comum às duas portas.
+ *
+ * `null` é resposta de NEGÓCIO, e não erro: significa "o evento está lotado e não há
+ * fila" — quem chama a porta do EVENTO traduz isso em `FULL` (a pessoa não entrou), e
+ * quem chama a porta da ATIVIDADE segue em frente (a oficina tem vaga; o evento não é
+ * problema dela). Lançar aqui obrigaria a porta da atividade a distinguir "erro de
+ * verdade" de "lotação do evento" por conta própria.
+ *
+ * `inserted` diz se a LINHA NASCEU nesta chamada: `false` é a corrida perdida para
+ * outra requisição da mesma pessoa, e quem escreve trilha precisa saber a diferença
+ * (registrar duas vezes o mesmo fato é ruído na auditoria).
+ *
+ * Não há ramo de erro no tipo: o caminho comum LANÇA `RegistrationError` para o que é
+ * recusa (vínculo, duplicidade) e quem o chama traduz no seu próprio formato.
+ */
+type EventAdmissionCore =
+  | {
+      registrationId: string;
+      waitlisted: boolean;
+      waitlistPosition: number | null;
+      inserted: boolean;
+    }
+  | null;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O CAMINHO COMUM DA INSCRIÇÃO NO EVENTO — extraído para ser REUSADO (FASE 70)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO FOI EXTRAÍDO, E NÃO COPIADO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A inscrição numa atividade passou a MATERIALIZAR a inscrição no evento. Escrever
+ *  um segundo caminho que "faz quase o mesmo" criaria duas respostas para as mesmas
+ *  perguntas — vínculo do participante, evento restrito, evento lotado (fila),
+ *  duplicidade, consentimentos — e a segunda cópia é a que fica desatualizada
+ *  (armadilha 55). As duas portas passam por AQUI.
+ *
+ *  A ordem das checagens é a da prioridade, e ela é a mesma de antes:
+ *
+ *    1. VÍNCULO — quem a instituição suspendeu ou removeu é recusado ANTES de
+ *       qualquer escrita, e quem chegou a um evento restrito sem vínculo também;
+ *    2. DUPLICIDADE — quem já tem inscrição viva no evento não ganha outra (o índice
+ *       único parcial `registrations_live_event_user_key` é a garantia final);
+ *    3. VAGA — o `UPDATE` condicional decide. Sem vaga e com lotação, a FILA; sem
+ *       vaga e sem lotação, a recusa.
+ *
+ *  O QUE O CHAMADOR FAZ DEPOIS DA RESERVA é a única diferença entre as portas: a
+ *  inscrição no evento inscreve a pessoa nas atividades ABERTAS (e quem entra pela
+ *  atividade não deve ganhar isso de brinde — ela já escolheu a dela). Por isso o
+ *  pós-reserva é um CALLBACK, e não uma cópia da função inteira.
+ */
+async function admitToEventRegistration(
+  tx: TxClient,
+  input: {
+    tenantId: string;
+    userId: string;
+    event: EventAdmissionContext;
+    linkDecision: ParticipantLinkDecision;
+    /** A ORIGEM da linha do evento: quem a cria automaticamente declara `EVENT_AUTO`. */
+    origin: 'INDIVIDUAL' | 'EVENT_AUTO';
+    /** Roda DEPOIS de a linha existir e a vaga estar reservada. */
+    onSeatReserved: (registrationId: string) => Promise<void>;
+    consentImage: boolean;
+    consentData: boolean;
+    accessibilityNotes: string | null;
+    formResponses: object;
+  },
+): Promise<EventAdmissionCore> {
+  const { tenantId, userId, event } = input;
+
+  if (input.linkDecision.action === 'BLOCKED') {
+    throw new RegistrationError(
+      /**
+       * O evento restrito tem código PRÓPRIO (FASE 70): "peça o seu vínculo" e "sua
+       * conta foi bloqueada" mandam a pessoa fazer coisas diferentes.
+       */
+      readEventRegistrationPolicy(event.settings).requiresMembership
+        ? 'MEMBERSHIP_REQUIRED'
+        : 'MEMBERSHIP_BLOCKED',
+      input.linkDecision.message ?? 'Inscrição não permitida para esta conta.',
+    );
+  }
+
+  const existing = await tx.registration.findFirst({
+    where: { eventId: event.id, activityId: null, userId, deletedAt: null },
+    select: { id: true, status: true },
+  });
+
+  if (existing && existing.status !== 'CANCELED') {
+    throw new RegistrationError('DUPLICATE', 'Você já está inscrito neste evento.');
+  }
+
+  const reserved = await reserveEventSeat(tx, event.id);
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  SEM VAGA NO EVENTO: A PESSOA ENTRA NA FILA (dívida E33)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A reserva é o `UPDATE` condicional, e ele continua sendo quem decide — esta
+   *  leitura só escolhe entre ENFILEIRAR e RECUSAR. Com lotação, a fila é o caminho:
+   *  a pessoa existe no evento (a linha nasce `WAITLISTED`, com posição), a
+   *  instituição sabe quem espera e a vaga de quem desistir tem para onde ir.
+   *
+   *  O que a fila NÃO faz, e é deliberado: inscrever nas atividades abertas. Quem
+   *  espera não tem lugar no evento, e criar as linhas `EVENT_AUTO` daria presença a
+   *  quem não entrou — a promoção é que as cria, no mesmo passo em que reserva a vaga
+   *  (`promoteNextFromEventWaitlist`).
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  E A ATIVIDADE NÃO É RECUSADA POR CAUSA DISSO (FASE 70)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Esta função devolve a resposta, e o chamador da ATIVIDADE segue em frente com
+   *  ela: quem não coube no evento espera na fila DELE e participa da oficina. Antes,
+   *  o evento lotado lançava `FULL` daqui e a oficina — que tinha vaga — era recusada.
+   */
+  if (!reserved && !eventHasWaitlist(event.capacity)) return null;
+
+  if (!reserved) {
+    const queued = await enqueueEventRegistration(tx, {
+      tenantId,
+      eventId: event.id,
+      userId,
+      consentImage: input.consentImage,
+      consentData: input.consentData,
+      accessibilityNotes: input.accessibilityNotes,
+      formResponses: input.formResponses,
+    });
+
+    return {
+      registrationId: queued.id,
+      waitlisted: true,
+      waitlistPosition: queued.position,
+      inserted: true,
+    };
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O INSERT EM SAVEPOINT: A CORRIDA DA MESMA PESSOA NÃO PODE VIRAR ERRO (FASE 70)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Duas requisições simultâneas da MESMA pessoa (duas abas, dois caminhos: inscrever
+   *  na atividade A e na atividade B) chegam aqui com a linha do evento ainda
+   *  inexistente nas duas leituras. O índice único parcial
+   *  `registrations_live_event_user_key` recusa a segunda — corretamente —, e o
+   *  resultado não pode ser um erro de banco na cara de quem pediu: a resposta certa é
+   *  a MESMA linha, porque o fato é idempotente por `(eventId, userId)`.
+   *
+   *  O SAVEPOINT é obrigatório: no PostgreSQL um erro ABORTA a transação inteira, e a
+   *  releitura seguinte falharia com "current transaction is aborted" (é a mesma
+   *  armadilha que a fila da atividade documenta em `tryReserveSeat`). Sem o savepoint,
+   *  este caminho não teria como se recuperar da própria corrida.
+   */
+  await tx.$executeRawUnsafe('SAVEPOINT event_line');
+
+  let registration: { id: string };
+
+  try {
+    registration = await tx.registration.create({
+      data: {
+        tenantId,
+        eventId: event.id,
+        activityId: null,
+        userId,
+        /**
+         * A ORIGEM é DADO do chamador (FASE 70): `INDIVIDUAL` quando a pessoa pediu o
+         * evento, `EVENT_AUTO` quando foi a inscrição numa ATIVIDADE que a materializou.
+         * A distinção decide o que o cancelamento da inscrição no evento leva junto.
+         */
+        origin: input.origin,
+        status: 'CONFIRMED',
+        consentImage: input.consentImage,
+        consentData: input.consentData,
+        consentAt: new Date(),
+        accessibilityNotes: input.accessibilityNotes,
+        formResponses: input.formResponses,
+      },
+      select: { id: true },
+    });
+
+    await tx.$executeRawUnsafe('RELEASE SAVEPOINT event_line');
+  } catch (error) {
+    if (classifyUniqueConflict(error) !== 'already-in-event') throw error;
+
+    await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT event_line');
+
+    const winner = await tx.registration.findFirst({
+      where: { eventId: event.id, activityId: null, userId, deletedAt: null },
+      select: { id: true, status: true },
+    });
+
+    if (!winner) throw error;
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A VAGA RESERVADA VOLTA: A LINHA NÃO NASCEU AQUI (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A reserva aconteceu ANTES deste `INSERT` — e quem perdeu a corrida reservou um
+     *  lugar que não vai ocupar. Sem devolvê-lo, `events.confirmedCount` ficaria um
+     *  acima das linhas vivas a cada clique duplo, e o contador é o que decide se o
+     *  evento está lotado: o evento passaria a recusar gente que caberia.
+     */
+    await openEventSeat(tx, event.id);
+
+    return {
+      registrationId: winner.id,
+      waitlisted: winner.status === 'WAITLISTED',
+      waitlistPosition: null,
+      /** A linha nasceu na OUTRA transação: esta não escreveu nada. */
+      inserted: false,
+    };
+  }
+
+  await input.onSeatReserved(registration.id);
+
+  return {
+    registrationId: registration.id,
+    waitlisted: false,
+    waitlistPosition: null,
+    inserted: true,
+  };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A INSCRIÇÃO NA ATIVIDADE MATERIALIZA A INSCRIÇÃO NO EVENTO (FASE 70)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O DEFEITO QUE ISTO CONSERTA (medido: 3 de 3 inscrições em atividade sem a linha
+ *  do evento no banco de desenvolvimento)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Quem entrava numa oficina ficava sem inscrição no evento — e o evento não tinha
+ *  como saber disso: o certificado de participação saía sem CPF (o CPF só é lido da
+ *  linha do evento), o painel contava linhas misturando os dois níveis e o crachá
+ *  aceitava a pessoa por uma régua que o resto do sistema não seguia.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE ELA **NÃO** FAZ
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  • NÃO inscreve nas atividades ABERTAS. Quem escolheu uma oficina não ganha as
+ *    outras de brinde; quem quer o evento inteiro se inscreve nele (a outra porta,
+ *    `registerForEvent`, é quem faz isso).
+ *  • NÃO falha quando o evento está lotado: a linha nasce na FILA (`WAITLISTED`) e a
+ *    atividade segue confirmada. Recusar a oficina por lotação do evento seria
+ *    recusar a coisa errada.
+ *  • NÃO cobra uma segunda vaga: a reserva do lugar no evento passa a ser FEITA AQUI,
+ *    e a inscrição na atividade deixou de reservá-la (`attemptRegistration`). O
+ *    invariante é UMA reserva por pessoa por evento.
+ *  • NÃO copia o CPF (não existe): o formulário da atividade não tem o campo, então a
+ *    linha nasce com `formResponses` HERDADO (vazio) e a pessoa completa depois em
+ *    `/inscricao`, que passa a oferecer "completar meus dados".
+ *
+ *  É IDEMPOTENTE por `(eventId, userId)`: quem já tem a linha do evento (inclusive
+ *  porque se inscreveu no evento antes) sai daqui sem escrever nada, e o índice
+ *  único parcial `registrations_live_event_user_key` é a garantia final sob
+ *  concorrência.
+ */
+export interface EnsureEventRegistrationInput {
+  tenantId: string;
+  userId: string;
+  /** O evento já lido pela transação da ATIVIDADE — sem consulta nova. */
+  event: EventAdmissionContext;
+  linkDecision: ParticipantLinkDecision;
+  consentImage: boolean;
+  consentData: boolean;
+  accessibilityNotes: string | null;
+  formResponses: object;
+}
+
+export async function ensureEventRegistration(
+  tx: TxClient,
+  input: EnsureEventRegistrationInput,
+): Promise<{ created: boolean; registrationId: string | null; waitlisted: boolean }> {
+  const existing = await tx.registration.findFirst({
+    where: { eventId: input.event.id, activityId: null, userId: input.userId, deletedAt: null },
+    select: { id: true, status: true },
+  });
+
+  if (existing && existing.status !== 'CANCELED') {
+    /** Já tem a linha do evento: nada a escrever, nada a reservar de novo. */
+    return { created: false, registrationId: existing.id, waitlisted: false };
+  }
+
+  const admission = await admitToEventRegistration(tx, {
+    tenantId: input.tenantId,
+    userId: input.userId,
+    event: input.event,
+    linkDecision: input.linkDecision,
+    /**
+     * A LINHA NASCE `EVENT_AUTO`: quem a criou foi a inscrição numa ATIVIDADE, e é
+     * isso que o cancelamento da inscrição no evento precisa saber para levar junto
+     * só o que ele mesmo criou.
+     */
+    origin: 'EVENT_AUTO',
+    /**
+     * NÃO inscreve nas atividades abertas: quem escolheu uma oficina não ganha as
+     * outras de brinde. O que a vaga já reservada pede é apenas o registro na trilha,
+     * feito pelo chamador.
+     */
+    onSeatReserved: async () => {},
+    consentImage: input.consentImage,
+    consentData: input.consentData,
+    accessibilityNotes: input.accessibilityNotes,
+    formResponses: input.formResponses,
+  }).catch(async (error: unknown) => {
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A OUTRA METADE DA CORRIDA: A LINHA VENCEU ANTES DA LEITURA (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Há DUAS ordens possíveis para duas transações da mesma pessoa, e cada uma
+     *  chega por um caminho diferente:
+     *
+     *   • **as duas leem "sem linha" e uma insere enquanto a outra insere** — o
+     *     índice único parcial recusa a segunda, e quem trata isso é o `SAVEPOINT
+     *     event_line` lá dentro (`admitToEventRegistration`);
+     *   • **a primeira JÁ COMITOU quando a segunda relê** — a releitura enxerga a
+     *     linha e cai no `DUPLICATE` do guarda de duplicidade. Nada de banco
+     *     aconteceu: é a mesma pessoa, a mesma linha, e a resposta certa é a MESMA
+     *     que o caminho de cima dá — "já existe, não escrevo nada".
+     *
+     *  Sem este `catch`, o segundo clique (a segunda oficina dela, em duas abas)
+     *  recebia **"Você já está inscrito neste evento"** e a inscrição na ATIVIDADE
+     *  era desfeita junto — a mensagem falava do evento para quem pediu a oficina, e
+     *  a pessoa ficava sem a vaga que existia. Medido: o caso
+     *  `public-registration.test.ts` ("duas inscrições simultâneas da mesma pessoa
+     *  nova") reprovava **3 de 9 execuções isoladas** antes deste conserto.
+     *
+     *  O `DUPLICATE` continua sendo a resposta do caminho do EVENTO
+     *  (`registerForEvent`), onde pedir de novo é o erro que ele nomeia. Aqui ele é
+     *  idempotência — e é por isso que a conversão é feita NESTA função, e não dentro
+     *  de `admitToEventRegistration`: a régua é de quem chamou.
+     */
+    if (!(error instanceof RegistrationError) || error.code !== 'DUPLICATE') throw error;
+
+    const winner = await tx.registration.findFirst({
+      where: { eventId: input.event.id, activityId: null, userId: input.userId, deletedAt: null },
+      select: { id: true, status: true },
+    });
+
+    /** Fail-closed: sem a linha que justificaria a conversão, o erro é o erro. */
+    if (!winner) throw error;
+
+    return {
+      registrationId: winner.id,
+      waitlisted: winner.status === 'WAITLISTED',
+      waitlistPosition: null,
+      /** A linha não nasceu aqui: esta transação não escreveu nada. */
+      inserted: false,
+    };
+  });
+
+  /**
+   * Evento lotado e SEM FILA: não há vaga para reservar e não há onde esperar. A
+   * resposta é "não criei a linha" — e a ATIVIDADE segue, que é o invariante desta
+   * fase ("evento lotado não recusa a atividade").
+   */
+  if (!admission) {
+    return { created: false, registrationId: null, waitlisted: false };
+  }
+
+  /**
+   * `created` é "a LINHA DESTA CHAMADA" — quem correu contra outra transação da mesma
+   * pessoa recebeu a linha existente e NÃO escreveu nada (`inserted: false`), e a
+   * trilha não pode registrar um fato que não aconteceu aqui.
+   */
+  return {
+    created: admission.inserted,
+    registrationId: admission.registrationId,
+    waitlisted: admission.waitlisted,
+  };
+}
 async function attemptEventRegistration(
   input: RegisterForEventInput,
 ): Promise<RegisterForEventOutcome> {
@@ -1201,6 +1723,8 @@ async function attemptEventRegistration(
             registrationOpensAt: true,
             registrationClosesAt: true,
             settings: true,
+            /** O nome entra na recusa de evento restrito (FASE 70). */
+            tenant: { select: { name: true } },
           },
         });
 
@@ -1230,114 +1754,71 @@ async function attemptEventRegistration(
             eventStatus: event.status,
             settings: event.settings,
           }),
+          requiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
+          tenantName: event.tenant.name,
         });
 
-        if (linkDecision.action === 'BLOCKED') {
-          throw new RegistrationError(
-            'MEMBERSHIP_BLOCKED',
-            linkDecision.message ?? 'Inscrição não permitida para esta conta.',
-          );
-        }
-
-        const existing = await tx.registration.findFirst({
-          where: { eventId: event.id, activityId: null, userId, deletedAt: null },
-          select: { id: true, status: true },
-        });
-
-        if (existing && existing.status !== 'CANCELED') {
-          throw new RegistrationError('DUPLICATE', 'Você já está inscrito neste evento.');
-        }
-
-        const reserved = await reserveEventSeat(tx, event.id);
+        const consentImage = input.consentImage ?? false;
+        const consentData = input.consentData ?? false;
+        const accessibilityNotes = input.accessibilityNotes ?? null;
+        const formResponses = (input.formResponses ?? {}) as object;
 
         /**
-         * ─────────────────────────────────────────────────────────────────────────
-         *  SEM VAGA NO EVENTO: A PESSOA ENTRA NA FILA (dívida E33)
-         * ─────────────────────────────────────────────────────────────────────────
-         *  A reserva é o `UPDATE` condicional, e ele continua sendo quem decide — esta
-         *  leitura só escolhe entre ENFILEIRAR e RECUSAR. Com lotação, a fila é o
-         *  caminho: a pessoa existe no evento (a linha nasce `WAITLISTED`, com posição),
-         *  a instituição sabe quem espera e a vaga de quem desistir tem para onde ir.
-         *
-         *  O que a fila NÃO faz, e é deliberado: inscrever nas atividades abertas. Quem
-         *  espera não tem lugar no evento, e criar as linhas `EVENT_AUTO` daria presença
-         *  a quem não entrou — a promoção é que as cria, no mesmo passo em que reserva a
-         *  vaga (`promoteNextFromEventWaitlist`).
+         * A ORDEM DO PÓS-RESERVA é a que sempre foi: as atividades ABERTAS recebem a
+         * inscrição antes de a vaga virar `CONFIRMED` na resposta. Quem espera não
+         * entra nelas — o callback só é chamado quando a vaga é reservada.
          */
-        if (!reserved && !eventHasWaitlist(event.capacity)) {
+        let enrolledTitles: string[] = [];
+
+        const admission = await admitToEventRegistration(tx, {
+          tenantId,
+          userId,
+          event: {
+            id: event.id,
+            title: event.title,
+            capacity: event.capacity,
+            settings: event.settings,
+            tenantName: event.tenant.name,
+          },
+          linkDecision,
+          origin: 'INDIVIDUAL',
+          onSeatReserved: async (registrationId) => {
+            /**
+             * ─────────────────────────────────────────────────────────────────────
+             *  A VAGA JÁ ESTÁ RESERVADA E A LINHA JÁ EXISTE: falta o que a inscrição
+             *  no evento PROVOCA de automático (as atividades abertas).
+             * ─────────────────────────────────────────────────────────────────────
+             *  Roda DEPOIS do `INSERT` de propósito: é o `registrationId` que o
+             *  `syncOpenActivityEnrollments` documenta como contexto, e criar a linha
+             *  antes da reserva é o padrão que a armadilha 22 descreve como errado —
+             *  uma linha que sobra quando a vaga não vem.
+             */
+            const enrolled = await enrollEventRegistrationInOpenActivities(tx, {
+              tenantId,
+              eventId: event.id,
+              userId,
+              registrationId,
+              consentImage,
+              consentData,
+              accessibilityNotes,
+            });
+
+            enrolledTitles = [...enrolled.titles];
+          },
+          consentImage,
+          consentData,
+          accessibilityNotes,
+          formResponses,
+        });
+
+        /**
+         * Evento lotado e sem fila: a porta do EVENTO recusa, porque o lugar no
+         * evento é exatamente o que a pessoa pediu. (A porta da ATIVIDADE trata o
+         * mesmo `null` de outro jeito: a oficina segue.)
+         */
+        if (!admission) {
           throw new RegistrationError('FULL', 'A lotação total do evento foi atingida.');
         }
-
-        if (!reserved) {
-          const queued = await enqueueEventRegistration(tx, {
-            tenantId,
-            eventId: event.id,
-            userId,
-            consentImage: input.consentImage ?? false,
-            consentData: input.consentData ?? false,
-            accessibilityNotes: input.accessibilityNotes ?? null,
-            formResponses: (input.formResponses ?? {}) as object,
-          });
-
-          const linkedAsParticipant = await applyParticipantLink(tx, {
-            tenantId,
-            userId,
-            decision: linkDecision,
-          });
-
-          await recordAudit(
-            {
-              tenantId,
-              userId,
-              action: 'CREATE',
-              entityType: 'registration',
-              entityId: queued.id,
-              changes: {
-                evento: { from: null, to: event.title },
-                tipo: { from: null, to: 'fila do evento' },
-                posicao: { from: null, to: queued.position },
-              },
-            },
-            tx,
-          );
-
-          return {
-            ok: true as const,
-            waitlisted: true,
-            waitlistPosition: queued.position,
-            registrationId: queued.id,
-            enrolledActivities: 0,
-            titles: [],
-            linkedAsParticipant,
-          };
-        }
-
-        const registration = await tx.registration.create({
-          data: {
-            tenantId,
-            eventId: event.id,
-            activityId: null,
-            userId,
-            origin: 'INDIVIDUAL',
-            status: 'CONFIRMED',
-            consentImage: input.consentImage ?? false,
-            consentData: input.consentData ?? false,
-            consentAt: new Date(),
-            accessibilityNotes: input.accessibilityNotes ?? null,
-            formResponses: (input.formResponses ?? {}) as object,
-          },
-          select: { id: true },
-        });
-
-        const enrolled = await enrollEventRegistrationInOpenActivities(tx, {
-          tenantId,
-          eventId: event.id,
-          userId,
-          registrationId: registration.id,
-          consentImage: input.consentImage ?? false,
-          consentData: input.consentData ?? false,
-          accessibilityNotes: input.accessibilityNotes ?? null,
-        });
 
         const linkedAsParticipant = await applyParticipantLink(tx, {
           tenantId,
@@ -1351,14 +1832,18 @@ async function attemptEventRegistration(
             userId,
             action: 'CREATE',
             entityType: 'registration',
-            entityId: registration.id,
+            entityId: admission.registrationId,
             changes: {
               evento: { from: null, to: event.title },
-              tipo: { from: null, to: 'inscrição no evento' },
-              atividadesAutomaticas: {
-                from: null,
-                to: enrolled.titles.join(', ') || 'nenhuma atividade aberta',
-              },
+              tipo: { from: null, to: admission.waitlisted ? 'fila do evento' : 'inscrição no evento' },
+              ...(admission.waitlisted
+                ? { posicao: { from: null, to: admission.waitlistPosition } }
+                : {
+                    atividadesAutomaticas: {
+                      from: null,
+                      to: enrolledTitles.join(', ') || 'nenhuma atividade aberta',
+                    },
+                  }),
             },
           },
           tx,
@@ -1366,11 +1851,11 @@ async function attemptEventRegistration(
 
         return {
           ok: true as const,
-          waitlisted: false,
-          waitlistPosition: null,
-          registrationId: registration.id,
-          enrolledActivities: enrolled.titles.length,
-          titles: enrolled.titles,
+          waitlisted: admission.waitlisted,
+          waitlistPosition: admission.waitlistPosition,
+          registrationId: admission.registrationId,
+          enrolledActivities: enrolledTitles.length,
+          titles: enrolledTitles,
           linkedAsParticipant,
         };
       },
@@ -1463,6 +1948,157 @@ async function enrollEventRegistrationInOpenActivities(
   }
 
   return { titles };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Completar os dados da inscrição no evento (FASE 70)
+// ───────────────────────────────────────────────────────────────────────────────
+export interface UpdateEventRegistrationInput {
+  tenantId: string;
+  userId: string;
+  eventSlug: string;
+  consentImage: boolean;
+  consentData: boolean;
+  accessibilityNotes: string | null;
+  /** Respostas NOVAS — mescladas sobre as existentes, sem apagar o que já havia. */
+  formResponses?: Record<string, unknown>;
+}
+
+export type UpdateEventRegistrationOutcome =
+  | { ok: true; registrationId: string; status: RegistrationStatus }
+  | { ok: false; code: RegistrationErrorCode; message: string };
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  COMPLETAR OS DADOS DA INSCRIÇÃO NO EVENTO (FASE 70)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTA FUNÇÃO PRECISA EXISTIR
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A inscrição numa atividade passou a MATERIALIZAR a linha do evento — e essa linha
+ *  nasce com `formResponses` HERDADO (vazio), porque o formulário da atividade não
+ *  coleta CPF. Sem uma porta para completar, quem veio pela oficina ficaria para
+ *  sempre com um certificado sem CPF e sem lugar para informá-lo: `registerForEvent`
+ *  recusa quem já tem inscrição viva (`DUPLICATE`), e recusar é o certo — não faz
+ *  sentido "inscrever de novo" quem já está inscrito.
+ *
+ *  O que a pessoa precisa é ATUALIZAR a própria inscrição, e é isso que esta função
+ *  faz: a MESMA linha, com os dados de contato e o CPF que faltavam.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  AS TRÊS REGRAS DELA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  1. **Só a PRÓPRIA inscrição** (`userId` da sessão, casado no `where`) e só no
+ *     evento do slug — posse conferida no banco, não na tela;
+ *  2. **Mescla, não substitui**: `formResponses` é um depósito com outras chaves (e
+ *     com as chaves que a fase do formulário personalizável trouxer), então gravar o
+ *     objeto novo inteiro apagaria respostas que já existiam;
+ *  3. **Não mexe em vaga nem em status**: lugar, fila e confirmação são de outros
+ *     fatos. Completar dados não é se inscrever nem confirmar nada.
+ *
+ *  A JANELA não é conferida aqui, de propósito: quem está inscrito precisa poder
+ *  corrigir o próprio CPF depois de as inscrições fecharem — é justamente quando o
+ *  certificado está sendo pedido.
+ */
+export async function updateEventRegistrationData(
+  input: UpdateEventRegistrationInput,
+): Promise<UpdateEventRegistrationOutcome> {
+  const { tenantId, userId, eventSlug } = input;
+
+  try {
+    return await withTenant(tenantId, async (tx) => {
+      const event = await tx.event.findFirst({
+        where: { slug: eventSlug, deletedAt: null },
+        select: { id: true, title: true },
+      });
+
+      if (!event) {
+        throw new RegistrationError('EVENT_NOT_FOUND', 'Evento não encontrado.');
+      }
+
+      const registration = await tx.registration.findFirst({
+        where: { eventId: event.id, userId, activityId: null, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true, formResponses: true },
+      });
+
+      if (!registration || !registrationIsLive(registration.status as RegistrationStatus)) {
+        throw new RegistrationError(
+          'NOT_REGISTERED',
+          'Você não tem inscrição ativa neste evento — inscreva-se para completar seus dados.',
+        );
+      }
+
+      /**
+       * A MESCLA é feita AQUI, com a leitura da própria transação: ler e gravar em
+       * passos separados perderia a resposta que outra aba tivesse acabado de salvar.
+       */
+      const existing =
+        registration.formResponses && typeof registration.formResponses === 'object'
+          ? (registration.formResponses as Record<string, unknown>)
+          : {};
+
+      const merged = { ...existing, ...(input.formResponses ?? {}) };
+
+      await tx.registration.update({
+        where: { id: registration.id },
+        data: {
+          consentImage: input.consentImage,
+          consentData: input.consentData,
+          consentAt: new Date(),
+          accessibilityNotes: input.accessibilityNotes,
+          formResponses: merged as object,
+        },
+      });
+
+      /**
+       * A TRILHA guarda QUAIS CAMPOS mudaram — e não os valores: CPF e necessidade de
+       * acessibilidade são dado pessoal, e a trilha é lida por mais gente do que a
+       * inscrição (a mesma régua do `sanitizeChanges`).
+       */
+      const changedFields = [
+        ...Object.keys(input.formResponses ?? {}).filter(
+          (key) => JSON.stringify(existing[key]) !== JSON.stringify(merged[key]),
+        ),
+        ...(input.accessibilityNotes !== null &&
+        input.accessibilityNotes !== (existing.accessibilityNotes ?? null)
+          ? ['acessibilidade']
+          : []),
+      ];
+
+      await recordAudit(
+        {
+          tenantId,
+          userId,
+          action: 'UPDATE',
+          entityType: 'registration',
+          entityId: registration.id,
+          changes: {
+            evento: { from: null, to: event.title },
+            dados: {
+              from: null,
+              to: changedFields.length > 0 ? changedFields.join(', ') : 'sem alteração',
+            },
+          },
+        },
+        tx,
+      );
+
+      return { ok: true as const, registrationId: registration.id, status: registration.status as RegistrationStatus };
+    });
+  } catch (error) {
+    if (error instanceof RegistrationError) {
+      return { ok: false, code: error.code, message: error.message };
+    }
+
+    logUnexpected('updateEventRegistrationData', error);
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível salvar seus dados agora. Tente novamente.',
+    };
+  }
 }
 
 /**
@@ -1667,13 +2303,19 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
           },
         });
 
-        // ── Decrementa o contador do evento, se ocupava vaga ────────────────
-        if (cancelReleasesSeat(from)) {
-          await tx.$executeRaw`
-            UPDATE events
-               SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
-             WHERE id = ${registration.eventId}::uuid
-          `;
+        /**
+         * ── O CONTADOR DO EVENTO É DA LINHA DO EVENTO (FASE 70) ─────────────────
+         *
+         *  `events.confirmedCount` espelha as inscrições VIVAS no evento, e a reserva
+         *  mudou de dono: quem reserva o lugar é a linha do EVENTO, não a da
+         *  atividade. Decrementar aqui ao cancelar uma ATIVIDADE tiraria do evento um
+         *  lugar que continua ocupado — ele passaria a aceitar mais gente do que cabe.
+         *
+         *  O `activityId` é o discriminador, e não um detalhe: as duas linhas vivem na
+         *  mesma tabela e só o nulo é a inscrição do evento.
+         */
+        if (cancelReleasesSeat(from) && registration.activityId === null) {
+          await openEventSeat(tx, registration.eventId);
         }
 
         // Cancelou uma posição da lista de espera: só reindexa as posições.
@@ -1719,10 +2361,10 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
            *  Cada linha `EVENT_AUTO` cancelada devolve a vaga da SUA atividade, e a
            *  inscrição do evento devolve o lugar no evento. Devolver sem oferecer é a
            *  mesma perda de antes, um nível abaixo: a fila existe e ninguém a chama.
-           *  A promoção de atividade reserva lugar no evento também (é o que
-           *  `promoteNextFromWaitlist` faz), então é a vaga recém-liberada que ela
-           *  consome — e quando não houver mais lugar no evento, as tentativas
-           *  seguintes devolvem `null` em vez de estourar a lotação.
+           *
+           *  FASE 70: a promoção da ATIVIDADE não reserva mais lugar no evento (a
+           *  reserva é da linha do evento), então cada vaga liberada aqui é consumida
+           *  só pela fila da própria atividade.
            */
           const promoted: { registrationId: string }[] = [];
 
@@ -1776,19 +2418,22 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
         const promotedNext = await promoteNextFromWaitlist(tx, registration.activityId);
 
         /**
-         * A inscrição de atividade também ocupava lugar no EVENTO (é o que a reserva
-         * faz), e esse lugar acabou de ser devolvido. Se a promoção da atividade não o
-         * consumiu — porque não havia fila na atividade —, quem espera pelo EVENTO é
-         * chamado: sem esta linha, a vaga do evento ficaria livre com gente na fila.
+         * ─────────────────────────────────────────────────────────────────────────
+         *  CANCELAR A ATIVIDADE **NÃO** DEVOLVE LUGAR NO EVENTO (FASE 70)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  Aqui havia a promoção da fila do EVENTO, porque a inscrição na atividade
+         *  reservava o lugar no evento. A reserva mudou de dono: agora quem a tem é a
+         *  linha do EVENTO, que continua viva — o lugar NÃO acabou de ser devolvido, e
+         *  promover alguém consumiria uma vaga que ninguém liberou (o evento passaria
+         *  a aceitar mais gente do que cabe).
+         *
+         *  O que acontece com a linha do evento é uma decisão declarada, e não
+         *  esquecimento: ela FICA. A pessoa cancelou a oficina, não a participação no
+         *  evento — e é a inscrição no evento que dá acesso às demais atividades.
          */
-        const promotedFromEvent = await promoteNextFromEventWaitlist(tx, registration.eventId);
-
         return {
           ok: true as const,
-          promoted: [
-            ...(promotedNext ? [promotedNext] : []),
-            ...(promotedFromEvent ? [promotedFromEvent] : []),
-          ],
+          promoted: promotedNext ? [promotedNext] : [],
         };
       },
       { timeout: 15_000 },
@@ -1853,28 +2498,30 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
 }
 
 /**
- * Promove o primeiro da lista de espera, se a vaga realmente puder ser ocupada.
+ * Promove o primeiro da lista de espera de uma ATIVIDADE.
  *
  * Mesmo padrão do fluxo principal: o UPDATE condicional decide. Se outra
  * transação consumiu a vaga nesse meio-tempo, `reserved` é 0 e ninguém é
  * promovido — a inscrição permanece na espera.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- *  PROMOVER TAMBÉM OCUPA LUGAR NO EVENTO (defeito real, encontrado na FASE 34)
+ *  A PROMOÇÃO DA ATIVIDADE DEIXOU DE RESERVAR LUGAR NO EVENTO (FASE 70)
  * ─────────────────────────────────────────────────────────────────────────────
- *  Quem entra pela lista de espera passa a ser uma inscrição CONFIRMADA — e toda
- *  inscrição confirmada de atividade ocupa, além da vaga da atividade, um lugar na
- *  lotação do EVENTO (é o que `attemptRegistration` reserva). A promoção reservava só
- *  a vaga da ATIVIDADE: a cada vaga devolvida e reocupada, o contador do evento ficava
- *  um abaixo do real. O sintoma não aparece no primeiro evento — ele aparece como
- *  "o evento diz que tem vaga e a inscrição no evento é recusada", ou o contrário, e
- *  só depois de muitos cancelamentos.
+ *  Aqui havia a reserva do lugar no EVENTO (de um defeito real da FASE 34: o
+ *  contador do evento ficava um abaixo do real a cada vaga devolvida e reocupada).
+ *  O defeito era real porque, naquele desenho, TODA inscrição confirmada de
+ *  atividade ocupava também um lugar no evento — e era `attemptRegistration` que o
+ *  reservava.
  *
- *  A ORDEM importa, e por isso ela está escrita: o lugar no evento é reservado
- *  PRIMEIRO (se não houver, não há promoção e nada foi tocado); a vaga da atividade
- *  vem depois e, se ela falhar (outra transação levou a vaga), o lugar do evento é
- *  DEVOLVIDO antes de desistir — senão a promoção que não aconteceu teria consumido
- *  lotação do evento.
+ *  A reserva mudou de dono: desde esta fase quem ocupa o lugar no evento é a LINHA
+ *  DO EVENTO, criada por `ensureEventRegistration` (idempotente por pessoa). Manter a
+ *  reserva aqui cobraria DOIS lugares pela mesma pessoa — o invariante é UM.
+ *
+ *  É por isso que o evento lotado deixou de impedir a promoção da atividade: quem
+ *  não couber no evento entra na FILA do evento (ou fica sem a linha, quando o evento
+ *  não tem lotação), e a vaga da OFICINA — que é o que esta fila disputa — segue
+ *  normalmente. Antes, `reservedEventSeat === false` devolvia `null` e a vaga da
+ *  oficina ficava parada por causa de uma lotação que não é a dela.
  */
 export async function promoteNextFromWaitlist(
   tx: TxClient,
@@ -1895,22 +2542,9 @@ export async function promoteNextFromWaitlist(
 
   if (!activity) return null;
 
-  const reservedEventSeat = await reserveEventSeat(tx, activity.eventId);
-
-  if (!reservedEventSeat) return null;
-
   const reserved = await tx.$executeRawUnsafe(RESERVE_ACTIVITY_SEAT_SQL, activityId);
 
-  if (reserved !== 1) {
-    /** Desfaz o lugar no evento: a promoção não vai acontecer. */
-    await tx.$executeRaw`
-      UPDATE events
-         SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
-       WHERE id = ${activity.eventId}::uuid
-    `;
-
-    return null;
-  }
+  if (reserved !== 1) return null;
 
   /**
    * ── A PROMOÇÃO RETÉM A VAGA COM PRAZO (dívida E1) ──────────────────────────
@@ -2125,6 +2759,11 @@ export interface MyRegistration {
   /** `true` = criada pela inscrição no evento (atividade aberta). */
   isAutomatic: boolean;
   /**
+   * `true` quando há resposta pessoal a apagar (FASE 70): campo declarado preenchido
+   * ou nota de acessibilidade. O CPF sozinho NÃO conta — ele fica.
+   */
+  hasErasableResponses: boolean;
+  /**
    * ─── A VAGA OFERTADA PELA FILA (dívida E1) ──────────────────────────────────
    * Existe quando a pessoa foi CHAMADA da lista de espera e a decisão é DELA: a vaga
    * está retida em nome dela até `dueAt`, e o botão de aceitar vive na tela.
@@ -2187,6 +2826,14 @@ export async function listMyRegistrations(
         confirmationDueAt: true,
         confirmedAt: true,
         cancelReason: true,
+        /**
+         * Os dois campos que decidem se há o que APAGAR (FASE 70 · fatia 4). Entram na
+         * MESMA consulta da lista de propósito: a tela precisa do fato para desenhar (ou
+         * não) o controle de eliminação, e uma segunda ida ao banco por linha seria N+1
+         * numa tela que abre a cada visita.
+         */
+        formResponses: true,
+        accessibilityNotes: true,
         activity: {
           select: {
             title: true,
@@ -2239,6 +2886,22 @@ export async function listMyRegistrations(
     eventSlug: row.event.slug,
     isEventRegistration: row.activityId === null,
     isAutomatic: row.origin === 'EVENT_AUTO',
+    /**
+     * ─── HÁ O QUE APAGAR? (FASE 70 · fatia 4) ───────────────────────────────────
+     *
+     * A tela de "Minhas inscrições" é o caminho visível para ELIMINAR as respostas do
+     * formulário. O controle só aparece quando há o que eliminar: oferecer "apague as
+     * suas respostas" a quem nunca respondeu nada é um beco sem saída — a pessoa clica,
+     * o servidor responde "nada a apagar" e ela fica sem saber se o sistema falhou.
+     *
+     * A régua é a do DOMÍNIO (`erasePersonalFormResponses`), e não uma cópia: o que
+     * sobra depois da eliminação é exatamente o que NÃO conta como resposta pessoal
+     * (o CPF, que é obrigação do evento). Contar à mão aqui daria uma tela que oferece
+     * o botão para sempre, ou que o esconde de quem tem o que apagar.
+     */
+    hasErasableResponses:
+      erasePersonalFormResponses(row.formResponses).removedKeys.length > 0 ||
+      row.accessibilityNotes !== null,
     /**
      * A confirmação só existe quando a atividade pede confirmação E há vaga retida
      * (ou confirmada) a mostrar. Numa atividade automática, ou na inscrição do
@@ -2320,15 +2983,44 @@ export async function findMyEventRegistration(
   tenantId: string,
   userId: string,
   eventId: string,
-): Promise<{ id: string; status: RegistrationStatus; waitlistPosition: number | null } | null> {
+): Promise<{
+  id: string;
+  status: RegistrationStatus;
+  waitlistPosition: number | null;
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS RESPOSTAS GRAVADAS VÊM JUNTO (FASE 70)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A porta "Completar meus dados" precisa MOSTRAR o que a pessoa já respondeu. Sem
+   *  isso, ela abriria um formulário em branco sobre respostas que existem — e a pessoa
+   *  (ou a organização, que lê a tela) não teria como saber que o dado está lá. É a
+   *  mesma leitura que já é feita: uma coluna a mais na projeção, e não uma consulta.
+   */
+  formResponses: Record<string, unknown>;
+  /**
+   * A nota de acessibilidade — uma COLUNA, e não resposta de campo declarado.
+   *
+   * Ela vem junto pelo mesmo motivo das respostas: o formulário de "completar" a
+   * reenvia, e um campo em branco faria a nota gravada ser SOBRESCRITA por vazio a cada
+   * passada por ali. Mostrar o valor é o que faz o reenvio ser inofensivo.
+   */
+  accessibilityNotes: string | null;
+} | null> {
   const row = await withTenant(tenantId, (tx) =>
     tx.registration.findFirst({
       where: { userId, eventId, activityId: null, deletedAt: null },
-      select: { id: true, status: true, waitlistPosition: true },
+      select: {
+        id: true,
+        status: true,
+        waitlistPosition: true,
+        formResponses: true,
+        accessibilityNotes: true,
+      },
     }),
   );
 
   if (!row) return null;
+
   return {
     id: row.id,
     status: row.status as RegistrationStatus,
@@ -2338,7 +3030,54 @@ export async function findMyEventRegistration(
      * única pergunta que a pessoa tem.
      */
     waitlistPosition: row.waitlistPosition,
+    /**
+     * Depósito de respostas: `null`, texto ou lista viram objeto VAZIO, e não erro — o
+     * leitor tolerante é o mesmo de todo o resto do formulário, e uma tela de inscrição
+     * não pode cair porque uma coluna Json antiga está num formato inesperado.
+     */
+    formResponses:
+      row.formResponses !== null &&
+      typeof row.formResponses === 'object' &&
+      !Array.isArray(row.formResponses)
+        ? (row.formResponses as Record<string, unknown>)
+        : {},
+    accessibilityNotes: row.accessibilityNotes,
   };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  OS CAMPOS QUE O ORGANIZADOR DECLAROU (FASE 70 · fatia 4)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A ACTION LÊ ISTO, E NÃO O QUE A TELA MANDOU
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `validateFormResponses` precisa da ESPECIFICAÇÃO para decidir o que entra das
+ *  respostas — e a especificação é do EVENTO, não do `<form>`. Aceitá-la como campo
+ *  do formulário deixaria qualquer pessoa declarar o próprio spec no POST e gravar
+ *  `{ cpf: ... }` (ou qualquer chave) como resposta de campo declarado: a validação
+ *  passaria a ser uma formalidade que o cliente cumpre consigo mesmo.
+ *
+ *  A leitura passa pelo leitor TOLERANTE do domínio, o MESMO que a página do
+ *  participante usa: a tela e o servidor não podem discordar sobre quais campos
+ *  existem. Configuração torta devolve lista vazia — e vazia significa "o formulário
+ *  de sempre", que é o que a pessoa vê e o que ela responde.
+ */
+export async function readEventRegistrationFields(input: {
+  tenantId: string;
+  eventSlug: string;
+}): Promise<readonly RegistrationFormField[]> {
+  return withTenant(input.tenantId, async (tx) => {
+    const event = await tx.event.findFirst({
+      where: { slug: input.eventSlug, deletedAt: null },
+      select: { settings: true },
+    });
+
+    if (!event) return [];
+
+    return readRegistrationForm(event.settings).fields;
+  });
 }
 
 /** Inscrição do usuário em UMA atividade, se existir. */
@@ -2426,6 +3165,11 @@ function toCancelOutcome(error: unknown): CancelOutcome {
  *     acabou de entrar na fila. Aqui não há o que recalcular: a inscrição já
  *     existe, então devolvemos "já inscrito" em vez de tentar de novo.
  *
+ *   • `registrations_live_event_user_key` (FASE 70) — a mesma pessoa ganhou a linha do
+ *     EVENTO em outra transação (as duas atividades dela, num clique duplo). É a
+ *     resposta idempotente do caminho que materializa a inscrição no evento: a linha
+ *     que existe é a resposta, e não um erro.
+ *
  * Qualquer outra violação (inclusive posse não reconhecida) propaga.
  *
  * `isUniqueViolation` e `violatedIndexName` vêm de `@/lib/db/prisma-errors` —
@@ -2433,13 +3177,14 @@ function toCancelOutcome(error: unknown): CancelOutcome {
  */
 function classifyUniqueConflict(
   error: unknown,
-): 'retry-position' | 'already-registered' | 'unrelated' {
+): 'retry-position' | 'already-registered' | 'already-in-event' | 'unrelated' {
   if (!isUniqueViolation(error)) return 'unrelated';
 
   const index = violatedIndexName(error);
 
   if (index === 'registrations_waitlist_position_key') return 'retry-position';
   if (index === 'registrations_live_activity_user_key') return 'already-registered';
+  if (index === 'registrations_live_event_user_key') return 'already-in-event';
 
   return 'unrelated';
 }

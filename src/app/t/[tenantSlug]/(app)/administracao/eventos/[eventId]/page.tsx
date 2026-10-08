@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarRange,
   CheckCircle2,
+  ClipboardList,
   DoorOpen,
   ExternalLink,
   FileText,
@@ -160,6 +161,7 @@ export default async function AdminEventDetailPage({
   /** O ícone de cada área: o domínio não conhece React, então o mapa vive aqui. */
   const AREA_ICONS: Record<string, LucideIcon> = {
     dados: Building2,
+    formulario: ClipboardList,
     programacao: CalendarRange,
     salas: DoorOpen,
     chamadas: FileText,

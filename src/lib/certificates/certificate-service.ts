@@ -126,8 +126,27 @@ async function loadFacts(
         activity: { select: { title: true, type: true, workloadMinutes: true } },
       },
     }),
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O CREDENCIAMENTO NO EVENTO É DA LINHA DO EVENTO (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A leitura era a PRIMEIRA inscrição da pessoa no evento — e a primeira podia
+     *  ser a de uma OFICINA. Como a presença na atividade grava `checkedInAt` na
+     *  linha dela, quem tinha entrado só numa oficina passava a ter "credenciamento no
+     *  evento" (`eventCheckedIn`), e o certificado de PARTICIPAÇÃO do evento saía sem
+     *  CPF — porque o CPF é lido da linha do evento, que não existia.
+     *
+     *  `activityId: null` é o que separa "chegou ao evento" de "esteve numa atividade"
+     *  — a mesma distinção que o crachá faz pelo CONTEXTO da leitura (ADR-149).
+     */
     tx.registration.findFirst({
-      where: { tenantId: input.tenantId, userId: input.userId, eventId: input.eventId, deletedAt: null },
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        eventId: input.eventId,
+        activityId: null,
+        deletedAt: null,
+      },
       select: { checkedInAt: true, status: true },
     }),
     /**

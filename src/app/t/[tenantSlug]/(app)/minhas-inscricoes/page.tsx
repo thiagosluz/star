@@ -7,6 +7,7 @@ import { listMyRegistrations } from '@/lib/events/registration-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CancelRegistrationButton } from '@/components/events/cancel-registration-button';
 import { AcceptPromotionButton } from '@/components/events/accept-promotion-button';
+import { EraseFormResponsesButton } from '@/components/events/erase-form-responses-button';
 
 export const metadata = { title: 'Minhas inscrições' };
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,9 @@ export default async function MyRegistrationsPage({
             <li
               key={registration.id}
               className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
+              data-testid="my-registration"
+              data-registration-id={registration.id}
+              data-registration-kind={registration.isEventRegistration ? 'event' : 'activity'}
             >
               <div className="min-w-0 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -143,9 +147,33 @@ export default async function MyRegistrationsPage({
                 </p>
 
                 {registration.isEventRegistration ? (
-                  <p className="text-xs text-muted-foreground">
-                    Vale para todas as atividades abertas a participantes.
-                  </p>
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Vale para todas as atividades abertas a participantes.
+                    </p>
+
+                    {/**
+                      * ─────────────────────────────────────────────────────────────────────
+                      *  APAGAR AS RESPOSTAS DO FORMULÁRIO (FASE 70 · fatia 4)
+                      * ─────────────────────────────────────────────────────────────────────
+                      *  A eliminação vive na linha da INSCRIÇÃO NO EVENTO, que é onde o
+                      *  formulário do organizador é respondido e onde ele é guardado. O
+                      *  controle só aparece quando há o que apagar (`hasErasableResponses`):
+                      *  oferecê-lo a quem nada respondeu seria um botão que só sabe dizer
+                      *  "não havia nada".
+                      *
+                      *  Apagar NÃO cancela: a vaga e o histórico continuam — é a decisão do
+                      *  humano, e a tela diz as duas coisas antes do clique.
+                      */}
+                    {registration.hasErasableResponses ? (
+                      <div className="mt-3" data-testid="erase-form-responses-slot">
+                        <EraseFormResponsesButton
+                          tenantSlug={tenantSlug}
+                          eventSlug={registration.eventSlug}
+                        />
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <CalendarDays className="size-3.5" aria-hidden />

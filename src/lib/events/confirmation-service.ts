@@ -12,10 +12,10 @@
  *       contador nenhum — a vaga já estava reservada desde a inscrição; o que muda é
  *       o que ela significa.
  *    2. **Liberar o que venceu** — a varredura cancela as inscrições pendentes cujo
- *       prazo passou, devolve a vaga da atividade, devolve o lugar no evento e
- *       promove o próximo da lista de espera, tudo na MESMA transação (é a mesma
- *       esteira do cancelamento da FASE 3, e por isso ela é reusada em vez de
- *       reimplementada).
+ *       prazo passou, devolve a vaga da atividade (ou o lugar no evento, quando a
+ *       linha que venceu é a do EVENTO) e promove o próximo da lista de espera, tudo
+ *       na MESMA transação (é a mesma esteira do cancelamento da FASE 3, e por isso
+ *       ela é reusada em vez de reimplementada).
  *    3. **Lembrar** — quem está perto do prazo recebe aviso enquanto ainda dá tempo.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -923,17 +923,26 @@ export async function runConfirmationExpirySweep(
           if (row.activityId) {
             const next = await promoteNextFromWaitlist(tx, row.activityId);
             if (next) promoted.push(next.registrationId);
+
+            /**
+             * ───────────────────────────────────────────────────────────────────────
+             *  A VAGA VENCIDA **NÃO** DEVOLVE LUGAR NO EVENTO (FASE 70)
+             * ───────────────────────────────────────────────────────────────────────
+             *  Aqui havia a promoção da fila do EVENTO, porque a inscrição na atividade
+             *  reservava o lugar no evento. A reserva mudou de dono: o lugar no evento é
+             *  da LINHA DO EVENTO, que a inscrição na atividade materializa e que NÃO é
+             *  cancelada junto (cancelar a oficina não é sair do evento). Devolver o
+             *  lugar aqui o tiraria de quem continua inscrito — e promover alguém
+             *  consumiria uma vaga que ninguém liberou.
+             */
+          } else {
+            /**
+             * A linha do EVENTO venceu: o lugar no evento voltou, e quem espera na fila
+             * DELE é chamado. A devolução do contador já saiu de `releaseSeatForExpiry`.
+             */
+            const nextInEvent = await promoteNextFromEventWaitlist(tx, row.eventId);
+            if (nextInEvent) promoted.push(nextInEvent.registrationId);
           }
-
-          /**
-           * A vaga devolvida pode ser do PRÓPRIO evento (linha promovida da fila do
-           * evento) ou de uma atividade, que também ocupava lugar no evento. Nos dois
-           * casos quem espera pelo evento é chamado — e a função devolve `null` quando
-           * não há lugar ou não há fila, sem efeito colateral.
-           */
-          const nextInEvent = await promoteNextFromEventWaitlist(tx, row.eventId);
-          if (nextInEvent) promoted.push(nextInEvent.registrationId);
-
         }
 
         return { released, promoted };
@@ -969,35 +978,37 @@ export async function runConfirmationExpirySweep(
 /**
  * Devolve a vaga ocupada por uma inscrição que venceu.
  *
- * Espelha EXATAMENTE o que `cancelRegistration` faz ao liberar vaga — inclusive o
- * `GREATEST(..., 0)`, que impede um contador negativo por dado inconsistente. Se os
- * dois caminhos divergirem, a atividade passa a mentir sobre a própria lotação: um
- * caminho que só decrementa a atividade deixa o evento contando a mais, e o
- * contrário libera vaga no evento sem liberar na atividade.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O LUGAR NO EVENTO É DA LINHA DO EVENTO (FASE 70)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Antes, TODA inscrição de atividade ocupava também um lugar na lotação do evento, e
+ *  por isso esta função decrementava o contador do evento em qualquer caso. A reserva
+ *  mudou de dono: quem ocupa o lugar no evento é a linha de `activityId` NULO, e a
+ *  linha da atividade — que é a que vence por prazo aqui — não ocupa lugar nenhum no
+ *  evento.
+ *
+ *  Decrementar o evento ao liberar uma ATIVIDADE tiraria da lotação um lugar que
+ *  continua ocupado: o evento passaria a aceitar mais gente do que cabe, que é
+ *  exatamente o defeito que a reserva atômica existe para impedir.
  */
 async function releaseSeatForExpiry(
   tx: TxClient,
   input: { tenantId: string; eventId: string; activityId: string | null },
 ): Promise<void> {
-  await tx.$executeRaw`
-    UPDATE events
-       SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
-     WHERE id = ${input.eventId}::uuid
-  `;
-
   /**
-   * A inscrição do EVENTO não ocupa vaga de atividade nenhuma (`activityId` nulo):
-   * só o lugar no evento é devolvido. Sem o `if`, o `${null}::uuid` do SQL casaria
-   * com zero linhas — inofensivo, mas mentiria sobre o que a função faz.
+   * A inscrição do EVENTO não ocupa vaga de atividade nenhuma (`activityId` nulo): só
+   * o lugar no evento é devolvido. Sem o `if`, o `${null}::uuid` do SQL casaria com
+   * zero linhas — inofensivo, mas mentiria sobre o que a função faz.
    */
-  if (input.activityId === null) return;
+  if (input.activityId === null) {
+    await tx.$executeRaw`
+      UPDATE events
+         SET "confirmedCount" = GREATEST("confirmedCount" - 1, 0)
+       WHERE id = ${input.eventId}::uuid
+    `;
 
-  /**
-   * A inscrição do EVENTO não ocupa vaga de atividade nenhuma (`activityId` nulo):
-   * devolve-se só o lugar no evento. Sem o guarda, o UPDATE com `null::uuid` casaria
-   * com zero linhas — inofensivo, mas mentiria sobre o que a função faz.
-   */
-  if (input.activityId === null) return;
+    return;
+  }
 
   await tx.$executeRaw`
     UPDATE activities

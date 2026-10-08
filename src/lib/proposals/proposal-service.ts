@@ -36,7 +36,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { linkParticipantIfEligible } from '@/lib/events/registration-service';
 import { createSubmission, submitSubmission } from '@/lib/review/submission-service';
-import { isOpenToPublicEvent } from '@/domain/events/public-registration-rules';
+import { isOpenToPublicEvent, readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
 import { queueEmail } from '@/lib/communication/email-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -130,7 +130,11 @@ export async function submitProposal(
         }),
         tx.event.findFirst({
           where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
-          select: { title: true, status: true, settings: true },
+          /**
+           * O NOME DA INSTITUIÇÃO entra na recusa de evento restrito (FASE 70): a
+           * mensagem que a pessoa lê diz de QUEM é a comunidade que ela precisa.
+           */
+          select: { title: true, status: true, settings: true, tenant: { select: { name: true } } },
         }),
       ]);
 
@@ -172,6 +176,17 @@ export async function submitProposal(
           eventStatus: call.event!.status,
           settings: call.event!.settings,
         }),
+        /**
+         * ─────────────────────────────────────────────────────────────────────────
+         *  O EVENTO RESTRITO TAMBÉM RECUSA A PROPOSTA (FASE 70)
+         * ─────────────────────────────────────────────────────────────────────────
+         *  A restrição à comunidade era conferida só na tela da inscrição, e a
+         *  chamada de propostas é a OUTRA porta pública do mesmo evento — sem esta
+         *  chave, quem não tem vínculo enviaria um trabalho para um evento que não
+         *  deixaria nem entrar.
+         */
+        requiresMembership: readEventRegistrationPolicy(call.event!.settings).requiresMembership,
+        tenantName: call.event!.tenant.name,
       }),
     );
 

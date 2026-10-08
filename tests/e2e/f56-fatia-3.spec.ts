@@ -87,6 +87,38 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
     eventId = event.id;
 
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  UM CAMPO DECLARADO NO EVENTO (FASE 70 · fatia 4)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Este caso media `formResponses` por IGUALDADE (`{ cpf }`). Com o formulário
+     *  que o organizador monta, a inscrição passou a gravar TAMBÉM as respostas dos
+     *  campos declarados — e o campo entra aqui, na fixture do caminho real, para que
+     *  a asserção seja REESCRITA em vez de afrouxada: antes `{ cpf }` exato; agora
+     *  "contém o CPF **e** contém o campo novo", com as chaves conferidas uma a uma.
+     *
+     *  Ele nasce OBRIGATÓRIO de propósito: obrigatório é o caso que recusa a inscrição
+     *  inteira, e é ele que prova que a tela desenha o `required` e que o valor
+     *  digitado VOLTA depois de uma recusa (a lição da E54).
+     */
+    await withTenant(tenantId, (tx) =>
+      tx.event.update({
+        where: { id: eventId },
+        data: {
+          settings: {
+            registrationForm: [
+              {
+                key: 'instituicao',
+                label: 'Instituição de origem',
+                type: 'SHORT_TEXT',
+                required: true,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
     pessoa = await signUpVia(api, 'Pessoa da Fatia 3');
     await linkUser({ tenantId, userId: pessoa.id, kind: 'PARTICIPANT' });
     await grantRole({ tenantId, userId: pessoa.id, role: 'PARTICIPANT' });
@@ -104,6 +136,16 @@ test('1. o CPF é opcional, explicado — e um número que não confere é RECUS
 
   /** A tela diz PARA QUE SERVE: documento sem finalidade declarada não se pede. */
   await expect(page.getByText(/sai no certificado/i)).toBeVisible();
+
+  /**
+   * ── O CAMPO QUE O ORGANIZADOR DECLAROU (FASE 70) ─────────────────────────────
+   *  Ele é obrigatório: sem ele o navegador nem envia o formulário. E é o valor que a
+   *  asserção final vai procurar no banco, ao lado do CPF.
+   */
+  const campoDeclarado = page.getByTestId('event-declared-field-instituicao');
+  await expect(campoDeclarado).toBeVisible();
+  await expect(campoDeclarado).toHaveAttribute('required', '');
+  await campoDeclarado.fill('UFBA');
 
   // ── CPF que não confere: a inscrição para, e a mensagem diz o que fazer ────────
   await cpf.fill(CPF_INVALIDO);
@@ -130,6 +172,14 @@ test('1. o CPF é opcional, explicado — e um número que não confere é RECUS
    */
   await expect(cpf).toHaveValue(CPF_INVALIDO);
 
+  /**
+   * ── E O CAMPO DECLARADO TAMBÉM VOLTOU (FASE 70) ───────────────────────────────
+   *  A recusa do CPF devolve `values`, e `values` passou a carregar os campos
+   *  declarados: sem isso, corrigir um dígito do CPF custaria redigitar a resposta —
+   *  exatamente o defeito que a E54 mediu, por outra porta.
+   */
+  await expect(campoDeclarado).toHaveValue('UFBA');
+
   // ── CPF que confere: a inscrição passa, e o banco guarda DÍGITOS ──────────────
   await cpf.fill(CPF_VALIDO);
   /** A caixa de consentimento o React também zera: a pessoa remarca antes de enviar. */
@@ -155,8 +205,25 @@ test('1. o CPF é opcional, explicado — e um número que não confere é RECUS
   /**
    * DÍGITOS, e não a máscara: o banco guarda o número, e a formatação é da impressão —
    * guardar `529.982.247-25` obrigaria a desformatar em toda leitura.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A IGUALDADE VIROU "CONTÉM", E A FORÇA AUMENTOU (FASE 70 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  ANTES: `toEqual({ cpf: '52998224725' })` — a inscrição só tinha o CPF.
+   *  DEPOIS: as MESMAS duas verdades, agora sobre um depósito que também guarda o que
+   *  o organizador perguntou. `toMatchObject` prende os DOIS valores, e a contagem de
+   *  chaves impede que o "contém" esconda um terceiro campo que ninguém pediu — um
+   *  `toEqual` sobre o objeto inteiro voltaria a quebrar no próximo campo declarado,
+   *  que é justamente o que a fase passou a permitir.
    */
-  expect(registration.formResponses).toEqual({ cpf: '52998224725' });
+  expect(registration.formResponses).toMatchObject({
+    cpf: '52998224725',
+    instituicao: 'UFBA',
+  });
+  expect(Object.keys(registration.formResponses as object).sort()).toEqual([
+    'cpf',
+    'instituicao',
+  ]);
 });
 
 test('2. a galeria pede a MINIATURA, e a rota entrega WebP pequeno', async ({ page }) => {

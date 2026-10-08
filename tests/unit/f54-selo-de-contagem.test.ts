@@ -95,4 +95,22 @@ describe('selo de contagem por área', () => {
   it('o selo do crachá usa o plural com acento correto', () => {
     expect(eventAreaMetric('crachas', contagens({ credentials: 3 }))).toBe('3 crachás emitidos');
   });
+
+  /**
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  O SELO DA ÁREA `formulario` (FASE 70)
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  A área nasceu na fatia 3 e o selo dela ficou pendente. O caso prende as três
+   *  respostas da régua da F54 na área nova: zero é resposta ("nenhum campo
+   *  declarado"), um é singular ("1 campo declarado") e `null` — a configuração que o
+   *  sistema não consegue ler — vira NADA, e não zero.
+   */
+  it('o formulário do evento também tem selo — e conta CAMPOS DECLARADOS', () => {
+    expect(eventAreaMetric('formulario', contagens({ formFields: 0 }))).toBe(
+      'nenhum campo declarado',
+    );
+    expect(eventAreaMetric('formulario', contagens({ formFields: 1 }))).toBe('1 campo declarado');
+    expect(eventAreaMetric('formulario', contagens({ formFields: 3 }))).toBe('3 campos declarados');
+    expect(eventAreaMetric('formulario', contagens({ formFields: null }))).toBeNull();
+  });
 });

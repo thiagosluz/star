@@ -24,6 +24,10 @@ import {
 import { remainingSeats } from '@/domain/events/registration-rules';
 import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
 import {
+  readRegistrationForm,
+  type RegistrationFormField,
+} from '@/domain/events/registration-form-spec-rules';
+import {
   orderSpeakersForDisplay,
   readSocialLinks,
   type SocialLinks,
@@ -365,6 +369,19 @@ export interface PublicEventDetail extends PublicEventSummary {
    * formulário de inscrição precisam saber para não oferecer o que será recusado.
    */
   registrationRequiresMembership: boolean;
+  /**
+   * ─── OS CAMPOS QUE O ORGANIZADOR DECLAROU (FASE 70 · fatia 4) ────────────────
+   *
+   * Derivados de `settings.registrationForm` pelo leitor tolerante do domínio. Os
+   * CAMPOS são públicos por natureza — são as perguntas que o participante responde
+   * ao se inscrever, e a tela de inscrição precisa desenhá-los. O que NÃO é público é
+   * o `settings` cru: ele guarda outras configurações do evento, e expor o objeto
+   * inteiro faria qualquer chave futura sair no HTML sem ninguém decidir isso.
+   *
+   * A lista vazia é o caso normal (o evento que nunca montou formulário) e é o que
+   * faz a tela cair no formulário de sempre.
+   */
+  registrationFormFields: readonly RegistrationFormField[];
   /**
    * O evento RECEBE trabalhos? (FASE 68)
    *
@@ -1037,6 +1054,8 @@ async function loadEventDetail(
     theme,
     themeIsValid,
     registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
+    /** O mesmo leitor tolerante da política acima — e a MESMA leitura que a action faz. */
+    registrationFormFields: readRegistrationForm(event.settings).fields,
     usesCall: event.usesCall,
     page: page
       ? {

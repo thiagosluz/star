@@ -19,6 +19,7 @@ import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { EventRegistrationForm } from '@/components/events/event-registration-form';
+import { EventRegistrationDataForm } from '@/components/events/event-registration-data-form';
 import { Section, ThemeScope } from '@/components/events/theme-scope';
 
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,15 @@ export default async function EventRegistrationPage({
   let alreadyRegistered: string | null = null;
   /** A posição na FILA do evento, quando é isso que a pessoa tem (dívida E33). */
   let myWaitlistPosition: number | null = null;
+  /**
+   * O QUE A INSCRIÇÃO JÁ TEM GRAVADO (FASE 70).
+   *
+   * A porta "Completar meus dados" mostra estes valores em vez de abrir em branco: uma
+   * resposta que existe e não aparece é uma resposta que a pessoa vai redigitar (ou
+   * achar que perdeu). O CPF está em dígitos, que é como ele é gravado.
+   */
+  let myFormResponses: Record<string, unknown> = {};
+  let myAccessibilityNotes: string | null = null;
 
   if (user) {
     const membership = await adminPrisma.userTenantProfile.findFirst({
@@ -86,6 +96,8 @@ export default async function EventRegistrationPage({
       if (mine && mine.status !== 'CANCELED') {
         alreadyRegistered = mine.status;
         myWaitlistPosition = mine.waitlistPosition;
+        myFormResponses = mine.formResponses;
+        myAccessibilityNotes = mine.accessibilityNotes;
       }
     } else {
       canRegister = membershipStatus !== 'SUSPENDED' && membershipStatus !== 'REMOVED';
@@ -112,8 +124,41 @@ export default async function EventRegistrationPage({
     <ThemeScope theme={event.theme}>
       <main>
         <Section>
+          {/**
+            * ═══════════════════════════════════════════════════════════════════════════
+            *  A PÁGINA DE INSCRIÇÃO ENTROU NO PORTÃO, E O PORTÃO ACHOU O QUE FALTAVA
+            *  (FASE 70)
+            *
+            *  ───────────────────────────────────────────────────────────────────────────
+            *  O DEFEITO NÃO ERA DESTA FASE — E SOBREVIVEU PORQUE A TELA NÃO ERA MEDIDA
+            *  ───────────────────────────────────────────────────────────────────────────
+            *  A FASE 70 pôs esta página no portão WCAG AA (era a única superfície da
+            *  inscrição fora dele), e a varredura reprovou **3 violações** que já estavam
+            *  aqui desde a FASE 3: 1 nó de `definition-list`, 4 de `dlitem` e **6 nós de
+            *  `color-contrast`** — todos em marcação antiga (`dl > div > div > dt/dd` e
+            *  `text-xs opacity-60`), nenhum nos campos declarados.
+            *
+            *  As duas correções são DECISÕES QUE A CASA JÁ TINHA TOMADO, e aplicá-las
+            *  aqui não é escolha nova:
+            *
+            *   • **o `<dl>` que não era uma lista de definições** — a FASE 68 (fatia 5)
+            *     achou o MESMO defeito na ficha da ATIVIDADE (`1 nó de definition-list e
+            *     10 de dlitem`) e decidiu: o `div` que agrupa o ÍCONE com o rótulo é o
+            *     desenho, então a marcação deixa de afirmar "lista de definições" e vira
+            *     `div` com rótulo e valor. Esta página ficou de fora daquela correção
+            *     porque não estava no portão — é a lição da "catraca que não cobria o
+            *     alvo", com nome e número;
+            *   • **o `opacity-60`** — a FASE 66 trocou a opacidade (que COMPÕE o texto com
+            *     o fundo) pelo papel do tema `.ef-muted`, medido em **5,08:1** no claro e
+            *     **5,91:1** no escuro sobre a `--ef-background`. Ela alcançou os nós do
+            *     FORMULÁRIO e os dois da programação; os rótulos e os contadores desta
+            *     PÁGINA continuaram em `opacity-60` (**4,44:1**) pelo mesmo motivo.
+            *
+            *  O desenho não muda: mesmos ícones, mesmas duas colunas, mesmo texto.
+            * ═══════════════════════════════════════════════════════════════════════════
+            */}
           <nav className="mb-6">
-            <Link href={eventPageHref} className="text-xs opacity-60 underline underline-offset-4">
+            <Link href={eventPageHref} className="ef-muted text-xs underline underline-offset-4">
               ← {event.title}
             </Link>
           </nav>
@@ -121,7 +166,7 @@ export default async function EventRegistrationPage({
           <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr]">
             <div className="space-y-5">
               <header className="space-y-2">
-                <p className="text-xs uppercase tracking-wide opacity-60">Inscrição</p>
+                <p className="ef-muted text-xs uppercase tracking-wide">Inscrição</p>
                 <h1 className="text-balance text-3xl font-semibold tracking-tight">
                   Inscreva-se no evento
                 </h1>
@@ -132,12 +177,15 @@ export default async function EventRegistrationPage({
                 </p>
               </header>
 
-              <dl className="grid gap-3 text-sm sm:grid-cols-2" data-testid="event-registration-summary">
+              <div
+                className="grid gap-3 text-sm sm:grid-cols-2"
+                data-testid="event-registration-summary"
+              >
                 <div className="flex items-center gap-2">
-                  <CalendarDays className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <CalendarDays className="ef-muted size-4 shrink-0" aria-hidden />
                   <div>
-                    <dt className="text-xs opacity-60">Período</dt>
-                    <dd>
+                    <span className="ef-muted block text-xs">Período</span>
+                    <span className="block" data-testid="event-registration-period">
                       {new Intl.DateTimeFormat('pt-BR', {
                         dateStyle: 'long',
                         timeZone: event.timezone,
@@ -147,21 +195,21 @@ export default async function EventRegistrationPage({
                         dateStyle: 'long',
                         timeZone: event.timezone,
                       }).format(event.endsAt)}
-                    </dd>
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Users className="size-4 shrink-0 opacity-60" aria-hidden />
+                  <Users className="ef-muted size-4 shrink-0" aria-hidden />
                   <div>
-                    <dt className="text-xs opacity-60">Vagas no evento</dt>
-                    <dd>
+                    <span className="ef-muted block text-xs">Vagas no evento</span>
+                    <span className="block">
                       {event.remainingSeats === null
                         ? 'Vagas ilimitadas'
                         : `${event.remainingSeats} restantes`}
-                    </dd>
+                    </span>
                   </div>
                 </div>
-              </dl>
+              </div>
 
               {openActivities.length > 0 ? (
                 <section className="space-y-2" data-testid="open-activities-list">
@@ -173,7 +221,7 @@ export default async function EventRegistrationPage({
                       <li key={activity.id} className="flex flex-wrap items-center gap-2">
                         <span className="ef-badge">{activityTypeLabel(activity.type)}</span>
                         <span>{activity.title}</span>
-                        <span className="text-xs opacity-60">
+                        <span className="ef-muted text-xs">
                           {formatDuration(activity.workloadMinutes)}
                         </span>
                       </li>
@@ -187,7 +235,7 @@ export default async function EventRegistrationPage({
                   <h2 className="text-base font-semibold tracking-tight">
                     Com inscrição própria ({individualActivities.length})
                   </h2>
-                  <p className="text-sm opacity-70">
+                  <p className="ef-muted text-sm">
                     Estas têm turma e vagas: depois de se inscrever no evento, escolha as que
                     quiser na programação.
                   </p>
@@ -204,7 +252,7 @@ export default async function EventRegistrationPage({
                         >
                           {activity.title}
                         </Link>
-                        <span className="text-xs opacity-60">
+                        <span className="ef-muted text-xs">
                           {activity.remainingSeats === null
                             ? 'vagas ilimitadas'
                             : `${activity.remainingSeats} vaga(s)`}
@@ -272,6 +320,34 @@ export default async function EventRegistrationPage({
                   <Link href={tenantPath(tenantSlug, '/minhas-inscricoes')} className="ef-button-outline w-full">
                     Ver minhas inscrições
                   </Link>
+
+                  {/**
+                    * ─────────────────────────────────────────────────────────────────────
+                    *  "COMPLETAR MEUS DADOS" (FASE 70)
+                    * ─────────────────────────────────────────────────────────────────────
+                    *  A inscrição numa ATIVIDADE passou a materializar a linha do EVENTO —
+                    *  e ela nasce com as respostas herdadas do formulário da atividade,
+                    *  que não tem CPF. Esta é a porta para completar depois, e ela NÃO
+                    *  aparece para quem está na FILA: quem espera vaga ainda não tem
+                    *  inscrição, e "completar" os dados de uma vaga que não existe
+                    *  confundiria as duas coisas.
+                    *
+                    *  Ela recebe OS MESMOS campos declarados que a tela de inscrição
+                    *  (`event.registrationFormFields`, a leitura única do domínio) e as
+                    *  respostas que a inscrição JÁ TEM (`mine.formResponses`), para a
+                    *  pessoa ver o que respondeu em vez de um formulário em branco. A
+                    *  lista vazia é o formulário de sempre: sem campos declarados, o
+                    *  bloco não existe no DOM.
+                    */}
+                  {alreadyRegistered && alreadyRegistered !== 'WAITLISTED' ? (
+                    <EventRegistrationDataForm
+                      tenantSlug={tenantSlug}
+                      eventSlug={eventSlug}
+                      fields={event.registrationFormFields}
+                      respostas={myFormResponses}
+                      accessibilityNotes={myAccessibilityNotes}
+                    />
+                  ) : null}
                 </div>
               ) : !user ? (
                 <div className="ef-card space-y-3 p-5">
@@ -337,6 +413,20 @@ export default async function EventRegistrationPage({
                     eventSlug={eventSlug}
                     openActivities={openActivities.map((activity) => activity.title)}
                     individualActivities={individualActivities.map((activity) => activity.title)}
+                    /**
+                     * ─────────────────────────────────────────────────────────────────────
+                     *  AS PERGUNTAS QUE O ORGANIZADOR DECLAROU (FASE 70 · fatia 4)
+                     * ─────────────────────────────────────────────────────────────────────
+                     *  Vêm da MESMA leitura que a Server Action usa para validar
+                     *  (`readRegistrationForm`, dentro da projeção pública do evento): tela
+                     *  e servidor não podem discordar sobre quais campos existem — a tela
+                     *  desenharia um campo que o servidor recusaria, ou o contrário.
+                     *
+                     *  A lista VAZIA é o formulário de sempre (CPF, necessidades e
+                     *  consentimentos): o evento que nunca montou formulário não ganha um
+                     *  bloco vazio.
+                     */
+                    fields={event.registrationFormFields}
                   />
                 </>
               )}

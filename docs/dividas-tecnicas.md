@@ -27,7 +27,11 @@
 > que não é reprocessado, e **E66**, a autorização da foto que é declarada e não guardada), com as
 > **revisões
 > pós-entrega** da FASE 25
-> (E30), da FASE 4 (E31–E32) e da FASE 3 (E33).
+> (E30), da FASE 4 (E31–E32) e da FASE 3 (E33). As fases **47 a 70** seguiram atualizando
+> este documento a cada entrega; a **FASE 70** declarou **A7** (o falso positivo do casamento
+> por fragmento de tipo sensível) e **B10** (a varredura dos `catch` silenciosos das
+> contagens), e quitou nenhum item — o defeito que ela fechou (a inscrição na atividade sem
+> linha no evento) nunca esteve neste levantamento.
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -104,8 +108,8 @@
 
 | Tema | Itens abertos | Dos quais rápidos (P) | Risco se ficar como está |
 |---|---|---|---|
-| A. Segurança e conformidade | 3 | 0 | Médio — **a varredura de arquivos foi entregue na FASE 36**; resta a assinatura assimétrica do certificado, a auditoria de leitura e o login social |
-| B. Confiabilidade e operação | 4 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker) |
+| A. Segurança e conformidade | 4 | 0 | Médio — **a varredura de arquivos foi entregue na FASE 36**; resta a assinatura assimétrica do certificado, a auditoria de leitura, o login social e o falso positivo do casamento por fragmento de tipo (A7, declarado na FASE 70) |
+| B. Confiabilidade e operação | 5 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker); resta a varredura dos `catch` silenciosos das contagens (B10, declarada na FASE 70) |
 | C. Quotas e billing | 1 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 2 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem central de preferências por tipo de aviso (o **recado em massa** tem opt-out desde a FASE 67 — ver D9) |
 | E. Jornada do participante | 21 | 1 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP**, **a autorização da foto é declarada, não guardada**, **a arte da carta entra por URL sem passar pelo acervo** e **a suíte de credenciamento depende da ordem dos testes**; a FASE 67 acrescentou **E87** (sem revogação individual do endereço de descadastro) — o **E88** (o descadastro não pergunta o motivo) foi **quitado na FASE 69** |
@@ -113,7 +117,7 @@
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 1 | 0 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 0 | 0 | Baixo — ~~resta a sigla × nome na detecção de conflito~~ a FASE 60 fechou as duas linhas abertas (I1 e I2) |
-| **Total** | **38** | **5** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — · **5 na FASE 69** — E82, E83, E84, E86 e E88 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **40** | **5** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — · **5 na FASE 69** — E82, E83, E84, E86 e E88 — · **2 declarados na FASE 70** — A7 e B10 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -227,6 +231,36 @@
 > `VenueBlock` ganhou **linha de base visual** (a captura `evento-bloco-de-local`, que não
 > existia porque `?aba=agora` não renderiza blocos). A fase também acrescentou **2 casos** ao
 > portão WCAG AA (o evento de tema escuro e o visitante no escuro), sem isenção nova.
+>
+> **FASE 70 (a inscrição que não deixa buraco · o formulário que o organizador monta):** o
+> **defeito** que a fase fechou nunca esteve neste levantamento — ele é a razão da fase existir:
+> inscrever-se numa **ATIVIDADE** não materializava a inscrição no **EVENTO** (medido: **3 de 3**
+> linhas de atividade sem linha de evento no banco de dev), a vaga do evento era reservada pela
+> linha da atividade e quem só fez uma oficina **emitia o certificado de participação do evento
+> sem CPF**. O conserto **moveu a reserva** (uma reserva por pessoa por evento), pôs
+> `registrationRequiresMembership` no **servidor**, deu ao organizador um **formulário declarado
+> por evento** (allowlist de seis tipos, tipos sensíveis proibidos por construção, eliminação das
+> respostas pela própria pessoa) e **fechou a lacuna de produto**: a porta "Completar meus dados"
+> — a única de quem entrou pela atividade — passou a pedir **também** os campos declarados, com
+> o mesmo componente, o mesmo validador e **mescla** (nunca sobrescrita).
+>
+> **A fase declarou dois itens novos**, e os dois são honestos porque foram **medidos** e não
+> corrigidos:
+>
+>   • **A7** — o casamento por **fragmento** de tipo sensível recusa nomes parecidos
+>     (`DOCENTE` contém `doc`); é o preço declarado da lista que impede `CPF` e `cpf_do_titular`
+>     de virarem campo, e o erro é para o lado certo (a recusa é explícita, com motivo);
+>   • **B10** — os **outros `catch` silenciosos** das contagens: o defeito da FASE 70 (§5.4 do
+>     documento da fase) mostrou que uma consulta que lança e um `catch` que devolve "sem
+>     número" apagam o selo de **todas** as áreas em silêncio. O caso encontrado foi corrigido
+>     (o `where` próprio e o `console.error`), e a **varredura dos demais serviços de contagem**
+>     ficou aberta, com o caminho escrito.
+>
+> **Contagem: 38 → 40** (A=3→**4** · B=4→**5** · C=1 · D=3 · E=21 · F=5 · H=1 · I=0), medida
+> linha por linha nas tabelas deste documento. A fase também **acrescentou um caso** ao portão
+> WCAG AA (**28 → 29**, `ISENCOES = []`) e **uma linha de base visual** (**22 → 23**), e as duas
+> decisões foram **medidas antes** de tomadas — os números estão em
+> `docs/fase-70-formulario-do-organizador.md` §3.6 e §6.
 >
 > **FASE 68 (o evento que não era de três dias):** **não quitou nem declarou item nenhum do
 > levantamento** — e isso é decisão, não omissão. A fase inteira (o interruptor da chamada com a
@@ -367,6 +401,7 @@
 | ~~A3~~ | ~~**Antivírus nos arquivos de submissão**~~ | F4, F6 | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. Driver de inspeção com o padrão em NÃO inspecionar, rotina `file-scan` no worker (de 5 em 5 minutos), portão de download nos dois caminhos que servem bytes de terceiro (submissão e material de palestrante), trilha da ameaça e ClamAV sob perfil próprio no compose. Ficou de fora `media_assets` (bucket público, leitura pela URL) e o anexo de proposta, que ainda não existe (**E46**) | — | — | — |
 | A4 | **Auditoria de leitura de dados pessoais** | F7 | A trilha registra mutações; quem **visualizou** não é registrado | Sem rastro em incidente de acesso indevido | M | Decorrente |
 | A6 | **Login social (Google/ORCID)** | F2 | Tabela `account` é multi-provedor; falta o provedor e as credenciais | Atrito de cadastro em público acadêmico | M | Sim |
+| A7 | **O casamento por FRAGMENTO de tipo sensível recusa nomes parecidos** | FASE 70 (novo) | O formulário do organizador recusa tipo declarado que **contenha** um fragmento da lista de dados sensíveis (`FORBIDDEN_FIELD_TYPE_FRAGMENTS`), já normalizado (minúsculas, sem separadores). É o que faz `cpf`, `CPF` e `cpf_do_titular` caírem no mesmo lugar — e é também o que recusa `DOCENTE` (contém `doc`). Um casamento por palavra inteira reduziria o falso positivo e **abriria** o buraco que a lista existe para fechar | O organizador que quiser um tipo com nome parecido escolhe outro rótulo — a recusa é explícita e cita o fragmento. O erro é para o lado certo (recusar é barato; deixar passar é o defeito), e a decisão de manter assim é declarada | P | Sim |
 
 > A5 (verificação de e-mail) continua agrupado com **D1** na F14 candidata: depende do
 > provedor de e-mail, que é o item que a fase de Comunicação entrega primeiro.
@@ -380,6 +415,7 @@
 | ~~B7~~ | ~~**Agendamento da manutenção de partições**~~ | F13 (novo) | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. A manutenção virou rotina do WORKER (`audit-partitions`, todo dia às 3h) e não depende mais de alguém configurar cron na máquina; a CLI (`npm run db:partitions`) continua existindo para quem opera sem worker, chamando o mesmo serviço | — | — | — |
 | B8 | **Política de retenção da auditoria** | F13 (novo) | Decisão de negócio (LGPD × guarda): nada é descartado hoje | A `DEFAULT` e o histórico crescem sem limite definido | P | Decorrente |
 | B9 | **Coletor de métricas (Prometheus/Grafana)** | F13 (novo) | O endpoint é o contrato; falta quem raspe e alerte | Métrica existe e ninguém lê; `bullmq_queue_up 0` não vira alerta | M | Decorrente |
+| B10 | **Os `catch` silenciosos das contagens** | FASE 70 (novo) | A FASE 70 achou **um**: `getEventAreaCounts` contava o formulário com `where: { tenantId, eventId }` sobre o modelo `Event` — e `eventId` **não existe** ali (as tabelas filhas é que o usam). A consulta **lançava**, e o `catch` do serviço — escrito para "sem número a tela continua" — devolvia `READ_FAILED` para o **conjunto inteiro**: o defeito de UMA área apagava o selo de TODAS, em silêncio. O caso foi corrigido (o `where` próprio e um `console.error` no `catch`), e a **varredura dos demais serviços de contagem ficou aberta** — o caminho é `grep -n "catch" src/lib/**/*count*.ts` com a régua de que **toda falha silenciosa por desenho precisa de log** | O modo de falha é o pior possível para uma catraca: o selo some e o silêncio é indistinguível de "não havia nada para contar", então ninguém investiga | P | Sim |
 
 ### C. Quotas e billing
 

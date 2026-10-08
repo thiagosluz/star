@@ -20,17 +20,25 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { cpfDigits, isValidCpf } from '@/domain/events/registration-form-rules';
+import {
+  composeFormResponses,
+  formResponseFieldName,
+  validateFormResponses,
+} from '@/domain/events/registration-form-spec-rules';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { guardSelfServiceAction } from '@/lib/auth/guard-action';
 import { adminPrisma } from '@/lib/db/admin-client';
 import {
   cancelRegistration,
+  readEventRegistrationFields,
   registerForActivity,
   registerForEvent,
   acceptPromotion,
+  updateEventRegistrationData,
   type RegistrationOutcome,
 } from '@/lib/events/registration-service';
+import { eraseMyFormResponses } from '@/lib/events/registration-response-service';
 import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -51,7 +59,20 @@ export interface RegistrationActionState {
    *  chegava com o campo VAZIO: a pessoa tinha de redigitar tudo para corrigir um
    *  dígito. O E2E da dívida E54 foi quem pegou isso.
    */
-  values?: { cpf?: string; accessibilityNotes?: string };
+  values?: {
+    cpf?: string;
+    accessibilityNotes?: string;
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O QUE A PESSOA RESPONDEU NOS CAMPOS DECLARADOS (FASE 70 · fatia 4)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `key` → o texto CRU que chegou do `<form>`, e não o valor normalizado: é ele
+     *  que volta para o `defaultValue` do controle. Devolver o normalizado faria a
+     *  data digitada reaparecer no formato do banco e a escolha inválida sumir da
+     *  tela — exatamente o apagamento que a lição da E54 proíbe.
+     */
+    declaredFields?: Record<string, string>;
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -315,6 +336,35 @@ export async function registerForEventAction(
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
+   *  OS CAMPOS DECLARADOS: O SPEC VEM DO BANCO, AS RESPOSTAS VÊM DO `<form>` (FASE 70)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A especificação é lida do EVENTO (jamais do POST: aceitá-la do cliente faria a
+   *  validação ser uma formalidade que quem envia cumpre consigo mesmo), e as
+   *  respostas são lidas pelo nome PREFIXADO de cada campo declarado — o mesmo que o
+   *  componente desenhou. O que não foi preenchido simplesmente não aparece aqui, e é
+   *  o `required` do domínio que decide se isso recusa.
+   */
+  const declaredFields = await readEventRegistrationFields({
+    tenantId: context.tenantId,
+    eventSlug: data.eventSlug,
+  });
+
+  const typed: Record<string, string> = {};
+
+  for (const field of declaredFields) {
+    const raw = formData.get(formResponseFieldName(field.key));
+    if (typeof raw === 'string') typed[field.key] = raw;
+  }
+
+  /** O que a pessoa digitou, como ela digitou — volta inteiro em qualquer recusa. */
+  const values = {
+    cpf: data.cpf,
+    accessibilityNotes: data.accessibilityNotes,
+    declaredFields: typed,
+  };
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
    *  CPF ERRADO É RECUSADO AQUI, COM A PESSOA NA TELA (dívida E54)
    * ─────────────────────────────────────────────────────────────────────────────
    *  O CPF entra em DOCUMENTO (certificado, ata, lista de presença). Aceitar onze
@@ -329,7 +379,46 @@ export async function registerForEventAction(
       ok: false,
       code: 'INVALID_CPF',
       message: 'O CPF informado não confere. Confira os números e tente de novo.',
-      values: { cpf: data.cpf, accessibilityNotes: data.accessibilityNotes },
+      values,
+    };
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O DOMÍNIO DECIDE O QUE ENTRA DAS RESPOSTAS — E A ACTION NÃO INVENTA TEXTO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `validateFormResponses` devolve SÓ O ACEITO (é o contrato do `validateProposalData`
+   *  da F33): tipo errado, valor acima do teto, escolha fora das opções, número fora
+   *  da faixa, data que não existe — e `required` em branco, que é recusa da inscrição
+   *  INTEIRA. As mensagens são as DELE, com o rótulo do campo: a tela não reescreve,
+   *  não resume e não traduz.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  RECUSA DE CAMPO OPCIONAL TAMBÉM PARA A INSCRIÇÃO — E A RAZÃO É O SILÊNCIO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A alternativa seria gravar o aceito e seguir, deixando o valor inválido de fora.
+   *  Isso apagaria em silêncio o que a pessoa digitou num campo OPCIONAL: ela veria a
+   *  inscrição confirmada, e a resposta — que ela acredita ter dado — não existiria em
+   *  lugar nenhum. Como a recusa devolve o que foi digitado, corrigir custa um dígito;
+   *  engolir custaria o dado.
+   */
+  const declared = validateFormResponses(declaredFields, typed);
+
+  if (!declared.ok) {
+    return {
+      ok: false,
+      code: declared.problem.code,
+      message: declared.problem.message,
+      values,
+    };
+  }
+
+  if (declared.rejected.length > 0) {
+    return {
+      ok: false,
+      code: 'INVALID_DECLARED_FIELD',
+      message: declared.rejected.map((rejection) => rejection.message).join(' '),
+      values,
     };
   }
 
@@ -340,12 +429,19 @@ export async function registerForEventAction(
     consentImage: data.consentImage,
     consentData: data.consentData,
     accessibilityNotes: data.accessibilityNotes ?? null,
-    /** O CPF vive nas respostas do formulário — é o que o certificado lê depois (E54). */
-    formResponses: cpf ? { cpf } : {},
+    /**
+     * O CPF vive nas respostas do formulário — é o que o certificado lê depois (E54) —
+     * e entra DEPOIS do que o organizador declarou, para que a chave do sistema seja a
+     * última palavra. As duas não podem colidir: `cpf` é identificador RESERVADO.
+     */
+    formResponses: composeFormResponses({
+      declared: declared.accepted,
+      system: cpf ? { cpf } : {},
+    }),
   });
 
   if (!outcome.ok) {
-    return { ok: false, code: outcome.code, message: outcome.message };
+    return { ok: false, code: outcome.code, message: outcome.message, values };
   }
 
   // A programação inteira muda de estado para esta pessoa: as atividades abertas
@@ -389,8 +485,187 @@ export async function registerForEventAction(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  Cancelamento
+//  Completar os dados da inscrição no evento (FASE 70)
 // ───────────────────────────────────────────────────────────────────────────────
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  "COMPLETAR MEUS DADOS" — A PORTA DE QUEM VEIO PELA ATIVIDADE (FASE 70)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UMA AÇÃO PRÓPRIA, E NÃO A INSCRIÇÃO DE NOVO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Desde esta fase, inscrever-se numa ATIVIDADE materializa a inscrição no EVENTO.
+ *  Essa linha nasce com `formResponses` vazio, porque o formulário da atividade não
+ *  coleta CPF — e `registerForEvent` recusa quem já tem inscrição viva (`DUPLICATE`),
+ *  corretamente: não faz sentido "se inscrever de novo" quem já está inscrito.
+ *
+ *  O que falta a essa pessoa é ATUALIZAR a própria inscrição, e é o que esta ação faz.
+ *  Ela NÃO cria linha, NÃO reserva vaga, NÃO mexe em fila nem em status: o serviço
+ *  casa a inscrição pelo `userId` da SESSÃO (posse no banco, não na tela) e mescla as
+ *  respostas.
+ *
+ *  A ação NÃO é a tela: a autorização é a mesma das outras portas públicas
+ *  (`guardSelfServiceAction`), e o consentimento de dados continua obrigatório.
+ */
+export async function completeEventRegistrationDataAction(
+  _prev: RegistrationActionState | null,
+  formData: FormData,
+): Promise<RegistrationActionState> {
+  const parsed = registerForEventSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    eventSlug: formData.get('eventSlug'),
+    consentImage: formData.get('consentImage') === 'on',
+    consentData: formData.get('consentData') === 'on',
+    accessibilityNotes: (formData.get('accessibilityNotes') as string) || undefined,
+    cpf: (formData.get('cpf') as string) || undefined,
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados do formulário inválidos.' };
+  }
+
+  const data = parsed.data;
+
+  const context = await guardSelfServiceAction({
+    tenantSlug: data.tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_CREATE,
+  });
+
+  if (!context.ok) {
+    if (context.reason === 'FORBIDDEN') {
+      return {
+        ok: false,
+        code: 'FORBIDDEN',
+        message: 'Seu perfil não tem permissão para se inscrever nesta instituição.',
+      };
+    }
+
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}/inscricao`),
+      )}`,
+    );
+  }
+
+  /** O consentimento de dados continua sendo a condição, como na inscrição. */
+  if (!data.consentData) {
+    return {
+      ok: false,
+      code: 'CONSENT_REQUIRED',
+      message: 'É necessário autorizar o tratamento dos seus dados para salvar.',
+    };
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS PERGUNTAS DO ORGANIZADOR TAMBÉM SÃO RESPONDIDAS AQUI (FASE 70)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Esta é a única porta que quem entrou pela ATIVIDADE tem para completar a própria
+   *  inscrição — e ela nascia pedindo só CPF e necessidades. Sem os campos declarados
+   *  aqui, o organizador que montou o formulário não coletava de quem veio pela oficina
+   *  exatamente o que ele pediu: era a lacuna de produto que a fase tinha deixado.
+   *
+   *  A régua é a MESMA da tela de inscrição, e por inteiro:
+   *   • o spec vem do BANCO (`readEventRegistrationFields`), nunca do POST — aceitá-lo
+   *     do cliente faria a validação ser uma formalidade que quem envia cumpre consigo
+   *     mesmo;
+   *   • o validador é o mesmo (`validateFormResponses`), com as mensagens DELE;
+   *   • a recusa devolve o que foi digitado (`values`), pela mesma razão da E54 — o
+   *     React 19 zera o formulário depois da resposta;
+   *   • o aceito é MESCLADO sobre o que já existe (no serviço), e nunca substitui: quem
+   *     já tinha respondido não perde a resposta por passar aqui de novo.
+   */
+  const declaredFields = await readEventRegistrationFields({
+    tenantId: context.tenantId,
+    eventSlug: data.eventSlug,
+  });
+
+  const typed: Record<string, string> = {};
+
+  for (const field of declaredFields) {
+    const raw = formData.get(formResponseFieldName(field.key));
+    if (typeof raw === 'string') typed[field.key] = raw;
+  }
+
+  /** O que a pessoa digitou, como ela digitou — volta inteiro em qualquer recusa. */
+  const values = {
+    cpf: data.cpf,
+    accessibilityNotes: data.accessibilityNotes,
+    declaredFields: typed,
+  };
+
+  const cpf = data.cpf ? cpfDigits(data.cpf) : null;
+
+  if (cpf && !isValidCpf(cpf)) {
+    return {
+      ok: false,
+      code: 'INVALID_CPF',
+      message: 'O CPF informado não confere. Confira os números e tente de novo.',
+      values,
+    };
+  }
+
+  const declared = validateFormResponses(declaredFields, typed);
+
+  if (!declared.ok) {
+    return {
+      ok: false,
+      code: declared.problem.code,
+      message: declared.problem.message,
+      values,
+    };
+  }
+
+  /**
+   * Resposta de campo OPCIONAL inválida também RECUSA, como na inscrição: gravar só o
+   * aceito apagaria em silêncio o que a pessoa digitou, e ela sairia da tela achando
+   * que a resposta existe.
+   */
+  if (declared.rejected.length > 0) {
+    return {
+      ok: false,
+      code: 'INVALID_DECLARED_FIELD',
+      message: declared.rejected.map((rejection) => rejection.message).join(' '),
+      values,
+    };
+  }
+
+  const outcome = await updateEventRegistrationData({
+    tenantId: context.tenantId,
+    userId: context.userId,
+    eventSlug: data.eventSlug,
+    consentImage: data.consentImage,
+    consentData: data.consentData,
+    accessibilityNotes: data.accessibilityNotes ?? null,
+    /**
+     * O aceito do organizador e, por ÚLTIMO, o CPF do sistema — a mesma composição da
+     * porta de inscrição (`composeFormResponses`). O que a pessoa NÃO respondeu não
+     * aparece aqui, e é isso que faz o serviço manter a resposta que já existia.
+     */
+    formResponses: composeFormResponses({
+      declared: declared.accepted,
+      system: cpf ? { cpf } : {},
+    }),
+  });
+
+  if (!outcome.ok) {
+    return { ok: false, code: outcome.code, message: outcome.message, values };
+  }
+
+  revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
+  revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}/inscricao`), 'page');
+
+  return {
+    ok: true,
+    code: 'UPDATED',
+    message: 'Seus dados foram atualizados. Eles são usados no seu certificado.',
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Cancelamento
+// ─────────────────────────────────────────────────────────────────────────────
 const cancelSchema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
   eventSlug: z.string().trim().min(1).max(120),
@@ -480,6 +755,99 @@ export async function cancelRegistrationAction(
           : `Inscrição cancelada. ${outcome.promoted.length} pessoas da lista de espera foram chamadas — cada uma tem 48 h para confirmar.`,
   };
 }
+// ───────────────────────────────────────────────────────────────────────────────
+//  Apagar as MINHAS respostas do formulário (FASE 70 · fatia 4)
+// ───────────────────────────────────────────────────────────────────────────────
+const eraseFormResponsesSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  eventSlug: z.string().trim().min(1).max(120),
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  APAGAR AS RESPOSTAS SEM CANCELAR A INSCRIÇÃO (decisão do humano na FASE 70)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A PERMISSÃO É A DE "AGIR SOBRE A PRÓPRIA INSCRIÇÃO"
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Não existe `registration:update:own` na matriz, e criar uma agora mexeria na
+ *  avaliação de TODOS os papéis (a permissão nova entraria na escolha de cada um, e a
+ *  matriz tem 66 itens presos por teste) para um ato que é da MESMA natureza do
+ *  cancelamento: a pessoa decidindo sobre a própria inscrição. A guarda usada é a
+ *  dele — `registration:cancel:own` com POSSE explícita —, e a posse é o próprio
+ *  `userId` da SESSÃO: `can()` nega sem ela, por desenho (fail-closed).
+ *
+ *  O SERVIÇO ainda filtra por `userId` em todas as consultas. São duas linhas de
+ *  defesa, e a segunda é a que vale se alguém chamar o serviço por outro caminho —
+ *  não existe aqui campo de "qual inscrição", então não há como nomear a de outra
+ *  pessoa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE A MENSAGEM DIZ — E POR QUE ELA DIZ ISSO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A pessoa precisa saber que NÃO perdeu a vaga e o que continua guardado. Uma
+ *  eliminação que só dissesse "pronto" deixaria duas dúvidas: "cancelei sem querer?" e
+ *  "apagou tudo mesmo?" — e a segunda tem resposta: o CPF e os consentimentos ficam.
+ */
+export async function eraseMyFormResponsesAction(
+  _prev: RegistrationActionState | null,
+  formData: FormData,
+): Promise<RegistrationActionState> {
+  const parsed = eraseFormResponsesSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    eventSlug: formData.get('eventSlug'),
+  });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
+  }
+
+  const data = parsed.data;
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(data.tenantSlug, '/minhas-inscricoes'),
+      )}`,
+    );
+  }
+
+  const context = await guard(data.tenantSlug, PERMISSIONS.REGISTRATION_CANCEL_OWN, {
+    ownership: { ownerId: user.id },
+  });
+
+  if (!context) {
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(data.tenantSlug, '/minhas-inscricoes'),
+      )}`,
+    );
+  }
+
+  const outcome = await eraseMyFormResponses({
+    tenantId: context.tenantId,
+    userId: context.userId,
+    eventSlug: data.eventSlug,
+  });
+
+  if (!outcome.ok) {
+    return { ok: false, code: outcome.code, message: outcome.message };
+  }
+
+  revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
+  revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
+
+  return {
+    ok: true,
+    code: 'ERASED',
+    message: outcome.erased
+      ? 'Suas respostas do formulário foram apagadas. A sua inscrição continua ativa: a vaga, o histórico e o certificado não mudam. O CPF e os consentimentos continuam guardados — eles são a base do seu certificado e da sua autorização.'
+      : 'Não havia respostas suas para apagar neste evento. A sua inscrição continua ativa e nada mudou.',
+  };
+}
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ACEITAR A VAGA OFERTADA (dívida E1)

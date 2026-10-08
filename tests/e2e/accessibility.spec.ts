@@ -58,6 +58,7 @@ import {
   linkUser,
 } from './helpers';
 import { createDemand } from '../../src/lib/events/demand-service';
+import { applyRegistrationFormOperationOnEvent } from '../../src/lib/admin/registration-form-service';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import {
@@ -616,6 +617,90 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 
     eventId = event.id;
     eventoSlug = `acessivel-${RUN_ID}`;
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *  O FORMULÁRIO QUE O ORGANIZADOR MONTA ENTRA NO PORTÃO (FASE 70)
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  POR QUE ESTE CASO PRECISOU EXISTIR
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  A fase entregou uma superfície NOVA — os campos declarados na página de
+     *  inscrição — e ela nasceu **fora** deste portão: nenhum dos 28 casos abria
+     *  `/eventos/<slug>/inscricao`. É a mesma forma do defeito da FASE 66 (o rótulo que
+     *  media 4,44:1 e sobreviveu porque a tela onde ele mora não era medida) e da FASE
+     *  69 (o tema escuro, que nenhuma varredura abria): **a catraca não cobria o alvo**.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  OS SEIS TIPOS ENTRAM, E NÃO UM
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  Cada tipo da allowlist vira um CONTROLE diferente — `input` de texto, `textarea`,
+     *  `<select>` de escolha, `<select>` de Sim/Não, `input type=number` e
+     *  `input type=date` —, e o que o `axe` reprova muda com o controle: `label` e
+     *  `select-name` são regras distintas, e o `aria-describedby` que liga ajuda e
+     *  finalidade só existe em alguns. Declarar um campo só mediria um sexto da
+     *  superfície que a fase criou.
+     *
+     *  A DECLARAÇÃO PASSA PELO SERVIÇO REAL (`applyRegistrationFormOperationOnEvent`):
+     *  é o caminho da tela do organizador, e é ele que grava a lista JÁ VALIDADA em
+     *  `Event.settings`. Escrever o JSON à mão mediria uma configuração que o produto
+     *  não tem como produzir.
+     */
+    for (const campo of [
+      {
+        key: 'instituicao',
+        label: 'Instituição de origem',
+        type: 'SHORT_TEXT',
+        required: true,
+        help: 'Onde você estuda ou trabalha hoje.',
+      },
+      {
+        key: 'observacoes',
+        label: 'Observações para a organização',
+        type: 'LONG_TEXT',
+        required: false,
+        purpose: 'Registrar pedidos que não cabem nas outras perguntas.',
+      },
+      {
+        key: 'chegada',
+        label: 'Horário previsto de chegada',
+        type: 'SINGLE_CHOICE',
+        required: false,
+        options: ['Manhã', 'Tarde', 'Noite'],
+      },
+      {
+        key: 'libras',
+        label: 'Precisa de intérprete de Libras?',
+        type: 'YES_NO',
+        required: false,
+      },
+      {
+        key: 'acompanhantes',
+        label: 'Quantos acompanhantes virão com você',
+        type: 'NUMBER',
+        required: false,
+        min: 0,
+        max: 5,
+      },
+      {
+        key: 'chegada_em',
+        label: 'Data prevista de chegada',
+        type: 'DATE',
+        required: false,
+      },
+    ] as const) {
+      const salvo = await applyRegistrationFormOperationOnEvent({
+        tenantId: tenant.id,
+        actorId: admin.id,
+        eventId: event.id,
+        operation: { kind: 'SAVE', originalKey: null, field: { ...campo } },
+      });
+
+      if (!salvo.ok) {
+        throw new Error(`Falha ao declarar o campo ${campo.key}: ${salvo.message}`);
+      }
+    }
 
     const hoje = new Date();
     const demandaBase = {
@@ -1503,6 +1588,107 @@ test.describe('telas autenticadas', () => {
     await expectNoCriticalViolations(
       page,
       `aba "programação" (/t/${tenantSlug}/eventos/<slug>)`,
+    );
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  A PÁGINA DE INSCRIÇÃO COM OS CAMPOS DECLARADOS ENTRA NO PORTÃO (FASE 70)
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A ÁREA NOVA FICOU SEM SELO — E AS CATRACAS FICARAM VERDES POR ISSO
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A FASE 70 pôs na página de inscrição uma superfície que não existia: os campos que
+   *  o ORGANIZADOR declara (seis tipos, seis controles) e, ao lado deles, a ajuda e a
+   *  finalidade que o texto longo obriga a declarar. Nenhum dos 28 casos deste arquivo
+   *  abria `/eventos/<slug>/inscricao` — e as catracas da F53/F54 continuaram verdes
+   *  porque **nenhuma delas afirmava aquele selo**. É o mesmo padrão que a FASE 66
+   *  registrou ("o defeito não sobreviveu por ser sutil: sobreviveu porque a tela onde
+   *  ele mora não era medida"), agora na dimensão da PÁGINA.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE O CASO AFIRMA O CONTEÚDO ANTES DE VARRER
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O `axe` mede o que está no DOM, e "o campo sumiu" não é violação de regra nenhuma:
+   *  uma página que perdesse o bloco inteiro — ou que desenhasse só o primeiro campo —
+   *  passaria IGUAL. As asserções prendem o que a fase criou: o formulário na tela, o
+   *  bloco das perguntas com o título visível, e CADA UM dos seis controles, pelo
+   *  `data-testid` que o próprio componente emite (`event-declared-field-<key>`).
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A SESSÃO É DA ADMINISTRADORA, E É O QUE FAZ O FORMULÁRIO EXISTIR
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  Sem sessão a página oferece "Entre para se inscrever", e o formulário — com os
+   *  campos declarados dentro dele — nem é renderizado: a varredura mediria uma tela
+   *  em que o nó da fase não está. A administradora tem `registration:create` (é
+   *  permissão de PARTICIPANTE, e todo papel de instituição a herda) e NÃO tem
+   *  inscrição no evento da fixture, então ela vê o formulário de verdade.
+   *
+   *  NENHUMA ISENÇÃO NOVA: `ISENCOES` continua vazio, e é isso que faz este caso valer.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  test('a página de inscrição com os campos declarados não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/eventos/${eventoSlug}/inscricao`);
+
+    /** A página é a CERTA e o formulário é o de inscrição no evento. */
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Inscreva-se no evento' }),
+    ).toBeVisible();
+    await expect(page.getByTestId('event-registration-form')).toBeVisible();
+
+    /**
+     * OS SEIS CAMPOS DECLARADOS, um a um. A lista é escrita à mão de propósito: um
+     * campo que deixasse de ser desenhado (um tipo a mais no domínio, um ramo perdido no
+     * componente) reprova aqui em vez de sumir da medição.
+     */
+    const bloco = page.getByTestId('event-declared-fields');
+
+    await expect(bloco).toBeVisible();
+    await expect(bloco).toContainText('Perguntas do evento');
+
+    for (const key of [
+      'instituicao',
+      'observacoes',
+      'chegada',
+      'libras',
+      'acompanhantes',
+      'chegada_em',
+    ]) {
+      await expect(page.getByTestId(`event-declared-field-${key}`)).toBeVisible();
+    }
+
+    /**
+     * A AJUDA e a FINALIDADE — os dois parágrafos de texto pequeno que a fase acrescentou
+     * ao lado do controle. Eles são o alvo mais provável de contraste fora do token
+     * (a família exata do defeito da FASE 66) e o `aria-describedby` é o que liga cada um
+     * ao seu campo: sem afirmá-los, a varredura mediria a tela sem eles.
+     */
+    await expect(bloco).toContainText('Onde você estuda ou trabalha hoje.');
+    await expect(bloco).toContainText('Registrar pedidos que não cabem nas outras perguntas.');
+
+    /** O controle NATIVO de cada tipo — é o que o `axe` reprova por regra própria. */
+    await expect(page.getByTestId('event-declared-field-observacoes')).toHaveJSProperty(
+      'tagName',
+      'TEXTAREA',
+    );
+    await expect(page.getByTestId('event-declared-field-chegada')).toHaveJSProperty(
+      'tagName',
+      'SELECT',
+    );
+    await expect(page.getByTestId('event-declared-field-libras')).toHaveJSProperty(
+      'tagName',
+      'SELECT',
+    );
+    await expect(page.getByTestId('event-declared-field-chegada_em')).toHaveAttribute(
+      'type',
+      'date',
+    );
+
+    await expectNoCriticalViolations(
+      page,
+      `página de inscrição com os campos declarados (/t/${tenantSlug}/eventos/<slug>/inscricao)`,
     );
   });
 

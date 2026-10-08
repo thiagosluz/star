@@ -596,11 +596,24 @@ test.describe('jornada de inscrição', () => {
       { timeout: 15_000 },
     );
 
-    // ── 6. O banco registra exatamente uma inscrição confirmada ────────────
+    // ── 6. O banco registra DUAS linhas: a atividade E o evento (FASE 70) ──
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  ERAM UMA LINHA; SÃO DUAS — E O VÍNCULO ENTRE ELAS É O QUE IMPORTA (FASE 70)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A inscrição numa atividade passou a MATERIALIZAR a inscrição no evento. Antes
+     *  desta fase, quem entrava só por uma oficina ficava sem inscrição no evento: o
+     *  certificado de participação do evento saía sem CPF (o CPF só é lido de lá) e o
+     *  painel contava linhas de dois níveis diferentes.
+     *
+     *  A asserção ficou MAIS forte, e não mais frouxa: além das duas linhas, ela prende
+     *  a LIGAÇÃO entre elas (mesma pessoa, mesma instituição, a do evento sem
+     *  atividade) e que a reserva de vaga é UMA só.
+     */
     const registrations = await e2eDb.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
       return tx.registration.findMany({
-        where: { activityId: activity.id },
+        where: { activityId: activity.id, userId: user.id },
         select: { status: true, userId: true, consentData: true },
       });
     });
@@ -609,21 +622,52 @@ test.describe('jornada de inscrição', () => {
     expect(registrations[0]?.status).toBe('CONFIRMED');
     expect(registrations[0]?.consentData).toBe(true);
 
+    /** A linha do EVENTO da MESMA pessoa — a que a fase passou a criar. */
+    const eventRows = await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      return tx.registration.findMany({
+        where: { eventId: event.id, userId: user.id, activityId: null },
+        select: { id: true, status: true, origin: true, consentData: true },
+      });
+    });
+
+    expect(eventRows).toHaveLength(1);
+    expect(eventRows[0]?.status).toBe('CONFIRMED');
+    /** `EVENT_AUTO` = o vínculo nasceu da ATIVIDADE, e não de um pedido ao evento. */
+    expect(eventRows[0]?.origin).toBe('EVENT_AUTO');
+    /** O consentimento é o MESMO que a pessoa deu no formulário da atividade. */
+    expect(eventRows[0]?.consentData).toBe(true);
+
     // O contador denormalizado acompanha.
     const counters = await e2eDb.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
-      return tx.activity.findUniqueOrThrow({
-        where: { id: activity.id },
-        select: { confirmedCount: true, capacity: true },
-      });
+      const [activityCounters, eventCounters] = await Promise.all([
+        tx.activity.findUniqueOrThrow({
+          where: { id: activity.id },
+          select: { confirmedCount: true, capacity: true },
+        }),
+        tx.event.findUniqueOrThrow({
+          where: { id: event.id },
+          select: { confirmedCount: true },
+        }),
+      ]);
+
+      return { activity: activityCounters, event: eventCounters };
     });
-    expect(counters.confirmedCount).toBe(1);
-    expect(counters.capacity).toBe(5);
+    expect(counters.activity.confirmedCount).toBe(1);
+    expect(counters.activity.capacity).toBe(5);
+    /** UMA reserva no evento — a linha da atividade NÃO cobra uma segunda vaga. */
+    expect(counters.event.confirmedCount).toBe(1);
 
     // ── 7. A landing page reflete a vaga consumida ─────────────────────────
     await page.goto(`/t/${tenant.slug}/eventos/${event.slug}`);
     // O contador da atividade passa a mostrar 1 de 5 preenchidas.
     await expect(page.getByText(/1\/5 inscritos/)).toBeVisible();
+
+    // ── 8. E a inscrição no evento já permite COMPLETAR os dados (o CPF) ───
+    await page.goto(`/t/${tenant.slug}/eventos/${event.slug}/inscricao`);
+    await expect(page.getByTestId('event-registration-status')).toBeVisible();
+    await expect(page.getByTestId('event-registration-data-form')).toBeVisible();
   });
 
   test('a vaga é decrementada e o último lugar fecha a atividade', async ({ page }) => {
@@ -817,8 +861,20 @@ test.describe('cancelamento e promoção', () => {
        *  Era `window.confirm` — que o Playwright dispensa sozinho quando ninguém o
        *  trata (submissão cancelada em silêncio). Agora o botão abre o diálogo do
        *  produto: o teste lê a consequência escrita e confirma, como o usuário faz.
+       *
+       *  ─────────────────────────────────────────────────────────────────────────────
+       *  E O ALVO É A LINHA DA ATIVIDADE, NÃO "A PRIMEIRA" (FASE 70)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A lista passou a ter DUAS linhas para esta pessoa (a da oficina e a do evento,
+       *  que a oficina materializou). Um `.first()` cru cancelaria a linha do EVENTO — e
+       *  a oficina continuaria inscrita, que não é o que o caso mede. A linha da
+       *  atividade é identificada pelo título dela (a do evento não o carrega).
        */
-      await page.getByTestId('cancel-registration-open').first().click();
+      await page
+        .getByTestId('my-registration')
+        .filter({ hasText: activity.title })
+        .getByTestId('cancel-registration-open')
+        .click();
 
       const cancelDialog = page.getByTestId('cancel-registration-confirm');
       await expect(cancelDialog).toBeVisible({ timeout: 20_000 });
@@ -826,14 +882,21 @@ test.describe('cancelamento e promoção', () => {
       await cancelDialog.getByTestId('cancel-registration-confirm-confirm').click();
 
       /**
-       * Ação aceita -> a rota é revalidada -> a inscrição cancelada SAI da lista
-       * (a consulta de "Minhas inscrições" exclui status CANCELED). O aviso
-       * transitório desmonta junto, então o alvo confiável é o estado vazio da
-       * lista, não o texto do resultado.
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  A OFICINA SAI DA LISTA; A INSCRIÇÃO NO EVENTO FICA (FASE 70)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  Ação aceita -> a rota é revalidada -> a inscrição cancelada SAI da lista (a
+       *  consulta de "Minhas inscrições" exclui status CANCELED). O alvo é o estado
+       *  durável da lista.
+       *
+       *  O que MUDOU: a lista não fica VAZIA. A inscrição na atividade materializou a
+       *  inscrição no evento, e cancelar a oficina não é sair do evento — a linha do
+       *  evento continua viva e é ela que dá acesso à programação aberta. A asserção
+       *  afirma as DUAS coisas: a atividade sumiu e o evento continua lá.
        */
-      await expect(
-        page.getByText(/ainda não se inscreveu em nenhuma atividade/i),
-      ).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId('my-registrations')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(activity.title)).toHaveCount(0, { timeout: 20_000 });
+      await expect(page.getByTestId('registration-event-badge')).toBeVisible();
 
       // ── Banco: o segundo foi promovido a CONFIRMED ─────────────────────
       const state = await e2eDb.$transaction(async (tx) => {

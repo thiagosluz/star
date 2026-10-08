@@ -340,6 +340,10 @@ describe('concorrência na primeira inscrição', () => {
     const activityCId = await createActivity('atividade-c', 10);
     const activityDId = await createActivity('atividade-d', 10);
 
+    const eventCountBefore = await withTenant(tenantId, (tx) =>
+      tx.event.findFirstOrThrow({ where: { id: eventId }, select: { confirmedCount: true } }),
+    ).then((row) => row.confirmedCount);
+
     const [first, second] = await Promise.all([
       registerForActivity({
         tenantId,
@@ -374,14 +378,45 @@ describe('concorrência na primeira inscrição', () => {
     expect(await readMembership(concurrent)).toMatchObject({ status: 'ACTIVE' });
 
     // As duas inscrições existem — o vínculo é que não se duplica.
-    const registrations = await adminPrisma.registration.count({
+    //
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  SÃO TRÊS LINHAS DESDE A FASE 70, E A TERCEIRA É A PROVA DA CORRIDA
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  A inscrição numa atividade passou a MATERIALIZAR a inscrição no evento. As duas
+    //  transações pediram a MESMA linha do evento (mesma pessoa, mesmo evento) e o
+    //  índice `registrations_live_event_user_key` recusou a segunda — a resposta dela
+    //  foi a linha que a outra criou, e não um erro. É por isso que a contagem exata
+    //  importa aqui: UMA linha de evento, e não duas.
+    const registrations = await adminPrisma.registration.findMany({
       where: { tenantId, userId: concurrent },
+      select: { activityId: true, status: true, origin: true },
     });
-    expect(registrations).toBe(2);
+    expect(registrations).toHaveLength(3);
 
-    await adminPrisma.registration.deleteMany({
-      where: { activityId: { in: [activityCId, activityDId] } },
-    });
+    const eventLines = registrations.filter((row) => row.activityId === null);
+    expect(eventLines).toHaveLength(1);
+    expect(eventLines[0]?.status).toBe('CONFIRMED');
+    expect(eventLines[0]?.origin).toBe('EVENT_AUTO');
+
+    expect(registrations.filter((row) => row.activityId !== null)).toHaveLength(2);
+
+    /**
+     * E a prova de que a vaga do evento NÃO foi cobrada duas vezes: o contador é
+     * espelho das linhas vivas do evento, e esta pessoa acrescentou UMA. A leitura é
+     * feita pelo contexto de instituição, como a tela e a lotação fazem.
+     */
+    const eventCountAfter = await withTenant(tenantId, (tx) =>
+      tx.event.findFirstOrThrow({ where: { id: eventId }, select: { confirmedCount: true } }),
+    ).then((row) => row.confirmedCount);
+
+    expect(eventCountAfter).toBe(eventCountBefore + 1);
+
+    /**
+     * A limpeza leva TODAS as linhas da pessoa: a do evento nasceu com `activityId`
+     * nulo e o filtro por atividade a deixaria para trás, com o contador do evento
+     * incrementado para o resto da suíte.
+     */
+    await adminPrisma.registration.deleteMany({ where: { userId: concurrent } });
     await adminPrisma.activity.deleteMany({ where: { id: { in: [activityCId, activityDId] } } });
   });
 });

@@ -276,7 +276,16 @@ describe('I3 — evento restrito à comunidade', () => {
 
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
-      expect(outcome.code).toBe('MEMBERSHIP_BLOCKED');
+      /**
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  O CÓDIGO É PRÓPRIO DO EVENTO RESTRITO (FASE 70)
+       * ─────────────────────────────────────────────────────────────────────────────
+       *  Antes desta fase a chave de `settings` era conferida SÓ na tela, e o serviço
+       *  respondia `MEMBERSHIP_BLOCKED` mais por acidente de percurso do que por regra.
+       *  A checagem passou a existir NO SERVIDOR, com código próprio: "peça o seu
+       *  vínculo" e "sua conta foi bloqueada" mandam a pessoa fazer coisas diferentes.
+       */
+      expect(outcome.code).toBe('MEMBERSHIP_REQUIRED');
       expect(outcome.message).toMatch(/restrito/i);
     }
 
