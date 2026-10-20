@@ -41,6 +41,15 @@ import {
   updateTenantProfile,
   type TenantMemberRole,
 } from '@/lib/platform/tenant-service';
+import {
+  insertInstitutionLead,
+  updateInstitutionLeadStatus,
+} from '@/lib/platform/global-repository';
+import {
+  validateLeadInput,
+  isLeadStatus,
+  type LeadStatusKey,
+} from '@/domain/platform/lead-rules';
 
 export interface PlatformActionState {
   ok: boolean;
@@ -208,6 +217,10 @@ const profileSchema = z.object({
   description: z.string().trim().max(600).optional(),
   logoUrl: z.string().trim().max(1024).optional(),
   websiteUrl: z.string().trim().max(1024).optional(),
+  coverImageUrl: z.string().trim().max(1024).optional(),
+  segment: z.string().trim().max(100).optional(),
+  city: z.string().trim().max(100).optional(),
+  state: z.string().trim().max(50).optional(),
   isPublic: z.coerce.boolean().optional(),
 });
 
@@ -222,6 +235,10 @@ export async function updateTenantProfileAction(
     description: (formData.get('description') as string) || undefined,
     logoUrl: (formData.get('logoUrl') as string) || undefined,
     websiteUrl: (formData.get('websiteUrl') as string) || undefined,
+    coverImageUrl: (formData.get('coverImageUrl') as string) || undefined,
+    segment: (formData.get('segment') as string) || undefined,
+    city: (formData.get('city') as string) || undefined,
+    state: (formData.get('state') as string) || undefined,
     isPublic: formData.get('isPublic') === 'on',
   });
 
@@ -238,6 +255,10 @@ export async function updateTenantProfileAction(
     description: parsed.data.description ?? null,
     logoUrl: parsed.data.logoUrl ?? null,
     websiteUrl: parsed.data.websiteUrl ?? null,
+    coverImageUrl: parsed.data.coverImageUrl ?? null,
+    segment: parsed.data.segment ?? null,
+    city: parsed.data.city ?? null,
+    state: parsed.data.state ?? null,
     isPublic: parsed.data.isPublic,
   });
 
@@ -508,5 +529,99 @@ export async function runJobNowAction(
     ok: true,
     message: `Execução de "${definition.label}" pedida ao worker. O registro aparece no histórico assim que ele concluir.`,
     data: { job },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Leads de Expansão Institucional (FASE 71)
+// ───────────────────────────────────────────────────────────────────────────────
+export async function submitInstitutionLeadAction(
+  _prev: PlatformActionState | null,
+  formData: FormData,
+): Promise<PlatformActionState> {
+  const name = formData.get('name');
+  const email = formData.get('email');
+  const phone = formData.get('phone');
+  const organization = formData.get('organization');
+  const role = formData.get('role');
+  const estimatedEvents = formData.get('estimatedEvents');
+  const message = formData.get('message');
+
+  const validation = validateLeadInput({
+    name: typeof name === 'string' ? name : '',
+    email: typeof email === 'string' ? email : '',
+    phone: typeof phone === 'string' ? phone : null,
+    organization: typeof organization === 'string' ? organization : '',
+    roleInOrg: typeof role === 'string' ? role : null,
+    estimatedEventsPerYear: typeof estimatedEvents === 'string' ? estimatedEvents : null,
+    message: typeof message === 'string' ? message : null,
+  });
+
+  if (!validation.ok) {
+    return failure(
+      validation.code,
+      validation.message,
+    );
+  }
+
+  try {
+    await insertInstitutionLead(validation.data);
+    return {
+      ok: true,
+      message: 'Recebemos seu contato com sucesso! Nossa equipe entrará em contato em breve.',
+    };
+  } catch (error) {
+    console.error('[platform] falha ao registrar lead:', error);
+    return failure(
+      'INTERNAL',
+      'Não foi possível registrar seu contato agora. Tente novamente mais tarde.',
+    );
+  }
+}
+
+export async function updateLeadStatusAction(
+  _prev: PlatformActionState | null,
+  formData: FormData,
+): Promise<PlatformActionState> {
+  const operator = await requirePlatformPermission();
+
+  const id = formData.get('id');
+  const status = formData.get('status');
+  const notes = formData.get('notes');
+
+  if (typeof id !== 'string' || !id) {
+    return failure('INVALID_INPUT', 'Identificador do lead obrigatório.');
+  }
+
+  if (typeof status !== 'string' || !isLeadStatus(status)) {
+    return failure('INVALID_INPUT', 'Status do lead inválido.');
+  }
+
+  const updated = await updateInstitutionLeadStatus(id, {
+    status: status as LeadStatusKey,
+    internalNotes: typeof notes === 'string' ? notes : undefined,
+  });
+
+  if (!updated) {
+    return failure('NOT_FOUND', 'Lead não encontrado.');
+  }
+
+  await recordAudit({
+    tenantId: null,
+    userId: operator.userId,
+    action: 'UPDATE',
+    entityType: 'InstitutionLead',
+    entityId: id,
+    changes: {
+      status: { from: null, to: status },
+      notes: { from: null, to: notes },
+    },
+  });
+
+  revalidatePath('/superadmin/leads');
+
+  return {
+    ok: true,
+    message: 'Situação do lead atualizada com sucesso.',
   };
 }

@@ -2,6 +2,7 @@ import {
   Award,
   BadgeCheck,
   BookOpenCheck,
+  Building2,
   CalendarDays,
   ChartColumn,
   ClipboardCheck,
@@ -423,6 +424,11 @@ export function buildPlatformNav(): ShellNavGroup[] {
           href: '/superadmin/tenants',
           label: 'Instituições',
           icon: <Layers className="size-4" aria-hidden />,
+        },
+        {
+          href: '/superadmin/leads',
+          label: 'Leads de Expansão',
+          icon: <Building2 className="size-4" aria-hidden />,
         },
         {
           href: '/superadmin/governanca',

@@ -253,6 +253,7 @@ describe('trilha de identidade — o que NUNCA é gravado', () => {
     }
 
     expect(PLATFORM_ONLY_TABLES).toContain('job_runs');
+    expect(PLATFORM_ONLY_TABLES).toContain('institution_leads');
     expect(IDENTITY_ONLY_TABLES).toContain('two_factor');
     expect(IDENTITY_ONLY_TABLES).toContain('identity_audit_logs');
   });

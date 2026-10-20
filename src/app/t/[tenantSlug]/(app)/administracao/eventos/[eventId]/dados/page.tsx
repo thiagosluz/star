@@ -11,6 +11,7 @@ import { SectionHeading } from '@/components/ui';
 import { toLocalInput } from '@/lib/events/activity-presentation';
 import { onlineRoomFieldVisibility } from '@/domain/events/event-form-defaults';
 import { EVENT_MODALITY_OPTIONS } from '@/domain/events/event-modality-rules';
+import { EVENT_CATEGORY_OPTIONS } from '@/domain/events/event-category-rules';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 
 /**
@@ -162,6 +163,12 @@ export default async function EventDataPage({
               />
               <SelectField label="Situação" name="status" options={EVENT_STATUS} defaultValue={event.status} />
               <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue={event.modality} />
+              <SelectField
+                label="Categoria temática"
+                name="category"
+                options={[{ value: '', label: 'Sem categoria específica' }, ...EVENT_CATEGORY_OPTIONS]}
+                defaultValue={event.category ?? ''}
+              />
               {/**
                 * FASE 12 (item I3): a instituição escolhe entre evento ABERTO (padrão
                 * desde a FASE 10) e restrito à própria comunidade. Sem esta caixa, a

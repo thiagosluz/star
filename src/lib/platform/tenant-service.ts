@@ -408,6 +408,10 @@ export async function updateTenantProfile(
       description: true,
       logoUrl: true,
       websiteUrl: true,
+      coverImageUrl: true,
+      segment: true,
+      city: true,
+      state: true,
       isPublic: true,
     },
   });
@@ -425,6 +429,10 @@ export async function updateTenantProfile(
         description: profile.description,
         logoUrl: profile.logoUrl,
         websiteUrl: profile.websiteUrl,
+        coverImageUrl: profile.coverImageUrl,
+        segment: profile.segment,
+        city: profile.city,
+        state: profile.state,
         isPublic: profile.isPublic,
       },
     });

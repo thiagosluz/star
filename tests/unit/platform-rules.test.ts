@@ -459,8 +459,39 @@ describe('validatePublicProfile()', () => {
       description: null,
       logoUrl: null,
       websiteUrl: null,
+      coverImageUrl: null,
+      segment: null,
+      city: null,
+      state: null,
       isPublic: true,
     });
+  });
+
+  it('normaliza e valida novos campos de vitrine institucional (F71)', () => {
+    const valid = validatePublicProfile({
+      coverImageUrl: 'https://exemplo.com/capa.jpg',
+      segment: '  Ensino Superior  ',
+      city: '  Belo Horizonte ',
+      state: ' MG ',
+    });
+
+    expect(valid.valid).toBe(true);
+    expect(valid.normalized).toMatchObject({
+      coverImageUrl: 'https://exemplo.com/capa.jpg',
+      segment: 'Ensino Superior',
+      city: 'Belo Horizonte',
+      state: 'MG',
+    });
+
+    const invalid = validatePublicProfile({
+      coverImageUrl: 'javascript:alert(1)',
+      segment: 'a'.repeat(101),
+      city: 'b'.repeat(101),
+      state: 'c'.repeat(51),
+    });
+
+    expect(invalid.valid).toBe(false);
+    expect(invalid.errors.length).toBe(4);
   });
 
   it('recusa descrição longa demais', () => {

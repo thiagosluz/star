@@ -46,6 +46,7 @@ import {
   saveRoom,
   saveTrack,
 } from '@/lib/admin/catalog-service';
+import type { EventCategoryKey } from '@/domain/events/event-category-rules';
 import {
   deleteCardTemplate,
   deleteMission,
@@ -223,6 +224,7 @@ export async function saveEventAction(
     description: nullable(formData.get('description')),
     status: parsed.data.status,
     modality: parsed.data.modality,
+    category: (nullable(formData.get('category')) as EventCategoryKey | null) ?? null,
     startsAt: new Date(parsed.data.startsAt),
     endsAt: new Date(parsed.data.endsAt),
     timezone: parsed.data.timezone,

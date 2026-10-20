@@ -31,6 +31,10 @@
 import { adminPrisma } from '@/lib/db/admin-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { countOpenEvents, type TenantPlan, type TenantStatus } from '@/domain/platform/platform-rules';
+import type { EventCategoryKey } from '@/domain/events/event-category-rules';
+import type { EventModalityValue } from '@/domain/events/event-modality-rules';
+import type { LeadStatusKey, ValidatedLeadInput } from '@/domain/platform/lead-rules';
+import type { PlatformMetricsSummary } from '@/domain/platform/platform-metrics-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Instituições
@@ -54,6 +58,10 @@ export interface TenantAdminRow {
    */
   logoUrl: string | null;
   websiteUrl: string | null;
+  coverImageUrl: string | null;
+  segment: string | null;
+  city: string | null;
+  state: string | null;
   maxEvents: number;
   maxMembers: number;
   /**
@@ -124,6 +132,10 @@ export async function listTenants(options: ListTenantsOptions = {}): Promise<Ten
       description: true,
       logoUrl: true,
       websiteUrl: true,
+      coverImageUrl: true,
+      segment: true,
+      city: true,
+      state: true,
       maxEvents: true,
       maxMembers: true,
       maxStorageBytes: true,
@@ -151,6 +163,10 @@ export async function findTenantById(tenantId: string): Promise<TenantAdminRow |
       description: true,
       logoUrl: true,
       websiteUrl: true,
+      coverImageUrl: true,
+      segment: true,
+      city: true,
+      state: true,
       maxEvents: true,
       maxMembers: true,
       maxStorageBytes: true,
@@ -177,6 +193,10 @@ type TenantProjection = {
   description: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  coverImageUrl: string | null;
+  segment: string | null;
+  city: string | null;
+  state: string | null;
   maxEvents: number;
   maxMembers: number;
   maxStorageBytes: bigint;
@@ -415,6 +435,10 @@ export interface DirectoryTenantRow {
   logoUrl: string | null;
   websiteUrl: string | null;
   customDomain: string | null;
+  coverImageUrl: string | null;
+  segment: string | null;
+  city: string | null;
+  state: string | null;
   plan: TenantPlan;
   status: TenantStatus;
   isPublic: boolean;
@@ -435,8 +459,8 @@ export interface DirectoryTenantRow {
  *  A separação é a mesma de sempre: o dado que decide o acesso é lido na hora; o
  *  dado que enfeita pode esperar.
  *
- *  `description`, `logoUrl` e `websiteUrl` são campos que a própria instituição
- *  escolheu publicar.
+ *  `description`, `logoUrl`, `websiteUrl`, `coverImageUrl`, `segment`, `city` e
+ *  `state` são campos que a própria instituição escolheu publicar.
  */
 export async function selectDirectoryTenants(): Promise<DirectoryTenantRow[]> {
   return adminPrisma.tenant.findMany({
@@ -450,6 +474,10 @@ export async function selectDirectoryTenants(): Promise<DirectoryTenantRow[]> {
       logoUrl: true,
       websiteUrl: true,
       customDomain: true,
+      coverImageUrl: true,
+      segment: true,
+      city: true,
+      state: true,
       plan: true,
       status: true,
       isPublic: true,
@@ -613,3 +641,313 @@ export async function listPlatformAudit(
     return [];
   }
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Busca Pública Global de Eventos (FASE 71 · ADR-350 / ADR-352 / R1)
+// ───────────────────────────────────────────────────────────────────────────────
+
+export interface PublicEventCardRow {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string | null;
+  coverImageUrl: string | null;
+  modality: EventModalityValue;
+  category: EventCategoryKey | null;
+  city: string | null;
+  state: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  registrationClosesAt: Date | null;
+  tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
+  tenantLogoUrl: string | null;
+}
+
+export interface SearchPublicEventsOptions {
+  query?: string;
+  category?: string;
+  modality?: string;
+  city?: string;
+  state?: string;
+  period?: 'upcoming' | 'all' | 'this_week' | 'this_month' | 'past';
+  tenantSlug?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PublicEventsSearchResult {
+  items: PublicEventCardRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * Consulta pública global de eventos com projeção ESTRITA contra vazamento de onlineUrl (R1).
+ */
+export async function searchPublicEvents(
+  options: SearchPublicEventsOptions = {},
+): Promise<PublicEventsSearchResult> {
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.min(Math.max(1, options.pageSize ?? 12), 48);
+  const skip = (page - 1) * pageSize;
+
+  const now = new Date();
+  const period = options.period ?? 'upcoming';
+
+  const where: Record<string, unknown> = {
+    deletedAt: null,
+    tenant: {
+      status: 'ACTIVE',
+      isPublic: true,
+      deletedAt: null,
+      ...(options.tenantSlug ? { slug: options.tenantSlug } : {}),
+    },
+  };
+
+  // Filtro de status e data por período
+  if (period === 'upcoming') {
+    where.status = { in: ['PUBLISHED', 'REGISTRATION_OPEN', 'IN_PROGRESS'] };
+    where.endsAt = { gte: now };
+  } else if (period === 'this_week') {
+    where.status = { in: ['PUBLISHED', 'REGISTRATION_OPEN', 'IN_PROGRESS'] };
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + (7 - now.getDay()));
+    endOfWeek.setHours(23, 59, 59, 999);
+    where.startsAt = { gte: now, lte: endOfWeek };
+  } else if (period === 'this_month') {
+    where.status = { in: ['PUBLISHED', 'REGISTRATION_OPEN', 'IN_PROGRESS'] };
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    where.startsAt = { gte: now, lte: endOfMonth };
+  } else if (period === 'past') {
+    where.endsAt = { lt: now };
+    where.status = { in: ['FINISHED', 'PUBLISHED', 'REGISTRATION_CLOSED'] };
+  } else if (period === 'all') {
+    where.status = { in: ['PUBLISHED', 'REGISTRATION_OPEN', 'IN_PROGRESS', 'FINISHED'] };
+  }
+
+  // Filtro de categoria
+  if (options.category && options.category.trim().length > 0) {
+    where.category = options.category.trim();
+  }
+
+  // Filtro de modalidade
+  if (options.modality && ['IN_PERSON', 'ONLINE', 'HYBRID'].includes(options.modality.trim())) {
+    where.modality = options.modality.trim();
+  }
+
+  // Filtro por cidade / estado
+  if (options.city && options.city.trim().length > 0) {
+    where.city = { contains: options.city.trim(), mode: 'insensitive' };
+  }
+  if (options.state && options.state.trim().length > 0) {
+    where.state = { equals: options.state.trim(), mode: 'insensitive' };
+  }
+
+  // Busca textual
+  if (options.query && options.query.trim().length > 0) {
+    const q = options.query.trim();
+    where.OR = [
+      { title: { contains: q, mode: 'insensitive' } },
+      { summary: { contains: q, mode: 'insensitive' } },
+      { city: { contains: q, mode: 'insensitive' } },
+      { tenant: { name: { contains: q, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [events, total] = await Promise.all([
+    adminPrisma.event.findMany({
+      where,
+      orderBy: period === 'past' ? { endsAt: 'desc' } : { startsAt: 'asc' },
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        summary: true,
+        coverImageUrl: true,
+        modality: true,
+        category: true,
+        city: true,
+        state: true,
+        startsAt: true,
+        endsAt: true,
+        registrationClosesAt: true,
+        tenant: {
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            logoUrl: true,
+          },
+        },
+      },
+    }),
+    adminPrisma.event.count({ where }),
+  ]);
+
+  const items: PublicEventCardRow[] = events.map((ev) => ({
+    id: ev.id,
+    slug: ev.slug,
+    title: ev.title,
+    summary: ev.summary,
+    coverImageUrl: ev.coverImageUrl,
+    modality: ev.modality as EventModalityValue,
+    category: (ev.category as EventCategoryKey) ?? null,
+    city: ev.city,
+    state: ev.state,
+    startsAt: ev.startsAt,
+    endsAt: ev.endsAt,
+    registrationClosesAt: ev.registrationClosesAt,
+    tenantId: ev.tenant.id,
+    tenantSlug: ev.tenant.slug,
+    tenantName: ev.tenant.name,
+    tenantLogoUrl: ev.tenant.logoUrl,
+  }));
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+/**
+ * Eventos em destaque para a Landing Page (próximos eventos publicados com capa/destaque).
+ */
+export async function getFeaturedPublicEvents(limit: number = 6): Promise<PublicEventCardRow[]> {
+  const result = await searchPublicEvents({
+    period: 'upcoming',
+    pageSize: limit,
+  });
+  return result.items;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Métricas Públicas Agregadas (FASE 71 · ADR-352)
+// ───────────────────────────────────────────────────────────────────────────────
+
+export async function getPlatformPublicMetrics(): Promise<PlatformMetricsSummary> {
+  const [totalTenants, totalEvents, totalRegistrations, totalCertificates] = await Promise.all([
+    adminPrisma.tenant.count({
+      where: { status: 'ACTIVE', deletedAt: null },
+    }),
+    adminPrisma.event.count({
+      where: {
+        deletedAt: null,
+        status: { in: ['PUBLISHED', 'REGISTRATION_OPEN', 'IN_PROGRESS', 'FINISHED'] },
+      },
+    }),
+    adminPrisma.registration.count({
+      where: {
+        status: { in: ['CONFIRMED', 'ATTENDED'] },
+        origin: 'INDIVIDUAL',
+      },
+    }),
+    adminPrisma.certificate.count(),
+  ]);
+
+  return {
+    totalTenants,
+    totalEvents,
+    totalRegistrations,
+    totalCertificates,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Leads Institucionais (FASE 71 · ADR-353 / Tabela de Plataforma)
+// ───────────────────────────────────────────────────────────────────────────────
+
+export async function insertInstitutionLead(
+  data: ValidatedLeadInput,
+): Promise<{ ok: true; id: string } | { ok: false; code: string; message: string }> {
+  try {
+    const lead = await adminPrisma.institutionLead.create({
+      data: {
+        name: data.name,
+        email: data.email,
+        organization: data.organization,
+        roleInOrg: data.roleInOrg,
+        phone: data.phone,
+        estimatedEventsPerYear: data.estimatedEventsPerYear,
+        message: data.message,
+        status: 'OPEN',
+      },
+      select: { id: true },
+    });
+    return { ok: true, id: lead.id };
+  } catch (error) {
+    return { ok: false, code: 'DB_ERROR', message: errorMessage(error) };
+  }
+}
+
+export interface ListInstitutionLeadsOptions {
+  status?: LeadStatusKey | 'ALL';
+  query?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listInstitutionLeads(options: ListInstitutionLeadsOptions = {}) {
+  const page = Math.max(1, options.page ?? 1);
+  const pageSize = Math.min(Math.max(1, options.pageSize ?? 20), 100);
+  const skip = (page - 1) * pageSize;
+
+  const where: Record<string, unknown> = {};
+  if (options.status && options.status !== 'ALL') {
+    where.status = options.status;
+  }
+  if (options.query && options.query.trim().length > 0) {
+    const q = options.query.trim();
+    where.OR = [
+      { name: { contains: q, mode: 'insensitive' } },
+      { email: { contains: q, mode: 'insensitive' } },
+      { organization: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
+  const [items, total] = await Promise.all([
+    adminPrisma.institutionLead.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: pageSize,
+    }),
+    adminPrisma.institutionLead.count({ where }),
+  ]);
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+export async function getInstitutionLeadById(id: string) {
+  return adminPrisma.institutionLead.findUnique({
+    where: { id },
+  });
+}
+
+export async function updateInstitutionLeadStatus(
+  id: string,
+  patch: { status?: LeadStatusKey; internalNotes?: string },
+) {
+  return adminPrisma.institutionLead.update({
+    where: { id },
+    data: {
+      ...(patch.status ? { status: patch.status } : {}),
+      ...(patch.internalNotes !== undefined ? { internalNotes: patch.internalNotes } : {}),
+    },
+  });
+}
+

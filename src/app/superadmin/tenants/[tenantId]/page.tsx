@@ -129,6 +129,10 @@ export default async function PlatformTenantDetailPage({
           description={tenant.description}
           logoUrl={tenant.logoUrl}
           websiteUrl={tenant.websiteUrl}
+          coverImageUrl={tenant.coverImageUrl}
+          segment={tenant.segment}
+          city={tenant.city}
+          state={tenant.state}
           isPublic={tenant.isPublic}
         />
       </section>

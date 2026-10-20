@@ -54,6 +54,7 @@ import { parseRubric, type RubricCriterion } from '@/domain/review/review-rules'
 import { assertRubricShapeFree } from '@/lib/review/rubric-guard';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
 import { parseOnlineRoomUrl } from '@/domain/events/online-room-rules';
+import { isEventCategory, type EventCategoryKey } from '@/domain/events/event-category-rules';
 
 export type AdminErrorCode =
   | 'NOT_FOUND'
@@ -169,6 +170,8 @@ export interface EventInput {
    * FASE 10. A chave é gravada em `Event.settings`, preservando as demais.
    */
   registrationRequiresMembership?: boolean;
+  /** Categoria temática do evento (FASE 71) para descoberta e filtros da vitrine. */
+  category?: EventCategoryKey | null;
 }
 
 /**
@@ -202,6 +205,10 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
       return { ok: false as const, code: 'INVALID_INPUT' as const, message: onlineUrl.message };
     }
 
+    if (input.category && !isEventCategory(input.category)) {
+      return { ok: false as const, code: 'INVALID_INPUT' as const, message: 'Categoria temática inválida.' };
+    }
+
     return await withTenant(input.tenantId, async (tx) => {
       const data = {
         slug: input.slug,
@@ -211,6 +218,7 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
         description: input.description ?? null,
         status: input.status,
         modality: input.modality,
+        category: input.category === undefined ? undefined : (input.category ? input.category : null),
         startsAt: input.startsAt,
         endsAt: input.endsAt,
         timezone: input.timezone,
@@ -438,6 +446,7 @@ export interface AdminEventDetail extends AdminEventRow {
   summary: string | null;
   description: string | null;
   modality: string;
+  category: EventCategoryKey | null;
   timezone: string;
   venueName: string | null;
   city: string | null;
@@ -558,6 +567,7 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
         description: true,
         status: true,
         modality: true,
+        category: true,
         startsAt: true,
         endsAt: true,
         timezone: true,
@@ -697,6 +707,7 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
     description: event.description,
     status: event.status,
     modality: event.modality,
+    category: (event.category as EventCategoryKey | null) ?? null,
     startsAt: event.startsAt,
     endsAt: event.endsAt,
     timezone: event.timezone,

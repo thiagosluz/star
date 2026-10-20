@@ -1,17 +1,62 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, CalendarDays, Award, Sparkles, FileCheck2 } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarDays,
+  Award,
+  Sparkles,
+  Search,
+  Building2,
+  QrCode,
+  ShieldCheck,
+  Flame,
+  CheckCircle2,
+  Clock,
+  Compass,
+} from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import { getRequestContext } from '@/lib/auth/session';
-import { tenantPath } from '@/domain/tenancy/resolution';
+import { tenantPath, buildTenantUrl } from '@/domain/tenancy/resolution';
+import {
+  getFeaturedPublicEvents,
+  getPlatformPublicMetrics,
+} from '@/lib/platform/global-repository';
+import {
+  formatMetricCount,
+} from '@/domain/platform/platform-metrics-rules';
+import {
+  EVENT_CATEGORIES,
+  getEventCategoryLabel,
+} from '@/domain/events/event-category-rules';
+import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 
-/**
- * Landing page da PLATAFORMA (domínio raiz).
- *
- * Quando o host identifica uma instituição, o Proxy reescreve para
- * `/t/<slug>`, então esta página só é servida no domínio raiz ou em `localhost`.
- */
+export const metadata: Metadata = {
+  title: 'EventFlow · A Vitrine Viva de Eventos Acadêmicos e Corporativos',
+  description:
+    'Descubra eventos, inscreva-se com segurança, receba crachás digitais, conquiste certificados autenticados por QR Code e participe de comunidades.',
+};
+
+const ROOT_DOMAIN = process.env.ROOT_DOMAIN ?? 'lvh.me';
+
+function formatEventDate(startsAt: Date, endsAt: Date): string {
+  const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+  const sameDay =
+    startsAt.getFullYear() === endsAt.getFullYear() &&
+    startsAt.getMonth() === endsAt.getMonth() &&
+    startsAt.getDate() === endsAt.getDate();
+
+  if (sameDay) {
+    return dateFormatter.format(startsAt);
+  }
+  return `${dateFormatter.format(startsAt)} a ${dateFormatter.format(endsAt)}`;
+}
+
 export default async function PlatformHomePage() {
   const context = await getRequestContext();
 
@@ -25,97 +70,469 @@ export default async function PlatformHomePage() {
     redirect('/selecionar-instituicao');
   }
 
-  const features = [
-    {
-      icon: FileCheck2,
-      title: 'Submissão e avaliação por pares',
-      description:
-        'Chamada de trabalhos por trilha, versão cega, rubricas ponderadas e detecção automática de conflito de interesse.',
-    },
-    {
-      icon: CalendarDays,
-      title: 'Eventos, atividades e inscrições',
-      description:
-        'Controle de lotação, salas, horários e listas de espera, com página pública modular por instituição.',
-    },
-    {
-      icon: Sparkles,
-      title: 'Gamificação e cards colecionáveis',
-      description:
-        'Engine de XP com missões, níveis de prestígio e cartas distribuídas por check-in, aprovação e avaliação.',
-    },
-    {
-      icon: Award,
-      title: 'Certificação automática',
-      description:
-        'Emissão assíncrona com carga horária real cumprida, assinatura digital e validação pública por QR Code.',
-    },
-  ];
+  // Leitura paralela de dados da vitrine viva e métricas públicas agregadas
+  const [featuredEvents, metrics] = await Promise.all([
+    getFeaturedPublicEvents(6),
+    getPlatformPublicMetrics(),
+  ]);
+
+  const popularCategories = EVENT_CATEGORIES.slice(0, 5);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center gap-16 px-6 py-20">
-      <header className="space-y-6 text-center">
-        <span className="inline-flex items-center rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
-          Plataforma multi-instituição
-        </span>
+    <main className="min-h-screen bg-background text-foreground" data-testid="platform-home-page">
+      {/* ─── BARRA DE NAVEGAÇÃO SUPERIOR ─────────────────────────────────────── */}
+      <header className="border-b border-border bg-card/70 backdrop-blur-md sticky top-0 z-30">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
+          <div className="flex items-center gap-6">
+            <Link href="/" className="flex items-center gap-2.5 font-bold tracking-tight text-lg text-foreground hover:opacity-90">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-black text-sm shadow-xs">
+                EF
+              </span>
+              <span>EventFlow</span>
+            </Link>
 
-        <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          Toda a jornada do evento em um só lugar
-        </h1>
+            <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
+              <Link
+                href="/eventos"
+                className="text-muted-foreground transition hover:text-foreground inline-flex items-center gap-1.5"
+              >
+                <Compass className="size-4" aria-hidden />
+                Explorar Eventos
+              </Link>
+              <Link
+                href="/para-instituicoes"
+                className="text-muted-foreground transition hover:text-foreground inline-flex items-center gap-1.5"
+              >
+                <Building2 className="size-4" aria-hidden />
+                Para Instituições
+              </Link>
+            </nav>
+          </div>
 
-        <p className="mx-auto max-w-2xl text-pretty text-lg text-muted-foreground">
-          Da chamada de trabalhos ao certificado assinado: gestão de eventos
-          acadêmicos, corporativos e comunitários com isolamento total entre
-          instituições.
-        </p>
-
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-          >
-            Entrar
-            <ArrowRight className="size-4" aria-hidden />
-          </Link>
-          <Link
-            href="/signup"
-            className="inline-flex items-center rounded-md border border-border px-5 py-2.5 text-sm font-medium transition hover:bg-accent"
-          >
-            Criar conta
-          </Link>
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/login"
+              className="rounded-md px-3.5 py-1.5 text-xs sm:text-sm font-medium text-muted-foreground transition hover:text-foreground hover:bg-muted"
+            >
+              Entrar
+            </Link>
+            <Link
+              href="/signup"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-xs sm:text-sm font-medium text-primary-foreground shadow-xs transition hover:opacity-90"
+            >
+              Criar conta
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          </div>
         </div>
       </header>
 
-      <section className="grid gap-6 sm:grid-cols-2">
-        {features.map(({ icon: Icon, title, description }) => (
-          <article
-            key={title}
-            className="rounded-lg border border-border bg-card p-6 text-card-foreground"
-          >
-            <Icon className="mb-4 size-5 text-primary" aria-hidden />
-            <h2 className="mb-2 font-medium">{title}</h2>
-            <p className="text-sm text-muted-foreground">{description}</p>
-          </article>
-        ))}
+      {/* ─── HERO SECTION COM BUSCA RÁPIDA ──────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b border-border py-16 sm:py-24 bg-radial from-primary/5 via-background to-background">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-8">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3.5 py-1 text-xs font-medium text-muted-foreground shadow-2xs">
+            <Sparkles className="size-3.5 text-primary" aria-hidden />
+            A vitrine viva de congressos, simpósios e encontros institucionais
+          </div>
+
+          <h1 className="text-balance text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl text-foreground">
+            Encontre conhecimento, viva experiências e{' '}
+            <span className="text-primary underline decoration-primary/40 underline-offset-6">
+              certifique seu percurso
+            </span>
+          </h1>
+
+          <p className="mx-auto max-w-2xl text-pretty text-base sm:text-lg text-muted-foreground">
+            Descubra os principais eventos acadêmicos, corporativos e comunitários do país.
+            Inscrições simplificadas, submissões com revisão por pares e emissão oficial de certificados.
+          </p>
+
+          {/* Campo de Busca Rápida de Eventos */}
+          <div className="mx-auto max-w-2xl">
+            <form
+              action="/eventos"
+              method="GET"
+              className="flex flex-col sm:flex-row items-stretch gap-2 rounded-xl border border-border bg-card p-2 shadow-sm"
+              data-testid="home-search-form"
+            >
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden />
+                <input
+                  type="text"
+                  name="q"
+                  placeholder="Busque por nome do evento, tema ou cidade..."
+                  aria-label="Buscar eventos"
+                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-0"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 shrink-0"
+              >
+                <span>Explorar</span>
+                <ArrowRight className="size-4" aria-hidden />
+              </button>
+            </form>
+
+            {/* Categorias em alta */}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+              <span className="text-muted-foreground">Temas frequentes:</span>
+              {popularCategories.map((cat) => (
+                <Link
+                  key={cat.key}
+                  href={`/eventos?categoria=${cat.key}`}
+                  className="rounded-full border border-border bg-card px-2.5 py-1 text-muted-foreground transition hover:border-primary hover:text-foreground"
+                >
+                  {cat.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       </section>
 
-      <footer className="space-y-3 text-center text-xs text-muted-foreground">
-        <p>
-          Cada instituição acessa pelo próprio endereço
-          (<span className="code-data">instituicao.{process.env.ROOT_DOMAIN ?? 'lvh.me'}</span>)
-          ou por <span className="code-data">/t/&lt;instituicao&gt;</span>.
-        </p>
+      {/* ─── EVENTOS EM DESTAQUE NA PLATAFORMA ───────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 space-y-8" data-testid="featured-events-section">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Flame className="size-3.5 text-primary" aria-hidden />
+              Eventos em Destaque
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl text-foreground mt-1">
+              Próximos eventos com inscrições abertas
+            </h2>
+          </div>
 
-        {/*
-          ─────────────────────────────────────────────────────────────────────────
-          O VISITANTE SEM SESSÃO TAMBÉM ESCOLHE A APARÊNCIA (FASE 63)
-          ─────────────────────────────────────────────────────────────────────────
-          Sem cookie, esta página nasce obedecendo ao sistema operacional — e quem
-          abre uma aba anônima num computador configurado no escuro não tinha como
-          discordar: não há menu de conta, porque não há conta. O controle fica no
-          rodapé, que é onde ele cabe sem disputar com a chamada para entrar.
-        */}
-        <ThemeChoice variant="public" className="justify-center" />
+          <Link
+            href="/eventos"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground underline underline-offset-4 hover:text-muted-foreground shrink-0"
+          >
+            Ver todos os eventos
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        </div>
+
+        {featuredEvents.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center space-y-3">
+            <CalendarDays className="mx-auto size-10 text-muted-foreground" aria-hidden />
+            <h3 className="text-base font-semibold text-foreground">Novos eventos sendo preparados</h3>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Nossa comunidade está organizando as próximas edições. Explore o diretório completo de instituições para saber mais.
+            </p>
+            <div className="pt-2">
+              <Link
+                href="/eventos?aba=instituicoes"
+                className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-xs font-medium hover:bg-muted"
+              >
+                Ver instituições ativas
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {featuredEvents.map((event) => {
+              const eventPublicUrl = buildTenantUrl({
+                slug: event.tenantSlug,
+                rootDomain: ROOT_DOMAIN,
+                path: `/eventos/${event.slug}`,
+              });
+              return (
+                <article
+                  key={event.id}
+                  className="group flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition hover:border-primary/50 hover:shadow-md"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="rounded-full border border-border bg-muted/60 px-2.5 py-0.5 font-medium text-foreground text-xs">
+                        {getEventCategoryLabel(event.category)}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {eventModalityLabel(event.modality)}
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-semibold tracking-tight text-foreground line-clamp-2 group-hover:text-primary transition">
+                      <a href={eventPublicUrl} target="_blank" rel="noopener noreferrer">
+                        {event.title}
+                      </a>
+                    </h3>
+
+                    {event.summary ? (
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {event.summary}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-5 pt-4 border-t border-border/60 space-y-3">
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5 truncate">
+                        <CalendarDays className="size-3.5 shrink-0" aria-hidden />
+                        {formatEventDate(event.startsAt, event.endsAt)}
+                      </span>
+                      {event.city ? (
+                        <span className="truncate max-w-[100px]">
+                          {event.city}{event.state ? `/${event.state}` : ''}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2 truncate">
+                        {event.tenantLogoUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={event.tenantLogoUrl}
+                            alt=""
+                            className="size-5 rounded-full object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted font-bold text-xs">
+                            {event.tenantName.slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-xs font-medium text-muted-foreground truncate">
+                          {event.tenantName}
+                        </span>
+                      </div>
+
+                      <a
+                        href={eventPublicUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                      >
+                        Participar
+                        <ArrowRight className="size-3" aria-hidden />
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ─── A JORNADA DO PARTICIPANTE (4 PILARES) ─────────────────────────── */}
+      <section className="border-y border-border bg-card/40 py-16 sm:py-20" data-testid="participant-journey-section">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 space-y-12">
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Experiência Completa
+            </span>
+            <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              Toda a jornada do evento: do credenciamento ao certificado
+            </h2>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Acompanhe sua trajetória acadêmica e profissional com infraestrutura desenhada para valorizar cada atividade realizada.
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <article className="rounded-xl border border-border bg-card p-6 space-y-3">
+              <span className="inline-flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <CalendarDays className="size-5" aria-hidden />
+              </span>
+              <h3 className="text-base font-semibold text-foreground">Inscrições Ágeis</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Inscreva-se em múltiplos eventos com seu perfil único. Controle de lotação transparente, lista de espera automática e formulários personalizados.
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-border bg-card p-6 space-y-3">
+              <span className="inline-flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <QrCode className="size-5" aria-hidden />
+              </span>
+              <h3 className="text-base font-semibold text-foreground">Credenciamento & Crachá</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Crachá digital no celular com QR Code exclusivo para portaria e leitura de frequência por atividade e minicurso em tempo real.
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-border bg-card p-6 space-y-3">
+              <span className="inline-flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Sparkles className="size-5" aria-hidden />
+              </span>
+              <h3 className="text-base font-semibold text-foreground">Gamificação & XP</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Ganhe pontos de experiência (XP), cumpra missões e desbloqueie cartas colecionáveis exclusivas por sua presença, submissão e avaliação de trabalhos.
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-border bg-card p-6 space-y-3">
+              <span className="inline-flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Award className="size-5" aria-hidden />
+              </span>
+              <h3 className="text-base font-semibold text-foreground">Certificação Oficial</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Certificados digitais com carga horária real discriminada, hash criptográfico de integridade e link público permanente para verificação instantânea.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── MÉTRICAS PÚBLICAS DA PLATAFORMA ───────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6" data-testid="public-metrics-section">
+        <div className="rounded-2xl border border-border bg-card p-8 sm:p-12 space-y-8">
+          <div className="text-center space-y-2 max-w-xl mx-auto">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              A força da nossa rede em números
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Métricas agregadas em tempo real de todas as instituições e eventos ativos na plataforma.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border">
+            <div className="text-center px-4 pt-4 sm:pt-0">
+              <p className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
+                {formatMetricCount(metrics.totalTenants)}
+              </p>
+              <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Instituições Ativas
+              </p>
+            </div>
+
+            <div className="text-center px-4 pt-4 sm:pt-0">
+              <p className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
+                {formatMetricCount(metrics.totalEvents)}
+              </p>
+              <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Eventos Realizados
+              </p>
+            </div>
+
+            <div className="text-center px-4 pt-4 sm:pt-0">
+              <p className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
+                {formatMetricCount(metrics.totalRegistrations)}
+              </p>
+              <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Inscrições Processadas
+              </p>
+            </div>
+
+            <div className="text-center px-4 pt-4 sm:pt-0">
+              <p className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
+                {formatMetricCount(metrics.totalCertificates)}
+              </p>
+              <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Certificados Emitidos
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-border flex items-center justify-center gap-2 text-xs text-muted-foreground text-center">
+            <Clock className="size-3.5" aria-hidden />
+            <span>Validação criptográfica permanente por QR Code em todos os certificados emitidos.</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── BANNER PARA ORGANIZADORES & INSTITUIÇÕES ───────────────────────── */}
+      <section className="border-t border-border bg-muted/40 py-16 sm:py-20" data-testid="institutions-banner-section">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-8 rounded-2xl border border-border bg-card p-8 sm:p-12">
+            <div className="space-y-4 max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground">
+                <ShieldCheck className="size-3.5 text-primary" aria-hidden />
+                Para Universidades, Associações e Empresas
+              </div>
+
+              <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                Pronto para transformar a gestão de eventos da sua instituição?
+              </h2>
+
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Garanta isolamento completo dos seus dados, submissão cega com critérios de avaliação por pares,
+                crachás térmicos e emissão automática em lote com a sua própria marca e subdomínio institucional.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-4 pt-2">
+                <Link
+                  href="/para-instituicoes"
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-xs transition hover:opacity-90"
+                >
+                  Conheça a plataforma para instituições
+                  <ArrowRight className="size-4" aria-hidden />
+                </Link>
+
+                <Link
+                  href="/para-instituicoes#contato"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-muted"
+                >
+                  Falar com especialista
+                </Link>
+              </div>
+            </div>
+
+            <div className="w-full lg:w-auto shrink-0 space-y-3 rounded-xl border border-border bg-muted/50 p-6 text-xs text-muted-foreground">
+              <div className="font-semibold text-foreground text-sm">O que sua organização ganha:</div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-primary shrink-0" />
+                <span>Isolamento seguro de dados via Row-Level Security</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-primary shrink-0" />
+                <span>Submissão por trilha com avaliação duplamente cega</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-primary shrink-0" />
+                <span>Leitura ágil de crachás e controle de presença</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-primary shrink-0" />
+                <span>Página pública personalizada com sua identidade visual</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── RODAPÉ DA PLATAFORMA ────────────────────────────────────────────── */}
+      <footer className="border-t border-border bg-card py-12 text-xs text-muted-foreground">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 space-y-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+            <div className="space-y-1">
+              <div className="flex items-center justify-center sm:justify-start gap-2 font-bold text-sm text-foreground">
+                <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground font-black text-xs">
+                  EF
+                </span>
+                <span>EventFlow SaaS</span>
+              </div>
+              <p className="max-w-md text-xs text-muted-foreground">
+                Plataforma integrada de gestão, descoberta e certificação de eventos acadêmicos, comunitários e corporativos.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-6 text-xs">
+              <Link href="/eventos" className="hover:text-foreground transition">
+                Explorar Eventos
+              </Link>
+              <Link href="/eventos?aba=instituicoes" className="hover:text-foreground transition">
+                Diretório de Instituições
+              </Link>
+              <Link href="/para-instituicoes" className="hover:text-foreground transition">
+                Para Instituições
+              </Link>
+              <Link href="/login" className="hover:text-foreground transition">
+                Área do Participante
+              </Link>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+            <p>
+              Cada instituição acessa pelo próprio subdomínio (<span className="code-data">instituicao.{ROOT_DOMAIN}</span>) ou por <span className="code-data">/t/&lt;slug&gt;</span>.
+            </p>
+
+            {/* Seletor de Tema Público (FASE 63) */}
+            <ThemeChoice variant="public" />
+          </div>
+        </div>
       </footer>
     </main>
   );

@@ -115,6 +115,28 @@ enum EventModality {
   HYBRID
 }
 
+/// Taxonomia de temas/categorias de evento para descoberta e filtros na vitrine (FASE 71).
+enum EventCategory {
+  TECNOLOGIA
+  CIENCIA_ACADEMICO
+  SAUDE_BEM_ESTAR
+  EDUCACAO
+  NEGOCIOS_GESTAO
+  ENGENHARIA_INDUSTRIA
+  DIREITO_GOVERNANCA
+  ARTE_CULTURA
+  MEIO_AMBIENTE
+  OUTROS
+}
+
+/// Situação do contato institucional / lead (FASE 71).
+enum LeadStatus {
+  OPEN
+  CONTACTED
+  QUALIFIED
+  ARCHIVED
+}
+
 enum ActivityType {
   LECTURE
   MINI_COURSE
@@ -971,14 +993,22 @@ model Tenant {
   locale       String  @default("pt-BR") @db.VarChar(10)
   timezone     String  @default("America/Bahia") @db.VarChar(64)
 
-  // ── Diretório público (FASE 9) ─────────────────────────────────────────────
+  // ── Diretório público e vitrine (FASE 9 e FASE 71) ──────────────────────────
   /// Aparece na vitrine global de instituições. Desligar é a saída para quem não
   /// quer ser descoberto, sem precisar sair da plataforma.
-  isPublic    Boolean @default(true)
+  isPublic      Boolean @default(true)
   /// Apresentação curta exibida no diretório e no card da instituição.
-  description String? @db.Text
+  description   String? @db.Text
   /// Site institucional externo (validado por allowlist http/https).
-  websiteUrl  String? @db.VarChar(1024)
+  websiteUrl    String? @db.VarChar(1024)
+  /// Imagem de capa da instituição para vitrine e cards (FASE 71).
+  coverImageUrl String? @db.VarChar(1024)
+  /// Segmento de atuação (ex.: Universidade, Empresa de Tecnologia, Associação) (FASE 71).
+  segment       String? @db.VarChar(100)
+  /// Cidade sede da instituição (FASE 71).
+  city          String? @db.VarChar(120)
+  /// UF sede da instituição (FASE 71).
+  state         String? @db.VarChar(2)
 
   // ── Ciclo de vida (FASE 9) ─────────────────────────────────────────────────
   /// Quando o tráfego foi cortado. Nulo em instituição operante.
@@ -1606,8 +1636,9 @@ model Event {
   summary     String? @db.VarChar(600)
   description String? @db.Text
 
-  status   EventStatus   @default(DRAFT)
-  modality EventModality @default(IN_PERSON)
+  status   EventStatus    @default(DRAFT)
+  modality EventModality  @default(IN_PERSON)
+  category EventCategory?
 
   startsAt DateTime @db.Timestamptz(6)
   endsAt   DateTime @db.Timestamptz(6)
@@ -1725,6 +1756,7 @@ model Event {
   @@index([tenantId, status])
   @@index([tenantId, startsAt])
   @@index([status, startsAt])
+  @@index([category])
   @@index([deletedAt])
   @@map("events")
 }
@@ -4543,3 +4575,37 @@ model EventTeamMember {
   @@index([tenantId, userId])
   @@map("event_team_members")
 }
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  LEADS INSTITUCIONAIS (FASE 71)
+///
+///  ─────────────────────────────────────────────────────────────────────────────
+///  TABELA DE PLATAFORMA: SEM RLS E SEM ACESSO PARA A ROLE DE RUNTIME
+///  ─────────────────────────────────────────────────────────────────────────────
+///  Armazena contatos enviados pelo formulário "/para-instituicoes".
+///  Não possui `tenantId` (o lead quer ser cliente da plataforma, não pertence a
+///  nenhuma instituição ainda).
+///  O acesso é exclusivo da conexão administrativa (`adminPrisma`) na criação
+///  (Server Action pública) e na gestão (`/superadmin/leads`).
+///  Revogada da role `eventflow_app` (ADR-191, ADR-353).
+/// ═══════════════════════════════════════════════════════════════════════════════
+model InstitutionLead {
+  id                     String     @id @default(uuid(7)) @db.Uuid
+  name                   String     @db.VarChar(160)
+  email                  String     @db.VarChar(255)
+  organization           String     @db.VarChar(200)
+  roleInOrg              String?    @db.VarChar(120)
+  phone                  String?    @db.VarChar(40)
+  estimatedEventsPerYear String?    @db.VarChar(60)
+  message                String?    @db.Text
+  status                 LeadStatus @default(OPEN)
+  internalNotes          String?    @db.Text
+
+  createdAt              DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime   @updatedAt @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("institution_leads")
+}
+

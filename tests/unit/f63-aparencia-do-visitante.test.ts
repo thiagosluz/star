@@ -212,7 +212,7 @@ describe('FASE 63 · catracas do controle no rodapé', () => {
      */
     const paginas = [
       'src/app/page.tsx',
-      'src/app/(public)/organizacoes/page.tsx',
+      'src/app/(public)/eventos/page.tsx',
       'src/app/validar/[code]/page.tsx',
       'src/app/validar/lote/page.tsx',
     ];

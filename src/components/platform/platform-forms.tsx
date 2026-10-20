@@ -410,19 +410,31 @@ export function TenantProfileForm({
   description,
   logoUrl,
   websiteUrl,
+  coverImageUrl,
+  segment,
+  city,
+  state,
   isPublic,
 }: {
   tenantId: string;
   description: string | null;
   logoUrl: string | null;
   websiteUrl: string | null;
+  coverImageUrl?: string | null;
+  segment?: string | null;
+  city?: string | null;
+  state?: string | null;
   isPublic: boolean;
 }) {
-  const [state, action] = useActionState(updateTenantProfileAction, INITIAL);
+  const [actionState, action] = useActionState(updateTenantProfileAction, INITIAL);
   const [values, setValues] = useState({
     description: description ?? '',
     logoUrl: logoUrl ?? '',
     websiteUrl: websiteUrl ?? '',
+    coverImageUrl: coverImageUrl ?? '',
+    segment: segment ?? '',
+    city: city ?? '',
+    state: state ?? '',
     isPublic,
   });
 
@@ -468,18 +480,79 @@ export function TenantProfileForm({
           </div>
 
           <div>
-            <label className={labelClass} htmlFor="profile-website">
-              Site institucional (URL)
+            <label className={labelClass} htmlFor="profile-cover">
+              Imagem de capa (URL)
             </label>
             <input
-              id="profile-website"
-              name="websiteUrl"
-              value={values.websiteUrl}
-              onChange={(event) => setValues((c) => ({ ...c, websiteUrl: event.target.value }))}
-              data-testid="profile-website"
+              id="profile-cover"
+              name="coverImageUrl"
+              value={values.coverImageUrl}
+              onChange={(event) => setValues((c) => ({ ...c, coverImageUrl: event.target.value }))}
+              data-testid="profile-cover"
               className={inputClass}
             />
           </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className={labelClass} htmlFor="profile-segment">
+              Segmento / Atuação
+            </label>
+            <input
+              id="profile-segment"
+              name="segment"
+              placeholder="Ex: Universidade, Empresa..."
+              value={values.segment}
+              onChange={(event) => setValues((c) => ({ ...c, segment: event.target.value }))}
+              data-testid="profile-segment"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="profile-city">
+              Cidade
+            </label>
+            <input
+              id="profile-city"
+              name="city"
+              placeholder="Ex: São Paulo"
+              value={values.city}
+              onChange={(event) => setValues((c) => ({ ...c, city: event.target.value }))}
+              data-testid="profile-city"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor="profile-state">
+              Estado (UF)
+            </label>
+            <input
+              id="profile-state"
+              name="state"
+              placeholder="Ex: SP"
+              value={values.state}
+              onChange={(event) => setValues((c) => ({ ...c, state: event.target.value }))}
+              data-testid="profile-state"
+              className={inputClass}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className={labelClass} htmlFor="profile-website">
+            Site institucional (URL)
+          </label>
+          <input
+            id="profile-website"
+            name="websiteUrl"
+            value={values.websiteUrl}
+            onChange={(event) => setValues((c) => ({ ...c, websiteUrl: event.target.value }))}
+            data-testid="profile-website"
+            className={inputClass}
+          />
         </div>
 
         <label className="flex items-center gap-2 text-sm">
@@ -502,7 +575,7 @@ export function TenantProfileForm({
         />
       </form>
 
-      <Feedback state={state} testId="tenant-profile-feedback" />
+      <Feedback state={actionState} testId="tenant-profile-feedback" />
     </section>
   );
 }

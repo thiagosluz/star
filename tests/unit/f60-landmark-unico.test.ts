@@ -217,7 +217,7 @@ describe('landmark único por tela (FASE 60 · dívida I2)', () => {
        * Sem landmark próprio e sem herança: só passa quem NÃO desenha tela —
        * o redirecionamento puro (`/superadmin` → `/superadmin/metricas`).
        */
-      const redireciona = /redirect\(/.test(conteudo);
+      const redireciona = /(?:permanentRedirect|redirect)\(/.test(conteudo);
 
       if (!DESENHA_JSX.test(conteudo) && redireciona) continue;
 

@@ -217,15 +217,14 @@ export const GLOBAL_TABLES_WITH_RLS = ['user', 'session', 'tenants'];
  * ANTES de existir tenant ativo. Aplicar RLS aqui quebraria o login sem ganho
  * de segurança: o acesso já é mediado por `identifier`/`userId`.
  *
- * `job_runs` (FASE 36) entra aqui pela mesma razão de fundo — não há `tenantId` por
- * onde isolar, porque a passada de uma rotina atende TODAS as instituições —, mas o
- * que a protege é outra coisa: o **privilégio foi revogado** da role de runtime
- * (migração `20260923154500_job_runs_platform_only`). Sem isso, o padrão do banco
- * (que concede CRUD a toda tabela nova para `eventflow_app`) deixaria o runtime ler o
- * histórico operacional e até reservar uma rotina inserindo uma linha `RUNNING`.
+ * `job_runs` (FASE 36) e `institution_leads` (FASE 71) entram aqui pela mesma razão de
+ * fundo — não há `tenantId` por onde isolar, porque a passada de uma rotina atende
+ * todas as instituições e um lead quer ser cliente da plataforma —, mas o que as
+ * protege é a **revogação explícita de privilégios** da role de runtime.
+ * Sem isso, o padrão do banco deixaria o runtime ler ou escrever dados de plataforma.
  * `PLATFORM_ONLY_TABLES` é o que a verificação de contrato usa para exigir a revogação.
  */
-export const PLATFORM_ONLY_TABLES = ['job_runs'];
+export const PLATFORM_ONLY_TABLES = ['job_runs', 'institution_leads'];
 
 /**
  * Tabelas de IDENTIDADE que o runtime não pode alcançar (FASE 47 · ampliada na 49).

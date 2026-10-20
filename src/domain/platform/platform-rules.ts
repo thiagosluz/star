@@ -145,6 +145,8 @@ export const RESERVED_SLUGS: readonly string[] = [
   'plataforma',
   'organizacoes',
   'organizations',
+  'eventos',
+  'para-instituicoes',
   'explorar',
   'explore',
   'validar',
@@ -792,6 +794,10 @@ export interface DirectoryRow {
   logoUrl: string | null;
   websiteUrl: string | null;
   customDomain: string | null;
+  coverImageUrl?: string | null;
+  segment?: string | null;
+  city?: string | null;
+  state?: string | null;
   plan: TenantPlan;
   status: TenantStatus;
   isPublic: boolean;
@@ -926,13 +932,26 @@ export interface PublicProfileInput {
   description?: string | null;
   logoUrl?: string | null;
   websiteUrl?: string | null;
+  coverImageUrl?: string | null;
+  segment?: string | null;
+  city?: string | null;
+  state?: string | null;
   isPublic?: boolean;
 }
 
 export interface PublicProfileResult {
   valid: boolean;
   errors: string[];
-  normalized: { description: string | null; logoUrl: string | null; websiteUrl: string | null; isPublic: boolean } | null;
+  normalized: {
+    description: string | null;
+    logoUrl: string | null;
+    websiteUrl: string | null;
+    coverImageUrl: string | null;
+    segment: string | null;
+    city: string | null;
+    state: string | null;
+    isPublic: boolean;
+  } | null;
 }
 
 /**
@@ -951,6 +970,21 @@ export function validatePublicProfile(input: PublicProfileInput): PublicProfileR
     errors.push('A descrição não pode passar de 600 caracteres.');
   }
 
+  const segment = input.segment?.trim() || null;
+  if (segment && segment.length > 100) {
+    errors.push('O segmento de atuação não pode passar de 100 caracteres.');
+  }
+
+  const city = input.city?.trim() || null;
+  if (city && city.length > 100) {
+    errors.push('A cidade não pode passar de 100 caracteres.');
+  }
+
+  const state = input.state?.trim() || null;
+  if (state && state.length > 50) {
+    errors.push('O estado (UF) não pode passar de 50 caracteres.');
+  }
+
   const parseUrl = (value: string | null | undefined, label: string): string | null => {
     const trimmed = value?.trim() || null;
     if (!trimmed) return null;
@@ -966,6 +1000,7 @@ export function validatePublicProfile(input: PublicProfileInput): PublicProfileR
 
   const logoUrl = parseUrl(input.logoUrl, 'A URL do logotipo');
   const websiteUrl = parseUrl(input.websiteUrl, 'O site institucional');
+  const coverImageUrl = parseUrl(input.coverImageUrl, 'A URL da imagem de capa');
 
   if (errors.length > 0) {
     return { valid: false, errors, normalized: null };
@@ -974,6 +1009,15 @@ export function validatePublicProfile(input: PublicProfileInput): PublicProfileR
   return {
     valid: true,
     errors: [],
-    normalized: { description, logoUrl, websiteUrl, isPublic: input.isPublic ?? true },
+    normalized: {
+      description,
+      logoUrl,
+      websiteUrl,
+      coverImageUrl,
+      segment,
+      city,
+      state,
+      isPublic: input.isPublic ?? true,
+    },
   };
 }

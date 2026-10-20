@@ -413,6 +413,8 @@ export const RESERVED_USERNAMES: readonly string[] = [
   'minhas-inscricoes',
   'minhas-mensagens',
   'organizacoes',
+  'eventos',
+  'para-instituicoes',
   'painel',
   'participantes',
   'patrocinador',

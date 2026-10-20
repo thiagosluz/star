@@ -15,6 +15,7 @@ import {
   EVENT_MODALITY_OPTIONS,
   type EventModalityValue,
 } from '@/domain/events/event-modality-rules';
+import { EVENT_CATEGORY_OPTIONS } from '@/domain/events/event-category-rules';
 import { toLocalInput } from '@/lib/events/activity-presentation';
 
 export const metadata = { title: 'Eventos' };
@@ -230,6 +231,12 @@ export default async function AdminEventsPage({
             />
             <SelectField label="Situação" name="status" options={STATUS_LABELS} defaultValue="DRAFT" />
             <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue={modalidadePadrao} />
+            <SelectField
+              label="Categoria temática"
+              name="category"
+              options={[{ value: '', label: 'Sem categoria específica' }, ...EVENT_CATEGORY_OPTIONS]}
+              defaultValue=""
+            />
             <CheckboxField
               label="Exigir vínculo com a instituição para se inscrever"
               name="registrationRequiresMembership"
