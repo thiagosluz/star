@@ -215,6 +215,11 @@ function chamada(): CallView {
     /** Contadores internos: a API não os devolve. */
     proposals: 4,
     decided: 1,
+    /**
+     * O estado do resultado publicado (FASE 73): a chamada de fixture nunca publicou
+     * resultado, e a API não projeta este campo — ele é da landing.
+     */
+    resultState: 'SEM_RESULTADO',
   };
 }
 

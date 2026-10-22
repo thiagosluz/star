@@ -559,6 +559,161 @@ export interface SubmissionReadiness {
   warnings: readonly string[];
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  O que a submissão EXIGE — uma fonte para a recusa e para a tela
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O artefato que a régua abaixo cobra — e que a página da chamada ANUNCIA.
+ *
+ * `ANY_PDF` é "qualquer versão do trabalho": quem não exige revisão cega aceita a
+ * anonimizada ou a identificada, porque as duas são o trabalho.
+ */
+export type SubmissionArtifactKey = 'BLIND_PDF' | 'IDENTIFIED_PDF' | 'ANY_PDF';
+
+export interface SubmissionArtifactRequirement {
+  key: SubmissionArtifactKey;
+  /** A frase da TELA — é ela que "O que esta chamada pede" mostra. */
+  label: string;
+  /** Bloqueia o envio? `false` = recomendação (a régua devolve como AVISO). */
+  required: boolean;
+  /** A recusa que a régua devolve quando o artefato falta e é obrigatório. */
+  refusal?: string;
+  /** O aviso que a régua devolve quando o artefato falta e não é obrigatório. */
+  notice?: string;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  AS EXIGÊNCIAS DE ARQUIVO, EM UM LUGAR SÓ (FASE 74 · fatia 2)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O DEFEITO QUE ISTO CONSERTA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A página da chamada dizia o que o formulário pede (título, resumo, campos do
+ *  tipo) e NÃO dizia o que o SERVIDOR exige para aceitar o envio. A pessoa
+ *  preenchia tudo, recebia "anexe a versão sem identificação dos autores" e não
+ *  tinha onde anexar — a promessa e a exigência apareciam separadas.
+ *
+ *  Escrever a frase na tela resolveria hoje e divergiria amanhã: a régua abaixo
+ *  mudaria (um aviso virasse bloqueio, um tipo deixasse de exigir arquivo) e o
+ *  anúncio continuaria o mesmo. Por isso a régua e o anúncio leem ESTA função —
+ *  acrescentar uma exigência aqui a faz aparecer nos dois lugares, e o teste que
+ *  compara as duas listas prende a coincidência.
+ *
+ *  A ordem também é a da tela: primeiro o que o envio exige, depois o que é
+ *  recomendação.
+ */
+export function submissionArtifactRequirements(input: {
+  requiresBlindReview: boolean;
+  proposalKind?: ProposalKind | null;
+}): readonly SubmissionArtifactRequirement[] {
+  if (input.requiresBlindReview) {
+    return [
+      {
+        key: 'BLIND_PDF',
+        label: 'PDF anonimizado, sem identificação dos autores',
+        required: true,
+        refusal: 'A trilha exige revisão cega: anexe a versão sem identificação dos autores.',
+      },
+      {
+        /**
+         * A identificada NÃO impede a avaliação (o revisor cego julga a anonimizada),
+         * mas é ela que vai para a publicação — por isso recomendação, e não bloqueio.
+         */
+        key: 'IDENTIFIED_PDF',
+        label: 'PDF com identificação dos autores — recomendado: é ele que vai para a publicação',
+        required: false,
+        notice:
+          'A versão com identificação dos autores ainda não foi anexada. Ela será necessária para a publicação.',
+      },
+    ];
+  }
+
+  /**
+   * Fora da ciência, a proposta de programação não pede PDF: quem propõe um
+   * minicurso descreve a proposta, não anexa um artigo (FASE 33, ADR-162). A lista
+   * vazia não é esquecimento — é a afirmação de que não há exigência de arquivo.
+   */
+  const scientific = input.proposalKind == null || isScientific(input.proposalKind);
+
+  return scientific
+    ? [
+        {
+          key: 'ANY_PDF',
+          label: 'PDF do trabalho',
+          required: true,
+          refusal: 'Anexe o arquivo do trabalho em PDF.',
+        },
+      ]
+    : [];
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O AVISO DO FLUXO QUANDO O ENVIO EXIGE ARQUIVO (FASE 74 · fatia 4)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A DECISÃO QUE ESTE TEXTO ACOMPANHA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A proposta científica NÃO se completa na página pública: o upload acontece na
+ *  área do autor, onde a esteira existe inteira (arquivo, bloqueios, envio) e onde o
+ *  autor já está autenticado. Duplicar o upload na chamada custaria uma segunda
+ *  superfície de storage e um passo que só funciona com JavaScript numa página que
+ *  hoje funciona sem ele — e ainda deixaria o ENVIO de fora, porque enviar é o passo
+ *  seguinte e ele mora na mesma área. O caminho é: os dados são gravados aqui, o
+ *  rascunho fica salvo, e a pessoa continua de onde o trabalho se completa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O AVISO É DE DOMÍNIO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Quem sabe se há exigência obrigatória de arquivo é `submissionArtifactRequirements`
+ *  — a MESMA função que a régua usa para recusar. Escrever a frase na página faria a
+ *  tela prometer um passo que a régua talvez não cobre (ou esconder um que ela cobre)
+ *  no dia em que a exigência mudar. `null` é resposta legítima: numa chamada de
+ *  minicurso sem cegueira, nada é exigido e o envio acontece ali mesmo.
+ */
+export function proposalAttachmentStepNotice(input: {
+  requiresBlindReview: boolean;
+  proposalKind?: ProposalKind | null;
+}): string | null {
+  const hasRequiredArtifact = submissionArtifactRequirements(input).some(
+    (requirement) => requirement.required,
+  );
+
+  if (!hasRequiredArtifact) return null;
+
+  return (
+    'Esta chamada exige um arquivo do trabalho. Preencha os dados abaixo: o rascunho ' +
+    'fica salvo e você continua na sua área, onde anexa o arquivo e envia para avaliação.'
+  );
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O AVISO DE CHEGADA AO RASCUNHO (FASE 74 · ajuste da fatia 2)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ELE É UMA FRASE SÓ, E DO DOMÍNIO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A recusa `NOT_READY` não é um erro para ler e refazer: o rascunho já está
+ *  gravado, e o envio só não terminou porque falta o arquivo. A action redireciona
+ *  para a página desse rascunho com `?rascunho=1`, e é este aviso que EXPLICA a
+ *  chegada — sem ele a pessoa cai numa tela de rascunho sem saber por quê, e o
+ *  caminho de volta (a recusa com link) teria virado uma tela muda.
+ *
+ *  A frase mora aqui pelo mesmo motivo das exigências: a página não pode escrever
+ *  a própria versão do que aconteceu. Um teste unitário compara o texto e prende a
+ *  tela ao símbolo, então mudar a frase é mudar o que a pessoa lê nos dois lados.
+ *
+ *  Ela NÃO substitui os bloqueios: o aviso diz por que a pessoa chegou ali, e a
+ *  régua abaixo continua dizendo o que ainda falta para enviar.
+ */
+export const SUBMISSION_DRAFT_ARRIVAL_NOTICE =
+  'Seu rascunho foi salvo. Anexe o arquivo e envie para avaliação.';
+
 /**
  * A submissão pode ser enviada?
  *
@@ -609,39 +764,45 @@ export function evaluateSubmissionReadiness(
   const confirmed = input.files.filter((file) => file.checksum !== null);
   const hasBlind = confirmed.some((file) => file.kind === 'BLIND_PDF');
   const hasIdentified = confirmed.some((file) => file.kind === 'IDENTIFIED_PDF');
-  const scientific = input.proposalKind == null || isScientific(input.proposalKind);
 
-  if (input.requiresBlindReview) {
-    if (!hasBlind) {
-      blockers.push(
-        'A trilha exige revisão cega: anexe a versão sem identificação dos autores.',
-      );
+  /**
+   * A LISTA DE EXIGÊNCIAS É A MESMA QUE A PÁGINA DA CHAMADA ANUNCIA (FASE 74).
+   * Ver `submissionArtifactRequirements`: a frase e a recusa nascem juntas.
+   */
+  const artifactRequirements = submissionArtifactRequirements({
+    requiresBlindReview: input.requiresBlindReview,
+    proposalKind: input.proposalKind ?? null,
+  });
+
+  const hasArtifact = (key: SubmissionArtifactKey): boolean => {
+    if (key === 'BLIND_PDF') return hasBlind;
+    if (key === 'IDENTIFIED_PDF') return hasIdentified;
+    return hasBlind || hasIdentified;
+  };
+
+  for (const requirement of artifactRequirements) {
+    if (hasArtifact(requirement.key)) continue;
+
+    if (requirement.required) {
+      if (requirement.refusal) blockers.push(requirement.refusal);
+    } else if (requirement.notice) {
+      warnings.push(requirement.notice);
     }
-    if (!hasIdentified) {
-      // A versão identificada é necessária para a publicação final, mas não
-      // impede a avaliação — por isso é aviso, não bloqueio.
-      warnings.push(
-        'A versão com identificação dos autores ainda não foi anexada. Ela será necessária para a publicação.',
-      );
-    }
-  } else if (!hasBlind && !hasIdentified) {
-    /**
-     * SEM ARQUIVO PRINCIPAL: bloqueio para o científico, AVISO para a proposta de
-     * programação — e para ela, qualquer anexo confirmado já conta.
-     *
-     * Um artigo sem PDF não tem o que ser avaliado (e um anexo suplementar não é o
-     * artigo). Um minicurso proposto sem material de apoio é uma proposta completa —
-     * e se ele anexou QUALQUER coisa (material, slides, programação), não há nem o
-     * que avisar. Transformar isso em bloqueio faria a chamada de minicurso exigir
-     * um PDF que ninguém pediu.
-     */
-    if (scientific) {
-      blockers.push('Anexe o arquivo do trabalho em PDF.');
-    } else if (confirmed.length === 0) {
-      warnings.push(
-        'Nenhum arquivo anexado. Você pode enviar a proposta assim e combinar o material depois.',
-      );
-    }
+  }
+
+  /**
+   * SEM ARQUIVO NENHUM na proposta de programação: AVISO, nunca bloqueio.
+   *
+   * Um minicurso proposto sem material de apoio é uma proposta completa — e se ele
+   * anexou QUALQUER coisa (material, slides, programação), não há nem o que avisar:
+   * a lista de exigências acima está vazia justamente porque o tipo não pede PDF, e
+   * o aviso só faz sentido quando o conjunto está vazio de verdade. Transformar isso
+   * em bloqueio faria a chamada de minicurso exigir um arquivo que ninguém pediu.
+   */
+  if (artifactRequirements.length === 0 && confirmed.length === 0) {
+    warnings.push(
+      'Nenhum arquivo anexado. Você pode enviar a proposta assim e combinar o material depois.',
+    );
   }
 
   return {

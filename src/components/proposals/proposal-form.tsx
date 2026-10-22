@@ -1,11 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { AlertCircle, CheckCircle2, Loader2, Send } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Send } from 'lucide-react';
 
 import type { CallActionState } from '@/app/actions/call-actions';
 import { Button, Input, Label, Textarea } from '@/components/ui';
+import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   MAX_ABSTRACT_LENGTH,
   MAX_KEYWORDS,
@@ -25,6 +27,24 @@ import type { ProposalFieldSpec } from '@/domain/proposals/call-rules';
  *  diz — inclusive quando o domínio ganhar um campo novo. A validação acontece no
  *  servidor, com a MESMA função; aqui só se evita o erro previsível (obrigatório,
  *  faixa numérica, tamanho).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A RECUSA NÃO É UM BECO (FASE 74 · fatia 2, ajuste posterior)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Quando o servidor recusa o ENVIO por prontidão (falta o PDF anonimizado, por
+ *  exemplo), a proposta JÁ está gravada como rascunho — e a action REDIRECIONA
+ *  para a página desse rascunho, com `?rascunho=1`. Não há link a desenhar aqui:
+ *  a navegação acontece no servidor, antes de existir estado de erro.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O ANEXO NÃO MORA AQUI, E ISSO É DECISÃO (FASE 74 · fatia 4)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A proposta científica se COMPLETA na área do autor: lá estão o upload dos
+ *  artefatos, a lista de bloqueios e o botão de envio, no mesmo lugar e na mesma
+ *  leitura. Trazer o upload para cá custaria uma segunda superfície de storage numa
+ *  página pública, um passo que só funciona com JavaScript (o hash e o PUT direto ao
+ *  bucket) — e ainda deixaria o ENVIO de fora, porque enviar é o passo seguinte.
+ *  Meio caminho não quita nada e cria um a manter.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE O NOME DO CAMPO TEM PREFIXO
@@ -89,6 +109,24 @@ export function ProposalForm({
         ) : null}
 
         <p className="text-xs text-muted-foreground">{state.message}</p>
+
+        {/*
+          O DESTINO DA TELA DE SUCESSO É O QUE A ACTION DEVOLVEU (`redirectTo`, a
+          rota REAL da submissão). Antes o campo apontava para `/minhas-submissoes`,
+          que nunca existiu — um link quebrado escondido atrás de um valor morto.
+        */}
+        {state.redirectTo ? (
+          <p>
+            <Link
+              href={state.redirectTo}
+              className="inline-flex items-center gap-1 text-sm underline underline-offset-4"
+              data-testid="proposal-received-link"
+            >
+              Ver a proposta
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -235,6 +273,28 @@ export function ProposalForm({
                 <li key={detail}>{detail}</li>
               ))}
             </ul>
+          ) : null}
+
+          {/*
+            ── O TETO DE RASCUNHOS TAMBÉM DIZ O CAMINHO (FASE 74 · fatia 4) ───────
+            A recusa do teto não devolve um rascunho específico (são vários), mas a
+            mensagem manda enviar ou excluir um — e sem link a pessoa teria de
+            adivinhar onde. O destino é a lista, onde os rascunhos aparecem com o
+            estado e o botão de abrir. "Erro sem saída é o defeito" vale aqui também.
+
+            A recusa que TEM rascunho não aparece nesta caixa: a action redireciona
+            para ele (FASE 74 · ajuste da fatia 2), e este formulário nunca a vê.
+          */}
+          {state.code === 'DRAFT_FILE_LIMIT_REACHED' ? (
+            <p className="pt-1 text-xs">
+              <Link
+                href={tenantPath(tenantSlug, '/submissoes')}
+                className="font-medium underline underline-offset-4"
+                data-testid="proposal-draft-ceiling-link"
+              >
+                Ver meus rascunhos
+              </Link>
+            </p>
           ) : null}
         </div>
       ) : null}

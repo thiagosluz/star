@@ -16,6 +16,15 @@
  *  O checksum SHA-256 é calculado no NAVEGADOR (Web Crypto API) e conferido no
  *  servidor contra o objeto armazenado. Isso é o que permite detectar um arquivo
  *  trocado entre o envio e a confirmação.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A POSSE DO ALVO É CONFERIDA NO SERVIÇO (FASE 74 · fatia 1)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  `submission:update:own` autoriza a PESSOA, não a submissão: a guarda da action
+ *  passa o `ownerId` da sessão, e não o dono do recurso. Quem compara com
+ *  `submittedById` é o SERVIÇO (`ensureSubmissionOwnedBy`, em
+ *  `submission-service.ts`) — não remova essa checagem achando que a permissão
+ *  acima já cobre o alvo: era exatamente esse o furo de IDOR da fatia.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { z } from 'zod';

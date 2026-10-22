@@ -3014,11 +3014,32 @@ model CallForProposals {
 
   /// Avaliação: cegueira e rubrica são DA CHAMADA. Sem rubrica própria, a proposta
   /// usa a da trilha — e a padrão quando também não há trilha (palestrante).
-  requiresBlindReview Boolean @default(false)
-  reviewRubric        Json    @default("[]")
+  ///
+  /// NULA = "herdar da trilha" (FASE 74 · fatia 5). `true`/`false` decidem sozinhos
+  /// e é o que as linhas anteriores à fase já diziam; `NULL` é a chamada que não se
+  /// pronuncia, e aí vale a TRILHA — e, sem trilha, o padrão do TIPO
+  /// (`resolveRequiresBlindReview`). O `DEFAULT false` fica para não mudar o sentido
+  /// de uma inserção crua que não fala de cegueira.
+  requiresBlindReview Boolean? @default(false)
+  reviewRubric        Json     @default("[]")
 
   /// Limite de propostas por pessoa NESTA chamada (0 = ilimitado).
   maxSubmissionsPerAuthor Int @default(0)
+
+  /// Resultado que o organizador PUBLICA (FASE 73): `{ estado, texto,
+  /// proximosPassos, publicados, atualizadoEm, publicadoEm? }`.
+  ///
+  /// É JSON e não colunas porque o conteúdo é UM ATO lido por inteiro (a página
+  /// pública lê o bloco todo), e não um dado consultável por campo. A leitura é
+  /// TOLERANTE (`readCallResult`): JSON torto cai em SEM_RESULTADO, nunca derruba
+  /// a página da chamada. `'{}'` é o estado "sem resultado" — o mesmo que a coluna
+  /// presente desde a criação tem para toda chamada que nunca publicou nada.
+  ///
+  /// Não reusa `reviewRubric`: aquela coluna é a RUBRICA (congela no primeiro
+  /// parecer e é lida por `resolveEffectiveRubric`); sobrecarregá-la misturaria o
+  /// resultado público com a régua da avaliação. E não vive em `Event.settings`
+  /// porque o resultado é por CHAMADA, não por evento.
+  result Json @default("{}")
 
   /// Trilha de avaliação. NULA para palestrante/minicurso, que não têm eixo temático.
   trackId String? @db.Uuid

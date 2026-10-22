@@ -30,7 +30,9 @@ import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
 import { isScanningEnabled } from '@/lib/storage/scan-service';
 import { canServeFile, initialScanStatus } from '@/domain/review/file-scan-rules';
-import { canSubmitToCall, type ProposalKind } from '@/domain/proposals/call-rules';
+import { canSubmitToCall, resolveRequiresBlindReview, type ProposalKind } from '@/domain/proposals/call-rules';
+import { canStartAnotherDraftWithFile } from '@/domain/proposals/proposal-draft-rules';
+import { NOT_SENT_SUBMISSION_STATUSES } from '@/domain/proposals/proposal-receipt-rules';
 import { legacySubmissionPermission } from '@/domain/events/call-optional-rules';
 import { formatBytes } from '@/domain/events/image-rules';
 import {
@@ -109,6 +111,15 @@ export type SubmissionErrorCode =
   | 'CALL_CLOSED'
   | 'AUTHOR_LIMIT_REACHED'
   | 'TRACK_REQUIRED'
+  /**
+   * FASE 74 · fatia 4 — o teto de RASCUNHOS COM ARQUIVO por autor por chamada.
+   *
+   * Código próprio porque ele não é o limite de propostas (`AUTHOR_LIMIT_REACHED`):
+   * este não impede a pessoa de enviar, impede de ACUMULAR trabalho começado. A
+   * correção que a mensagem pede também é outra — enviar ou excluir um rascunho, e
+   * não esperar a chamada reabrir.
+   */
+  | 'DRAFT_FILE_LIMIT_REACHED'
   /** A instituição esgotou a quota de armazenamento do plano (FASE 21). */
   | 'QUOTA_EXCEEDED'
   /**
@@ -120,6 +131,15 @@ export type SubmissionErrorCode =
   | 'FILE_SCANNING'
   | 'FILE_BLOCKED'
   | 'FORBIDDEN'
+  /**
+   * O alvo do upload existe, mas NÃO é do autor da sessão (FASE 74 · fatia 1).
+   *
+   * Código próprio em vez de `FORBIDDEN` porque a recusa é sobre o RECURSO, não
+   * sobre o papel: quem tem `submission:update:own` pode anexar — só não pode
+   * anexar na submissão de outra pessoa. `FORBIDDEN` faria a pessoa procurar um
+   * problema de permissão que ela não tem.
+   */
+  | 'NOT_OWNER'
   | 'INTERNAL';
 
 export class SubmissionError extends Error {
@@ -297,9 +317,29 @@ export async function createSubmission(
 
       if (call) {
         /**
-         * O LIMITE É O DA CHAMADA, e conta as propostas desta pessoa NESTA chamada.
-         * Contar no evento faria o limite de uma chamada consumir a cota da outra —
-         * e a mensagem que o proponente lê fala da chamada que ele abriu.
+         * O LIMITE É O DA CHAMADA, e conta as propostas RECEBIDAS desta pessoa
+         * NESTA chamada. Contar no evento faria o limite de uma chamada consumir a
+         * cota da outra — e a mensagem que o proponente lê fala da chamada que ele
+         * abriu.
+         *
+         * ── RASCUNHO NÃO CONSOME COTA (FASE 74 · fatia 3) ──────────────────────
+         * O envio pela chamada cria o rascunho antes de validar a prontidão. Contá-lo
+         * aqui fazia a pessoa se trancar fora TENTANDO: o rascunho deixado por uma
+         * recusa já ocupava a vaga, e a criação seguinte — que acontece quando o
+         * rascunho tem arquivo e não é reusado pela fatia 2 — respondia
+         * `AUTHOR_LIMIT_REACHED` (preso em `f74-rascunho-honesto.test.ts`).
+         *
+         * A régua é a MESMA do painel (`proposal-receipt-rules`): o que não foi
+         * ENVIADO também não é proposta para efeito de limite. Retirada, cancelada e
+         * recusada continuam consumindo a cota — foram enviadas, e a cota é do envio,
+         * não do desfecho (sair do páreo não devolve a vaga). E isso não vira colchão
+         * infinito: o formulário público REUSA o rascunho vazio (`findReusableDraft`),
+         * então repetir a mesma tentativa não cria outro; o rascunho COM arquivo é
+         * trabalho em andamento — não entra na fila — e tem TETO PRÓPRIO logo abaixo
+         * (`proposal-draft-rules`), porque a quota de armazenamento da F21 é
+         * compartilhada e uma pessoa poderia consumi-la sozinha com rascunhos
+         * abandonados. Quem já enviou o que a chamada permite continua recusado: a
+         * contagem das recebidas é o que barra o SEGUNDO envio real.
          */
         const authorSubmissions = await tx.submission.count({
           where: {
@@ -307,7 +347,7 @@ export async function createSubmission(
             callId: call.id,
             submittedById: input.userId,
             deletedAt: null,
-            status: { notIn: ['WITHDRAWN', 'CANCELED', 'REJECTED'] },
+            status: { notIn: [...NOT_SENT_SUBMISSION_STATUSES] },
           },
         });
 
@@ -325,6 +365,36 @@ export async function createSubmission(
 
         if (!permission.ok) {
           throw new SubmissionError(permission.code, permission.message);
+        }
+
+        /**
+         * ── O TETO DE RASCUNHOS COM ARQUIVO (FASE 74 · fatia 4) ────────────────
+         *
+         *  Conta os rascunhos DESTA pessoa NESTA chamada que já têm arquivo. É a
+         *  única coisa que o teto conta: rascunho vazio é reciclado pela tentativa
+         *  seguinte (fatia 2) e não pode consumir a cota de quem está apenas
+         *  tentando enviar.
+         *
+         *  A verificação roda DEPOIS do limite de propostas de propósito: quando a
+         *  pessoa já usou as propostas que a chamada permite, essa é a verdade que
+         *  ela precisa ler — o teto de rascunhos é uma proteção de armazenamento, não
+         *  a razão principal da recusa.
+         */
+        const draftsWithFile = await tx.submission.count({
+          where: {
+            tenantId: input.tenantId,
+            callId: call.id,
+            submittedById: input.userId,
+            status: 'DRAFT',
+            deletedAt: null,
+            files: { some: { deletedAt: null } },
+          },
+        });
+
+        const ceiling = canStartAnotherDraftWithFile({ draftsWithFile });
+
+        if (!ceiling.allowed) {
+          throw new SubmissionError(ceiling.code, ceiling.message, ceiling.details);
         }
       }
 
@@ -487,6 +557,32 @@ export interface RequestUploadResult {
 }
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POSSE DO ALVO DO UPLOAD (FASE 74 · fatia 1)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `submission:update:own` é uma permissão sobre o PRÓPRIO usuário — a guarda da
+ *  action passa `ownerId` da sessão (`guard-action.ts`), não o dono do recurso.
+ *  Sem comparar com `submission.submittedById`, quem tem a permissão no tenant
+ *  anexa (ou troca) arquivo na submissão de outra pessoa apenas conhecendo o UUID:
+ *  a permissão autoriza a PESSOA, não o ALVO. É o IDOR que a FASE 74 fecha.
+ *
+ *  A comparação vive no SERVIÇO porque a action é só uma das portas — o serviço é
+ *  quem decide, e é ele que os testes de integração exercitam diretamente.
+ *
+ *  O serviço não distingue "não existe" de "é de outro tenant": os dois continuam
+ *  `NOT_FOUND`, porque a RLS esconde a linha alheia antes de qualquer comparação.
+ *  Só o caso "existe, é deste tenant e não é seu" chega ao `NOT_OWNER`.
+ */
+function ensureSubmissionOwnedBy(
+  submission: { submittedById: string },
+  userId: string,
+): void {
+  if (submission.submittedById !== userId) {
+    throw new SubmissionError('NOT_OWNER', 'Esta submissão não é sua.');
+  }
+}
+
+/**
  * Etapa 1 — reserva a chave do objeto e devolve a URL pré-assinada.
  *
  * A validação de formato e tamanho acontece AQUI, antes de o arquivo sair da
@@ -516,12 +612,19 @@ export async function requestUpload(
     return await withTenant(input.tenantId, async (tx) => {
       const submission = await tx.submission.findFirst({
         where: { id: input.submissionId, deletedAt: null },
-        select: { id: true, eventId: true, status: true, version: true },
+        select: { id: true, eventId: true, status: true, version: true, submittedById: true },
       });
 
       if (!submission) {
         throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
       }
+
+      /**
+       * A POSSE VEM ANTES DE ASSINAR A URL (FASE 74 · fatia 1): a pré-assinada é o
+       * começo do upload, e concedê-la a quem não é o autor já é abrir o furo —
+       * mesmo que a confirmação fosse recusar depois.
+       */
+      ensureSubmissionOwnedBy(submission, input.userId);
 
       // ── Versão do artefato ─────────────────────────────────────────────────
       // Em rascunho, substitui a versão existente. Depois do envio, incrementa.
@@ -626,10 +729,12 @@ export interface ConfirmUploadResult {
 /**
  * Etapa 3 — confere o objeto e registra o artefato.
  *
- * A ordem é deliberada: primeiro INSPECIONA o storage, depois valida, e só então
- * grava. Registrar antes de conferir deixaria uma linha apontando para um objeto
- * que talvez não exista — o pior tipo de inconsistência, porque só aparece no
- * momento em que alguém tenta abrir o arquivo.
+ * A ordem é deliberada: primeiro confere a POSSE do alvo, depois INSPECIONA o
+ * storage, valida, e só então grava. A posse vem antes de tudo porque a falha de
+ * integridade APAGA o objeto — e um terceiro não pode chegar a esse caminho.
+ * Registrar antes de conferir deixaria uma linha apontando para um objeto que
+ * talvez não exista — o pior tipo de inconsistência, porque só aparece no momento
+ * em que alguém tenta abrir o arquivo.
  *
  * Quando a integridade falha, o objeto É REMOVIDO do bucket: manter um blob
  * órfão que sabemos ser inválido só acumula lixo e superfície de confusão.
@@ -638,6 +743,29 @@ export async function confirmUpload(
   input: ConfirmUploadInput,
 ): Promise<Result<ConfirmUploadResult>> {
   try {
+    /**
+     * ─── A POSSE É CONFERIDA ANTES DE OLHAR O OBJETO (FASE 74 · fatia 1) ───
+     * `inspectObject` é só leitura, mas o caminho de falha de integridade APAGA o
+     * objeto do bucket. Se a posse fosse conferida depois, um terceiro com a chave
+     * de um objeto alheio poderia apagá-lo passando um checksum errado — a
+     * submissão do dono ficaria intacta no banco e quebrada no storage.
+     *
+     * Por isso a leitura de posse vem primeiro: quando o alvo não é de quem
+     * chamou, NADA é tocado — nem o banco, nem o objeto.
+     */
+    const ownership = await withTenant(input.tenantId, (tx) =>
+      tx.submission.findFirst({
+        where: { id: input.submissionId, deletedAt: null },
+        select: { submittedById: true },
+      }),
+    );
+
+    if (!ownership) {
+      throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
+    }
+
+    ensureSubmissionOwnedBy(ownership, input.userId);
+
     const stored = await inspectObject(input.bucket, input.objectKey);
 
     if (!stored.exists) {
@@ -667,12 +795,20 @@ export async function confirmUpload(
     return await withTenant(input.tenantId, async (tx) => {
       const submission = await tx.submission.findFirst({
         where: { id: input.submissionId, deletedAt: null },
-        select: { id: true, status: true },
+        select: { id: true, status: true, submittedById: true },
       });
 
       if (!submission) {
         throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
       }
+
+      /**
+       * Reconfere DENTRO da transação que grava: a leitura acima garante que nada
+       * toca o storage antes da posse, e esta garante que a escrita também não
+       * depende de uma leitura antiga (defesa em profundidade — `submittedById`
+       * não muda, mas a escrita é o que realmente importa).
+       */
+      ensureSubmissionOwnedBy(submission, input.userId);
 
       /**
        * ─── IDEMPOTÊNCIA DA CONFIRMAÇÃO ──────────────────────────────────────
@@ -768,8 +904,9 @@ export interface SubmitInput {
  * Envia a submissão para avaliação.
  *
  * Aqui roda a validação COMPLETA (`evaluateSubmissionReadiness`): conteúdo
- * mínimo, trilha, autores e o artefato obrigatório conforme a trilha exija
- * revisão cega ou não.
+ * mínimo, trilha, autores e o artefato obrigatório conforme a cegueira EFETIVA —
+ * CHAMADA → TRILHA → PADRÃO do tipo (`resolveRequiresBlindReview`, FASE 74 · fatia 5).
+ * Lendo só a trilha (ou só a chamada), uma das duas decisões sumia em silêncio.
  *
  * O `blindSnapshot` é gravado no envio: é o retrato da autoria naquele instante,
  * e é dele que a revisão cega remove a identificação.
@@ -846,8 +983,18 @@ export async function submitSubmission(
           kind: file.kind as SubmissionFileKind,
           checksum: file.checksum,
         })),
-        requiresBlindReview:
-          submission.call?.requiresBlindReview ?? submission.track?.requiresBlindReview ?? true,
+        /**
+         * A cegueira que o ENVIO vai cobrar (FASE 74 · fatia 5): a mesma função pura
+         * que a tela da submissão, a atribuição de revisor e o anúncio da página da
+         * chamada usam — CHAMADA → TRILHA → PADRÃO do tipo. Aqui a expressão inline
+         * `call ?? track ?? true` escondia a trilha (a coluna da chamada não era
+         * nula), então uma chamada aberta fazia a trilha cega desaparecer.
+         */
+        requiresBlindReview: resolveRequiresBlindReview({
+          callRequiresBlindReview: submission.call?.requiresBlindReview ?? null,
+          trackRequiresBlindReview: submission.track?.requiresBlindReview ?? null,
+          kind: (submission.call?.kind as ProposalKind | undefined) ?? null,
+        }).requiresBlindReview,
         authorCount: submission.authors.length,
         proposalKind: (submission.call?.kind as ProposalKind | undefined) ?? null,
       });
@@ -1474,11 +1621,12 @@ export async function getSubmission(
         decisionNotes: true,
         track: { select: { name: true, requiresBlindReview: true } },
         /**
-         * A cegueira é da CHAMADA quando ela existe (FASE 33) — a mesma precedência
-         * que a validação de envio usa. Sem esta coluna, a tela da submissão diria
-         * "revisão aberta" para uma proposta que o revisor recebe cega.
+         * A cegueira é da CHAMADA quando ela se pronuncia (FASE 33) — e da TRILHA
+         * quando a chamada CALA (FASE 74 · fatia 5). Sem esta coluna, a tela da
+         * submissão diria "revisão aberta" para uma proposta que o revisor recebe
+         * cega. O `kind` entra junto porque é o último degrau da precedência.
          */
-        call: { select: { requiresBlindReview: true } },
+        call: { select: { kind: true, requiresBlindReview: true } },
         files: {
           where: {
             deletedAt: null,
@@ -1528,8 +1676,16 @@ export async function getSubmission(
     trackId: submission.trackId,
     trackName: submission.track?.name ?? null,
     callId: submission.callId,
-    requiresBlindReview:
-      submission.call?.requiresBlindReview ?? submission.track?.requiresBlindReview ?? true,
+    /**
+     * A cegueira EFETIVA, pela precedência CHAMADA → TRILHA → PADRÃO (FASE 74 ·
+     * fatia 5). A tela desta submissão decide os uploads e a frase "revisão cega"
+     * com este valor, então ele precisa ser o mesmo que o envio vai cobrar.
+     */
+    requiresBlindReview: resolveRequiresBlindReview({
+      callRequiresBlindReview: submission.call?.requiresBlindReview ?? null,
+      trackRequiresBlindReview: submission.track?.requiresBlindReview ?? null,
+      kind: (submission.call?.kind as ProposalKind | undefined) ?? null,
+    }).requiresBlindReview,
     eventId: submission.eventId,
     files: submission.files.map((file) => ({
       id: file.id,

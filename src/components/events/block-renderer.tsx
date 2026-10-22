@@ -35,6 +35,11 @@ import {
   type SponsorTierTint,
 } from '@/domain/events/sponsor-rules';
 import { CALL_STATE_LABELS } from '@/domain/proposals/call-rules';
+import {
+  PUBLIC_CALL_RESULT_LANDING_BADGE,
+  PUBLIC_CALL_RESULT_LANDING_LINK,
+  showsPublishedResultBadge,
+} from '@/domain/proposals/call-result-public-rules';
 import type { CallView } from '@/lib/proposals/call-service';
 import { hasPublicContacts, PUBLIC_CONTACT_LABELS, PUBLIC_CONTACT_NETWORKS } from '@/domain/profile/public-contacts';
 import { teamInitials } from '@/domain/events/team-rules';
@@ -1103,6 +1108,34 @@ function CallsBlock({
                 </span>
               ) : null}
             </p>
+
+            {/*
+              ── O RESULTADO PUBLICADO, NA LANDING (FASE 73 · fatia 4) ──────────
+              A landing lê a chamada na renderização (ADR-168) e por isso consegue
+              dizer, barato e honesto, que há resultado publicado: um SELO e o link
+              para a página da chamada. O texto, a lista e os próximos passos ficam
+              LÁ — repeti-los aqui criaria a segunda cópia do mesmo documento, que
+              envelhece no primeiro ajuste.
+
+              O estado vem de `readCallResult` (via `CallView.resultState`) e nunca
+              do JSON: RASCUNHO e SEM_RESULTADO não ganham selo, senão a landing
+              anunciaria um resultado que a página da chamada não mostra.
+            */}
+            {showsPublishedResultBadge(call.resultState) ? (
+              <p
+                className="flex flex-wrap items-center gap-2 text-xs"
+                data-testid="call-result-published"
+              >
+                <span className="ef-badge">{PUBLIC_CALL_RESULT_LANDING_BADGE}</span>
+                <Link
+                  href={tenantPath(tenantSlug, `/eventos/${eventSlug}/chamada/${call.slug}`)}
+                  className="underline underline-offset-4"
+                  data-testid={`call-result-published-link-${call.id}`}
+                >
+                  {PUBLIC_CALL_RESULT_LANDING_LINK}
+                </Link>
+              </p>
+            ) : null}
 
             <Link
               href={tenantPath(tenantSlug, `/eventos/${eventSlug}/chamada/${call.slug}`)}

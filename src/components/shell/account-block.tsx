@@ -6,6 +6,7 @@ import { ThemeChoice } from '@/components/theme/theme-choice';
 import { TenantMenu, type MembershipSummary } from '@/components/tenancy/tenant-menu';
 import { Avatar } from '@/components/ui/feedback';
 import { buttonClasses } from '@/components/ui/button';
+import { MINHA_AREA_LABEL } from '@/domain/platform/vitrine-account-rules';
 import { NAV_MODE_RAIL } from '@/lib/shell/nav-mode';
 import { readNavMode } from '@/lib/shell/nav-mode-server';
 import { cn } from '@/lib/utils/cn';
@@ -186,7 +187,8 @@ export function PublicHeader({
           {isAuthenticated ? (
             <Link href={accountHref} className={buttonClasses({ size: 'sm' })}>
               <UserRound className="size-4" aria-hidden />
-              Minha área
+              {/* O rótulo é do DOMÍNIO: a vitrine da plataforma mostra o mesmo botão. */}
+              {MINHA_AREA_LABEL}
             </Link>
           ) : (
             <Link href={loginHref} className={buttonClasses({ size: 'sm' })}>

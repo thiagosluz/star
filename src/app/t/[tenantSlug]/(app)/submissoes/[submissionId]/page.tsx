@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import { CheckCircle2, Clock, FileText, AlertCircle } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
+import { loadSubmissionPageAccess } from '@/lib/review/submission-access';
 import {
   canChangeSubmissionTrackOf,
   getSubmission,
@@ -10,7 +11,13 @@ import {
   resolveRubric,
 } from '@/lib/review/submission-service';
 import { getSubmissionAuthors } from '@/lib/review/author-service';
-import { isEditableByAuthor, canDeleteSubmission, type SubmissionStatus } from '@/domain/review/submission-rules';
+import {
+  evaluateSubmissionReadiness,
+  isEditableByAuthor,
+  canDeleteSubmission,
+  SUBMISSION_DRAFT_ARRIVAL_NOTICE,
+  type SubmissionStatus,
+} from '@/domain/review/submission-rules';
 import { canWithdrawSubmission } from '@/domain/review/submission-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -53,10 +60,10 @@ export default async function SubmissionDetailPage({
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string; submissionId: string }>;
-  searchParams: Promise<{ novo?: string }>;
+  searchParams: Promise<{ novo?: string; rascunho?: string }>;
 }) {
   const { tenantSlug, submissionId } = await params;
-  const { novo } = await searchParams;
+  const { novo, rascunho } = await searchParams;
 
   const context = await getRequestContext();
   if (!context) {
@@ -72,6 +79,43 @@ export default async function SubmissionDetailPage({
   }
 
   const tenantId = context.activeTenant.tenantId;
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A PÁGINA É DO AUTOR (FASE 74 · fatia 2)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O QUE ACONTECIA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `getSubmission` filtra por INSTITUIÇÃO, e a página não comparava o
+   *  `submittedById`: qualquer membro do tenant que tivesse o UUID lia os metadados
+   *  de um trabalho alheio — resumo, autores com e-mail, arquivos, nota e decisão.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A RESPOSTA É 404, E É A MESMA DE "NÃO EXISTE"
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Quem não é o autor recebe o mesmo 404 de uma submissão inexistente: dizer
+   *  "esta submissão não é sua" transformaria a página num oráculo de existência
+   *  (daria para varrer UUIDs e descobrir quais são reais).
+   *
+   *  Não há leitor legítimo que NÃO seja o autor nesta tela: o comitê trabalha em
+   *  `/comite/<submissionId>` (FASE 33), com permissão própria e outro serviço, e o
+   *  coautor nunca pôde agir aqui (o upload já responde `NOT_OWNER` desde a fatia 1,
+   *  e a autoria só é editável por quem submeteu).
+   *
+   *  A conferência vem ANTES do detalhe: recusar depois de ler os metadados seria
+   *  confiar que nada no caminho até o `notFound()` vaza — e a lista de bloqueios, a
+   *  rubrica e a autoria já viriam carregadas.
+   */
+  const access = await loadSubmissionPageAccess({
+    tenantId,
+    submissionId,
+    viewerId: context.user.id,
+  });
+
+  if (!access.ok) notFound();
+
   const submission = await getSubmission(tenantId, submissionId);
 
   if (!submission) notFound();
@@ -129,15 +173,49 @@ export default async function SubmissionDetailPage({
     ? await listTrackOptionsForSubmission(tenantId, submission.eventId)
     : [];
 
-  /** Bloqueios que impedem o envio, calculados no servidor. */
-  const blockers: string[] = [];
-  if (submission.authors.length === 0) blockers.push('Informe ao menos um autor.');
-  if (submission.requiresBlindReview && !currentByKind.has('BLIND_PDF')) {
-    blockers.push('Anexe a versão cega (sem identificação dos autores).');
-  }
-  if (!submission.requiresBlindReview && !currentByKind.has('IDENTIFIED_PDF')) {
-    blockers.push('Anexe o arquivo do trabalho em PDF.');
-  }
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  OS BLOQUEIOS DA TELA SÃO OS DO SERVIDOR (FASE 74 · fatia 2)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O DEFEITO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A lista era escrita à mão aqui com TRÊS condições (autores, PDF cego, PDF
+   *  identificado) e o serviço cobrava uma QUARTA: a trilha, que a chamada
+   *  científica exige (`evaluateSubmissionReadiness`). Numa chamada científica sem
+   *  trilha a tela dizia "Tudo pronto para o envio" e o servidor recusava — a
+   *  mesma mentira do relato, só que na tela do rascunho.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A CORREÇÃO É USAR A FONTE, NÃO ACRESCENTAR UMA LINHA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Acrescentar "trilha" aqui consertaria este caso e deixaria o próximo: a régua
+   *  é uma só (`evaluateSubmissionReadiness`, a MESMA que `submitSubmission` chama),
+   *  e é ela que a tela passa a ler. Os dados vêm do detalhe da submissão, o
+   *  `proposalKind` da chamada de origem (que decide se a proposta é científica).
+   *  O teste de integração compara esta lista com os bloqueios que o serviço
+   *  devolve — divergência ali é o defeito.
+   */
+  const readiness = evaluateSubmissionReadiness({
+    title: submission.title,
+    abstract: submission.abstract,
+    keywords: submission.keywords,
+    language: submission.language,
+    trackId: submission.trackId,
+    /**
+     * Só a versão CORRENTE conta: um arquivo antigo confirmado não satisfaz o envio
+     * (o serviço lê `isCurrent: true`). O checksum é a prova de integridade.
+     */
+    files: submission.files
+      .filter((file) => file.isCurrent)
+      .map((file) => ({ kind: file.kind, checksum: file.checksum })),
+    requiresBlindReview: submission.requiresBlindReview,
+    authorCount: submission.authors.length,
+    proposalKind: access.callKind,
+  });
+
+  const blockers = readiness.blockers;
 
   return (
     <main className="max-w-4xl space-y-8">
@@ -190,6 +268,37 @@ export default async function SubmissionDetailPage({
             />
           ) : null}
         </div>
+
+        {/*
+          ─── O AVISO QUE EXPLICA A CHEGADA (FASE 74 · ajuste da fatia 2) ───
+          A action redireciona para cá com `?rascunho=1` quando o envio pela página
+          pública recusa por prontidão. Sem esta frase, a pessoa que acabou de
+          clicar em "Enviar proposta" cairia num rascunho sem saber se o envio
+          funcionou ou por que ela está ali.
+
+          O TEXTO VEM DO DOMÍNIO (`SUBMISSION_DRAFT_ARRIVAL_NOTICE`), e não é escrito
+          nesta tela: a mesma frase é o contrato do teste, e a superfície que a
+          mostra não pode ter a própria versão dela.
+
+          ELE NÃO SUBSTITUI OS BLOQUEIOS: o aviso diz por que a pessoa chegou; a
+          lista de "Enviar para avaliação", logo abaixo, continua dizendo o que falta
+          — e é a MESMA régua que o servidor aplica.
+
+          O `?rascunho=1` FICA na URL depois do reload, de propósito: ele descreve o
+          fato (a chegada por uma recusa), e não um evento de uso único. Consumir o
+          parâmetro exigiria estado de cliente ou um cookie de "já avisei" — e a
+          pessoa que recarrega a página justamente para conferir o que falta perderia
+          a explicação no exato momento em que voltou a ela.
+        */}
+        {rascunho === '1' ? (
+          <p
+            className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-strong"
+            data-testid="draft-arrival-notice"
+          >
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {SUBMISSION_DRAFT_ARRIVAL_NOTICE}
+          </p>
+        ) : null}
 
         {/*
           ─── O AVISO QUE SUBSTITUI A PÁGINA INTERMEDIÁRIA (revisão da FASE 4) ───
@@ -390,6 +499,27 @@ export default async function SubmissionDetailPage({
               Tudo pronto para o envio.
             </p>
           )}
+
+          {/*
+            OS AVISOS TAMBÉM SÃO DA RÉGUA (FASE 74): são coisas que NÃO impedem o
+            envio — hoje, a versão identificada que a publicação vai exigir. A tela
+            não os transforma em bloqueio (o botão continua habilitado), mas também
+            não os esconde: quem envia sem eles descobre a falta depois, na hora de
+            publicar.
+          */}
+          {readiness.warnings.length > 0 ? (
+            <ul className="space-y-1" data-testid="submit-warnings">
+              {readiness.warnings.map((warning) => (
+                <li
+                  key={warning}
+                  className="flex items-start gap-2 text-xs text-muted-foreground"
+                >
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  {warning}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Clock className="size-3.5" aria-hidden />

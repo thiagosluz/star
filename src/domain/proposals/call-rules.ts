@@ -116,6 +116,85 @@ export function defaultBlindFor(kind: ProposalKind): boolean {
   return PROPOSAL_KIND_BLIND_BY_DEFAULT[kind];
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  A cegueira EFETIVA: CHAMADA → TRILHA → PADRÃO DO TIPO
+// ───────────────────────────────────────────────────────────────────────────────
+/** De onde veio a decisão — é o que a tela do organizador pode dizer sem inventar. */
+export type BlindReviewSource = 'CALL' | 'TRACK' | 'TYPE';
+
+export interface BlindReviewPrecedenceInput {
+  /** O que a CHAMADA declara. `null`/ausente = ela não se pronuncia. */
+  callRequiresBlindReview?: boolean | null;
+  /** O que a TRILHA declara. `null`/ausente = não há trilha no caminho. */
+  trackRequiresBlindReview?: boolean | null;
+  /** O TIPO da proposta — só decide quando as duas pontas acima calaram. */
+  kind?: ProposalKind | null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A CEGUEIRA QUE VALE, EM UMA FUNÇÃO (FASE 74 · fatia 5 · decisão 3 do humano)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O DEFEITO QUE ISTO CONSERTA
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A precedência existia no ADR-160, mas o serviço a escrevia assim:
+ *
+ *      call?.requiresBlindReview ?? track?.requiresBlindReview ?? true
+ *
+ *  Como `CallForProposals.requiresBlindReview` era `boolean NOT NULL`, `call` nunca
+ *  era nulo e o `??` NUNCA chegava na trilha: a chamada sempre vencia, mesmo quando
+ *  não tinha dito nada sobre cegueira. O ADR falava CHAMADA → TRILHA e o código fazia
+ *  CHAMADA → PADRÃO. A chamada de minicursos do seed (trilha cega, chamada aberta) é
+ *  o caso vivo: avaliada como aberta, em silêncio.
+ *
+ *  Agora a coluna aceita `NULL` — "não me pronuncio" — e a ordem é explícita. O
+ *  serviço, a tela da submissão, a atribuição de revisor e o anúncio da página
+ *  pública leem ESTA função: escrever a expressão em cada lugar é como as duas
+ *  versões da regra nasceram.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE "TRILHA NULA" CAI NO PADRÃO DO TIPO (E NÃO EM `false`)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Sem trilha não há eixo temático — é o caso de uma chamada de palestrante ou de
+ *  um artigo submetido antes de a trilha existir. O ADR-160 diz o que vale aí: "sem
+ *  trilha, a rubrica padrão e a cegueira PRESSUPOSTA". O pressuposto é o do TIPO, e
+ *  ele não é arbitrário: `PAPER` e `POSTER` nascem cegos porque é a cegueira que dá
+ *  legitimidade à nota ponderada e é a versão anonimizada que o revisor julga. Se o
+ *  último degrau fosse `false`, toda chamada de artigo sem trilha abriria a autoria
+ *  em silêncio — o MESMO defeito desta fatia, virado do avesso: em vez de a chamada
+ *  calada vencer a trilha, ela venceria o tipo. Para palestrante, minicurso, oficina,
+ *  mesa e "outra", o padrão do tipo é aberto, e nada muda.
+ *
+ *  Submissão SEM chamada e SEM trilha (o artigo legado, anterior à FASE 33) cai no
+ *  mesmo degrau com `kind` nulo, e aí vale `true` — é literalmente o `?? true` que a
+ *  FASE 4 escrevia, preservado para que a revisão de um trabalho antigo não mude de
+ *  regime por causa de uma fase sobre chamadas.
+ */
+export function resolveRequiresBlindReview(input: BlindReviewPrecedenceInput): {
+  requiresBlindReview: boolean;
+  source: BlindReviewSource;
+} {
+  if (input.callRequiresBlindReview !== null && input.callRequiresBlindReview !== undefined) {
+    return { requiresBlindReview: input.callRequiresBlindReview, source: 'CALL' };
+  }
+
+  if (input.trackRequiresBlindReview !== null && input.trackRequiresBlindReview !== undefined) {
+    return { requiresBlindReview: input.trackRequiresBlindReview, source: 'TRACK' };
+  }
+
+  /**
+   * O último degrau. `kind` nulo aqui não é "tipo desconhecido": é a submissão que
+   * não veio de chamada nenhuma, e o trabalho científico sempre exigiu a versão cega.
+   */
+  return {
+    requiresBlindReview: input.kind ? defaultBlindFor(input.kind) : true,
+    source: 'TYPE',
+  };
+}
+
+
 /** A chamada tem público externo? Todas têm — mas artigo é o caso central. */
 export function isScientific(kind: ProposalKind): boolean {
   return kind === 'PAPER' || kind === 'POSTER';
@@ -460,10 +539,14 @@ export type ProposalPermission =
 /**
  * Decide se ESTA pessoa pode propor NESTA chamada NESTE instante.
  *
- * O limite por autor conta as propostas **não canceladas nem recusadas** do autor
- * NAQUELA chamada — não no evento. É o que a chamada promete ("até 2 propostas por
- * pessoa nesta chamada"), e contar no evento faria o limite de uma chamada consumir
- * a cota da outra.
+ * O limite por autor conta as propostas **recebidas** do autor NAQUELA chamada — não
+ * no evento. É o que a chamada promete ("até 2 propostas por pessoa nesta chamada"),
+ * e contar no evento faria o limite de uma chamada consumir a cota da outra.
+ *
+ * "Recebida" tem UMA definição, em `proposal-receipt-rules` (FASE 74): o rascunho
+ * criado antes da validação de prontidão não conta — nem no painel, nem aqui. Quem
+ * chama precisa passar a contagem feita pela MESMA régua; um número apurado de
+ * outro jeito reintroduziria o defeito que a fase fechou.
  */
 export function canSubmitToCall(input: {
   call: CallWindow & { maxSubmissionsPerAuthor: number; title: string };

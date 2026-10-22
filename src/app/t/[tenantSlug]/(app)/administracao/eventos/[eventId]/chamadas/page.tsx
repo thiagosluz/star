@@ -7,12 +7,18 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listCallProposals, listCalls } from '@/lib/proposals/call-service';
+import { getCallResultPanel } from '@/lib/proposals/call-result-service';
+import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
 import {
   CALL_STATE_LABELS,
   PROPOSAL_KINDS,
   PROPOSAL_KIND_LABELS,
   PROPOSAL_KIND_SHORT_LABELS,
 } from '@/domain/proposals/call-rules';
+import {
+  inProgressDraftsLabel,
+  receivedProposalsLabel,
+} from '@/domain/proposals/proposal-receipt-rules';
 import {
   deleteCallAction,
   saveCallAction,
@@ -23,6 +29,7 @@ import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { RubricEditor } from '@/components/admin/rubric-editor';
 import { TrackSection } from '@/components/admin/track-section';
+import { CallResultCard } from '@/components/proposals/call-result-card';
 import { rubricReviewCounts } from '@/lib/review/rubric-guard';
 
 export const metadata = { title: 'Chamadas de propostas' };
@@ -111,6 +118,29 @@ export default async function EventCallsPage({
     ),
   );
 
+  /**
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  O RESULTADO DE CADA CHAMADA (FASE 73 · fatia 3)
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  Uma leitura por chamada, e não uma global: o painel do resultado carrega a
+   *  chamada, as submissões DELA e a projeção pública — tudo dentro do `withTenant`,
+   *  com a RLS ligada. Não há consulta por submissão (a autoria vem aninhada), e o
+   *  número de chamadas por evento já tem teto (CALL_LIST_LIMIT).
+   *
+   *  A leitura é feita para TODA chamada, inclusive a que nunca teve resultado e a
+   *  que ainda não recebeu propostas: é exatamente nessas que o organizador precisa
+   *  do formulário para começar. A falha de UMA não derruba a tela — o cartão daquela
+   *  chamada mostra o aviso honesto, e as outras continuam utilizáveis.
+   */
+  const resultPanels = new Map(
+    await Promise.all(
+      calls.map(async (call) => {
+        const result = await getCallResultPanel({ tenantId, callId: call.id });
+        return [call.id, result] as const;
+      }),
+    ),
+  );
+
   const kindOptions = PROPOSAL_KINDS.map((kind) => ({
     value: kind,
     label: PROPOSAL_KIND_LABELS[kind],
@@ -120,6 +150,34 @@ export default async function EventCallsPage({
     { value: '', label: 'Sem trilha (chamada não científica)' },
     ...event.tracks.map((track) => ({ value: track.id, label: track.name })),
   ];
+
+  /**
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  OS TRÊS ESTADOS DA CEGUEIRA (FASE 74 · fatia 5)
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  "Padrão do tipo" e "Herdar da trilha" parecem a mesma coisa ("não escolhi") e
+   *  NÃO são:
+   *
+   *    • Padrão do tipo — grava `defaultBlindFor(tipo)` na coluna. A chamada passa a
+   *      decidir sozinha com esse valor, e a trilha deixa de ser consultada.
+   *    • Herdar da trilha — grava `NULL`. A chamada não se pronuncia e a TRILHA
+   *      decide; sem trilha, vale o padrão do tipo.
+   *
+   *  O rótulo do primeiro diz qual é o padrão do tipo porque o formulário é sem
+   *  JavaScript: o `kind` é outro campo e não há como o texto mudar ao trocá-lo.
+   *  A frase do `hint` é a mesma nos dois formulários (criar e editar).
+   */
+  const blindOptions = [
+    { value: '', label: 'Padrão do tipo (cego para artigo e pôster)' },
+    { value: 'inherit', label: 'Herdar da trilha' },
+    { value: 'on', label: 'Sim — os revisores não veem a autoria' },
+    { value: 'off', label: 'Não — revisão aberta' },
+  ];
+
+  const blindHint =
+    '“Padrão do tipo” grava o default do tipo na chamada (cego para artigo e pôster). ' +
+    '“Herdar da trilha” deixa a chamada sem opinião: é o que faz uma trilha cega valer ' +
+    'aqui — sem trilha, volta o padrão do tipo.';
 
   const callFields = (
     <>
@@ -142,13 +200,9 @@ export default async function EventCallsPage({
       <SelectField
         label="Revisão cega"
         name="requiresBlindReview"
-        options={[
-          { value: '', label: 'Padrão do tipo' },
-          { value: 'on', label: 'Sim — os revisores não veem a autoria' },
-          { value: 'off', label: 'Não — revisão aberta' },
-        ]}
+        options={blindOptions}
         defaultValue=""
-        hint="O padrão do tipo é cego para artigo e pôster, aberto para os demais."
+        hint={blindHint}
       />
       <Field
         label="Propostas por autor"
@@ -237,7 +291,10 @@ export default async function EventCallsPage({
           </p>
         ) : (
           <ul className="space-y-4">
-            {calls.map((call) => (
+            {calls.map((call) => {
+              const resultPanel = resultPanels.get(call.id);
+
+              return (
               <li
                 key={call.id}
                 className="space-y-4 rounded-lg border border-border bg-card p-5"
@@ -260,11 +317,43 @@ export default async function EventCallsPage({
                         {call.windowLabel}
                       </span>
                       {call.countdown ? <span>{call.countdown}</span> : null}
-                      <span>
-                        {call.proposals} proposta(s) · {call.decided} decidida(s)
+                      {/**
+                        * ── O SELO FALA DE PROPOSTA RECEBIDA, E SÓ DISSO (F74) ────
+                        *  O número e a frase saem da MESMA régua da lista logo
+                        *  abaixo (`proposal-receipt-rules`), então o selo não pode
+                        *  anunciar uma proposta que a lista não mostra. Rascunho de
+                        *  tentativa que falhou não entra; rascunho COM arquivo é
+                        *  trabalho em andamento e ganha frase própria — o
+                        *  organizador mantém a visão de quem começou e parou sem
+                        *  chamar de "recebido" o que ninguém enviou.
+                        */}
+                      <span data-testid={`call-proposals-selo-${call.id}`}>
+                        {receivedProposalsLabel(call.proposals)} · {call.decided} decidida(s)
                       </span>
+                      {call.proposalsInProgress !== null && call.proposalsInProgress > 0 ? (
+                        <span data-testid={`call-proposals-in-progress-${call.id}`}>
+                          {inProgressDraftsLabel(call.proposalsInProgress)}
+                        </span>
+                      ) : null}
                       {call.trackName ? <span>Trilha: {call.trackName}</span> : null}
-                      <span>{call.requiresBlindReview ? 'Revisão cega' : 'Revisão aberta'}</span>
+                      {/**
+                        * A frase diz o que VALE, e quando a chamada herda ela diz de
+                        * quem: "Herdar da trilha (cega)" é informação diferente de
+                        * "Revisão cega" — a segunda é uma decisão da chamada, a
+                        * primeira é uma decisão da trilha que a chamada aceitou
+                        * (FASE 74 · fatia 5). Sem trilha apontada, "herdar" não tem de
+                        * quem herdar e quem decide é o tipo: dizer "herdar da trilha"
+                        * ali seria prometer uma trilha que não existe.
+                        */}
+                      <span data-testid={`call-blind-${call.id}`}>
+                        {call.requiresBlindReview === null
+                          ? call.trackId === null
+                            ? `Sem trilha — padrão do tipo (${call.effectiveRequiresBlindReview ? 'cega' : 'aberta'})`
+                            : `Herdar da trilha (${call.effectiveRequiresBlindReview ? 'cega' : 'aberta'})`
+                          : call.effectiveRequiresBlindReview
+                            ? 'Revisão cega'
+                            : 'Revisão aberta'}
+                      </span>
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Endereço público:{' '}
@@ -306,7 +395,13 @@ export default async function EventCallsPage({
                         description:
                           call.proposals > 0
                             ? 'Esta chamada já recebeu propostas: a exclusão será recusada e a resposta dirá para despublicar em vez de excluir.'
-                            : 'A chamada sai do painel e da página pública. Sem propostas recebidas, não há histórico a perder.',
+                            : /**
+                               * A tela só conhece as propostas RECEBIDAS; um rascunho
+                               * de tentativa que falhou não aparece aqui e mesmo assim
+                               * impede a exclusão (ele é o caminho de volta do autor).
+                               * Por isso o texto não promete que a exclusão passa.
+                               */
+                              'A chamada sai do painel e da página pública. Se houver rascunho de proposta ainda não enviado, a exclusão é recusada e a resposta diz o caminho.',
                         confirmLabel: 'Excluir chamada',
                       }}
                     >
@@ -321,6 +416,47 @@ export default async function EventCallsPage({
                 {call.summary ? (
                   <p className="text-sm text-muted-foreground">{call.summary}</p>
                 ) : null}
+
+                {/* ── Resultado publicado (FASE 73 · fatia 3) ────────────────── */}
+                {/**
+                 *  O cartão fica ANTES da edição da chamada e das propostas: publicar o
+                 *  resultado é o ato que o organizador vem fazer nesta tela, e ele não
+                 *  deve depender de abrir uma sanfona para achar o formulário.
+                 *
+                 *  O painel inteiro vem do serviço (`getCallResultPanel`), que já
+                 *  derivou `acoesDisponiveis` da tabela do domínio e montou a prévia com
+                 *  a MESMA projeção da página pública. A tela não recalcula nada.
+                 */}
+                {resultPanel?.ok ? (
+                  <CallResultCard
+                    tenantSlug={tenantSlug}
+                    callId={call.id}
+                    callTitle={call.title}
+                    resultado={resultPanel.panel.resultado}
+                    acoesDisponiveis={resultPanel.panel.acoesDisponiveis}
+                    seletor={resultPanel.panel.seletor}
+                    publico={resultPanel.panel.publico}
+                    problems={resultPanel.panel.problems}
+                    publicadoEmLabel={
+                      resultPanel.panel.resultado.publicadoEm
+                        ? formatZonedDateTime(
+                            new Date(resultPanel.panel.resultado.publicadoEm),
+                            event.timezone,
+                          )
+                        : null
+                    }
+                  />
+                ) : (
+                  <p
+                    role="status"
+                    className="rounded-md border border-warning bg-warning-soft p-3 text-xs text-warning-strong"
+                    data-testid={`call-result-unavailable-${call.id}`}
+                  >
+                    Não foi possível carregar o resultado desta chamada agora. A chamada e as
+                    propostas continuam funcionando; recarregue a página para ver o formulário do
+                    resultado.
+                  </p>
+                )}
 
                 {/* ── Edição ───────────────────────────────────────────────── */}
                 <details className="rounded-md border border-border p-3">
@@ -381,12 +517,9 @@ export default async function EventCallsPage({
                         <SelectField
                           label="Revisão cega"
                           name="requiresBlindReview"
-                          options={[
-                            { value: '', label: 'Padrão do tipo' },
-                            { value: 'on', label: 'Sim — os revisores não veem a autoria' },
-                            { value: 'off', label: 'Não — revisão aberta' },
-                          ]}
-                          defaultValue={call.requiresBlindReview ? 'on' : 'off'}
+                          options={blindOptions}
+                          defaultValue={blindOptionValue(call.requiresBlindReview)}
+                          hint={blindHint}
                         />
                         <Field
                           label="Propostas por autor"
@@ -438,7 +571,20 @@ export default async function EventCallsPage({
                             <p className="text-xs text-muted-foreground">
                               {proposal.authorName ?? 'Autoria não informada'}
                               {proposal.authorEmail ? ` · ${proposal.authorEmail}` : ''} ·{' '}
-                              {proposal.status}
+                              {/**
+                                * O STATUS NA LINHA, EM PORTUGUÊS (FASE 74 · fatia 6).
+                                *  A lista mostra o que foi ENVIADO — inclusive a
+                                *  retirada, a cancelada e a recusada —, e é este
+                                *  rótulo que diz o desfecho. Antes o painel escondia
+                                *  essas três linhas e o organizador perdia a
+                                *  informação de que a proposta existiu; agora ele vê
+                                *  o que chegou e em que pé está. O texto vem do
+                                *  serviço (domínio `SUBMISSION_STATUS_LABELS`), não
+                                *  do enum cru do banco.
+                                */}
+                              <span data-testid={`call-proposal-status-${proposal.id}`}>
+                                {proposal.statusLabel}
+                              </span>
                               {proposal.finalScore !== null
                                 ? ` · nota ${proposal.finalScore.toFixed(1)}`
                                 : ''}
@@ -470,7 +616,8 @@ export default async function EventCallsPage({
                   </details>
                 ) : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>
@@ -500,6 +647,18 @@ export default async function EventCallsPage({
 }
 
 /**
+ * O valor do `<select>` de cegueira que representa o estado GRAVADO (FASE 74 · fatia 5).
+ *
+ * `null` volta como `inherit` — é a única forma de o formulário reabrir no estado em
+ * que a chamada está e de o organizador ver que ela HERDA em vez de decidir. Mapear
+ * `null` para `off` (o que um `? 'on' : 'off'` faz) apagaria a diferença na primeira
+ * abertura da tela: bastaria salvar para a herança virar uma decisão aberta.
+ */
+function blindOptionValue(value: boolean | null): string {
+  if (value === null) return 'inherit';
+
+  return value ? 'on' : 'off';
+}
 
 /**
  * Instante → valor de `<input type="datetime-local">`.

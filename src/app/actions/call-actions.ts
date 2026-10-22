@@ -7,9 +7,12 @@
  *  ─────────────────────────────────────────────────────────────────────────────
  *  TRÊS PORTAS, TRÊS AUTORIZAÇÕES DIFERENTES
  *  ─────────────────────────────────────────────────────────────────────────────
- *  1. PAINEL (`saveCallAction`, `setCallPublishedAction`, `deleteCallAction`) —
- *     quem organiza a chamada precisa de `event:manage`: montar a chamada é ato de
- *     organização do evento, não de quem submete nem de quem julga.
+ *  1. PAINEL (`saveCallAction`, `setCallPublishedAction`, `deleteCallAction`, e as
+ *     quatro ações do RESULTADO da FASE 73) — quem organiza a chamada precisa de
+ *     `event:manage`: montar a chamada é ato de organização do evento, não de quem
+ *     submete nem de quem julga. Publicar o resultado é o MESMO ato de organização
+ *     (é o documento que a instituição assina), e por isso usa a MESMA permissão da
+ *     tela de chamadas — não uma permissão nova.
  *
  *  2. FORMULÁRIO PÚBLICO (`submitProposalAction`) — a porta é a PÁGINA PÚBLICA, e
  *     por isso ela usa `guardSelfServiceAction`, não `guardAction`: quem chega para
@@ -50,6 +53,8 @@ import {
   saveCall,
   setCallPublished,
 } from '@/lib/proposals/call-service';
+import { applyCallResultAction } from '@/lib/proposals/call-result-service';
+import type { CallResultAction } from '@/domain/proposals/call-result-rules';
 import { submitProposal } from '@/lib/proposals/proposal-service';
 import { acceptProposal } from '@/lib/proposals/acceptance-service';
 import {
@@ -145,12 +150,16 @@ const saveCallSchema = z.object({
   opensAt: z.string().trim().max(32).optional(),
   closesAt: z.string().trim().max(32).optional(),
   /**
-   * `""` = padrão do tipo; `on` = forçar revisão cega; `off` = forçar aberta.
+   * `""` = padrão do tipo; `inherit` = HERDAR DA TRILHA (grava `null` na coluna);
+   * `on` = forçar revisão cega; `off` = forçar aberta.
    *
    * Um checkbox não serviria: desmarcado ele seria indistinguível de "não perguntei",
    * e o padrão do tipo (que é `true` para artigo e pôster) nunca voltaria a valer.
+   * E um booleano não serviria depois da FASE 74 · fatia 5: "não me pronuncio" (a
+   * trilha decide) é coisa diferente de "decidi aberta", e só o terceiro estado
+   * carrega essa diferença até a coluna.
    */
-  blind: z.string().trim().max(8).optional(),
+  blind: z.string().trim().max(16).optional(),
   maxSubmissionsPerAuthor: z.coerce.number().int().min(0).max(50).optional(),
   trackId: z.string().uuid().optional(),
   eventTimezone: z.string().trim().max(64).optional(),
@@ -214,8 +223,14 @@ export async function saveCallAction(
     instructions: data.instructions ?? null,
     opensAt: opensAt.date,
     closesAt: closesAt.date,
-    // `undefined` deixa o serviço aplicar o padrão do tipo (FASE 33, ADR-160).
-    requiresBlindReview: data.blind === undefined ? undefined : data.blind === 'on',
+    /**
+     * `undefined` deixa o serviço aplicar o padrão do TIPO (FASE 33, ADR-160) e
+     * `'inherit'` grava `NULL` — a chamada não se pronuncia e a TRILHA decide
+     * (FASE 74 · fatia 5). São estados diferentes: o primeiro preenche a coluna, o
+     * segundo deixa a coluna vazia de propósito.
+     */
+    requiresBlindReview:
+      data.blind === undefined ? undefined : data.blind === 'inherit' ? null : data.blind === 'on',
     maxSubmissionsPerAuthor: data.maxSubmissionsPerAuthor ?? 0,
     trackId: data.trackId ?? null,
     reviewRubric: readRubric(formData),
@@ -230,7 +245,11 @@ export async function saveCallAction(
     };
   }
 
-  revalidateCallPaths(data.tenantSlug, data.eventSlug, data.eventId);
+  revalidateCallPaths({
+    tenantSlug: data.tenantSlug,
+    eventSlug: data.eventSlug,
+    eventId: data.eventId,
+  });
 
   return {
     ok: true,
@@ -284,7 +303,11 @@ export async function setCallPublishedAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateCallPaths(parsed.data.tenantSlug, parsed.data.eventSlug, parsed.data.eventId);
+  revalidateCallPaths({
+    tenantSlug: parsed.data.tenantSlug,
+    eventSlug: parsed.data.eventSlug,
+    eventId: parsed.data.eventId,
+  });
 
   return {
     ok: true,
@@ -327,15 +350,197 @@ export async function deleteCallAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateCallPaths(parsed.data.tenantSlug, parsed.data.eventSlug, parsed.data.eventId);
+  revalidateCallPaths({
+    tenantSlug: parsed.data.tenantSlug,
+    eventSlug: parsed.data.eventSlug,
+    eventId: parsed.data.eventId,
+  });
 
   return { ok: true, message: 'Chamada excluída.' };
 }
 
-/** O painel e a página pública leem a mesma chamada: os dois precisam ser revalidados. */
-function revalidateCallPaths(tenantSlug: string, eventSlug: string, eventId: string): void {
-  revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/chamadas`), 'page');
-  revalidatePath(tenantPath(tenantSlug, `/eventos/${eventSlug}`), 'layout');
+/**
+ * O painel e a página pública leem a mesma chamada: os dois precisam ser revalidados.
+ *
+ * `callSlug` existe para o ato do RESULTADO, que muda uma página pública específica
+ * (a da chamada) além da landing: revalidar só o `layout` do evento funcionaria,
+ * mas deixaria o caminho da call page implícito — e um dia alguém move a seção de
+ * resultado para fora do layout sem perceber que a revalidação parou de alcançá-la.
+ */
+function revalidateCallPaths(input: {
+  tenantSlug: string;
+  eventSlug: string;
+  eventId: string;
+  callSlug?: string;
+}): void {
+  revalidatePath(tenantPath(input.tenantSlug, `/administracao/eventos/${input.eventId}/chamadas`), 'page');
+
+  if (input.callSlug) {
+    revalidatePath(
+      tenantPath(input.tenantSlug, `/eventos/${input.eventSlug}/chamada/${input.callSlug}`),
+      'page',
+    );
+  }
+
+  revalidatePath(tenantPath(input.tenantSlug, `/eventos/${input.eventSlug}`), 'layout');
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Resultado da chamada (FASE 73 · fatia 2)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Os limites de TRANSPORTE, e não de regra.
+ *
+ * O teto de verdade é do DOMÍNIO (`CALL_RESULT_TEXT_MAX`, `CALL_RESULT_PUBLISHED_MAX`),
+ * e é ele que precisa produzir a mensagem que o organizador lê. Se o zod recusasse
+ * antes, com um limite igual, a tela mostraria "dados inválidos" no lugar de "o texto
+ * passa de 4000 caracteres" — e o teste do texto longo deixaria de provar o domínio.
+ * Estes números existem só para uma requisição montada à mão não arrastar um corpo
+ * sem tamanho para dentro do processo.
+ */
+const RESULT_TRANSPORT_TEXT_MAX = 200_000;
+const RESULT_TRANSPORT_IDS_MAX = 2_000;
+
+const callResultSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  callId: z.string().uuid('Chamada inválida.'),
+  texto: z.string().max(RESULT_TRANSPORT_TEXT_MAX).optional(),
+  proximosPassos: z.string().max(RESULT_TRANSPORT_TEXT_MAX).optional(),
+  /**
+   * A lista vem de CHECKBOXES de mesmo nome — o padrão da casa para lista em
+   * formulário que funciona sem JavaScript (`formData.getAll`), o mesmo das seleções
+   * de participantes das F56/F70. Um item por caixa marcada, na ordem do formulário.
+   *
+   * O id NÃO é validado como uuid aqui de propósito: quem sabe se o id é de uma
+   * submissão DESTA chamada é o domínio (`ID_FORA_DA_CHAMADA`), e é a mensagem dele
+   * que a tela precisa mostrar. Validar o formato antes trocaria o motivo por um
+   * genérico.
+   */
+  publicados: z.array(z.string().max(64)).max(RESULT_TRANSPORT_IDS_MAX).optional(),
+});
+
+const RESULT_ACTION_MESSAGES: Readonly<Record<CallResultAction, string>> = {
+  SALVAR_RASCUNHO: 'Rascunho salvo. Nada aparece no público enquanto o resultado não for publicado.',
+  PUBLICAR_PARCIAL:
+    'Resultado parcial publicado — ele já aparece na página da chamada e continua editável.',
+  PUBLICAR_FINAL:
+    'Resultado final publicado. Ele está travado: para mudar, reabra o resultado final.',
+  REABRIR: 'Resultado reaberto como parcial — ele continua no ar e voltou a ser editável.',
+};
+
+/**
+ * O caminho comum das quatro ações.
+ *
+ * As quatro fazem a MESMA coisa com um nome diferente de ato: validar o formulário,
+ * autorizar, chamar o serviço, devolver a mensagem do domínio e revalidar. Uma função
+ * por ação com o corpo copiado faria a autorização divergir na primeira manutenção
+ * (armadilha 55) — e a autorização é o pior lugar para uma cópia divergir.
+ */
+async function runResultAction(input: {
+  acao: CallResultAction;
+  formData: FormData;
+}): Promise<CallActionState> {
+  const parsed = callResultSchema.safeParse({
+    tenantSlug: input.formData.get('tenantSlug'),
+    callId: input.formData.get('callId'),
+    texto: nullable(input.formData.get('texto')) ?? undefined,
+    proximosPassos: nullable(input.formData.get('proximosPassos')) ?? undefined,
+    publicados: input.formData
+      .getAll('publicados')
+      .filter((value): value is string => typeof value === 'string'),
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: parsed.error.issues[0]?.message ?? 'Dados do formulário inválidos.',
+    };
+  }
+
+  /** A MESMA permissão da tela de chamadas (`chamadas/page.tsx` usa `event:manage`). */
+  const auth = await guardAction({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.EVENT_MANAGE,
+  });
+
+  if (!auth.ok) return auth.state;
+
+  const result = await applyCallResultAction({
+    tenantId: auth.tenantId,
+    callId: parsed.data.callId,
+    acao: input.acao,
+    conteudo: {
+      texto: parsed.data.texto ?? '',
+      proximosPassos: parsed.data.proximosPassos ?? '',
+      publicados: parsed.data.publicados ?? [],
+    },
+    actorId: auth.userId,
+  });
+
+  if (!result.ok) {
+    /**
+     * A mensagem é a DO DOMÍNIO, sem tradução: é ela que diz "o resultado final está
+     * travado, reabra" e "esta submissão não é desta chamada". Os `details` viram a
+     * lista que o `ActionGuardState` já carrega — o diagnóstico não se perde.
+     */
+    return {
+      ok: false,
+      code: result.code,
+      message: result.message,
+      details: result.details ? Object.values(result.details) : undefined,
+    };
+  }
+
+  /**
+   * Os caminhos vêm do BANCO (o serviço devolve o evento e o slug da chamada que ele
+   * gravou), e não do formulário. É a lição da FASE 68 no `setCallPublished`: um id de
+   * evento vindo do cliente revalida o caminho errado — e ninguém percebe, porque a
+   * revalidação não falha.
+   */
+  revalidateCallPaths({
+    tenantSlug: parsed.data.tenantSlug,
+    eventId: result.eventId,
+    eventSlug: result.eventSlug,
+    callSlug: result.callSlug,
+  });
+
+  return {
+    ok: true,
+    message: RESULT_ACTION_MESSAGES[input.acao],
+    data: {
+      estado: result.estado,
+      ...(result.publicadoEm === undefined ? {} : { publicadoEm: result.publicadoEm }),
+    },
+  };
+}
+
+export async function saveCallResultDraftAction(
+  _prev: CallActionState | null,
+  formData: FormData,
+): Promise<CallActionState> {
+  return runResultAction({ acao: 'SALVAR_RASCUNHO', formData });
+}
+
+export async function publishPartialCallResultAction(
+  _prev: CallActionState | null,
+  formData: FormData,
+): Promise<CallActionState> {
+  return runResultAction({ acao: 'PUBLICAR_PARCIAL', formData });
+}
+
+export async function publishFinalCallResultAction(
+  _prev: CallActionState | null,
+  formData: FormData,
+): Promise<CallActionState> {
+  return runResultAction({ acao: 'PUBLICAR_FINAL', formData });
+}
+
+export async function reopenCallResultAction(
+  _prev: CallActionState | null,
+  formData: FormData,
+): Promise<CallActionState> {
+  return runResultAction({ acao: 'REABRIR', formData });
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -449,6 +654,37 @@ export async function submitProposalAction(
   });
 
   if (!result.ok) {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════
+     *  A RECUSA DE PRONTIDÃO LEVA AO RASCUNHO — SEM TELA INTERMEDIÁRIA
+     *  (FASE 74 · ajuste da fatia 2)
+     * ═══════════════════════════════════════════════════════════════════════════
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  O QUE MUDOU, E POR QUÊ
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A fatia 2 devolvia o `submissionId` e a tela mostrava um link "Continuar na
+     *  área do autor". Funcionava, mas cobrava um passo de quem já tinha acabado de
+     *  escrever a proposta e só queria anexar o arquivo: a recusa não é um erro a
+     *  ler, é o fim de um caminho que continua em outro lugar.
+     *
+     *  Agora a action REDIRECIONA para o rascunho que o serviço acabou de gravar. O
+     *  `redirect` do framework é a exceção deliberada à regra de "erro como valor":
+     *  ele interrompe a resposta e vira navegação — não há estado de erro a renderizar.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  SÓ A RECUSA QUE TEM RASCUNHO
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `submissionId` só vem de `NOT_READY` (o serviço devolve o rascunho da
+     *  tentativa). Qualquer outra recusa — janela fechada, limite por autor, vínculo
+     *  bloqueado, dados inválidos — NÃO tem rascunho para onde ir, e continua voltando
+     *  como erro na tela. Um redirecionamento sem alvo seria uma tela morta, que é
+     *  exatamente o que esta mudança veio remover.
+     */
+    if (result.code === 'NOT_READY' && result.submissionId) {
+      redirect(tenantPath(data.tenantSlug, `/submissoes/${result.submissionId}?rascunho=1`));
+    }
+
     return {
       ok: false,
       code: result.code,
@@ -471,14 +707,20 @@ export async function submitProposalAction(
   await rewardSubmissionSubmittedById({ tenantId: context.tenantId, submissionId: result.submissionId });
 
   /**
-   * A confirmação diz o que aconteceu com o E-MAIL, e não só "enviado": a proposta
-   * está gravada (o protocolo é a prova), e o e-mail pode ter ficado na fila. Prometer
-   * entrega quando ela não aconteceu faria a pessoa esperar por uma mensagem que não vem.
+   * ── A CONFIRMAÇÃO DIZ O QUE ACONTECEU COM O E-MAIL (FASE 33) ─────────────────
+   * A proposta está gravada (o protocolo é a prova), e o e-mail pode ter ficado na
+   * fila. Prometer entrega quando ela não aconteceu faria a pessoa esperar por uma
+   * mensagem que não vem.
+   *
+   * O `redirectTo` é a rota REAL, e não `/minhas-submissoes` (que nunca existiu —
+   * o caminho da lista é `/submissoes` desde a FASE 56): um destino quebrado numa
+   * tela de sucesso é a mesma mentira da recusa sem saída, só que depois do trabalho
+   * pronto. Como a action devolve o id da submissão, o destino é a página dela.
    */
   return {
     ok: true,
     protocol: result.protocol,
-    redirectTo: tenantPath(data.tenantSlug, '/minhas-submissoes'),
+    redirectTo: tenantPath(data.tenantSlug, `/submissoes/${result.submissionId}`),
     message: result.confirmationQueued
       ? `Proposta recebida! Seu protocolo é ${result.protocol}. Enviamos a confirmação por e-mail.`
       : `Proposta recebida! Seu protocolo é ${result.protocol}. Guarde-o: é com ele que a organização localiza sua proposta.`,

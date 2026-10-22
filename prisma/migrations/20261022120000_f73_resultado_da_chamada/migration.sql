@@ -1,0 +1,57 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  FASE 73 — O RESULTADO QUE O ORGANIZADOR PUBLICA NA CHAMADA (fatia 1)
+--
+--  ENTRA uma coluna: `call_for_proposals.result` (JSONB), com o resultado que o
+--  organizador publica — estado, texto, próximos passos, a lista de submissões
+--  publicadas e as datas.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  A MEDIÇÃO QUE DECIDIU A COLUNA NOVA (feita antes de escrever este arquivo)
+--  ─────────────────────────────────────────────────────────────────────────────
+--  O modelo `CallForProposals` (tabela `call_for_proposals`) tinha UMA coluna JSON:
+--  `reviewRubric`. Ela NÃO serve, e o motivo é semântico, não de espaço:
+--
+--    • `reviewRubric` é a RUBRICA da avaliação. Ela CONGELA no primeiro parecer
+--      (FASE 39, ADR-215/216) e é lida por `resolveEffectiveRubric` na precedência
+--      CHAMADA → TRILHA → PADRÃO. Guardar o resultado ali dentro faria o resultado
+--      público depender da régua da avaliação — e o congelamento da rubrica passaria
+--      a congelar, junto, um dado que o organizador precisa poder republicar.
+--
+--  `Event.settings` (JSON) também foi descartado, e a razão é a mesma que separa os
+--  dois conceitos: o RESULTADO é por CHAMADA. Um evento pode ter várias chamadas
+--  (artigo, resumo, minicurso), cada uma com a própria lista e o próprio texto; em
+--  `Event.settings` elas dividiriam o mesmo espaço e o resultado de uma sobrescreveria
+--  o da outra.
+--
+--  Conclusão medida: **não havia coluna reutilizável**. Uma coluna nova, sem tabela
+--  nova e sem migração de dado.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE JSON, E POR QUE COM `DEFAULT '{}'`
+--  ─────────────────────────────────────────────────────────────────────────────
+--  O resultado é UM ATO lido por inteiro: a página pública lê o bloco todo e não
+--  consulta por campo. As duas datas e a lista de ids não justificam três colunas e
+--  uma tabela de junção — e a lista é a ESCOLHA do organizador (a ordem é a da
+--  publicação), não uma relação a ser filtrada em SQL.
+--
+--  `DEFAULT '{}'` é o estado honesto da coluna para toda chamada que já existia:
+--  "sem resultado" (o leitor tolerante o lê como SEM_RESULTADO). Assim a coluna pode
+--  ser NOT NULL, e nenhuma linha nasce ambígua: `NULL` e `{}` significariam coisas
+--  diferentes sem que ninguém tivesse decidido isso.
+--
+--  ⚠ O JSON não é validado pelo banco — quem valida é o domínio
+--  (`readCallResult` na leitura, `decideCallResultTransition` na escrita). É o mesmo
+--  arranjo de `Event.settings` e de `reviewRubric`: dado pequeno, lido por inteiro,
+--  com leitor tolerante fail-closed.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  CONTRATO DE BANCO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  Coluna nova em tabela que JÁ tem RLS + FORCE não cria policy nem RLS nova (a
+--  armadilha 101 vale para TABELA nova), e os privilégios da role de runtime sobre
+--  `call_for_proposals` não mudam. `npm run db:verify` continua medindo a tabela que
+--  já existia, e `src/lib/db/schema-contract.ts` fala de TABELAS, não de colunas.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- AlterTable
+ALTER TABLE "call_for_proposals" ADD COLUMN "result" JSONB NOT NULL DEFAULT '{}';

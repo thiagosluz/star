@@ -63,6 +63,8 @@ import {
   createEventApiKey,
   updateEventApiSections,
 } from '../../src/lib/api/event-api-key-service';
+import { saveCall, setCallPublished } from '../../src/lib/proposals/call-service';
+import { applyCallResultAction } from '../../src/lib/proposals/call-result-service';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import {
@@ -461,6 +463,42 @@ let atividadeEscuraId: string;
 const SALA_ESCURA = `Auditório Noturno A11y ${RUN_ID}`;
 const ATIVIDADE_ESCURA_TITULO = 'Mesa redonda noturna sobre avaliação';
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O CARTÃO DO RESULTADO NA TELA DE CHAMADAS (FASE 73 · fatia 3)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTE CASO PRECISA EXISTIR
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A fatia entregou uma superfície NOVA na página de chamadas: `textarea` com dica e
+ *  teto, `CheckboxField` por submissão (com decisão e selo), quatro botões que só
+ *  existem quando a tabela legal permite, a confirmação por `<details>` e a prévia da
+ *  projeção pública. Nenhum dos 30 casos abria `/administracao/eventos/<id>/chamadas`.
+ *  É a mesma forma do defeito da FASE 66 (o rótulo que media 4,44:1 porque a tela onde
+ *  ele mora não era medida) e da FASE 70/72: **a catraca não cobria o alvo**.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  DUAS CHAMADAS, PARA OS QUATRO GESTOS ESTAREM NO MESMO DOM
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A legalidade é do DOMÍNIO: em PARCIAL existem salvar, publicar parcial e publicar
+ *  final; em FINAL existe SÓ reabrir. Nenhuma chamada mostra os quatro ao mesmo tempo
+ *  — e é assim que tem de ser. A fixture cria DUAS (uma parcial e uma final) para a
+ *  varredura medir os quatro botões, os dois estados e a prévia, sem inventar na tela
+ *  um gesto que o domínio recusaria.
+ */
+let chamadaParcialId: string;
+let chamadaFinalId: string;
+/** A submissão já publicada no parcial — o item com o selo "já publicada". */
+let submissaoParcialPublicadaId: string;
+/**
+ * O `slug` da chamada PARCIAL (FASE 73 · fatia 4).
+ *
+ * Ela também é PUBLICADA, e não só criada: a varredura da página pública da chamada
+ * precisa de uma chamada no ar com resultado publicado — é o endereço que o visitante
+ * anônimo abre. Sem a publicação, a página responde 404 e o portão mediria o vazio.
+ */
+const CHAMADA_PUBLICA_SLUG = `a11y-resultado-parcial-${RUN_ID}`;
+
 async function signUpVia(
   api: import('@playwright/test').APIRequestContext,
   name: string,
@@ -501,6 +539,132 @@ async function signInAs(page: Page, email: string): Promise<void> {
  * precisa ser dita. O evento nasce pelo contexto de instituição, como todo dado de
  * tenant.
  */
+/**
+ * Uma chamada COM resultado, montada pelo caminho REAL (`saveCall` +
+ * `applyCallResultAction`).
+ *
+ * Duas submissões, e só uma publicada: o `CheckboxField` precisa existir nos DOIS
+ * estados (marcado e desmarcado) para a varredura medir o rótulo de cada um, e o selo
+ * "já publicada" só aparece quando há publicação de verdade. O resultado parcial fica
+ * com os três gestos de edição; o final, com o REABRIR — juntos, os quatro.
+ *
+ * A submissão é escrita direto no banco porque o formulário público da chamada e o
+ * protocolo de aceite têm specs próprios (FASE 33); aqui o que importa é o CARTÃO
+ * desenhado sobre dados reais.
+ */
+async function criarChamadaComResultado(input: {
+  slug: string;
+  title: string;
+  final: boolean;
+}): Promise<{ callId: string; publicadaId: string }> {
+  const chamada = await saveCall({
+    tenantId,
+    eventId,
+    actorId: adminId,
+    kind: 'PAPER',
+    slug: input.slug,
+    title: input.title,
+    opensAt: new Date(Date.now() - 86_400_000),
+    closesAt: new Date(Date.now() + 20 * 86_400_000),
+    maxSubmissionsPerAuthor: 0,
+  });
+
+  if (!chamada.ok) {
+    throw new Error(`Falha ao criar a chamada do cartão de resultado: ${chamada.message}`);
+  }
+
+  const publicadaId = randomUUID();
+  const naoPublicadaId = randomUUID();
+
+  /**
+   * O protocolo é único por INSTITUIÇÃO (`submissions_tenantId_protocol_key`), e as
+   * duas chamadas da fixture vivem na mesma: o discriminador entra nele para as duas
+   * não colidirem. O sufixo da execução evita colidir com sobra de execução anterior.
+   */
+  const protocoloBase = `A11Y-${RUN_ID.slice(0, 6)}-${input.final ? 'F' : 'P'}`;
+
+  await e2eDb.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+
+    for (const [id, protocol, title, status] of [
+      [
+        publicadaId,
+        `${protocoloBase}1`,
+        `Trabalho publicado da chamada ${input.slug}`,
+        'ACCEPTED',
+      ],
+      [
+        naoPublicadaId,
+        `${protocoloBase}2`,
+        `Trabalho ainda em avaliação ${input.slug}`,
+        'UNDER_REVIEW',
+      ],
+    ] as const) {
+      await tx.submission.create({
+        data: {
+          id,
+          tenantId,
+          eventId,
+          callId: chamada.callId,
+          protocol,
+          title,
+          abstract:
+            'Resumo criado para a varredura de acessibilidade da tela de chamadas: o cartão do resultado precisa de um trabalho real.',
+          keywords: ['acessibilidade', 'resultado'],
+          status,
+          submittedById: adminId,
+          submittedAt: new Date(),
+        },
+      });
+
+      await tx.submissionAuthor.create({
+        data: {
+          id: randomUUID(),
+          tenantId,
+          submissionId: id,
+          userId: adminId,
+          authorOrder: 1,
+          isCorresponding: true,
+        },
+      });
+    }
+  });
+
+  const conteudo = {
+    texto: 'A lista dos trabalhos aprovados desta chamada está abaixo.',
+    proximosPassos: 'Envie a versão final até 10 de novembro pelo formulário da chamada.',
+    publicados: [publicadaId],
+  };
+
+  const parcial = await applyCallResultAction({
+    tenantId,
+    callId: chamada.callId,
+    acao: 'PUBLICAR_PARCIAL',
+    conteudo,
+    actorId: adminId,
+  });
+
+  if (!parcial.ok) {
+    throw new Error(`Falha ao publicar o parcial da fixture de acessibilidade: ${parcial.message}`);
+  }
+
+  if (input.final) {
+    const final = await applyCallResultAction({
+      tenantId,
+      callId: chamada.callId,
+      acao: 'PUBLICAR_FINAL',
+      conteudo,
+      actorId: adminId,
+    });
+
+    if (!final.ok) {
+      throw new Error(`Falha ao publicar o final da fixture de acessibilidade: ${final.message}`);
+    }
+  }
+
+  return { callId: chamada.callId, publicadaId };
+}
+
 async function criarEventoComJanela(input: {
   tenantId: string;
   slug: string;
@@ -751,6 +915,51 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     if (!secoesDaApi.ok) {
       throw new Error(`Falha ao ligar a seção de palestrantes da fixture: ${secoesDaApi.message}`);
     }
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O CARTÃO DO RESULTADO DA CHAMADA (FASE 73 · fatia 3)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Uma chamada PARCIAL e uma FINAL, montadas pelo serviço real. Juntas, elas põem
+     *  no DOM os quatro gestos (os três de edição do parcial e o reabrir do final), os
+     *  dois estados, o selo "já publicada" e a prévia da projeção pública. Uma chamada
+     *  só mediria metade da superfície — e a metade que falta é justamente a que o
+     *  organizador usa quando o resultado está travado.
+     */
+    const chamadaParcial = await criarChamadaComResultado({
+      slug: CHAMADA_PUBLICA_SLUG,
+      title: `Chamada com resultado parcial ${RUN_ID}`,
+      final: false,
+    });
+
+    chamadaParcialId = chamadaParcial.callId;
+    submissaoParcialPublicadaId = chamadaParcial.publicadaId;
+
+    /**
+     * A PUBLICAÇÃO da chamada (FASE 73 · fatia 4): o resultado publicado não basta —
+     * a chamada precisa estar no ar para a página pública existir. É o mesmo ato da
+     * tela do organizador (`setCallPublished`), e é ele que faz o endereço do caso
+     * público responder 200 em vez de 404.
+     */
+    const chamadaNoAr = await setCallPublished({
+      tenantId,
+      eventId,
+      callId: chamadaParcialId,
+      actorId: adminId,
+      isPublished: true,
+    });
+
+    if (!chamadaNoAr.ok) {
+      throw new Error(`Falha ao publicar a chamada da varredura pública: ${chamadaNoAr.message}`);
+    }
+
+    const chamadaFinal = await criarChamadaComResultado({
+      slug: `a11y-resultado-final-${RUN_ID}`,
+      title: `Chamada com resultado final ${RUN_ID}`,
+      final: true,
+    });
+
+    chamadaFinalId = chamadaFinal.callId;
 
     const hoje = new Date();
     const demandaBase = {
@@ -1169,6 +1378,39 @@ test.describe('telas públicas', () => {
     await expectNoCriticalViolations(page, 'landing da plataforma (/)');
   });
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A VITRINE LOGADA ENTRA NO PORTÃO (FASE 75)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A raiz deixou de redirecionar quem tem sessão e ganhou uma VARIANTE de cabeçalho
+   *  que nenhum caso media: um botão só ("Minha área") no lugar dos dois convites.
+   *  Variante nova de cabeçalho é variante nova para o `axe` — o botão é outro
+   *  elemento, com outro ícone, outro preenchimento (`primary`) e outro nome acessível
+   *  —, e o caso anônimo acima passaria IGUAL se ele nascesse ilegível: "o botão
+   *  sumiu" e "o botão apareceu" não são violações de regra nenhuma.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ELE AFIRMA O BOTÃO ANTES DE VARRER — E SEM ISENÇÃO NOVA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A varredura mede o DOM que existe. Sem as duas asserções abaixo, o caso seria
+   *  verde medindo a tela de VISITANTE (que é o que ela desenharia se o cabeçalho
+   *  ignorasse a sessão). A isenção continua sendo nenhuma: o cabeçalho novo não tem
+   *  cor própria — usa `primary`/`primary-foreground`, o mesmo par do botão "Criar
+   *  conta" que já passava aqui.
+   */
+  test('a landing da plataforma com sessão não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto('/');
+    await expect(page.getByTestId('platform-home-page')).toBeVisible();
+
+    /** A VARIANTE logada: um botão só, e ele é o desta tela. */
+    await expect(page.getByRole('link', { name: 'Minha área' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Entrar', exact: true })).toHaveCount(0);
+
+    await expectNoCriticalViolations(page, 'landing da plataforma logada (/)');
+  });
+
   test('a tela de login não tem violação crítica', async ({ page }) => {
     await page.goto('/login');
     await expect(page.locator('form')).toBeVisible();
@@ -1367,6 +1609,55 @@ test.describe('telas públicas', () => {
     await expectNoCriticalViolations(
       page,
       `diretório público com o controle de aparência (/organizacoes?q=acessibilidade-${RUN_ID} · ef_tema=escuro)`,
+    );
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A PÁGINA DA CHAMADA COM O RESULTADO PUBLICADO ENTRA NO PORTÃO (FASE 73 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A fatia entregou a superfície PÚBLICA do resultado: a seção com a etiqueta do
+   *  estado, a data, o texto, a LISTA (protocolo, título, tipo, autores) e os próximos
+   *  passos — desenhada pelo componente que a prévia do organizador já usava. Nenhum
+   *  dos 31 casos abria `/eventos/<slug>/chamada/<callSlug>`, e é a mesma forma dos
+   *  defeitos da FASE 66 (o rótulo de 4,44:1 que sobreviveu porque a tela não era
+   *  medida) e da FASE 70/72: **a catraca não cobria o alvo**.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O VISITANTE É ANÔNIMO, E O CONTEÚDO É CONFERIDO ANTES DA VARREDURA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A página é pública para LER — quem chega de um link compartilhado não tem
+   *  sessão. Sem sessão, o bloco do formulário não existe e o que se mede é o que o
+   *  visitante de fora vê (o aviso de que é preciso entrar + a chamada + a seção).
+   *
+   *  As asserções de conteúdo vêm antes do `axe` porque "a seção sumiu" não é
+   *  violação de regra nenhuma: uma página sem o resultado passaria igual.
+   */
+  test('a página pública da chamada com resultado publicado não tem violação crítica', async ({
+    page,
+  }) => {
+    await page.goto(
+      `/t/${tenantSlug}/eventos/${eventoSlug}/chamada/${CHAMADA_PUBLICA_SLUG}`,
+    );
+
+    await expect(page.getByTestId('call-title')).toHaveText(
+      `Chamada com resultado parcial ${RUN_ID}`,
+    );
+
+    const secao = page.getByTestId('call-result-section');
+
+    await expect(secao).toBeVisible({ timeout: 30_000 });
+    await expect(secao).toContainText('Resultado parcial');
+    await expect(secao).toContainText('Publicado em');
+    await expect(secao).toContainText(
+      'A lista dos trabalhos aprovados desta chamada está abaixo.',
+    );
+    await expect(secao.getByTestId('call-result-public-item')).toHaveCount(1);
+    await expect(secao).toContainText('Envie a versão final até 10 de novembro');
+
+    await expectNoCriticalViolations(
+      page,
+      `página pública da chamada com resultado (/t/${tenantSlug}/eventos/<slug>/chamada/<slug>)`,
     );
   });
 });
@@ -2271,6 +2562,58 @@ test.describe('telas autenticadas', () => {
     await expectNoCriticalViolations(
       page,
       `API do evento (/t/${tenantSlug}/administracao/eventos/<id>/api)`,
+    );
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────
+  //  A PÁGINA DE CHAMADAS COM O CARTÃO DO RESULTADO (FASE 73 · fatia 3)
+  // ───────────────────────────────────────────────────────────────────────────────
+  test('a página de chamadas com o cartão do resultado não tem violação crítica', async ({
+    page,
+  }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * A fixture traz DUAS chamadas com resultado (ver o `beforeAll`): a parcial, com o
+     * texto, a lista e os três gestos de edição, e a final, com o reabrir. A espera é
+     * pelo CARTÃO — e não pelo clique —, e confere que o texto, uma caixa rotulada, a
+     * prévia e o reabrir existem antes de varrer: sem eles o `axe` mediria um cartão
+     * desmontado e passaria sem medir o que a fase entregou.
+     */
+    await page.goto(`/t/${tenantSlug}/administracao/eventos/${eventId}/chamadas`);
+
+    const cartaoParcial = page.getByTestId(`call-result-${chamadaParcialId}`);
+    const cartaoFinal = page.getByTestId(`call-result-${chamadaFinalId}`);
+
+    await expect(cartaoParcial).toBeVisible();
+    await expect(cartaoFinal).toBeVisible();
+
+    await expect(page.getByTestId(`call-result-text-${chamadaParcialId}`)).toBeVisible();
+    await expect(
+      page
+        .getByTestId(`call-result-option-${submissaoParcialPublicadaId}`)
+        .getByRole('checkbox'),
+    ).toBeChecked();
+    await expect(page.getByTestId(`call-result-preview-${chamadaParcialId}`)).toContainText(
+      'A lista dos trabalhos aprovados desta chamada está abaixo.',
+    );
+    /**
+     * O REABRIR mora dentro do `<details>` de confirmação (é o padrão da F70/F72: a
+     * consequência é lida ANTES do clique). Fechado, o botão não entra na varredura —
+     * e o portão mediria três dos quatro gestos. Abrir o `<details>` é o gesto que o
+     * organizador faz, e é ele que põe o quarto botão à vista.
+     */
+    await page
+      .getByTestId(`call-result-reopen-${chamadaFinalId}`)
+      .locator('summary')
+      .click();
+    await expect(
+      page.getByTestId(`call-result-action-REABRIR-${chamadaFinalId}`),
+    ).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `chamadas com o resultado do organizador (/t/${tenantSlug}/administracao/eventos/<id>/chamadas)`,
     );
   });
 });

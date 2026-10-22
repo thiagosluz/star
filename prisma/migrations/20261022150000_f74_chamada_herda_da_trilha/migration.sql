@@ -1,0 +1,56 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+--  FASE 74 · FATIA 5 — A CHAMADA PODE HERDAR A CEGUEIRA DA TRILHA
+--
+--  TIRA o NOT NULL de `call_for_proposals.requiresBlindReview`. A coluna passa a
+--  ter três estados:
+--
+--    • `true`  → esta chamada exige revisão cega (decide sozinha);
+--    • `false` → esta chamada é aberta (decide sozinha);
+--    • `NULL`  → NÃO DIZ NADA: a cegueira vem da TRILHA — e, sem trilha, do
+--                padrão do TIPO (`defaultBlindFor`).
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  POR QUE A COLUNA PRECISAVA DISSO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  O ADR-160 declara a precedência CHAMADA → TRILHA → PADRÃO para a cegueira e
+--  para a rubrica. Para a RUBRICA ela funciona: `reviewRubric` vazio (`[]`) é a
+--  forma de dizer "não tenho rubrica própria". Para a CEGUEIRA não havia como
+--  dizer isso: `boolean NOT NULL` só expressa true e false, e o serviço leu a
+--  primeira ponta da precedência em silêncio (`call?.requiresBlindReview ??
+--  track?.requiresBlindReview ?? true`). Com a coluna sempre preenchida, o `??`
+--  nunca chegava na trilha — a chamada de minicursos do seed (trilha cega,
+--  chamada aberta) era avaliada como aberta, ao contrário do que o ADR diz.
+--
+--  A coluna nulável é o que devolve à chamada a possibilidade de CALAR. Não é um
+--  "terceiro booleano" inventado: é o mesmo arranjo de `Submission.callId` e de
+--  `Track.chairId` — ausência com significado declarado, em vez de um valor
+--  fingindo ser uma escolha.
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  NENHUM DADO É TOCADO (nem backfill, nem default novo)
+--  ─────────────────────────────────────────────────────────────────────────────
+--  As linhas existentes MANTÊM exatamente o valor que já tinham: o `ALTER COLUMN
+--  ... DROP NOT NULL` só relaxa a restrição, e nenhum `UPDATE` é executado. Quem
+--  já era `true`/`false` continua decidindo sozinho — inclusive as chamadas
+--  abertas que hoje ignoram uma trilha cega: elas só passam a herdar se o
+--  organizador ESCOLHER "herdar da trilha" na tela e salvar.
+--
+--  O `DEFAULT false` também fica. Ele é o valor de uma inserção CRUA (seed, SQL à
+--  mão) que não fala de cegueira: antes da fase esse silêncio significava "aberta",
+--  e trocá-lo por `NULL` mudaria o sentido de um insert que ninguém revisou. Quem
+--  cria chamada pelo serviço (`saveCall`) sempre grava um dos três estados.
+--
+--  A MEDIÇÃO ANTES/DEPOIS está no relatório da fatia: a mesma consulta foi rodada
+--  antes e depois do `migrate deploy`, e as três chamadas do seed apareceram com
+--  os mesmos valores (2 × false, 1 × true).
+--
+--  ─────────────────────────────────────────────────────────────────────────────
+--  CONTRATO DE BANCO
+--  ─────────────────────────────────────────────────────────────────────────────
+--  É coluna de tabela que já tem RLS + FORCE: nenhuma policy nova, nenhum
+--  privilégio novo (armadilha 101 vale para TABELA nova). `npm run db:verify` fala
+--  de TABELAS e de privilégios, não de nulabilidade de coluna.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- AlterTable
+ALTER TABLE "call_for_proposals" ALTER COLUMN "requiresBlindReview" DROP NOT NULL;

@@ -239,6 +239,7 @@ export function CheckboxField({
   defaultChecked = false,
   hint,
   value,
+  disabled = false,
 }: {
   label: string;
   name: string;
@@ -252,10 +253,25 @@ export function CheckboxField({
    * precisa: N caixas, um nome só, N identificadores.
    */
   value?: string;
+  /**
+   * Trava a caixa sem tirá-la da tela (FASE 73).
+   *
+   * Existe para o resultado FINAL da chamada: a lista publicada continua visível e
+   * marcada, mas não é editável enquanto o resultado está travado. Uma caixa
+   * DESABILITADA não é enviada pelo formulário — quem precisa do valor no POST põe um
+   * campo oculto ao lado (ver `call-result-card.tsx`).
+   */
+  disabled?: boolean;
 }) {
   return (
     <label className="flex items-start gap-2.5 text-sm">
-      <Checkbox name={name} value={value} defaultChecked={defaultChecked} className="mt-0.5" />
+      <Checkbox
+        name={name}
+        value={value}
+        defaultChecked={defaultChecked}
+        disabled={disabled}
+        className="mt-0.5"
+      />
       <span className="min-w-0">
         <span className="font-medium text-foreground">{label}</span>
         {hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}

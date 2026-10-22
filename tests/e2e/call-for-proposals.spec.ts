@@ -226,7 +226,13 @@ test.describe('chamadas de propostas', () => {
     const row = page.locator(`[data-testid="call-row-${await callIdBySlug()}"]`);
     await expect(row).toHaveAttribute('data-call-state', 'DRAFT');
 
-    await row.getByRole('button', { name: 'Publicar' }).click();
+    /**
+     * `exact: true` porque a MESMA linha agora tem o cartão do resultado da chamada
+     * (FASE 73), com o botão "Publicar **parcial**". O nome sem `exact` casa os dois e
+     * o Playwright reprova por ambiguidade (strict mode) — o botão que publica a
+     * CHAMADA continua sendo este, e o locator passa a dizer isso.
+     */
+    await row.getByRole('button', { name: 'Publicar', exact: true }).click();
     await expect(row).toHaveAttribute('data-call-state', 'OPEN', { timeout: 30_000 });
     await expect(row).toContainText('Aberta');
 

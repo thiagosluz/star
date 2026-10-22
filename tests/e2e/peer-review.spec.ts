@@ -460,9 +460,15 @@ test.describe('submissão de trabalho', () => {
     /**
      * E o envio parou de reclamar do CONTEÚDO: o bloqueio que sobra é o arquivo —
      * exatamente o que faltava para o autor seguir sem recomeçar a submissão.
+     *
+     * A frase é a do DOMÍNIO desde a FASE 74 (`submissionArtifactRequirements`):
+     * "a trilha exige revisão cega: anexe a versão sem identificação". A asserção
+     * antiga prendia o texto escrito à mão na tela ("versão cega"), que a fatia 2
+     * substituiu pela recusa do servidor — o que este teste mede é o BLOQUEIO do
+     * arquivo restar, não a redação de uma cópia que deixou de existir.
      */
     const blockers = page.getByTestId('submit-blockers');
-    await expect(blockers).toContainText(/versão cega/i);
+    await expect(blockers).toContainText(/revisão cega/i);
     await expect(blockers).not.toContainText(/palavras-chave/i);
   }, 120_000);
 

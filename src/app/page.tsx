@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import {
   ArrowRight,
   CalendarDays,
@@ -14,11 +13,13 @@ import {
   CheckCircle2,
   Clock,
   Compass,
+  UserRound,
 } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import { getRequestContext } from '@/lib/auth/session';
-import { tenantPath, buildTenantUrl } from '@/domain/tenancy/resolution';
+import { buildTenantUrl } from '@/domain/tenancy/resolution';
+import { resolveVitrineAccountAction } from '@/domain/platform/vitrine-account-rules';
 import {
   getFeaturedPublicEvents,
   getPlatformPublicMetrics,
@@ -58,17 +59,35 @@ function formatEventDate(startsAt: Date, endsAt: Date): string {
 }
 
 export default async function PlatformHomePage() {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A VITRINE É DE TODOS — INCLUSIVE DE QUEM TEM SESSÃO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Aqui havia dois `redirect()`: com instituição ativa a raiz mandava para
+   *  `/t/<slug>/dashboard`; autenticada sem vínculo, para `/selecionar-instituicao`.
+   *  O efeito prático era que a pessoa logada NÃO CONSEGUIA ABRIR a vitrine — o
+   *  endereço público da plataforma ficava inacessível justamente para quem já é da
+   *  casa, e quem clicasse no logo de uma página qualquer era jogado no painel.
+   *
+   *  A decisão de DESTINO não se perdeu: ela mudou de lugar. O que era para onde
+   *  redirecionar passou a ser para onde aponta o botão "Minha área" do cabeçalho, e
+   *  a regra vive em `resolveVitrineAccountAction` (domínio), com o mesmo critério e
+   *  os mesmos caminhos de antes. Por isso a leitura de contexto continua sendo
+   *  `getRequestContext()`: é ela que revalida o cookie assinado contra os vínculos
+   *  reais e diz qual é a instituição ativa — inventar outro caminho para descobrir o
+   *  slug do painel seria decidir diferente do que o produto decidia.
+   *
+   *  O preço é conhecido e aceito: quem tem sessão paga a leitura de vínculos nesta
+   *  página (quem não tem, sai antes, na primeira linha de `getRequestContext`). A
+   *  alternativa — adivinhar o destino pelo cookie sem revalidar — daria o mesmo
+   *  resultado na maioria das vezes e o ERRADO exatamente quando alguém perde o
+   *  vínculo, que é quando a resposta precisa estar certa.
+   */
   const context = await getRequestContext();
-
-  // Usuário autenticado com contexto definido: vai direto para o painel.
-  if (context?.activeTenant) {
-    redirect(tenantPath(context.activeTenant.tenantSlug, '/dashboard'));
-  }
-
-  // Autenticado mas sem vínculo ativo: escolhe uma instituição.
-  if (context?.user) {
-    redirect('/selecionar-instituicao');
-  }
+  const accountAction = resolveVitrineAccountAction({
+    isAuthenticated: Boolean(context?.user),
+    activeTenantSlug: context?.activeTenant?.tenantSlug ?? null,
+  });
 
   // Leitura paralela de dados da vitrine viva e métricas públicas agregadas
   const [featuredEvents, metrics] = await Promise.all([
@@ -109,20 +128,47 @@ export default async function PlatformHomePage() {
             </nav>
           </div>
 
+          {/*
+            ───────────────────────────────────────────────────────────────────────
+             O CABEÇALHO SABE QUEM ESTÁ OLHANDO (mas o CONTEÚDO não muda)
+            ───────────────────────────────────────────────────────────────────────
+             A troca é de BOTÃO, não de página: quem tem sessão perde os dois
+             convites ("Entrar" e "Criar conta" não fazem sentido para quem já
+             entrou) e ganha o caminho da própria área. É exatamente o par que o
+             cabeçalho público da instituição já desenhava — mesmas palavras, mesma
+             fonte de rótulo (`MINHA_AREA_LABEL`), para as duas telas não divergirem.
+
+             A âncora é `<Link>` de verdade (nada de `onClick`): navegação por
+             teclado, "abrir em nova aba" e o rastreamento de link continuam
+             funcionando — e o destino vem da regra de domínio, não do JSX.
+          */}
           <div className="flex items-center gap-2.5">
-            <Link
-              href="/login"
-              className="rounded-md px-3.5 py-1.5 text-xs sm:text-sm font-medium text-muted-foreground transition hover:text-foreground hover:bg-muted"
-            >
-              Entrar
-            </Link>
-            <Link
-              href="/signup"
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-xs sm:text-sm font-medium text-primary-foreground shadow-xs transition hover:opacity-90"
-            >
-              Criar conta
-              <ArrowRight className="size-3.5" aria-hidden />
-            </Link>
+            {accountAction.kind === 'account' ? (
+              <Link
+                href={accountAction.href}
+                data-testid="vitrine-account-link"
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-xs sm:text-sm font-medium text-primary-foreground shadow-xs transition hover:opacity-90"
+              >
+                <UserRound className="size-3.5" aria-hidden />
+                {accountAction.label}
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href={accountAction.loginHref}
+                  className="rounded-md px-3.5 py-1.5 text-xs sm:text-sm font-medium text-muted-foreground transition hover:text-foreground hover:bg-muted"
+                >
+                  Entrar
+                </Link>
+                <Link
+                  href={accountAction.signupHref}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-xs sm:text-sm font-medium text-primary-foreground shadow-xs transition hover:opacity-90"
+                >
+                  Criar conta
+                  <ArrowRight className="size-3.5" aria-hidden />
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>

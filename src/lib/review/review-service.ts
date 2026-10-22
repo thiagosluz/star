@@ -21,6 +21,7 @@
  */
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { notifyReviewAssigned } from '@/lib/communication/notification-service';
+import { resolveRequiresBlindReview, type ProposalKind } from '@/domain/proposals/call-rules';
 import {
   evaluateConflict,
   screenReviewersForConflicts,
@@ -512,6 +513,13 @@ export async function assignReviewer(
             },
           },
           track: { select: { requiresBlindReview: true } },
+          /**
+           * A chamada pode VENCER a trilha na cegueira (FASE 74 · fatia 5): sem esta
+           * coluna, a atribuição de uma chamada cega sobre trilha aberta nascia
+           * marcada como não-cega e o revisor via a autoria — o `BLIND_PDF` que o
+           * envio cobrou deixava de proteger alguma coisa.
+           */
+          call: { select: { kind: true, requiresBlindReview: true } },
         },
       });
 
@@ -614,7 +622,17 @@ export async function assignReviewer(
             (verdict.conflicts.length > 0
               ? `Atribuído com conflito incerto autorizado: ${verdict.message}`
               : 'Atribuição manual pelo comitê.'),
-          isBlind: submission.track?.requiresBlindReview ?? true,
+          /**
+           * A MESMA precedência do envio (FASE 74 · fatia 5): CHAMADA → TRILHA →
+           * PADRÃO. Antes esta linha lia só a trilha, então a chamada cega sobre uma
+           * trilha aberta produzia uma atribuição "não cega" — o parecer existia, mas
+           * o revisor via a autoria.
+           */
+          isBlind: resolveRequiresBlindReview({
+            callRequiresBlindReview: submission.call?.requiresBlindReview ?? null,
+            trackRequiresBlindReview: submission.track?.requiresBlindReview ?? null,
+            kind: (submission.call?.kind as ProposalKind | undefined) ?? null,
+          }).requiresBlindReview,
           assignedById: input.assignedById,
           ...(input.dueAt ? { dueAt: input.dueAt } : {}),
         },

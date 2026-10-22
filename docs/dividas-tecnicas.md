@@ -35,7 +35,26 @@
 > da prévia da API: o handler é chamado 5× por render, e um cache mudaria o "hoje" da prévia)
 > e **quitou o upload presigned recusado pelo MinIO novo** — um defeito de ambiente que
 > derrubava 1 teste de integração e 1 E2E, encontrado e corrigido dentro da própria bateria
-> (não estava neste levantamento).
+> (não estava neste levantamento). A **FASE 73** (o resultado que o organizador publica na
+> chamada) **não quitou nem declarou item** deste levantamento: criou uma superfície nova
+> (texto, lista e próximos passos com rascunho/parcial/final travado) e deixou **três pontos de
+> atenção declarados no documento da fase**, que **não** entram na contagem porque não são
+> dívidas deste levantamento: (a) os `<h5>` do componente compartilhado disparam `heading-order`
+> no `axe` — é **best-practice**, está **fora do portão AA**, e a fase não mexeu no componente
+> para não mudar a hierarquia de telas vizinhas; (b) o estado do resultado **não é exposto em
+> `/api/v1`** (o contrato da F72 ficou intacto: o documento vive na página e no painel); e (c) a
+> **concorrência do `FOR UPDATE`** não tem teste paralelo — a serialização está no código e
+> descrita na trilha, mas nenhum teste coloca dois processos disputando a mesma chamada. O
+> defeito que a fase corrigiu (o locator do E2E da chamada que passou a casar "Publicar
+> parcial") era de **teste**, não de produto. A **FASE 74** (a proposta que exige anexo e não
+> pede) **não quitou nem declarou item** deste levantamento: **re-escopou a E46** — o beco do
+> anexo está fechado (aviso antes do formulário, recusa com o rascunho e o link, conclusão na
+> área do autor), mas o **anexo INLINE na página pública continua fora** (decisão A, com o custo
+> de B registrado). A fase declarou ainda três pontos de atenção no próprio documento: o **teto
+> de 5 rascunhos com arquivo** (corrida de duas abas pode criar um a mais, deliberado e sem
+> teste paralelo), o **seed com a chamada de minicursos `false`** (a migração não faz backfill —
+> herdar é escolha do organizador) e o **`isBlind` das atribuições antigas**, que não é
+> reescrito pela migração.
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -129,6 +148,19 @@
 > presigned do MinIO **não** entra na contagem: ele não era uma dívida declarada, foi um
 > defeito de ambiente encontrado e corrigido na própria bateria da fase, registrado na §2.
 > O tema B vai de 5 para **6**; os demais temas não mudam.
+
+> **Contagem na FASE 73.** O total continua **41** (A=4, B=6, C=1, D=3, E=21, F=5, H=1, I=0):
+> a fase **não quitou nem declarou** item deste levantamento. Os três pontos de atenção que ela
+> deixou (o `heading-order` dos `<h5>`, o `resultState` fora do `/api/v1` e a concorrência do
+> `FOR UPDATE` sem teste paralelo) estão no documento da fase e **não** ganharam código de
+> dívida: o primeiro é `best-practice` fora do portão AA, o segundo é uma decisão de escopo da
+> API da F72, e o terceiro é cobertura de teste de uma proteção que existe.
+
+> **Contagem na FASE 74.** O total continua **41** (A=4, B=6, C=1, D=3, E=21, F=5, H=1, I=0):
+> a fase **não quitou nem declarou** item. Ela **re-escopou a E46** — que segue **ABERTA**,
+> porque o anexo inline na página pública não foi entregue —, fechou o **beco** do anexo pelo
+> caminho do autor e registrou os três pontos de atenção acima no documento da fase. "E46
+> quitada" seria falso; "re-escopada" é o fato.
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -480,7 +512,7 @@
 | ~~E44~~ | ~~**O arquivo exportado não tem prazo nem controle de destino**~~ | FASE 32 (novo, ADR-157) → **QUITADA na FASE 49** | O CSV saía com e-mail completo (é o insumo da ação) e passava a viver em pasta compartilhada, e-mail e pen drive. A trilha registrava QUEM exportou e quantas linhas, e nada mais | O arquivo não volta, então a fase separou as duas coisas: **marca d'água** (procedência no topo e autor, instante e validade em CADA linha — a cópia de uma linha continua dizendo de onde veio) e **pedido com prazo de 24 h** (`data_exports`), com download por sessão, revogação e a lista de exportações recentes na tela. O ARQUIVO não é guardado: o que expira é o direito de baixar de novo | — | Sim |
 | ~~E45~~ | ~~**O recado é mão única: não há resposta nem thread**~~ (QUITADA na FASE 56 — a conversa é de mão dupla) | FASE 32 (novo, ADR-156) | **QUITADA na FASE 56** — a pessoa responde o recado que recebeu (`direction: INBOUND`, `parentId` na RAIZ da conversa), a resposta aparece dentro do recado na caixa de entrada e a ficha da instituição mostra **"respondeu"** com a data (ADR-313) | — | — | Sim |
 | ~~E39~~ | ~~**A roleta tem duração fixa e não pode ser reexecutada nem desligada**~~ | FASE 30 | **Quitado na FASE 35**: botões de pausa/retomada e replay determinístico sobre lista real no palco, com atalhos `Espaço` e `R` (ADR-182) | — | — | — |
-| E46 | **A proposta de uma chamada não aceita anexo** | FASE 33 (novo, ADR-161/162) | O formulário público pede texto e os campos do TIPO (carga horária, público-alvo, minibiografia), e não tem upload — diferente da submissão de artigo, que anexa o PDF. A prontidão fora da ciência trata "sem arquivo" como AVISO, e o caminho de upload existe (FASE 23/24, com quota e assinatura real do arquivo) | A organização decide sobre um resumo de 150 caracteres e uma minibiografia, sem o plano de aula nem o currículo que costumam acompanhar a proposta — e a decisão fica mais pobre justamente nas chamadas em que ela é mais subjetiva. O caminho é reusar `requestUploadAction`/`confirmUploadAction` no formulário público, com visibilidade decidida como no material do palestrante | M | Sim |
+| E46 | **A proposta de uma chamada não aceita anexo INLINE — o beco foi fechado, a segunda esteira continua fora** | FASE 33 (novo, ADR-161/162) → **RE-ESCOPADA na FASE 74** | O formulário público pede texto e os campos do TIPO (carga horária, público-alvo, minibiografia) e não tem upload. A F74 **não** duplicou a esteira (decisão A) e fechou o **caminho**: a chamada avisa antes do formulário, a recusa de prontidão devolve o rascunho e o link, e o autor anexa e envia na área dele, onde a esteira inteira existe. **O que continua fora é o anexo na própria página pública**, com a visibilidade e o portão de inspeção da F36. O custo de B está medido: **três ações novas** na página (pedido, confirmação e envio), **conclusão duplicada** (dados × arquivo, com o envio morando na área do autor) e um passo que só funciona com **JavaScript** numa página que hoje funciona sem ele | A organização decide com o que o autor anexou **no caminho do autor**; quem quiser anexar sem sair da chamada ainda não pode — mas não fica mais sem caminho. O esforço de B é o que a fase recusou | M | Sim |
 | ~~E47~~ | ~~**O proponente não é avisado da decisão (aceite ou recusa)**~~ | FASE 33 | **QUITADO na FASE 36** — `docs/fase-36-operacao-e-seguranca.md`. Template `PROPOSAL_DECIDED`, disparado por `recordDecision` **fora da transação**, com `dedupeKey` por proposta × decisão, o parecer do comitê no aviso e os dois canais (caixa de entrada + outbox). Vale para a proposta de CHAMADA; o artigo do fluxo acadêmico continua acompanhando pela tela de submissões (limite declarado na ADR-189) | — | — | — |
 | ~~E48~~ | ~~**A confirmação de vaga é do CONJUNTO, não de cada exigência**~~ | FASE 34 | **QUITADO na FASE 37** — `docs/fase-37-crachas-e-checklist.md`. Cada exigência da atividade vira uma linha da INSCRIÇÃO (`registration_confirmation_items`, criada no momento da inscrição e na promoção da lista de espera) com estado próprio (`PENDING`/`RECEIVED`/`WAIVED`, autor e hora), e a vaga é DERIVADA: quando todas as obrigatórias estão satisfeitas ela se confirma sozinha, pelo caminho de sempre (ADR-196/197/198/199). O item opcional não segura a vaga, e "sem exigências" continua sendo confirmação da equipe | — | — | — |
 | ~~E49~~ | ~~**Não há prazo-limite da atividade além dos N dias da inscrição**~~ (QUITADA na FASE 50 — teto no início da atividade) | FASE 34 (novo, ADR-173) | O organizador escolhe "5 dias", e quem se inscreve no último dia antes do evento tem prazo até depois do evento começar: a varredura olha o prazo da pessoa, não a data da atividade | Uma vaga retida pode ser liberada com a atividade já em andamento, e quem se inscreve em cima da hora e não confirma ocupa o lugar no dia. O caminho é um campo opcional de data-limite na atividade, com o prazo da pessoa sendo o MENOR entre "N dias" e a data-limite (a terceira opção que o humano não escolheu nesta fase) | P | Sim |
