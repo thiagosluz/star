@@ -495,12 +495,26 @@ export interface PublicEventDetail extends PublicEventSummary {
 export async function getPublicEvent(
   tenantId: string,
   eventSlug: string,
+  /**
+   * Instante da leitura — opcional, e por isso a página não muda.
+   *
+   * A API pública (FASE 72) precisa que o status DERIVADO (`deriveEventStatus`) e
+   * o `generatedAt` do envelope sejam o MESMO instante: se cada um usasse o seu
+   * relógio, uma resposta poderia anunciar `REGISTRATION_OPEN` e um `generatedAt`
+   * já depois do fechamento. O parâmetro é injetado pelo serviço da API; a página
+   * continua chamando sem ele e usando o relógio do processo, como sempre.
+   */
+  options: { now?: Date } = {},
 ): Promise<PublicEventDetail | null> {
-  return loadEventDetail(tenantId, {
-    slug: eventSlug,
-    status: { in: [...PUBLIC_EVENT_STATUSES] },
-    deletedAt: null,
-  });
+  return loadEventDetail(
+    tenantId,
+    {
+      slug: eventSlug,
+      status: { in: [...PUBLIC_EVENT_STATUSES] },
+      deletedAt: null,
+    },
+    { now: options.now },
+  );
 }
 
 /**
@@ -535,9 +549,9 @@ export async function getEventForPreview(
 async function loadEventDetail(
   tenantId: string,
   where: Record<string, unknown>,
-  options: { includeUnpublishedPage?: boolean } = {},
+  options: { includeUnpublishedPage?: boolean; now?: Date } = {},
 ): Promise<PublicEventDetail | null> {
-  const now = new Date();
+  const now = options.now ?? new Date();
 
   const event = await withTenant(tenantId, (tx) =>
     tx.event.findFirst({

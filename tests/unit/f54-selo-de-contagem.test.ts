@@ -113,4 +113,23 @@ describe('selo de contagem por área', () => {
     expect(eventAreaMetric('formulario', contagens({ formFields: 3 }))).toBe('3 campos declarados');
     expect(eventAreaMetric('formulario', contagens({ formFields: null }))).toBeNull();
   });
+
+  /**
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  O SELO DA ÁREA `api` (FASE 72 · fatia 3)
+   * ───────────────────────────────────────────────────────────────────────────────
+   *  A área nasceu com a tela do organizador e o selo dela não é um número: é o
+   *  ESTADO da chave. As três respostas da régua da F54 continuam valendo — "nenhuma
+   *  chave" é o zero que aparece, "1 chave ativa" é o singular e `null` (não
+   *  conferido) vira NADA. A configuração ILEGÍVEL também não vira selo: afirmar
+   *  qualquer coisa sobre ela seria o selo mentindo.
+   */
+  it('a API do evento tem selo de ESTADO — e o não conferido não vira selo', () => {
+    expect(eventAreaMetric('api', contagens({ apiKey: 'NONE' }))).toBe('nenhuma chave');
+    expect(eventAreaMetric('api', contagens({ apiKey: 'ACTIVE' }))).toBe('1 chave ativa');
+    expect(eventAreaMetric('api', contagens({ apiKey: 'REVOKED' }))).toBe('chave revogada');
+    expect(eventAreaMetric('api', contagens({ apiKey: 'INVALID' }))).toBeNull();
+    expect(eventAreaMetric('api', contagens({ apiKey: null }))).toBeNull();
+    expect(eventAreaMetric('api', EMPTY_EVENT_AREA_COUNTS)).toBeNull();
+  });
 });

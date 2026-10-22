@@ -30,34 +30,33 @@
  *  rótulo próprio + `BETTER_AUTH_SECRET`. O rótulo garante que vazar uma não
  *  compromete a outra, e usar o MESMO segredo evita uma variável de ambiente nova
  *  para uma feature que já depende do segredo para existir.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A IMPLEMENTAÇÃO MUDOU DE LUGAR NA FASE 72
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O mecanismo (AES-GCM + IV + tag + derivação por rótulo) foi extraído para
+ *  `@/lib/crypto/sealed-secret-vault` quando a chave da API por evento passou a
+ *  precisar do MESMO cofre. Este arquivo continua com o MESMO comportamento e o
+ *  MESMO rótulo (`eventflow:card-share:`) — os links já emitidos continuam
+ *  abrindo. O que ele deixou de ter é a segunda implementação de criptografia.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-
+import { createSealedSecretVault } from '@/lib/crypto/sealed-secret-vault';
 import { SHARE_TOKEN_BYTES } from '@/domain/gamification/card-share-rules';
 
-const KEY_LABEL = 'eventflow:card-share:';
-const ALGORITHM = 'aes-256-gcm';
-/** 12 bytes é o tamanho de IV recomendado para GCM. */
-const IV_LENGTH = 12;
-/** Mesmo piso do cofre do sorteio: abaixo disso o segredo não protege nada. */
-const MIN_SECRET_LENGTH = 16;
-
 /** Entropia do token: 128 bits, em base64url (22 caracteres, seguros em URL). */
+const vault = createSealedSecretVault({
+  label: 'eventflow:card-share:',
+  tokenBytes: SHARE_TOKEN_BYTES,
+});
+
 export function createShareToken(): string {
-  return randomBytes(SHARE_TOKEN_BYTES).toString('base64url');
+  return vault.createToken();
 }
 
 /** Índice da leitura pública — SHA-256 em hexadecimal. */
 export function hashShareToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-function sealingKey(): Buffer | null {
-  const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret || secret.length < MIN_SECRET_LENGTH) return null;
-
-  return createHash('sha256').update(`${KEY_LABEL}${secret}`, 'utf8').digest();
+  return vault.hashToken(token);
 }
 
 /**
@@ -68,38 +67,10 @@ function sealingKey(): Buffer | null {
  * gravar o token em claro sem que ninguém perceba.
  */
 export function sealShareToken(token: string): string | null {
-  const key = sealingKey();
-  if (!key) return null;
-
-  const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-
-  return [iv.toString('base64url'), tag.toString('base64url'), encrypted.toString('base64url')].join('.');
+  return vault.seal(token);
 }
 
 /** Abre o selo. `null` quando o selo está corrompido ou a chave não está disponível. */
 export function openShareToken(sealed: string | null | undefined): string | null {
-  if (!sealed) return null;
-
-  const key = sealingKey();
-  if (!key) return null;
-
-  const [ivPart, tagPart, dataPart] = sealed.split('.');
-  if (!ivPart || !tagPart || !dataPart) return null;
-
-  try {
-    const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivPart, 'base64url'));
-    decipher.setAuthTag(Buffer.from(tagPart, 'base64url'));
-
-    const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(dataPart, 'base64url')),
-      decipher.final(),
-    ]);
-
-    return decrypted.toString('utf8');
-  } catch {
-    return null;
-  }
+  return vault.open(sealed);
 }

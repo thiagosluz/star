@@ -59,6 +59,10 @@ import {
 } from './helpers';
 import { createDemand } from '../../src/lib/events/demand-service';
 import { applyRegistrationFormOperationOnEvent } from '../../src/lib/admin/registration-form-service';
+import {
+  createEventApiKey,
+  updateEventApiSections,
+} from '../../src/lib/api/event-api-key-service';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import {
@@ -702,13 +706,58 @@ test.beforeAll(async ({ playwright, baseURL }) => {
       }
     }
 
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *  A TELA DA API DO ORGANIZADOR ENTRA NO PORTÃO (FASE 72 · fatia 3)
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  POR QUE ESTE CASO PRECISA EXISTIR
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  A fatia entregou uma superfície NOVA com três formulários (gerar/mostrar,
+     *  revogar com confirmação, ligar/desligar seção), um bloco `<pre>` rolável, um
+     *  aviso de credencial e uma documentação inteira — e nenhum dos 29 casos abria
+     *  `/administracao/eventos/<id>/api`. É a mesma forma do defeito da FASE 66 (o
+     *  rótulo que media 4,44:1 porque a tela onde ele mora não era medida) e da FASE
+     *  70 (a página de inscrição nasceu fora do portão): **a catraca não cobria o
+     *  alvo**.
+     *
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  A CHAVE ATIVA É O QUE FAZ A TELA MOSTRAR O QUE IMPORTA
+     *  ─────────────────────────────────────────────────────────────────────────────
+     *  Sem chave, a tela desenha o estado vazio e NENHUM dos controles da fatia
+     *  (Mostrar/Revogar, interruptores, prévias com corpo). A fixture usa o SERVIÇO
+     *  REAL (`createEventApiKey` + `updateEventApiSections`) para chegar ao estado em
+     *  que o organizador de fato usa a tela: chave ativa e uma seção ligada. A outra
+     *  seção fica desligada de propósito, para o `axe` medir também o 404 da prévia.
+     */
+    const chaveDaApi = await createEventApiKey({
+      tenantId: tenant.id,
+      eventId: event.id,
+      actorUserId: admin.id,
+    });
+
+    if (!chaveDaApi.ok) {
+      throw new Error(`Falha ao gerar a chave da API da fixture: ${chaveDaApi.message}`);
+    }
+
+    const secoesDaApi = await updateEventApiSections({
+      tenantId: tenant.id,
+      eventId: event.id,
+      actorUserId: admin.id,
+      secoes: { palestrantes: true },
+    });
+
+    if (!secoesDaApi.ok) {
+      throw new Error(`Falha ao ligar a seção de palestrantes da fixture: ${secoesDaApi.message}`);
+    }
+
     const hoje = new Date();
     const demandaBase = {
       tenantId: tenant.id,
       eventId: event.id,
       actorId: admin.id,
     };
-
     /** Uma barra que ATRAVESSA o período e vence no mês corrente. */
     await createDemand({
       ...demandaBase,
@@ -2200,5 +2249,28 @@ test.describe('telas autenticadas', () => {
      * teclado e leitor de tela, quem decide fica sem o caminho.
      */
     await expectNoCriticalViolations(page, 'fila de denúncias (/superadmin/denuncias)');
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────
+  //  A TELA DA API DO EVENTO (FASE 72 · fatia 3)
+  // ───────────────────────────────────────────────────────────────────────────────
+  test('a tela da API do organizador não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * A fixture deixa a chave ATIVA e uma seção ligada (ver o `beforeAll`): é a tela
+     * completa — o aviso de credencial, os três interruptores, os `<pre>` das cinco
+     * prévias (uma 200 e as outras 404) e a documentação. O estado vazio mediria
+     * muito menos do que o organizador vê.
+     */
+    await page.goto(`/t/${tenantSlug}/administracao/eventos/${eventId}/api`);
+    await expect(page.getByTestId('event-api-page')).toBeVisible();
+    await expect(page.getByTestId('event-api-key-state-title')).toHaveText('Chave ativa');
+    await expect(page.getByTestId('event-api-preview-status-evento')).toHaveText('HTTP 200');
+
+    await expectNoCriticalViolations(
+      page,
+      `API do evento (/t/${tenantSlug}/administracao/eventos/<id>/api)`,
+    );
   });
 });

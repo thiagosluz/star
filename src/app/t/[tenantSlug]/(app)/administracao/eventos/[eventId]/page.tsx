@@ -14,6 +14,7 @@ import {
   GraduationCap,
   Handshake,
   IdCard,
+  KeyRound,
   ListChecks,
   Mic,
   Settings2,
@@ -162,6 +163,8 @@ export default async function AdminEventDetailPage({
   const AREA_ICONS: Record<string, LucideIcon> = {
     dados: Building2,
     formulario: ClipboardList,
+    /** A API de leitura do evento (FASE 72): a chave é uma configuração, não um arquivo. */
+    api: KeyRound,
     programacao: CalendarRange,
     salas: DoorOpen,
     chamadas: FileText,

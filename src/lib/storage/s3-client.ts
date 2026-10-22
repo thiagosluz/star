@@ -279,6 +279,24 @@ export async function createUploadUrl(input: {
       'content-length',
       ...(checksum ? ['x-amz-checksum-sha256'] : []),
     ]),
+    /**
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O CHECKSUM PRECISA FICAR NO CABEÇALHO ASSINADO (medido na FASE 72)
+     * ───────────────────────────────────────────────────────────────────────────
+     *  O SDK v3, ao assinar, "iça" o `ChecksumSHA256` para a QUERY da URL
+     *  (`x-amz-checksum-sha256=…`) e deixa de incluí-lo em `X-Amz-SignedHeaders`.
+     *  O navegador, porém, continua mandando o cabeçalho que `requiredHeaders`
+     *  declara — e o MinIO novo (Chainguard, release 2026-09-22) recusa o PUT com
+     *  "request carries unsigned header X-Amz-Checksum-Sha256", porque toda
+     *  `x-amz-*` presente na requisição precisa estar assinada.
+     *
+     *  `unhoistableHeaders` mantém o checksum como CABEÇALHO em vez de jogá-lo na
+     *  query: ele volta para `X-Amz-SignedHeaders`, o MinIO aceita o upload e
+     *  continua calculando/gravando o SHA-256 do corpo que recebeu (a prova que
+     *  `verifyStoredObject` usa desde a FASE 50). Sem esta opção, o upload por URL
+     *  assinada quebra inteiro — e não só o do logotipo da F41.
+     */
+    unhoistableHeaders: new Set(checksum ? ['x-amz-checksum-sha256'] : []),
   });
 
   return {

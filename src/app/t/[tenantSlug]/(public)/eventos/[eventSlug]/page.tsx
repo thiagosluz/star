@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository';
+import { getTenantContext } from '@/lib/events/event-repository';
 import { buildEventMetadata } from '@/domain/events/landing-page';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { listPublicRaffleResults } from '@/lib/raffles/raffle-service';
@@ -14,10 +14,7 @@ import { agendaIcsUrl, agendaIcsToken } from '@/lib/events/agenda-export';
 import { buildHappeningNow, type NowActivityFact } from '@/domain/agenda/now-rules';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
-import {
-  applyOnlineRoomVisibility,
-  resolveOnlineRoomViewer,
-} from '@/lib/events/online-room-service';
+import { getPublicEventView } from '@/lib/events/public-event-view';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,8 +76,19 @@ export async function generateMetadata({
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) return { title: 'Evento não encontrado' };
 
-  const event = await getPublicEvent(tenant.tenantId, eventSlug);
-  if (!event) return { title: 'Evento não encontrado' };
+  /**
+   * A MESMA visão da página (FASE 72): a API e os metadados não podem ler o
+   * evento por um caminho que a renderização não usa. Para metadados não há
+   * sessão, então o endereço da sala chega `null` — e ele nunca foi usado aqui.
+   */
+  const view = await getPublicEventView({
+    tenantId: tenant.tenantId,
+    eventSlug,
+    userId: null,
+  });
+  if (!view) return { title: 'Evento não encontrado' };
+
+  const event = view.event;
 
   const meta = buildEventMetadata(event, event.timezone);
   const title = event.page?.metaTitle ?? meta.title;
@@ -120,9 +128,6 @@ export default async function PublicEventPage({
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) notFound();
 
-  const publicEvent = await getPublicEvent(tenant.tenantId, eventSlug);
-  if (!publicEvent) notFound();
-
   /**
    * Instante da renderização, resolvido UMA vez e passado adiante.
    *
@@ -131,15 +136,6 @@ export default async function PublicEventPage({
    * fechou por milissegundos), e mantém os componentes de renderização puros.
    */
   const now = new Date();
-
-  const publicRaffles = await listPublicRaffleResults(tenant.tenantId, publicEvent.id);
-
-  /**
-   * As chamadas PUBLICADAS (FASE 33). A leitura é do servidor e traz o estado de cada
-   * uma já decidido — o bloco da página só desenha, e por isso a chamada encerrada não
-   * continua anunciando prazo.
-   */
-  const calls = await listPublicCalls({ tenantId: tenant.tenantId, eventId: publicEvent.id, now });
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -173,35 +169,50 @@ export default async function PublicEventPage({
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
-   *  A SALA ONLINE: QUEM TEM LUGAR, VÊ (FASE 68 · fatia 3)
+   *  A VISÃO PÚBLICA — A MESMA QUE A API LÊ (FASE 72 · fatia 1)
    *
    *  ─────────────────────────────────────────────────────────────────────────────
-   *  A DECISÃO É DO SERVIDOR, E ELA ACONTECE ANTES DA RENDERIZAÇÃO
+   *  A SALA ONLINE: QUEM TEM LUGAR, VÊ (FASE 68 · fatia 3)
    *  ─────────────────────────────────────────────────────────────────────────────
    *  A pergunta "esta pessoa pode ver o endereço da sala?" é respondida no BANCO
    *  (`resolveOnlineRoomViewer`: inscrição viva que não seja de espera, ou a equipe
    *  do evento) e o resultado é aplicado à PROJEÇÃO — para quem não tem lugar, o
    *  `onlineUrl` do evento e o de cada atividade chegam `null` ao renderizador.
    *
+   *  A sequência `getPublicEvent → resolveOnlineRoomViewer → applyOnlineRoomVisibility`
+   *  saiu daqui e virou `getPublicEventView` porque a API por evento precisa da MESMA
+   *  visão. Duas sequências iguais em dois arquivos é o "segundo caminho para o banco"
+   *  que a fase proíbe — e a catraca de divergência prende isso.
+   *
    *  É por isso que o endereço não aparece no HTML de quem não é inscrito: não há
    *  `hidden`, não há CSS, não há JavaScript escondendo nada — não há o que esconder,
    *  porque o valor não foi entregue a nenhum componente. O E2E desta fatia prova
    *  exatamente isso (`page.content()` não contém o endereço).
    *
-   *  A VISIBILIDADE POR ATIVIDADE é resolvida no mesmo passo e sai daqui como um
-   *  MAPA (`onlineRooms`) — o caminho para o cartão do "acontecendo agora", que é
-   *  renderizado neste servidor mas cuja visão (`HappeningNowView`) é serializável e
-   *  vai para o cliente. O endereço não pode viajar nela.
+   *  A VISIBILIDADE POR ATIVIDADE sai daqui como um MAPA (`onlineRooms`) — o caminho
+   *  para o cartão do "acontecendo agora", que é renderizado neste servidor mas cuja
+   *  visão (`HappeningNowView`) é serializável e vai para o cliente. O endereço não
+   *  pode viajar nela.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  const { event, byActivity: onlineRooms } = applyOnlineRoomVisibility(
-    publicEvent,
-    await resolveOnlineRoomViewer({
-      tenantId: tenant.tenantId,
-      eventId: publicEvent.id,
-      userId: viewer?.id ?? null,
-    }),
-  );
+  const view = await getPublicEventView({
+    tenantId: tenant.tenantId,
+    eventSlug,
+    userId: viewer?.id ?? null,
+    now,
+  });
+  if (!view) notFound();
+
+  const { event, byActivity: onlineRooms } = view;
+
+  const publicRaffles = await listPublicRaffleResults(tenant.tenantId, event.id);
+
+  /**
+   * As chamadas PUBLICADAS (FASE 33). A leitura é do servidor e traz o estado de cada
+   * uma já decidido — o bloco da página só desenha, e por isso a chamada encerrada não
+   * continua anunciando prazo.
+   */
+  const calls = await listPublicCalls({ tenantId: tenant.tenantId, eventId: event.id, now });
 
   const minhaAgenda = viewer
     ? await getMyAgenda({

@@ -27,11 +27,15 @@
 > que não é reprocessado, e **E66**, a autorização da foto que é declarada e não guardada), com as
 > **revisões
 > pós-entrega** da FASE 25
-> (E30), da FASE 4 (E31–E32) e da FASE 3 (E33). As fases **47 a 70** seguiram atualizando
+> (E30), da FASE 4 (E31–E32) e da FASE 3 (E33). As fases **47 a 72** seguiram atualizando
 > este documento a cada entrega; a **FASE 70** declarou **A7** (o falso positivo do casamento
 > por fragmento de tipo sensível) e **B10** (a varredura dos `catch` silenciosos das
 > contagens), e quitou nenhum item — o defeito que ela fechou (a inscrição na atividade sem
-> linha no evento) nunca esteve neste levantamento.
+> linha no evento) nunca esteve neste levantamento. A **FASE 72** declarou **B11** (o custo
+> da prévia da API: o handler é chamado 5× por render, e um cache mudaria o "hoje" da prévia)
+> e **quitou o upload presigned recusado pelo MinIO novo** — um defeito de ambiente que
+> derrubava 1 teste de integração e 1 E2E, encontrado e corrigido dentro da própria bateria
+> (não estava neste levantamento).
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -101,6 +105,7 @@
 | **D6 — Notificação de certificado emitido** | F6 | **FASE 15** — `notifyCertificateIssued` em `generateCertificate` (vale para a emissão inline e para o worker), com código de validação e link de conferência pública |
 | **A5 — Verificação de e-mail** | F2 | **FASE 15** — `emailVerification.sendOnSignUp` envia a confirmação no cadastro (token de 24 h), página `/verificacao` para o resultado e aviso no shell com reenvio; `requireEmailVerification` continua **false** de propósito, e a decisão está travada por teste |
 | **E25 — Convite de palestrante não saía por e-mail** | FASE 25 | **FASE 33** — o protocolo de aceite gera o convite e enfileira o template `SPEAKER_INVITATION` (link do portal, validade de 14 dias, `dedupeKey` por perfil × data de expiração). A esteira de e-mail da FASE 15 já existia: o que faltava era o template e o gatilho |
+| **Upload presigned recusado pelo MinIO novo (`HTTP 400`, `unsigned header X-Amz-Checksum-Sha256`)** | FASE 72 (medido na bateria) | **FASE 72** — o MinIO reconstruído com `cgr.dev/chainguard/minio:latest` (release 2026-09-22) passou a exigir que toda `x-amz-*` estivesse assinada; o SDK içava o checksum para a query e o navegador mandava o cabeçalho não assinado. `getSignedUrl` ganhou `unhoistableHeaders`, o checksum voltou para `X-Amz-SignedHeaders`, o PUT respondeu 200 e o STORAGE continuou devolvendo o SHA-256 calculado (E26 preservado) |
 
 ---
 
@@ -109,7 +114,7 @@
 | Tema | Itens abertos | Dos quais rápidos (P) | Risco se ficar como está |
 |---|---|---|---|
 | A. Segurança e conformidade | 4 | 0 | Médio — **a varredura de arquivos foi entregue na FASE 36**; resta a assinatura assimétrica do certificado, a auditoria de leitura, o login social e o falso positivo do casamento por fragmento de tipo (A7, declarado na FASE 70) |
-| B. Confiabilidade e operação | 5 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker); resta a varredura dos `catch` silenciosos das contagens (B10, declarada na FASE 70) |
+| B. Confiabilidade e operação | 6 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker); restam a varredura dos `catch` silenciosos das contagens (B10, declarada na FASE 70) e o custo da prévia da API (B11, declarado na FASE 72) |
 | C. Quotas e billing | 1 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 2 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem central de preferências por tipo de aviso (o **recado em massa** tem opt-out desde a FASE 67 — ver D9) |
 | E. Jornada do participante | 21 | 1 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP**, **a autorização da foto é declarada, não guardada**, **a arte da carta entra por URL sem passar pelo acervo** e **a suíte de credenciamento depende da ordem dos testes**; a FASE 67 acrescentou **E87** (sem revogação individual do endereço de descadastro) — o **E88** (o descadastro não pergunta o motivo) foi **quitado na FASE 69** |
@@ -117,7 +122,13 @@
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 1 | 0 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 0 | 0 | Baixo — ~~resta a sigla × nome na detecção de conflito~~ a FASE 60 fechou as duas linhas abertas (I1 e I2) |
-| **Total** | **40** | **5** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — · **5 na FASE 69** — E82, E83, E84, E86 e E88 — · **2 declarados na FASE 70** — A7 e B10 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **41** | **5** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — · **5 na FASE 69** — E82, E83, E84, E86 e E88 — · **2 declarados na FASE 70** — A7 e B10 — · **1 declarado na FASE 72** — B11 — mais o escopo próprio da FASE 25 e as revisões) |
+
+> **Contagem na FASE 72.** O total medido linha por linha é **41**: os 40 anteriores mais
+> **B11** (o custo da prévia da API — 5 chamadas de handler por render). O defeito do upload
+> presigned do MinIO **não** entra na contagem: ele não era uma dívida declarada, foi um
+> defeito de ambiente encontrado e corrigido na própria bateria da fase, registrado na §2.
+> O tema B vai de 5 para **6**; os demais temas não mudam.
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -416,6 +427,7 @@
 | B8 | **Política de retenção da auditoria** | F13 (novo) | Decisão de negócio (LGPD × guarda): nada é descartado hoje | A `DEFAULT` e o histórico crescem sem limite definido | P | Decorrente |
 | B9 | **Coletor de métricas (Prometheus/Grafana)** | F13 (novo) | O endpoint é o contrato; falta quem raspe e alerte | Métrica existe e ninguém lê; `bullmq_queue_up 0` não vira alerta | M | Decorrente |
 | B10 | **Os `catch` silenciosos das contagens** | FASE 70 (novo) | A FASE 70 achou **um**: `getEventAreaCounts` contava o formulário com `where: { tenantId, eventId }` sobre o modelo `Event` — e `eventId` **não existe** ali (as tabelas filhas é que o usam). A consulta **lançava**, e o `catch` do serviço — escrito para "sem número a tela continua" — devolvia `READ_FAILED` para o **conjunto inteiro**: o defeito de UMA área apagava o selo de TODAS, em silêncio. O caso foi corrigido (o `where` próprio e um `console.error` no `catch`), e a **varredura dos demais serviços de contagem ficou aberta** — o caminho é `grep -n "catch" src/lib/**/*count*.ts` com a régua de que **toda falha silenciosa por desenho precisa de log** | O modo de falha é o pior possível para uma catraca: o selo some e o silêncio é indistinguível de "não havia nada para contar", então ninguém investiga | P | Sim |
+| B11 | **O custo da prévia da API do evento** | FASE 72 (novo) | A prévia da tela `/administracao/eventos/<id>/api` chama o handler REAL uma vez por recurso — **5 chamadas por render** —, e cada chamada lê instituição, chave e a projeção pública. O limitador foi injetado justamente para a prévia não derrubar a si mesma (5 × 24 = 120). Não se mediu a latência. Um cache de prévia é a saída óbvia, mas ele **muda o "hoje" da prévia**: a tela passaria a mostrar um 200/404 e um ETag de um instante anterior, e a promessa é "o que o cliente recebe hoje". O caminho é decidir o trade-off (cache curto com selo de "gerado em", ou manter a leitura real) antes de otimizar | A tela do organizador fica mais carregada do que precisa, e o custo cresce com o número de recursos; hoje são 5 e não há medição de latência para justificar a mudança | P | Sim |
 
 ### C. Quotas e billing
 

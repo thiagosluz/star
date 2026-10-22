@@ -32,6 +32,10 @@
  */
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import {
+  eventApiAreaMetric,
+  type EventApiKeyState,
+} from '@/domain/api/event-api-organizer-rules';
 
 export type EventAreaGroup = 'CONFIGURAR' | 'VITRINE' | 'OPERAR' | 'RESULTADO';
 
@@ -104,6 +108,27 @@ export const EVENT_AREAS: readonly EventArea[] = [
     permission: PERMISSIONS.EVENT_UPDATE,
   },
   {
+    /**
+     * ─── A API DE LEITURA DO EVENTO (FASE 72 · fatia 3) ───────────────────────
+     *
+     *  Entra logo depois do formulário, no grupo CONFIGURAR, porque é a mesma
+     *  espécie de decisão: "o que o evento oferece para fora". A ordem não é
+     *  cronológica — é a de quem acabou de decidir o que pedir a quem se inscreve
+     *  e agora decide o que um site externo pode ler.
+     *
+     *  A permissão é `event:update`: não existe na casa uma permissão de
+     *  "chave/segredo", e a chave é CONFIGURAÇÃO do evento. O papel que NÃO a
+     *  recebe é o CHAIR (coordenação científica): quem decide o parecer não
+     *  precisa poder expor o evento pela API.
+     */
+    id: 'api',
+    label: 'API do evento',
+    purpose: 'A chave e o que a API de leitura expõe para sites externos.',
+    group: 'CONFIGURAR',
+    href: (context) => route(context, '/api'),
+    permission: PERMISSIONS.EVENT_UPDATE,
+  },
+  {
     id: 'programacao',
     label: 'Programação',
     purpose: 'As atividades do evento: horário, sala, vagas e o que a presença vale.',
@@ -120,11 +145,23 @@ export const EVENT_AREAS: readonly EventArea[] = [
     permission: PERMISSIONS.EVENT_UPDATE,
   },
   {
+    /**
+     * ─── O CARTÃO DECLARA A PERMISSÃO DA TELA (FASE 72 · correção da fatia 3) ──
+     *
+     *  Sem `permission`, o cartão aparecia para todo mundo que via a raiz — e a
+     *  tela recusava quem não tinha `event:manage`, redirecionando ao painel. O
+     *  defeito era o mesmo em quatro cartões (chamadas, confirmações, sorteios e
+     *  credenciamento): a lista de áreas dizia "todo mundo entra" e cada página
+     *  dizia outra coisa. A catraca
+     *  `f72-cartao-esconde-o-que-a-tela-recusa` lê o par (área → página) e
+     *  reprova quando as duas voltarem a divergir.
+     */
     id: 'chamadas',
     label: 'Chamadas de trabalhos',
     purpose: 'Janelas de submissão, rubrica própria e as propostas recebidas.',
     group: 'CONFIGURAR',
     href: (context) => route(context, '/chamadas'),
+    permission: PERMISSIONS.EVENT_MANAGE,
     legacyTestId: 'calls-link',
   },
   {
@@ -168,6 +205,8 @@ export const EVENT_AREAS: readonly EventArea[] = [
     purpose: 'As inscrições que retêm vaga esperando conferência.',
     group: 'OPERAR',
     href: (context) => route(context, '/confirmacoes'),
+    /** A fila confirma vaga e mexe em inscrição: a tela exige `registration:update:any`. */
+    permission: PERMISSIONS.REGISTRATION_UPDATE_ANY,
     legacyTestId: 'confirmations-link',
   },
   {
@@ -185,6 +224,8 @@ export const EVENT_AREAS: readonly EventArea[] = [
     purpose: 'Rodadas, prêmios, telão público e auditoria do resultado.',
     group: 'OPERAR',
     href: (context) => route(context, '/sorteios'),
+    /** Sortear afeta pessoas e produz resultado auditável: a tela exige `event:manage`. */
+    permission: PERMISSIONS.EVENT_MANAGE,
     legacyTestId: 'raffles-link',
   },
   {
@@ -194,6 +235,13 @@ export const EVENT_AREAS: readonly EventArea[] = [
     group: 'OPERAR',
     href: (context) =>
       tenantPath(context.tenantSlug, `/credenciamento/crachas?evento=${context.eventId}`),
+    /**
+     * A tela de crachás exige `attendance:manage` (escopos TENANT ou EVENT). O
+     * cartão declara a MESMA permissão; a raiz a avalia no escopo TENANT, então
+     * quem só tem o papel por EVENTO não vê o cartão embora consiga abrir a URL —
+     * um esconder a menos, nunca um mostrar a mais (ver o relatório da fase).
+     */
+    permission: PERMISSIONS.ATTENDANCE_MANAGE,
   },
   {
     id: 'reconhecimento',
@@ -293,6 +341,14 @@ export interface EventAreaCounts {
   formFields: number | null;
   /** `null` quando a página do evento nunca foi criada. */
   pagePublished: boolean | null;
+  /**
+   * O estado da chave da API do evento (FASE 72 · fatia 3).
+   *
+   * Não é número: é ESTADO ("sem chave" × "ativa" × "revogada"), como a página.
+   * `null` é "não conferi" e o selo não aparece; `INVALID` também não vira selo
+   * (ver `eventApiAreaMetric`).
+   */
+  apiKey: EventApiKeyState | null;
 }
 
 /**
@@ -366,6 +422,12 @@ export function eventAreaMetric(areaId: string, counts: EventAreaCounts): string
       if (counts.pagePublished === null) return null;
 
       return counts.pagePublished ? 'publicada' : 'em rascunho';
+    /**
+     * A área `api` fala de ESTADO, não de quantidade de recursos: a frase do selo é
+     * a de `eventApiAreaMetric` (uma chave ativa, nenhuma chave, chave revogada).
+     */
+    case 'api':
+      return eventApiAreaMetric(counts.apiKey);
     default:
       /** Sorteios e a vitrine pública ficam sem selo enquanto não houver contagem. */
       return null;
@@ -392,4 +454,5 @@ export const EMPTY_EVENT_AREA_COUNTS: EventAreaCounts = {
   speakers: null,
   formFields: null,
   pagePublished: null,
+  apiKey: null,
 };

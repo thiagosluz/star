@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 70** (**F56 a F70 entregues**)
-Testes ................. 3631 (Vitest: unit + integração) + **384** (Playwright E2E) + 1 skip
-ADRs ................... 349 (numeração GLOBAL e sequencial — a próxima é ADR-350)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 72** (**F56 a F72 entregues**)
+Testes ................. **3773** (Vitest: unit + integração, 204 arquivos) + **393** (Playwright E2E) + 1 skip
+ADRs ................... 356 (numeração GLOBAL e sequencial — a próxima é ADR-357)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -122,7 +122,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 384 passando + 1 skip (385 no total)
+npm run test:e2e      # esperado: 393 ativos + 1 skip (394 no total); medido na F72 depois da correção do MinIO: **391 passando + 2 vermelhos PRÉ-EXISTENTES** (o snapshot do rodapé da raiz, §6.9 do doc da F72) **+ 1 intermitente** (`f65`, na virada do minuto)
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -767,13 +767,14 @@ tests/{unit,integration,e2e}
 | 69 | **Mutirão dos pequenos** — cinco dívidas quitadas: **E86** (margem de deslocamento pura de 15 min), **E82** (ranking mascarado pós-ordem), **E84** (papéis semânticos no tema do evento, 2 casos WCAG AA), **E83** (gesto repetido) e **E88** (motivo do descadastro sem atraso). ADR-344 … 346 | ✅ |
 | 70 | **A inscrição que não deixa buraco · o formulário que o organizador monta** — reserva de vaga movida para o evento com linha `EVENT_AUTO`; `registrationRequiresMembership` no servidor; formulário por evento com allowlist de 6 tipos em `Event.settings`; porta "Completar meus dados" unificada e portão WCAG AA (29 casos). ADR-347 … 349 | ✅ |
 | 71 | **A vitrine viva da plataforma · Descoberta e expansão institucional** — descoberta unificada em `/eventos` com abas e redirect 308 de `/organizacoes`; taxonomia padronizada com enum `EventCategory` (10 temas) e ocultação estrita de `onlineUrl` na busca pública; Landing Page `/` renovada com vitrine de destaques, busca rápida, 4 pilares da jornada e métricas públicas agregadas; expansão institucional em `/para-instituicoes` com formulário `InstitutionLeadForm` e gestão de leads em `/superadmin/leads` sob tabela de plataforma `institution_leads` inalcançável pela role de runtime `eventflow_app`. ADR-350 … 353 | ✅ |
+| 72 | **A API de leitura do evento** — API `/api/v1` por evento com **projeção única** (`getPublicEventView`, catraca de importação) e **chave selada por evento** (AES-256-GCM no cofre único extraído da F48), 5 rotas `eventos/<slug>/…`, ETag/304 sem `generatedAt`, `Vary: Authorization`, CORS, 120/min e 401 uniforme; tela `[eventId]/api` com prévia pela rota real, interruptores que nascem desligados e **funciona sem JavaScript**; corrigiu 4 cartões que escondiam o que a tela recusava (catraca nova) e o upload presigned do MinIO novo. ADR-354 … 356 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**40 itens abertos**; A=4, B=5, C=1, D=3, E=21, F=5, H=1, I=0) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento bate com ela desde a FASE 69.
-Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (**E84 para a PÁGINA DA INSTITUIÇÃO**) e **F69** (**E86, E82, E83, E88 e E84 por inteiro**). A **F66** não quitou nem declarou item: fechou o rótulo de seção e corrigiu a contagem.
-Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **A7** (o falso positivo do casamento por fragmento de tipo sensível) e **B10** (a varredura dos `catch` silenciosos das contagens) — os dois últimos **declarados na FASE 70**.
+**Dívidas técnicas:** o levantamento consolidado (**41 itens abertos**; A=4, B=6, C=1, D=3, E=21, F=5, H=1, I=0) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento bate com ela desde a FASE 69.
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (**E84 para a PÁGINA DA INSTITUIÇÃO**), **F69** (**E86, E82, E83, E88 e E84 por inteiro**) e **F72** (o upload presigned recusado pelo MinIO novo — achado e corrigido na bateria). A **F66** não quitou nem declarou item: fechou o rótulo de seção e corrigiu a contagem.
+Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **A7** (o falso positivo do casamento por fragmento de tipo sensível), **B10** (a varredura dos `catch` silenciosos das contagens) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
 
 ---
 
@@ -781,7 +782,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-71-vitrine-publica-e-instituicoes.md`; antes, F70, F69, F68, F67, F66 e F65; a
+   fase entregue** (`docs/fase-72-api-do-evento.md`; antes, F71, F70, F69, F68, F67, F66 e F65; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

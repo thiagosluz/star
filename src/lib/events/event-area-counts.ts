@@ -27,6 +27,8 @@
 import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { readRegistrationForm } from '@/domain/events/registration-form-spec-rules';
+import { readEventApiKeyState } from '@/domain/api/event-api-organizer-rules';
+import { readEventApiConfig } from '@/domain/api/event-api-key-rules';
 
 import type { EventAreaCounts } from '@/domain/events/event-areas';
 
@@ -49,7 +51,7 @@ export async function getEventAreaCounts(input: {
     return await withTenant(input.tenantId, async (tx) => {
       const escopo = { tenantId: input.tenantId, eventId: input.eventId };
 
-      const [calls, rooms, activities, teams, sponsors, credentials, certificates, openDemands, speakers, page, formulario] =
+      const [calls, rooms, activities, teams, sponsors, credentials, certificates, openDemands, speakers, page, estadoDoEvento] =
         await Promise.all([
           tx.callForProposals.count({ where: { ...escopo, deletedAt: null } }),
           tx.room.count({ where: escopo }),
@@ -85,17 +87,30 @@ export async function getEventAreaCounts(input: {
             /**
              * O `where` é próprio: `escopo` usa `eventId`, que é o nome da chave nas
              * tabelas FILHAS — o evento se identifica por `id`.
+             *
+             * A MESMA linha serve ao formulário (F70) e à chave da API (F72 · fatia
+             * 3): os dois vivem em `Event.settings`, e uma segunda leitura do mesmo
+             * JSON seria uma segunda verdade sobre o mesmo dado.
              */
             .findFirst({
               where: { id: input.eventId, tenantId: input.tenantId },
               select: { settings: true },
             })
             .then((row) => {
-              if (!row) return null;
+              if (!row) return { formFields: null, apiKey: null };
 
               const form = readRegistrationForm(row.settings);
+              const api = readEventApiConfig(row.settings);
 
-              return form.problems.length > 0 ? null : form.fields.length;
+              return {
+                formFields: form.problems.length > 0 ? null : form.fields.length,
+                /**
+                 * `INVALID` é um estado da chave, mas NÃO vira selo: a leitura
+                 * tolerante devolveu problemas, e afirmar qualquer coisa sobre uma
+                 * configuração ilegível seria o selo mentindo (ver o domínio).
+                 */
+                apiKey: readEventApiKeyState(api),
+              };
             }),
         ]);
 
@@ -117,8 +132,9 @@ export async function getEventAreaCounts(input: {
            * o mesmo fato. O chamador passa o número que já tem.
            */
           pendingConfirmations: null,
-          formFields: formulario,
+          formFields: estadoDoEvento.formFields,
           pagePublished: page?.isPublished ?? null,
+          apiKey: estadoDoEvento.apiKey,
         },
       };
     });
