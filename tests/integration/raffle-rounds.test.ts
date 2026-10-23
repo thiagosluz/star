@@ -24,13 +24,15 @@ import {
   cancelRaffle,
   createRaffle,
   drawRound,
-  getRaffleAudit,
-  getRaffleLiveState,
-  getRaffleStageView,
-  listRaffles,
   prepareRound,
   updateRoundAnnouncement,
 } from '../../src/lib/raffles/raffle-service';
+import { listRaffles } from '../../src/lib/raffles/raffle-read-service';
+import {
+  getRaffleAudit,
+  getRaffleLiveState,
+  getRaffleStageView,
+} from '../../src/lib/raffles/raffle-public-view-service';
 
 const RUN = randomUUID().slice(0, 8);
 const TIME_ZONE = 'America/Bahia';

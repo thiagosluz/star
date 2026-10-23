@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Crown, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -61,7 +62,9 @@ export default async function EventTeamsPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId, principal } = await requirePagePermission({
     tenantSlug,

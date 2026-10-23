@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 
 import { guardAction } from '@/lib/auth/guard-action';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { planEventCertificateZip } from '@/lib/certificates/certificate-service';
 import { getObjectBuffer } from '@/lib/storage/s3-client';
@@ -53,14 +55,32 @@ export async function GET(
 ): Promise<Response> {
   const { tenantSlug } = await context.params;
   const url = new URL(request.url);
-  const eventId = url.searchParams.get('evento')?.trim();
+  const evento = url.searchParams.get('evento')?.trim();
 
-  if (!eventId) {
-    return NextResponse.json(
-      { ok: false, code: 'INVALID_INPUT', message: 'Informe o evento.' },
-      { status: 400 },
+  /**
+   * ─── O `evento` É ENTRADA OBRIGATÓRIA, E O FORMATO É CONFERIDO AQUI ─────────
+   *  A rota é da FASE 36 e ficou fora das 8 rotas da fatia 2 da FASE 76 — por
+   *  isso o texto torto continuou descendo ao Prisma: o serviço engolia o `P2023`
+   *  e a resposta era **400 `INTERNAL`**, um erro de banco disfarçado de pedido
+   *  inválido. A catraca de fonte da fatia 3 achou o buraco; o fechamento segue a
+   *  régua da fase: entrada obrigatória → **400 `INVALID_INPUT`**, com o envelope,
+   *  sem tocar o banco. Ausente e malformado são o mesmo tipo de pergunta ("que
+   *  evento?"), então os dois têm a mesma resposta.
+   */
+  if (!evento) {
+    return tenantApiError(400, 'INVALID_INPUT', 'Informe o evento.');
+  }
+
+  if (!isUuid(evento)) {
+    return tenantApiError(
+      400,
+      'INVALID_INPUT',
+      'O evento do lote não é um identificador válido.',
     );
   }
+
+  /** O resto da rota fala `eventId`; o nome do PARAM é o que a URL carrega. */
+  const eventId = evento;
 
   const auth = await guardAction({
     tenantSlug,

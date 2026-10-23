@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { MonitorOff } from 'lucide-react';
 
 import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository';
-import { getRaffleStageView } from '@/lib/raffles/raffle-service';
+import { getRaffleStageView } from '@/lib/raffles/raffle-public-view-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { BIGSCREEN_OFF_MESSAGE, BIGSCREEN_OFF_TITLE } from '@/domain/raffles/stage-rules';
 import { ThemeScope } from '@/components/events/theme-scope';

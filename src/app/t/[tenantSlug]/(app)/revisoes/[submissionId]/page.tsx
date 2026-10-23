@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import { Download, EyeOff, ShieldAlert } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
+import { requireUuidParam } from '@/lib/validation/id';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getFileDownloadUrl, resolveRubric } from '@/lib/review/submission-service';
 import { canAccessSubmissionFile } from '@/domain/review/review-rules';
@@ -29,7 +30,9 @@ export default async function ReviewSubmissionPage({
 }: {
   params: Promise<{ tenantSlug: string; submissionId: string }>;
 }) {
-  const { tenantSlug, submissionId } = await params;
+  const resolvedParams = await params;
+  const submissionId = requireUuidParam(resolvedParams, 'submissionId');
+  const { tenantSlug } = resolvedParams;
 
   const context = await getRequestContext();
   if (!context) {

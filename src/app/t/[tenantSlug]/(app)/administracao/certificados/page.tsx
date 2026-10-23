@@ -7,6 +7,8 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { listCertificatesForAdmin } from '@/lib/admin/gamification-admin-service';
 import { listAdminEvents } from '@/lib/admin/catalog-service';
 import { AdminForm, Field } from '@/components/admin/admin-form';
+import { Alert } from '@/components/ui';
+import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import { retryCertificateAction, revokeCertificateAdminAction } from '@/app/actions/admin-actions';
 
 export const metadata = { title: 'Certificados' };
@@ -37,13 +39,22 @@ export default async function AdminCertificatesPage({
   const { tenantSlug } = await params;
   const { situacao, evento, q } = await searchParams;
 
+  /**
+   * ─── O `?evento=` É FILTRO, NÃO ENDEREÇO (FASE 76 · fatia 2) ────────────────
+   * Antes, um id malformado ia direto ao Prisma e a tela respondia 500. A regra da
+   * casa é outra: o filtro é DESCARTADO e a tela ANUNCIA — nunca 404 (a lista existe)
+   * e nunca 500 (o texto da URL não é culpa do banco). A frase vem do domínio.
+   */
+  const eventFilter = resolveUuidQueryFilter({ value: evento, label: 'evento' });
+  const selectedEventId = eventFilter?.kind === 'applied' ? eventFilter.value : undefined;
+
   const { tenantId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   });
 
   const [certificates, events] = await Promise.all([
-    listCertificatesForAdmin(tenantId, { status: situacao, eventId: evento, query: q }),
+    listCertificatesForAdmin(tenantId, { status: situacao, eventId: selectedEventId, query: q }),
     listAdminEvents(tenantId),
   ]);
 
@@ -105,9 +116,9 @@ export default async function AdminCertificatesPage({
               Modelos de certificado
             </Link>
 
-            {evento ? (
+            {selectedEventId ? (
               <a
-                href={`/api/t/${tenantSlug}/certificados/zip?evento=${evento}`}
+                href={`/api/t/${tenantSlug}/certificados/zip?evento=${selectedEventId}`}
                 data-testid="download-certificate-zip"
                 className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
               >
@@ -122,6 +133,12 @@ export default async function AdminCertificatesPage({
           </div>
         </div>
       </header>
+
+      {eventFilter?.kind === 'discarded' ? (
+        <Alert tone="warning" data-testid="certificate-filter-notice">
+          {eventFilter.notice}
+        </Alert>
+      ) : null}
 
       <form method="get" className="flex flex-wrap items-end gap-3" data-testid="certificate-filters">
         <label className="space-y-1 text-xs font-medium">
@@ -144,7 +161,7 @@ export default async function AdminCertificatesPage({
           Evento
           <select
             name="evento"
-            defaultValue={evento ?? ''}
+            defaultValue={selectedEventId ?? ''}
             aria-label="Evento"
             className="block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm"
           >

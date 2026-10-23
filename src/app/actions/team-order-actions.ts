@@ -26,9 +26,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { moveWithinList } from '@/domain/events/demand-rules';
@@ -39,61 +37,6 @@ export interface TeamOrderActionState {
   code?: string;
   message?: string;
   details?: readonly string[];
-}
-
-type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-async function guard(input: {
-  tenantSlug: string;
-  permission: Permission;
-  eventId: string;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: TeamOrderActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  /**
-   * O alvo é o EVENTO, como nas outras ações de equipe: o papel pode valer só nele, e
-   * exigir escopo de instituição recusaria o caso normal (a equipe do dia).
-   */
-  if (!can(principal, input.permission, { scope: 'EVENT', eventId: input.eventId })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${input.permission}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
 }
 
 function revalidateTeams(tenantSlug: string, eventId: string): void {
@@ -122,9 +65,16 @@ export async function moveTeamOrderAction(
 
   if (!parsed.success) return { ok: false, code: 'INVALID_INPUT', message: 'Movimento inválido.' };
 
-  const auth = await guard({
+  /**
+   * O alvo é o EVENTO, como nas outras ações de equipe: o papel pode valer só nele, e
+   * exigir escopo de instituição recusaria o caso normal (a equipe do dia). Quem
+   * garante isso é `allowedScopes: ['EVENT']` + o `eventId` do formulário — o
+   * `guardAction` continua sendo o dono da checagem.
+   */
+  const auth = await guardAction<TeamOrderActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.DEMAND_TEAM_MANAGE,
+    allowedScopes: ['EVENT'],
     eventId: parsed.data.eventId,
   });
   if (!auth.ok) return auth.state;

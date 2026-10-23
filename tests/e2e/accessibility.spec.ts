@@ -44,6 +44,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   RUN_ID,
@@ -1660,6 +1662,70 @@ test.describe('telas públicas', () => {
       `página pública da chamada com resultado (/t/${tenantSlug}/eventos/<slug>/chamada/<slug>)`,
     );
   });
+
+  // ───────────────────────────────────────────────────────────────────────────────
+  //  AS PÁGINAS DE ERRO (FASE 75 · decisão 4)
+  // ───────────────────────────────────────────────────────────────────────────────
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE ESTES CASOS ENTRAM NO PORTÃO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até a FASE 75 o app tinha **zero `not-found.tsx` e zero `error.tsx`**: essas
+   *  telas simplesmente não existiam, e por isso não havia o que medir — o 404 caía
+   *  na página padrão do Next. Uma vez que passam a existir, elas são superfícies
+   *  como qualquer outra, e uma página de erro inacessível é pior que a padrão: é a
+   *  tela onde a pessoa já está sem saída.
+   *
+   *  O que o `axe` mede aqui é diferente do resto do arquivo: não há formulário nem
+   *  tabela — há UM título, UM parágrafo e dois links. O que ele pode reprovar é o
+   *  contraste do texto secundário sobre o cartão e o nome acessível dos links, e é
+   *  exatamente o tipo de coisa que nasce errada numa tela escrita às pressas.
+   *
+   *  O `<main>` único também é medido, e aqui ele tem um veneno próprio: as três
+   *  cascas que hospedam essas páginas (a barra lateral autenticada, o cabeçalho
+   *  público e o `<body>` da raiz) já não são landmark — se alguém devolver o `<main>`
+   *  à casca "para a página de erro ficar centralizada", `expectNoCriticalViolations`
+   *  reprova com `Received: 2`.
+   */
+  test('a página de não encontrado da área pública não tem violação crítica', async ({ page }) => {
+    /**
+     * Endereço que não existe na vitrine da instituição — o caso NORMAL de quem chega
+     * por link antigo. Anônimo de propósito: é assim que o visitante a vê.
+     */
+    await page.goto(`/t/${tenantSlug}/eventos/evento-inexistente-${RUN_ID}`);
+
+    const tela = page.getByTestId('area-not-found-public');
+    await expect(tela).toBeVisible();
+    await expect(tela).toContainText('Página não encontrada');
+
+    /**
+     * As três hipóteses na MESMA frase: sem elas, o `axe` passaria igual e a página
+     * poderia virar oráculo de existência de recurso privado.
+     */
+    await expect(tela).toContainText(
+      'Este endereço não existe, foi removido ou não está disponível para você.',
+    );
+    await expect(tela.getByRole('link', { name: 'Ver os eventos da instituição' })).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `página de não encontrado da área pública (/t/${tenantSlug}/eventos/<inexistente>)`,
+    );
+  });
+
+  test('a página de não encontrado da raiz não tem violação crítica', async ({ page }) => {
+    /** Endereço que não é rota nenhuma — o outro caminho que a mesma página cobre. */
+    await page.goto(`/endereco-inexistente-${RUN_ID}`);
+
+    const tela = page.getByTestId('area-not-found-platform');
+    await expect(tela).toBeVisible();
+    await expect(tela.getByRole('link', { name: 'Ir para a página inicial' })).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      'página de não encontrado da raiz (endereço inexistente)',
+    );
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2614,6 +2680,110 @@ test.describe('telas autenticadas', () => {
     await expectNoCriticalViolations(
       page,
       `chamadas com o resultado do organizador (/t/${tenantSlug}/administracao/eventos/<id>/chamadas)`,
+    );
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────
+  //  AS PÁGINAS DE ERRO DA CASCA AUTENTICADA (FASE 75 · decisão 4)
+  // ───────────────────────────────────────────────────────────────────────────────
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS DUAS TELAS ONDE A PESSOA JÁ ESTÁ SEM SAÍDA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A área pública já mediu o par dela (no bloco de telas públicas). Aqui entram as
+   *  telas que só existem DENTRO da casca — com a barra lateral, o bloco de conta e o
+   *  contexto da instituição em volta.
+   *
+   *  Elas são mais densas do que parecem: o `<main>` divide a tela com a navegação
+   *  inteira, e um cartão com dois botões precisa continuar alcançável por teclado
+   *  sem que o foco caia num elemento escondido da barra recolhida.
+   */
+  test('a página de não encontrado do painel não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * Um UUID VÁLIDO que não existe: o caminho do `notFound()` normal (404), e não o
+     * do id malformado — esse é o caso da página de erro, logo abaixo.
+     */
+    await page.goto(`/t/${tenantSlug}/administracao/eventos/${randomUUID()}`);
+
+    const tela = page.getByTestId('area-not-found-app');
+    await expect(tela).toBeVisible();
+    await expect(tela).toContainText('Página não encontrada');
+    await expect(tela.getByRole('link', { name: 'Voltar ao painel' })).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `página de não encontrado do painel (/t/${tenantSlug}/administracao/eventos/<id inexistente>)`,
+    );
+  });
+
+  test('a página de erro do painel não tem violação crítica', async ({ page }) => {
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *  A PÁGINA DE ERRO AGORA É MEDIDA POR RENDER, NÃO POR UMA ROTA QUE ESTOURA
+     *  (FASE 76 · fatia 3)
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *
+     *  Até a F75 este caso navegava para `/administracao/eventos/nao-e-uuid`: o
+     *  texto ia ao Prisma, o Postgres recusava e o boundary desenhava a página de
+     *  erro (armadilha 25). A F76 fechou esse caminho — o formato inválido agora é
+     *  404 antes da consulta —, e a rota deixou de produzir o 500 que dava acesso à
+     *  tela. Sem uma rota feita para falhar (e inventar uma seria medir o teste), a
+     *  prova honesta é o RENDER estático do componente.
+     *
+     *  O Playwright não transforma o `.tsx` do app no próprio processo (o runtime
+     *  de JSX dele devolve um objeto `{__pw_type, ...}`, e não um elemento React).
+     *  Por isso o HTML vem de `tests/e2e/fixtures/f76-area-error-app.html`, gerado
+     *  por `renderToStaticMarkup` e PRESO ao componente por igualdade exata em
+     *  `tests/unit/f76-pagina-de-erro-axe.test.ts`: se a tela mudar e o fixture não,
+     *  o teste de unidade reprova antes deste aqui medir um retrato velho.
+     *
+     *  O que se ganha mantendo o caso AQUI: o `axe` roda no Chromium, com o CSS da
+     *  casa — inclusive `color-contrast`, que o jsdom não consegue medir. A
+     *  cobertura da página de erro não cai: sai do caminho "rota 500" e entra no
+     *  render, com a mesma régua WCAG AA e a mesma lista de isenções (vazia).
+     */
+    await page.goto('/');
+
+    const css = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map((link) =>
+        link.getAttribute('href'),
+      ),
+    );
+
+    expect(css.length, 'a página inicial não carregou o CSS da casa').toBeGreaterThan(0);
+
+    const html = readFileSync(
+      join(process.cwd(), 'tests/e2e/fixtures/f76-area-error-app.html'),
+      'utf8',
+    );
+
+    /**
+     * O fixture usa o slug `ufba-demo` (o mesmo do retrato); o alvo aqui é a TELA,
+     * não o tenant da fixture. O href é conferido pela forma que o componente monta.
+     */
+    await page.setContent(
+      `<!doctype html><html lang="pt-BR"><head><title>Página de erro</title>${css
+        .filter((href): href is string => Boolean(href))
+        .map((href) => `<link rel="stylesheet" href="${href}">`)
+        .join('')}</head><body>${html}</body></html>`,
+      { waitUntil: 'networkidle' },
+    );
+
+    const tela = page.getByTestId('area-error-app');
+    await expect(tela).toBeVisible();
+    await expect(tela).toContainText('Não foi possível abrir esta página');
+    await expect(tela).toContainText('A falha foi do nosso lado, não sua');
+    await expect(tela.getByRole('button', { name: 'Tentar de novo' })).toBeVisible();
+    await expect(tela.getByRole('link', { name: 'Voltar ao painel' })).toHaveAttribute(
+      'href',
+      '/t/ufba-demo/dashboard',
+    );
+
+    await expectNoCriticalViolations(
+      page,
+      'página de erro do painel (render estático do componente area-error)',
     );
   });
 });

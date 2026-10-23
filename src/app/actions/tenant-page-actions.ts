@@ -30,9 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -83,61 +81,16 @@ export interface TenantPageActionState {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Guarda
 // ───────────────────────────────────────────────────────────────────────────────
-async function guard(tenantSlug: string): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: TenantPageActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
-    };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Você não tem vínculo ativo com esta instituição.',
-      },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, PERMISSIONS.PAGE_MANAGE, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Permissão negada: só quem administra a instituição edita a página pública.',
-      },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
-}
+/**
+ * A recusa fala com quem NÃO é da equipe.
+ *
+ * `page:manage` é a mesma permissão do editor da página do evento, e a mensagem
+ * genérica (`Permissão negada: page:manage.`) não diria à direção da instituição o
+ * que fazer. A frase própria é passada ao `guardAction` — dono único da checagem
+ * desde a FASE 75 — como `deniedMessage`, e não duplicando a guarda aqui.
+ */
+const RECUSA_DA_PAGINA =
+  'Permissão negada: só quem administra a instituição edita a página pública.';
 
 /**
  * Revalida o editor E a página pública.
@@ -171,7 +124,7 @@ function text(value: FormDataEntryValue | null): string {
 const FORBIDDEN: TenantPageActionState = {
   ok: false,
   code: 'FORBIDDEN',
-  message: 'Permissão negada: só quem administra a instituição edita a página pública.',
+  message: RECUSA_DA_PAGINA,
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -315,7 +268,11 @@ export async function saveTenantPageSettingsAction(
     };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const draft = await draftOf(context.tenantId);
@@ -446,7 +403,11 @@ export async function addTenantPageBlockAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Selecione um tipo de bloco.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const draft = await draftOf(context.tenantId);
@@ -519,7 +480,11 @@ async function withBlock(
     return { ok: false, state: { ok: false, code: 'INVALID_INPUT', message: 'Bloco não identificado.' } };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return { ok: false, state: context.state };
 
   const draft = await draftOf(context.tenantId);
@@ -708,7 +673,11 @@ export async function publishTenantPageAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const draft = await draftOf(context.tenantId);
@@ -772,7 +741,11 @@ export async function unpublishTenantPageAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const result = await unpublishTenantPublicPage({
@@ -834,7 +807,11 @@ export async function requestTenantPageImageUploadAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Destino de imagem desconhecido.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const page = await currentPage(context.tenantId);
@@ -906,7 +883,11 @@ export async function confirmTenantPageImageUploadAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Destino de imagem desconhecido.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const draft = await draftOf(context.tenantId);
@@ -986,7 +967,11 @@ export async function removeTenantPageImageAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Destino de imagem desconhecido.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction<TenantPageActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.PAGE_MANAGE,
+    deniedMessage: RECUSA_DA_PAGINA,
+  });
   if (!context.ok) return context.state;
 
   const draft = await draftOf(context.tenantId);

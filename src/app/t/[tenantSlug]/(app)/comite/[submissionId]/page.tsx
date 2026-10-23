@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Ban, CalendarPlus, ShieldCheck, Star, UserPlus } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { getRequestContext } from '@/lib/auth/session';
 import { can } from '@/domain/rbac/authorization';
 import { buildAssignmentBoard, getSubmissionReviewPanel } from '@/lib/review/review-service';
@@ -39,7 +40,9 @@ export default async function ChairSubmissionPage({
 }: {
   params: Promise<{ tenantSlug: string; submissionId: string }>;
 }) {
-  const { tenantSlug, submissionId } = await params;
+  const resolvedParams = await params;
+  const submissionId = requireUuidParam(resolvedParams, 'submissionId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,

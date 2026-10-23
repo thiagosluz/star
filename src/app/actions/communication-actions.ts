@@ -27,9 +27,9 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { auth } from '@/lib/auth/auth';
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
+import { getAuthenticatedUser } from '@/lib/auth/session';
+import { guardAction } from '@/lib/auth/guard-action';
 import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -58,61 +58,6 @@ export interface CommunicationActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
-}
-
-type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-async function guard(input: {
-  tenantSlug: string;
-  permission: Permission;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: CommunicationActionState }
-> {
-  const user = await getAuthenticatedUser();
-
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Você não tem vínculo ativo com esta instituição.',
-      },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, input.permission, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${input.permission}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
 }
 
 function nullable(value: FormDataEntryValue | null): string | null {
@@ -150,7 +95,7 @@ export async function inviteMemberAction(
     };
   }
 
-  const access = await guard({
+  const access = await guardAction<CommunicationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
@@ -207,7 +152,7 @@ export async function reissueInvitationAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Convite inválido.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<CommunicationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
@@ -257,7 +202,7 @@ export async function revokeInvitationAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Convite inválido.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<CommunicationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
@@ -360,7 +305,7 @@ export async function retryEmailAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Mensagem inválida.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<CommunicationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.COMMUNICATION_READ,
   });
@@ -637,7 +582,7 @@ export async function campaignSendAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Revise o texto e o segmento antes de enviar.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<CommunicationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.PARTICIPANT_MESSAGE,
   });

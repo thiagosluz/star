@@ -13,9 +13,7 @@ import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { checkIn, checkOut } from '@/lib/events/attendance-service';
@@ -32,55 +30,18 @@ const schema = z.object({
   registrationId: z.string().uuid(),
 });
 
-async function guard(tenantSlug: string, permission: string) {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false as const,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return {
-      ok: false as const,
-      state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
-    };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false as const,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Você não tem vínculo ativo com esta instituição.',
-      },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-  const allowed = can(principal, permission as never, { scope: 'TENANT' });
-
-  if (!allowed) {
-    return {
-      ok: false as const,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${permission}.` },
-    };
-  }
-
-  return { ok: true as const, userId: user.id, tenantId: tenant.id };
-}
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A PERMISSÃO DEIXOU DE ENTRAR COMO `string`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A guarda local recebia `permission: string` e a convertia com `as never` no
+ *  `can()` — o tipo existia para ser contornado, e quem passasse uma permissão
+ *  inexistente (um typo) compilaria e só descobriria no teste. Com `guardAction` o
+ *  parâmetro é `ActionPermission`, então o typo não compila.
+ *
+ *  O comportamento não muda: `NotAuthorized`/`INVALID` continuam com o MESMO código
+ *  e a MESMA mensagem, presos pelo caso 20 de `f75-guardas-caracterizacao`.
+ */
 
 export async function checkInAction(
   _prev: AttendanceActionState | null,
@@ -95,7 +56,10 @@ export async function checkInAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para credenciamento.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug, PERMISSIONS.REGISTRATION_CHECKIN);
+  const auth = await guardAction<AttendanceActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_CHECKIN,
+  });
   if (!auth.ok) return auth.state;
 
   const headerList = await headers();
@@ -145,7 +109,10 @@ export async function checkOutAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para a saída.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug, PERMISSIONS.REGISTRATION_CHECKOUT);
+  const auth = await guardAction<AttendanceActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.REGISTRATION_CHECKOUT,
+  });
   if (!auth.ok) return auth.state;
 
   const result = await checkOut({

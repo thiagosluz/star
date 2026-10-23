@@ -25,10 +25,12 @@ import { listAuditLog } from '../../src/lib/admin/audit';
 import {
   createRaffle,
   drawRaffle,
+} from '../../src/lib/raffles/raffle-service';
+import {
   getRaffleAudit,
   getRaffleLiveState,
   getRaffleStageView,
-} from '../../src/lib/raffles/raffle-service';
+} from '../../src/lib/raffles/raffle-public-view-service';
 import { poolHash } from '../../src/domain/raffles/pool-rules';
 import { buildResultPayload, hashResult } from '../../src/domain/raffles/raffle-rules';
 

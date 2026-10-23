@@ -22,9 +22,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { setBigscreenVisibility } from '@/lib/raffles/raffle-service';
@@ -38,55 +36,21 @@ export interface BigscreenActionState {
 }
 
 /**
- * A guarda é reimplementada porque `raffle-actions.ts` a mantém PRIVADA — e um módulo
- * `'use server'` só pode exportar funções assíncronas, então importá-la não é uma
- * opção. O que importa é que a régua é a mesma: vínculo ACTIVE na instituição e
- * `event:manage` no escopo do tenant.
+ * A guarda local SAIU na FASE 75 (era a duplicação declarada com `raffle-actions`).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ELA EXISTIA, E POR QUE NÃO EXISTE MAIS
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Quando este arquivo nasceu, `raffle-actions.ts` mantinha a guarda PRIVADA — e um
+ *  módulo `'use server'` só pode exportar funções assíncronas, então importá-la não
+ *  era uma opção. Copiar era a saída, com o comentário explicando a cópia.
+ *
+ *  A regra é a mesma das duas: vínculo ACTIVE na instituição e `event:manage` no
+ *  escopo do tenant. Duas cópias da MESMA autorização divergem na primeira
+ *  manutenção (armadilha 55) — e aqui a divergência fecharia ou abriria o telão, que
+ *  é público. `guardAction` é o dono único dessa checagem; este arquivo só diz qual
+ *  é a permissão.
  */
-async function guard(tenantSlug: string): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: BigscreenActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, PERMISSIONS.EVENT_MANAGE, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${PERMISSIONS.EVENT_MANAGE}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
-}
 
 /**
  * Liga ou desliga o telão de um sorteio.
@@ -117,7 +81,10 @@ export async function setBigscreenVisibilityAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para o telão do sorteio.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction<BigscreenActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.EVENT_MANAGE,
+  });
   if (!auth.ok) return auth.state;
 
   const result = await setBigscreenVisibility({

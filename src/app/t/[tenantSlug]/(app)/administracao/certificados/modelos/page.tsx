@@ -24,7 +24,8 @@ import {
   readTemplateBackground,
 } from '@/lib/certificates/certificate-template-service';
 import { renderCertificateLayoutSvg } from '@/lib/certificates/layout-renderer';
-import { Card, CardContent, SectionHeading } from '@/components/ui';
+import { Card, CardContent, SectionHeading, Alert } from '@/components/ui';
+import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import {
   CertificateTemplateEditor,
   type EditorElement,
@@ -89,6 +90,15 @@ export default async function CertificateTemplatesPage({
   const { tenantSlug } = await params;
   const { modelo, novo, evento, salvo } = await searchParams;
 
+  /**
+   * ─── O `?modelo=` É FILTRO, NÃO ENDEREÇO (FASE 76 · fatia 2) ────────────────
+   * O endereço da tela é fixo; `modelo` decide qual editor abrir. Um texto que não é
+   * uuid chegava ao Prisma e a tela respondia 500. Agora o filtro é descartado (a
+   * galeria abre sem editor) e a tela ANUNCIA o descarte — a frase é do domínio.
+   */
+  const templateFilter = resolveUuidQueryFilter({ value: modelo, label: 'modelo' });
+  const selectedTemplateId = templateFilter?.kind === 'applied' ? templateFilter.value : null;
+
   const { tenantId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.EVENT_MANAGE,
@@ -99,7 +109,7 @@ export default async function CertificateTemplatesPage({
   const eventOptions = events.map((event) => ({ value: event.id, label: event.title }));
 
   // ── Editor: modelo existente ou um modelo pronto como ponto de partida ────────
-  const editing = modelo ? await getCertificateTemplate(tenantId, modelo) : null;
+  const editing = selectedTemplateId ? await getCertificateTemplate(tenantId, selectedTemplateId) : null;
   const preset = novo ? findPreset(novo) : null;
 
   let editorModel: EditorModel | null = null;
@@ -164,6 +174,12 @@ export default async function CertificateTemplatesPage({
           certificado no momento da emissão: editar o modelo depois não altera documento já emitido.
         </p>
       </header>
+
+      {templateFilter?.kind === 'discarded' ? (
+        <Alert tone="warning" data-testid="template-filter-notice">
+          {templateFilter.notice}
+        </Alert>
+      ) : null}
 
       {/* ── Modelos da instituição ─────────────────────────────────────────────── */}
       <section className="space-y-4" aria-labelledby="modelos">

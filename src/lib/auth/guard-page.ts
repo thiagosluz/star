@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getRequestContext } from '@/lib/auth/session';
+import type { RequestContext } from '@/lib/auth/session';
 import { can, holdsPermission } from '@/domain/rbac/authorization';
 import type { Principal } from '@/domain/rbac/authorization';
 import type { Permission } from '@/domain/rbac/permissions';
@@ -24,6 +25,21 @@ import { tenantPath } from '@/domain/tenancy/resolution';
  *
  *  O `Principal` já vem resolvido em `getRequestContext()` (sob RLS), então a
  *  guarda não paga uma segunda ida ao banco.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A GUARDA DEVOLVE O CONTEXTO QUE JÁ RESOLVEU (FASE 75 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A permissão só pode ser decidida DEPOIS de resolver sessão → vínculos →
+ *  principal. Quando a página precisava de um desses dados (o `principal` filtra
+ *  os cartões, o `user` decide a posse), ela chamava `getRequestContext()` de novo
+ *  — e o render pagava duas vezes a leitura de vínculos (consulta administrativa
+ *  que atravessa tenants) e a do principal (uma transação sob RLS).
+ *
+ *  Devolver o contexto é a forma de "uma leitura, duas necessidades" SEM memoizar
+ *  a sessão: cada chamada continua relendo o cookie e revalidando o vínculo contra
+ *  o banco (a lição da FASE 74 — ler o cookie sem revalidar dá a resposta errada
+ *  quando a pessoa perde o vínculo). O que deixa de existir é a SEGUNDA leitura
+ *  dentro do mesmo render, que não tinha como discordar da primeira.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export async function requirePagePermission(input: {
@@ -51,7 +67,19 @@ export async function requirePagePermission(input: {
    *  acesso ao evento alheio.
    */
   allowedScopes?: readonly RoleScope[];
-}): Promise<{ tenantId: string; tenantName: string; userId: string; principal: Principal }> {
+}): Promise<{
+  tenantId: string;
+  tenantName: string;
+  userId: string;
+  principal: Principal;
+  /**
+   * O contexto COMPLETO que a guarda já resolveu. A página que precisa de
+   * `user`/`memberships`/`activeTenant` usa daqui em vez de chamar
+   * `getRequestContext()` outra vez (a contagem por render está presa em
+   * `tests/integration/f75-contexto-uma-vez.test.ts`).
+   */
+  context: RequestContext;
+}> {
   const context = await getRequestContext();
 
   if (!context) {
@@ -102,6 +130,7 @@ export async function requirePagePermission(input: {
      * barreira continua na Server Action, que reconfere a permissão com o alvo exato.
      */
     principal: context.principal,
+    context,
   };
 }
 

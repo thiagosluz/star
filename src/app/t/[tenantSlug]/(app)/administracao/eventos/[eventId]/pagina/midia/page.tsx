@@ -3,21 +3,24 @@ import { notFound } from 'next/navigation';
 import { HardDrive, ImageIcon, Search } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listMediaLibrary } from '@/lib/admin/media-asset-service';
 import { formatBytes, imageFormatLabel } from '@/domain/events/image-rules';
 import {
+  MEDIA_NO_SOURCE_EVENT,
   MEDIA_USAGE_EM_USO,
   MEDIA_USAGE_LIVRE,
   normalizeMediaMimeType,
   normalizeMediaSearch,
-  parseMediaSourceEvent,
   parseMediaUsageFilter,
 } from '@/domain/events/media-filter-rules';
+import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { AssetUploader } from '@/components/admin/asset-uploader';
+import { Alert } from '@/components/ui';
 import {
   confirmAssetUploadAction,
   deleteMediaAssetAction,
@@ -67,7 +70,9 @@ export default async function EventMediaLibraryPage({
   params: Promise<{ tenantSlug: string; eventId: string }>;
   searchParams: Promise<{ busca?: string; tipo?: string; evento?: string; uso?: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
   const { busca, tipo, evento, uso } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
@@ -82,15 +87,28 @@ export default async function EventMediaLibraryPage({
    * ─────────────────────────────────────────────────────────────────────────────
    *  O QUE VEIO DA URL É NORMALIZADO ANTES DE VIRAR CONSULTA (dívida E19)
    * ─────────────────────────────────────────────────────────────────────────────
-   *  A URL é texto livre. `parseMediaSourceEvent` descarta id malformado (em vez de
+   *  A URL é texto livre. O filtro de evento descarta id malformado (em vez de
    *  deixar a consulta lançar) e `normalizeMediaMimeType` acerta a caixa; o estado já
    *  limpo é o que alimenta o serviço E os campos do formulário, para que o que está
    *  escrito na tela seja exatamente o que foi aplicado.
+   *
+   *  ─── O DESCARTE NÃO É MAIS SILENCIOSO (FASE 76 · fatia 2) ───────────────────
+   *  Antes, `?evento=nao-e-uuid` caía no `null` de "sem filtro" e a consulta era
+   *  ALARGADA em silêncio: a tela mostrava o acervo inteiro como se fosse o resultado
+   *  do filtro pedido. Agora o filtro é descartado E anunciado — a lista é a mesma,
+   *  mas a pessoa sabe que o recorte não foi aplicado. O sentinela `sem-evento`
+   *  continua sendo filtro de verdade, e por isso entra em `extraValues`.
    */
+  const sourceEventFilter = resolveUuidQueryFilter({
+    value: evento,
+    label: 'evento de origem',
+    extraValues: [MEDIA_NO_SOURCE_EVENT],
+  });
+
   const filters = {
     search: normalizeMediaSearch(busca),
     mimeType: normalizeMediaMimeType(tipo),
-    sourceEventId: parseMediaSourceEvent(evento),
+    sourceEventId: sourceEventFilter?.kind === 'applied' ? sourceEventFilter.value : null,
     inUse: parseMediaUsageFilter(uso),
   };
 
@@ -142,6 +160,12 @@ export default async function EventMediaLibraryPage({
           (dívida C4) — esta tela apenas mede.
         </p>
       </header>
+
+      {sourceEventFilter?.kind === 'discarded' ? (
+        <Alert tone="warning" data-testid="media-filter-notice">
+          {sourceEventFilter.notice}
+        </Alert>
+      ) : null}
 
       {/* ── Envio ────────────────────────────────────────────────────────── */}
       <section className="space-y-3 rounded-xl border border-border bg-card p-5">

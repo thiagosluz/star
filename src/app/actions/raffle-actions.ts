@@ -19,9 +19,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RAFFLE_SCOPES, type RaffleScope } from '@/domain/raffles/raffle-rules';
@@ -31,11 +29,11 @@ import {
   drawRound,
   markPrizeDelivered,
   prepareRound,
-  previewEligibility,
   reversePrizeDelivery,
   setRaffleVisibility,
   updateRoundAnnouncement,
 } from '@/lib/raffles/raffle-service';
+import { previewEligibility } from '@/lib/raffles/raffle-read-service';
 
 export interface RaffleActionState {
   ok: boolean;
@@ -43,51 +41,6 @@ export interface RaffleActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
-}
-
-async function guard(tenantSlug: string): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: RaffleActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, PERMISSIONS.EVENT_MANAGE, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Permissão negada: event:manage.' },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
 }
 
 function toDateOnly(value: FormDataEntryValue | null): Date | null {
@@ -148,7 +101,7 @@ export async function previewRaffleAction(
     };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await previewEligibility({
@@ -303,7 +256,7 @@ export async function createRaffleForStageAction(
   const config = readRaffleConfig(formData);
   if (!config.ok) return config.state;
 
-  const auth = await guard(config.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: config.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const created = await createFromConfig(config.data, auth);
@@ -347,7 +300,7 @@ export async function createAndDrawRaffleAction(
   const config = readRaffleConfig(formData);
   if (!config.ok) return config.state;
 
-  const auth = await guard(config.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: config.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const created = await createFromConfig(config.data, auth);
@@ -454,7 +407,7 @@ export async function prepareRoundAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Verifique os dados da próxima rodada.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await prepareRound({
@@ -515,7 +468,7 @@ export async function updateRoundAnnouncementAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Verifique os dados do anúncio.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await updateRoundAnnouncement({
@@ -578,7 +531,7 @@ export async function drawRoundAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para a apuração.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const drawn = await drawRound({
@@ -676,7 +629,7 @@ export async function markPrizeDeliveredAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para registrar a entrega.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await markPrizeDelivered({
@@ -738,7 +691,7 @@ export async function reversePrizeDeliveryAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para desfazer a entrega.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await reversePrizeDelivery({
@@ -788,7 +741,7 @@ export async function setRaffleVisibilityAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para publicar o resultado.' };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await setRaffleVisibility({
@@ -845,7 +798,7 @@ export async function cancelRaffleAction(
     };
   }
 
-  const auth = await guard(parsed.data.tenantSlug);
+  const auth = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await cancelRaffle({

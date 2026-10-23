@@ -33,11 +33,11 @@ import { withTenant } from '../../src/lib/db/tenant-client';
 import { saveActivity, saveEvent } from '../../src/lib/admin/catalog-service';
 import { applyRegistrationFormOperationOnEvent } from '../../src/lib/admin/registration-form-service';
 import {
-  readEventRegistrationFields,
   registerForActivity,
   registerForEvent,
   updateEventRegistrationData,
 } from '../../src/lib/events/registration-service';
+import { readEventRegistrationFields } from '../../src/lib/events/registration-read-service';
 import {
   composeFormResponses,
   formResponseFieldName,

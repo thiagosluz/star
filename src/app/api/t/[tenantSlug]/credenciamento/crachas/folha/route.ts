@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
-
 import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { renderBadgeSheetPdf } from '@/lib/credentials/badge-renderer';
 import { badgeFileName, prepareBadgePrint } from '@/lib/events/badge-print-service';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -50,9 +50,24 @@ export async function GET(
   const eventId = url.searchParams.get('eventId') ?? '';
 
   if (eventId.length === 0) {
-    return NextResponse.json(
-      { ok: false, code: 'INVALID_INPUT', message: 'Informe o evento da folha de crachás.' },
-      { status: 400 },
+    return tenantApiError(400, 'INVALID_INPUT', 'Informe o evento da folha de crachás.');
+  }
+
+  /**
+   * ─── POR QUE 400, E NÃO 404, NO `?eventId=` MALFORMADO (FASE 76) ────────────
+   * Esta rota NÃO tem o evento no caminho: o endereço é `/crachas/folha` e o evento
+   * é um parâmetro OBRIGATÓRIO da operação (de quem é a folha). Sem ele a rota já
+   * responde 400 ("Informe o evento..."); um texto que não é uuid é a MESMA classe de
+   * erro — pedido malformado, não recurso ausente. Um 404 aqui colidiria com o 404
+   * de "evento não encontrado" (uuid bem formado e inexistente) e diria à tela que a
+   * folha não existe, quando o problema é o valor enviado. Sem esta linha, o id
+   * torto chegava ao Prisma e a rota respondia 500 sem corpo.
+   */
+  if (!isUuid(eventId)) {
+    return tenantApiError(
+      400,
+      'INVALID_INPUT',
+      'O evento da folha de crachás não é um identificador válido.',
     );
   }
 
@@ -69,7 +84,7 @@ export async function GET(
   });
 
   if (!auth.ok) {
-    return NextResponse.json({ ok: false, code: auth.state.code, message: auth.state.message }, { status: 403 });
+    return tenantApiError(403, auth.state.code ?? 'FORBIDDEN', auth.state.message ?? 'Permissão negada.');
   }
 
   const prepared = await prepareBadgePrint({
@@ -80,9 +95,10 @@ export async function GET(
   });
 
   if (!prepared.ok) {
-    return NextResponse.json(
-      { ok: false, code: prepared.code, message: prepared.message },
-      { status: prepared.code === 'NOT_FOUND' ? 404 : 400 },
+    return tenantApiError(
+      prepared.code === 'NOT_FOUND' ? 404 : 400,
+      prepared.code,
+      prepared.message,
     );
   }
 

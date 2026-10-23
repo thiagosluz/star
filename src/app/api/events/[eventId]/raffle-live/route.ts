@@ -49,7 +49,9 @@ import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { RAFFLE_SCOPES, type RaffleScope } from '@/domain/raffles/raffle-rules';
-import { getLiveEligibility, type LiveEligibility } from '@/lib/raffles/raffle-service';
+import { getLiveEligibility, type LiveEligibility } from '@/lib/raffles/raffle-read-service';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -66,7 +68,7 @@ const SAMPLE_INTERVAL_MS = 3_000;
 const HEARTBEAT_INTERVAL_MS = 20_000;
 
 function badRequest(message: string): NextResponse {
-  return NextResponse.json({ ok: false, code: 'INVALID_INPUT', message }, { status: 400 });
+  return tenantApiError(400, 'INVALID_INPUT', message);
 }
 
 /** Os campos que a tela mostra — e a assinatura usada para decidir se houve mudança. */
@@ -88,16 +90,56 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ eventId: string }> },
 ): Promise<Response> {
+  const { eventId } = await context.params;
+
+  /**
+   * ─── O `eventId` É O ENDEREÇO DA PRÉVIA (FASE 76) ───────────────────────────
+   * A rota não é de `/api/t/**`, mas devolve o MESMO envelope — é a prévia que a tela
+   * de operação consome, e um segundo formato de erro só para ela seria a divergência
+   * que esta fatia veio apagar. Antes, o id malformado descia até a consulta de
+   * elegibilidade, o serviço engolia o `P2023` e a rota respondia **200 com
+   * `{ok:false}`** no corpo — um erro disfarçado de sucesso. Agora é 404 antes de
+   * tocar o banco.
+   */
+  if (!isUuid(eventId)) {
+    return tenantApiError(404, 'NOT_FOUND', 'Evento não encontrado.');
+  }
+
+  const url = new URL(request.url);
+  const scope = url.searchParams.get('scope') ?? 'EVENT';
+  const activityId = url.searchParams.get('activityId')?.trim() || null;
+
+  /**
+   * ─── `?activityId=` É ENTRADA OBRIGATÓRIA NO ESCOPO DE ATIVIDADE (FASE 76) ──
+   *  A fatia 2 cobriu o `eventId` do caminho e deixou este param de fora. Como
+   *  ele só é lido quando `scope = ACTIVITY`, o formato passa pela MESMA régua da
+   *  fase: entrada obrigatória → **400 `INVALID_INPUT`**, com o envelope e ANTES
+   *  de autenticar/consultar (a pergunta é sobre o PEDIDO, não sobre quem pediu).
+   *  Um uuid bem formado e inexistente continua seguindo o caminho de sempre (o
+   *  serviço decide 404); o que muda é só o TEXTO torto, que antes descia ao
+   *  Prisma e virava 500 `INTERNAL`.
+   */
+  if (scope === 'ACTIVITY') {
+    if (!activityId) {
+      return badRequest('Informe a atividade do sorteio.');
+    }
+
+    if (!isUuid(activityId)) {
+      return tenantApiError(
+        400,
+        'INVALID_INPUT',
+        'A atividade do sorteio não é um identificador válido.',
+      );
+    }
+  }
+
   const user = await getAuthenticatedUser();
 
   if (!user) {
-    return NextResponse.json({ ok: false, code: 'NOT_AUTHENTICATED' }, { status: 401 });
+    return tenantApiError(401, 'NOT_AUTHENTICATED', 'Sessão expirada. Entre novamente.');
   }
 
-  const { eventId } = await context.params;
-  const url = new URL(request.url);
   const tenantSlug = url.searchParams.get('tenantSlug')?.trim() ?? '';
-  const scope = url.searchParams.get('scope') ?? 'EVENT';
 
   if (!tenantSlug || !(RAFFLE_SCOPES as readonly string[]).includes(scope)) {
     return badRequest('Informe a instituição e um escopo de sorteio válido.');
@@ -109,7 +151,7 @@ export async function GET(
   });
 
   if (!tenant) {
-    return NextResponse.json({ ok: false, code: 'NOT_FOUND' }, { status: 404 });
+    return tenantApiError(404, 'NOT_FOUND', 'Instituição não encontrada.');
   }
 
   const membership = await adminPrisma.userTenantProfile.findFirst({
@@ -118,13 +160,17 @@ export async function GET(
   });
 
   if (!membership || membership.status !== 'ACTIVE') {
-    return NextResponse.json({ ok: false, code: 'FORBIDDEN' }, { status: 403 });
+    return tenantApiError(
+      403,
+      'FORBIDDEN',
+      'Você não tem vínculo ativo com esta instituição.',
+    );
   }
 
   const principal = await loadPrincipal(user.id, tenant.id, membership.status);
 
   if (!can(principal, PERMISSIONS.EVENT_MANAGE, { scope: 'TENANT' })) {
-    return NextResponse.json({ ok: false, code: 'FORBIDDEN' }, { status: 403 });
+    return tenantApiError(403, 'FORBIDDEN', 'Permissão negada: event:manage.');
   }
 
   const referenceDateParam = url.searchParams.get('referenceDate');
@@ -132,7 +178,7 @@ export async function GET(
   const config = {
     scope: scope as RaffleScope,
     referenceDate: referenceDateParam ? new Date(`${referenceDateParam}T12:00:00.000Z`) : null,
-    activityId: url.searchParams.get('activityId') || null,
+    activityId,
     minAttendanceMinutes: Number(url.searchParams.get('minAttendanceMinutes') ?? 0) || 0,
     winnersCount: 1,
     alternatesCount: 0,
@@ -150,7 +196,14 @@ export async function GET(
     const result = await getLiveEligibility({ tenantId: tenant.id, eventId, config });
 
     if (!result.ok) {
-      return NextResponse.json({ ok: false, code: result.code, message: result.message }, { status: 200 });
+      /**
+       * `result.code` vem do serviço: `INTERNAL` é falha de leitura (500), `NOT_FOUND`
+       * é ausência (404) e o resto é pedido inválido (400). O status deixa de ser
+       * 200 — um erro nunca foi sucesso.
+       */
+      const status = result.code === 'INTERNAL' ? 500 : result.code === 'NOT_FOUND' ? 404 : 400;
+
+      return tenantApiError(status, result.code, result.message);
     }
 
     return NextResponse.json(livePayload(result), { headers: { 'cache-control': 'no-store' } });

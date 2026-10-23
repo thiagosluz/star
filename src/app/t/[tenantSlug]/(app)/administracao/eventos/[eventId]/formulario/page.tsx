@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, ClipboardList, Info } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
@@ -64,7 +65,9 @@ export default async function EventRegistrationFormPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,

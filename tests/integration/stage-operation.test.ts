@@ -24,12 +24,12 @@ import {
   cancelRaffle,
   createRaffle,
   drawRaffle,
-  getPublicRaffleResult,
-  listRaffles,
   markPrizeDelivered,
   reversePrizeDelivery,
   setRaffleVisibility,
 } from '../../src/lib/raffles/raffle-service';
+import { listRaffles } from '../../src/lib/raffles/raffle-read-service';
+import { getPublicRaffleResult } from '../../src/lib/raffles/raffle-public-view-service';
 import { parseRaffleHistoryFilter } from '../../src/domain/raffles/stage-rules';
 import { parseSeedKeyRing } from '../../src/domain/raffles/seed-key-rules';
 

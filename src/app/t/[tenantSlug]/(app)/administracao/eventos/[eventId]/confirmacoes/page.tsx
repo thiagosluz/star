@@ -3,11 +3,12 @@ import { notFound } from 'next/navigation';
 import { AlertTriangle, BadgeCheck, Clock, Search, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listConfirmationQueue } from '@/lib/events/confirmation-service';
-import { listEventWaitlist } from '@/lib/events/registration-service';
+import { listEventWaitlist } from '@/lib/events/registration-read-service';
 import { confirmRegistrationAction, resolveConfirmationItemAction } from '@/app/actions/admin-actions';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { CONFIRMATION_ITEM_STATUS_LABELS } from '@/domain/events/confirmation-item-rules';
@@ -46,7 +47,9 @@ export default async function EventConfirmationsPage({
   params: Promise<{ tenantSlug: string; eventId: string }>;
   searchParams: Promise<{ atividade?: string; busca?: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
   const { atividade, busca } = await searchParams;
 
   const { tenantId } = await requirePagePermission({

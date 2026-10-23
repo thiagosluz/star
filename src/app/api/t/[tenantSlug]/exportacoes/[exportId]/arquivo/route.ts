@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 
 import { authorizeDataExport } from '@/lib/exports/export-access';
 import { buildDataExportFile, getDataExport } from '@/lib/exports/export-service';
 import { EXPORT_TTL_HOURS } from '@/domain/exports/export-rules';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -39,17 +40,26 @@ export async function GET(
 ): Promise<Response> {
   const { tenantSlug, exportId } = await context.params;
 
+  /**
+   * `exportId` é o caminho do recurso: formato inválido responde 404 antes de
+   * qualquer leitura. Sem isto, `getDataExport` estourava no Prisma e a rota
+   * devolvia 500 sem corpo (o pior contrato possível para quem baixa arquivo).
+   */
+  if (!isUuid(exportId)) {
+    return tenantApiError(404, 'NOT_FOUND', 'Exportação não encontrada.');
+  }
+
   /** Primeiro achamos o PEDIDO: é ele que diz o tipo, e o tipo decide a permissão. */
   const tenant = await resolveTenantId(tenantSlug);
 
   if (!tenant) {
-    return NextResponse.json({ ok: false, message: 'Instituição não encontrada.' }, { status: 404 });
+    return tenantApiError(404, 'NOT_FOUND', 'Instituição não encontrada.');
   }
 
   const record = await getDataExport({ tenantId: tenant, exportId });
 
   if (!record) {
-    return NextResponse.json({ ok: false, message: 'Exportação não encontrada.' }, { status: 404 });
+    return tenantApiError(404, 'NOT_FOUND', 'Exportação não encontrada.');
   }
 
   const sponsorId =
@@ -60,11 +70,18 @@ export async function GET(
   const access = await authorizeDataExport({ tenantSlug, kind: record.kind, sponsorId });
 
   if (!access.ok) {
-    return NextResponse.json({ ok: false, message: access.message }, { status: access.status });
+    /**
+     * `access.status` é `number` no serviço, mas a rota só produz quatro respostas
+     * possíveis — o estreitamento aqui impede um status inválido de virar "erro com
+     * corpo de sucesso".
+     */
+    const status = access.status === 401 ? 401 : access.status === 403 ? 403 : access.status === 404 ? 404 : 400;
+
+    return tenantApiError(status, access.code, access.message);
   }
 
   if (access.tenantId !== tenant) {
-    return NextResponse.json({ ok: false, message: 'Exportação não encontrada.' }, { status: 404 });
+    return tenantApiError(404, 'NOT_FOUND', 'Exportação não encontrada.');
   }
 
   const requestHeaders = await headers();
@@ -81,7 +98,7 @@ export async function GET(
   if (!file.ok) {
     const status = file.code === 'NOT_FOUND' ? 404 : file.code === 'INTERNAL' ? 500 : 410;
 
-    return NextResponse.json({ ok: false, code: file.code, message: file.message }, { status });
+    return tenantApiError(status, file.code, file.message);
   }
 
   return new Response(file.csv, {

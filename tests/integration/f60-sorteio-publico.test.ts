@@ -41,14 +41,16 @@ import { savePublicProfile } from '../../src/lib/profile/public-profile-service'
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 import { decideReport } from '../../src/lib/platform/profile-moderation';
 import {
-  auditPoolDocument,
   createRaffle,
   drawRaffle,
+} from '../../src/lib/raffles/raffle-service';
+import {
+  auditPoolDocument,
   getPublicRaffleResult,
   getRaffleAudit,
   getRaffleStageView,
   listPublicRaffleResults,
-} from '../../src/lib/raffles/raffle-service';
+} from '../../src/lib/raffles/raffle-public-view-service';
 
 const RUN = randomUUID().slice(0, 8);
 const TIME_ZONE = 'America/Bahia';

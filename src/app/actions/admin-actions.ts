@@ -21,8 +21,7 @@ import { revalidatePath, revalidateTag } from 'next/cache';
 import { headers } from 'next/headers';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
+import { guardAction } from '@/lib/auth/guard-action';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { decideReport } from '@/lib/platform/profile-moderation';
 import {
@@ -30,7 +29,6 @@ import {
   PROFILE_MODERATION_ACTIONS,
   decisionNoteProblemMessage,
 } from '@/domain/profile/profile-moderation-rules';
-import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
@@ -65,56 +63,6 @@ export interface AdminActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
-}
-
-type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-async function guard(input: {
-  tenantSlug: string;
-  permission: Permission;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: AdminActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, input.permission, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${input.permission}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
 }
 
 /** Converte string vazia em `null` — formulário HTML não conhece ausência. */
@@ -210,7 +158,7 @@ export async function saveEventAction(
     };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_UPDATE });
+  const auth = await guardAction<AdminActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_UPDATE });
   if (!auth.ok) return auth.state;
 
   const result = await saveEvent({
@@ -291,7 +239,7 @@ export async function saveRoomAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.EVENT_UPDATE,
   });
@@ -357,7 +305,7 @@ export async function deleteRoomAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.EVENT_UPDATE,
   });
@@ -474,7 +422,7 @@ export async function saveActivityAction(
     };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.ACTIVITY_CREATE });
+  const auth = await guardAction<AdminActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.ACTIVITY_CREATE });
   if (!auth.ok) return auth.state;
 
   const result = await saveActivity({
@@ -573,7 +521,7 @@ export async function confirmRegistrationAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Confirmação inválida.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.REGISTRATION_UPDATE_ANY,
   });
@@ -655,7 +603,7 @@ export async function resolveConfirmationItemAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Item inválido.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.REGISTRATION_UPDATE_ANY,
   });
@@ -732,7 +680,7 @@ export async function deleteActivityAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.ACTIVITY_CREATE,
   });
@@ -757,7 +705,7 @@ export async function saveTrackAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.TRACK_MANAGE,
   });
@@ -822,7 +770,7 @@ export async function saveCardTemplateAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.CARD_TEMPLATE_MANAGE,
   });
@@ -908,7 +856,7 @@ export async function saveMissionAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.TASK_MANAGE,
   });
@@ -977,7 +925,7 @@ export async function deleteCardTemplateAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.CARD_TEMPLATE_MANAGE,
   });
@@ -1013,7 +961,7 @@ export async function deleteMissionAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.TASK_MANAGE,
   });
@@ -1052,7 +1000,7 @@ export async function retryCertificateAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   });
@@ -1087,7 +1035,7 @@ export async function revokeCertificateAdminAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.CERTIFICATE_REVOKE,
   });
@@ -1120,7 +1068,7 @@ export async function checkInByBadgeAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
-  const auth = await guard({
+  const auth = await guardAction<AdminActionState>({
     tenantSlug: String(formData.get('tenantSlug') ?? ''),
     permission: PERMISSIONS.REGISTRATION_CHECKIN,
   });

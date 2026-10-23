@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
-import { getRequestContext } from '@/lib/auth/session';
+import { requireUuidParam } from '@/lib/validation/id';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import {
@@ -62,9 +62,11 @@ export default async function AdminEventDetailPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
 
-  const { tenantId } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.EVENT_UPDATE,
   });
@@ -83,10 +85,11 @@ export default async function AdminEventDetailPage({
    * A leitura do ranking é do evento; a CONCESSÃO da carta exige `card:grant`. Quem
    * só administra o evento vê o ranking e entende por que o botão não está ali — em
    * vez de clicar e receber um erro.
+   *
+   * O principal vem da GUARDA (FASE 75 · fatia 4): ela já o resolveu para decidir
+   * `event:update`, e resolver de novo aqui era a mesma transação de RLS duas vezes
+   * por render — sem chance de dar resposta diferente.
    */
-  const context = await getRequestContext();
-  const principal = context?.principal ?? null;
-
 
   /**
    * Quantas vagas estão RETIDAS esperando confirmação neste evento (FASE 34).

@@ -20,9 +20,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { removeMember, updateMemberRoles } from '@/lib/admin/member-service';
@@ -33,57 +31,6 @@ export interface MemberActionState {
   code?: string;
   message?: string;
   details?: readonly string[];
-}
-
-type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-async function guard(input: {
-  tenantSlug: string;
-  permission: Permission;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: MemberActionState }
-> {
-  const user = await getAuthenticatedUser();
-
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, input.permission, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${input.permission}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
 }
 
 /** Papéis chegam como caixas de seleção repetidas — uma lista, nunca uma string. */
@@ -112,7 +59,7 @@ export async function updateMemberRolesAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Membro inválido.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<MemberActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.TENANT_ROLE_ASSIGN,
   });
@@ -162,7 +109,7 @@ export async function removeMemberAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Membro inválido.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<MemberActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_REMOVE,
   });
@@ -222,7 +169,7 @@ export async function demoteMemberAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Membro inválido.' };
   }
 
-  const access = await guard({
+  const access = await guardAction<MemberActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_REMOVE,
   });

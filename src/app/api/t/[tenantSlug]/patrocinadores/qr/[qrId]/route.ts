@@ -7,6 +7,8 @@ import { can } from '@/domain/rbac/authorization';
 import { getTenantContext } from '@/lib/events/event-repository';
 import { getSponsorQrForDownload, listSponsorAccess } from '@/lib/sponsors/sponsor-portal-service';
 import { isSponsorQrFormat, sponsorQrFile } from '@/lib/sponsors/sponsor-qr-sheet';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -44,21 +46,30 @@ export async function GET(
   const { tenantSlug, qrId } = await params;
   const formato = new URL(request.url).searchParams.get('formato');
 
+  /**
+   * ─── A MUDANÇA DE CONTRATO DESTA ROTA (FASE 76 · fatia 2) ───────────────────
+   * Até aqui TODA recusa saía como `{ error }`, um envelope só dela. O cliente desta
+   * rota (a tela do patrocinador e o painel) passa a receber o MESMO
+   * `{ ok:false, code, message }` das outras rotas `/api/t/**`: um formato por API,
+   * não um por arquivo. O `qrId` malformado, que antes caía no `catch` do serviço,
+   * responde 404 de formato — antes de consultar e de decidir permissão.
+   */
+  if (!isUuid(qrId)) {
+    return tenantApiError(404, 'NOT_FOUND', 'QR não encontrado.');
+  }
+
   if (formato !== null && !isSponsorQrFormat(formato)) {
-    return NextResponse.json(
-      { error: 'Formato inválido. Use "png" ou "svg".' },
-      { status: 400 },
-    );
+    return tenantApiError(400, 'INVALID_INPUT', 'Formato inválido. Use "png" ou "svg".');
   }
 
   const user = await getAuthenticatedUser();
   if (!user) {
-    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    return tenantApiError(401, 'UNAUTHENTICATED', 'Não autenticado.');
   }
 
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) {
-    return NextResponse.json({ error: 'Instituição não encontrada.' }, { status: 404 });
+    return tenantApiError(404, 'NOT_FOUND', 'Instituição não encontrada.');
   }
 
   const membership = await adminPrisma.userTenantProfile.findFirst({
@@ -67,7 +78,7 @@ export async function GET(
   });
 
   if (!membership || membership.status !== 'ACTIVE') {
-    return NextResponse.json({ error: 'Sem vínculo ativo com a instituição.' }, { status: 403 });
+    return tenantApiError(403, 'FORBIDDEN', 'Sem vínculo ativo com a instituição.');
   }
 
   const principal = await loadPrincipal(user.id, tenant.tenantId, membership.status);
@@ -76,7 +87,7 @@ export async function GET(
   const qr = await getSponsorQrForDownload(tenant.tenantId, qrId);
 
   if (!qr.ok) {
-    return NextResponse.json({ error: qr.message }, { status: 404 });
+    return tenantApiError(404, qr.code, qr.message);
   }
 
   if (!gerencia) {
@@ -84,7 +95,7 @@ export async function GET(
     const acesso = await listSponsorAccess(tenant.tenantId, user.id);
 
     if (!acesso.some((link) => link.sponsorId === qr.sponsorId)) {
-      return NextResponse.json({ error: 'Permissão negada.' }, { status: 403 });
+      return tenantApiError(403, 'FORBIDDEN', 'Permissão negada.');
     }
   }
 

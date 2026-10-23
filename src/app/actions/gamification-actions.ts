@@ -14,9 +14,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { claimMission } from '@/lib/gamification/task-service';
@@ -32,115 +30,6 @@ export interface GamificationActionState {
   code?: string;
   message?: string;
   data?: Record<string, unknown>;
-}
-
-interface GuardResult {
-  ok: boolean;
-  userId: string;
-  tenantId: string;
-  /**
-   * Nome da instituição — o texto de compartilhamento o cita (FASE 48).
-   *
-   * Vem da MESMA consulta que já resolve o slug: buscar o nome numa segunda ida ao
-   * banco só para montar uma frase seria uma consulta a mais por clique.
-   */
-  tenantName: string;
-  principal: Principal | null;
-  state?: GamificationActionState;
-}
-
-/**
- * Resolve sessão, vínculo e permissão.
- *
- * `requiresOwnership` não é automático aqui: quem chama declara, para que a
- * decisão fique visível no ponto de uso.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  ATENÇÃO AO CONSUMIR ESTE RETORNO
- * ─────────────────────────────────────────────────────────────────────────────
- *  `state` existe APENAS no caso de falha. A checagem correta é `if (!auth.ok)`;
- *  escrever `if (!auth.ok || !auth.state)` devolve "Não autorizado" para toda
- *  ação legítima — foi exatamente o que o E2E pegou (o botão de resgate de missão
- *  falhava para um participante com permissão, sem nenhum erro de banco).
- */
-async function guard(input: {
-  tenantSlug: string;
-  permission: (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-  requiresOwnership?: boolean;
-}): Promise<GuardResult> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      userId: '',
-      tenantId: '',
-      tenantName: '',
-      principal: null,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true, name: true },
-  });
-
-  if (!tenant) {
-    return {
-      ok: false,
-      userId: user.id,
-      tenantId: '',
-      tenantName: '',
-      principal: null,
-      state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
-    };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      userId: user.id,
-      tenantId: tenant.id,
-      tenantName: tenant.name,
-      principal: null,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Você não tem vínculo ativo com esta instituição.',
-      },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  const allowed = can(
-    principal,
-    input.permission,
-    { scope: 'TENANT' },
-    input.requiresOwnership ? { ownerId: user.id } : undefined,
-  );
-
-  if (!allowed) {
-    return {
-      ok: false,
-      userId: user.id,
-      tenantId: tenant.id,
-      tenantName: tenant.name,
-      principal,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: `Permissão negada: ${input.permission}.`,
-      },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, tenantName: tenant.name, principal };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -164,13 +53,12 @@ export async function claimMissionAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para resgatar a missão.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<GamificationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.XP_READ_OWN,
-    requiresOwnership: true,
   });
 
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+  if (!auth.ok) return auth.state;
 
   const result = await claimMission({
     tenantId: auth.tenantId,
@@ -225,13 +113,12 @@ export async function pinCardAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para destacar a carta.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<GamificationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.CARD_READ_OWN,
-    requiresOwnership: true,
   });
 
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+  if (!auth.ok) return auth.state;
 
   const result = await setCardPinned({
     tenantId: auth.tenantId,
@@ -282,13 +169,12 @@ export async function revokeCardShareAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para revogar o link.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<GamificationActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.CARD_READ_OWN,
-    requiresOwnership: true,
   });
 
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+  if (!auth.ok) return auth.state;
 
   const result = await revokeCardShareLink({
     tenantId: auth.tenantId,
@@ -342,8 +228,8 @@ export async function adjustXpAction(
     };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.XP_ADJUST });
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+  const auth = await guardAction<GamificationActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.XP_ADJUST });
+  if (!auth.ok) return auth.state;
 
   const result = await adjustXp({
     tenantId: auth.tenantId,
@@ -391,8 +277,8 @@ export async function grantCardAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para conceder a carta.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.CARD_GRANT });
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+  const auth = await guardAction<GamificationActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.CARD_GRANT });
+  if (!auth.ok) return auth.state;
 
   /**
    * A concessão manual passa pelo MESMO caminho de tiragem das cartas
@@ -470,8 +356,8 @@ export async function awardTopReviewersAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para premiar revisores.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.CARD_GRANT });
-  if (!auth.ok) return auth.state ?? { ok: false, message: 'Não autorizado.' };
+  const auth = await guardAction<GamificationActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.CARD_GRANT });
+  if (!auth.ok) return auth.state;
 
   const result = await awardTopReviewers({
     tenantId: auth.tenantId,

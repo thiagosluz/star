@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, Clock, MessageSquare, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -44,7 +45,10 @@ export default async function DemandDetailPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string; demandId: string }>;
 }) {
-  const { tenantSlug, eventId, demandId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const demandId = requireUuidParam(resolvedParams, 'demandId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId, principal } = await requirePagePermission({
     tenantSlug,

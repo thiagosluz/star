@@ -8,6 +8,8 @@ import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { encodeThumbnailAsWebp } from '@/lib/storage/image-converter';
 import { getObjectBuffer, inspectObject, putObjectBuffer } from '@/lib/storage/s3-client';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -69,20 +71,24 @@ export async function GET(
 ): Promise<NextResponse> {
   const { tenantSlug, assetId } = await context.params;
 
+  /**
+   * ─── O FORMATO É PERGUNTA DE ENDEREÇO, E VEM ANTES DE TUDO (FASE 76) ────────
+   * `assetId` é o caminho do recurso: sem uuid não há o que procurar. A validação
+   * aqui evita o 500 mudo do Prisma (`P2023`) e responde o MESMO 404 de um uuid bem
+   * formado que não existe — para o cliente, as duas coisas são "não achei".
+   */
+  if (!isUuid(assetId)) {
+    return tenantApiError(404, 'NOT_FOUND', 'Imagem não encontrada.');
+  }
+
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) {
-    return NextResponse.json(
-      { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
-      { status: 404 },
-    );
+    return tenantApiError(404, 'NOT_FOUND', 'Instituição não encontrada.');
   }
 
   const user = await getAuthenticatedUser();
   if (!user) {
-    return NextResponse.json(
-      { ok: false, code: 'UNAUTHENTICATED', message: 'Entre para ver esta imagem.' },
-      { status: 401 },
-    );
+    return tenantApiError(401, 'UNAUTHENTICATED', 'Entre para ver esta imagem.');
   }
 
   const membership = await adminPrisma.userTenantProfile.findFirst({
@@ -91,19 +97,13 @@ export async function GET(
   });
 
   if (membership?.status !== 'ACTIVE') {
-    return NextResponse.json(
-      { ok: false, code: 'FORBIDDEN', message: 'Esta imagem é do acervo da instituição.' },
-      { status: 403 },
-    );
+    return tenantApiError(403, 'FORBIDDEN', 'Esta imagem é do acervo da instituição.');
   }
 
   const principal = await loadPrincipal(user.id, tenant.tenantId, 'ACTIVE');
 
   if (!can(principal, PERMISSIONS.PAGE_MANAGE, { scope: 'TENANT' })) {
-    return NextResponse.json(
-      { ok: false, code: 'FORBIDDEN', message: 'Você não gerencia o acervo desta instituição.' },
-      { status: 403 },
-    );
+    return tenantApiError(403, 'FORBIDDEN', 'Você não gerencia o acervo desta instituição.');
   }
 
   const asset = await withTenant(tenant.tenantId, (tx) =>
@@ -114,10 +114,7 @@ export async function GET(
   );
 
   if (!asset) {
-    return NextResponse.json(
-      { ok: false, code: 'NOT_FOUND', message: 'Imagem não encontrada.' },
-      { status: 404 },
-    );
+    return tenantApiError(404, 'NOT_FOUND', 'Imagem não encontrada.');
   }
 
   const thumbnailKey = `${THUMBNAIL_PREFIX}${asset.objectKey}.webp`;
@@ -138,10 +135,7 @@ export async function GET(
   const thumbnail = await encodeThumbnailAsWebp({ bytes: original });
 
   if (!thumbnail.ok) {
-    return NextResponse.json(
-      { ok: false, code: 'THUMBNAIL_FAILED', message: thumbnail.message },
-      { status: 422 },
-    );
+    return tenantApiError(422, 'THUMBNAIL_FAILED', thumbnail.message);
   }
 
   /**

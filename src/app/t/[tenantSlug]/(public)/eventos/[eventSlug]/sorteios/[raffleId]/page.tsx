@@ -5,7 +5,7 @@ import { ArrowLeft, Trophy } from 'lucide-react';
 
 import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { getPublicRaffleResult } from '@/lib/raffles/raffle-service';
+import { getPublicRaffleResult } from '@/lib/raffles/raffle-public-view-service';
 
 export const dynamic = 'force-dynamic';
 

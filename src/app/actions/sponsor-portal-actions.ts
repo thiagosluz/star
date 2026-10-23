@@ -21,9 +21,9 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
+import { getAuthenticatedUser } from '@/lib/auth/session';
+import { guardAction } from '@/lib/auth/guard-action';
 import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { sponsorQrInputSchema } from '@/domain/events/sponsor-experience-rules';
@@ -47,26 +47,17 @@ export interface SponsorPortalActionState {
   data?: Record<string, unknown>;
 }
 
-/** Sessão + vínculo ativo + permissão de GESTÃO do patrocínio. */
-async function guardManage(tenantSlug: string): Promise<
-  | { ok: true; userId: string; tenantId: string }
-  | { ok: false; state: SponsorPortalActionState }
-> {
-  const context = await guardSession(tenantSlug);
-  if (!context.ok) return context;
-
-  const principal: Principal = await loadPrincipal(context.userId, context.tenantId, 'ACTIVE');
-
-  if (!can(principal, PERMISSIONS.SPONSOR_MANAGE, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Permissão negada: sponsor:manage.' },
-    };
-  }
-
-  return { ok: true, userId: context.userId, tenantId: context.tenantId };
-}
-
+// ───────────────────────────────────────────────────────────────────────────────
+//  A GUARDA DE GESTÃO SAIU; AS DUAS IRMÃS FICAM (FASE 75 · fatia 2)
+//
+//  `guardManage` era `guardSession` + `can` — exatamente a checagem de
+//  `guardAction`, que passou a ser a dona dela. As duas que sobram são EXCEÇÕES
+//  declaradas no catálogo, e cada uma tem motivo próprio:
+//
+//    • `guardSession` não pede permissão nenhuma — o patrocinador entra por
+//      VÍNCULO, não por papel;
+//    • `guardAuthenticated` não pede nem vínculo: o aceite do convite é o que o CRIA.
+// ───────────────────────────────────────────────────────────────────────────────
 /** Sessão + instituição existente — SEM exigir vínculo (aceite de convite). */
 async function guardAuthenticated(tenantSlug: string): Promise<
   | { ok: true; userId: string; tenantId: string; userEmail: string }
@@ -198,7 +189,7 @@ export async function saveSponsorQrAction(
     };
   }
 
-  const context = await guardManage(data.tenantSlug);
+  const context = await guardAction({ tenantSlug: data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await saveSponsorQrCode({
@@ -248,7 +239,7 @@ export async function setSponsorQrActiveAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guardManage(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await setSponsorQrCodeActive({
@@ -285,7 +276,7 @@ export async function deleteSponsorQrAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guardManage(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await deleteSponsorQrCode({
@@ -331,7 +322,7 @@ export async function inviteSponsorUserAction(
     };
   }
 
-  const context = await guardManage(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await inviteSponsorUser({
@@ -384,7 +375,7 @@ export async function linkSponsorUserAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'E-mail inválido.' };
   }
 
-  const context = await guardManage(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await linkSponsorUserByEmail({
@@ -421,7 +412,7 @@ export async function removeSponsorUserAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guardManage(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await removeSponsorUser({

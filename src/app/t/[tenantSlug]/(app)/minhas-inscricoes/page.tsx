@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { CalendarDays, Ticket } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
-import { listMyRegistrations } from '@/lib/events/registration-service';
+import { listMyRegistrations } from '@/lib/events/registration-read-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CancelRegistrationButton } from '@/components/events/cancel-registration-button';
 import { AcceptPromotionButton } from '@/components/events/accept-promotion-button';

@@ -1,12 +1,13 @@
 import { notFound } from 'next/navigation';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { PUBLICATION_STATE_LABELS } from '@/domain/events/landing-page';
 import { getEventForPreview } from '@/lib/events/event-repository';
 import { getLandingForEdit } from '@/lib/admin/landing-service';
-import { listPublicRaffleResults } from '@/lib/raffles/raffle-service';
+import { listPublicRaffleResults } from '@/lib/raffles/raffle-public-view-service';
 import { listPublicCalls } from '@/lib/proposals/call-service';
 import { EventLanding } from '@/components/events/event-landing';
 import {
@@ -45,7 +46,9 @@ export default async function EventLandingPreviewPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId, tenantName, userId } = await requirePagePermission({
     tenantSlug,

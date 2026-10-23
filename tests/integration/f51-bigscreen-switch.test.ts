@@ -27,10 +27,12 @@ import { withTenant } from '../../src/lib/db/tenant-client';
 import {
   createRaffle,
   drawRound,
-  getRaffleLiveState,
-  getRaffleStageView,
   setBigscreenVisibility,
 } from '../../src/lib/raffles/raffle-service';
+import {
+  getRaffleLiveState,
+  getRaffleStageView,
+} from '../../src/lib/raffles/raffle-public-view-service';
 import { isBigscreenVisible } from '../../src/domain/raffles/stage-rules';
 
 const RUN = randomUUID().slice(0, 8);

@@ -4,6 +4,7 @@ import { ArrowLeft, ExternalLink, Globe, Mail, UserCog } from 'lucide-react';
 
 import { TenantMemberForm, TenantPlanForm, TenantProfileForm, TenantStatusForm } from '@/components/platform/platform-forms';
 import { requirePlatformPermission } from '@/lib/platform/guard';
+import { requireUuidParam } from '@/lib/validation/id';
 import { getTenantDetail } from '@/lib/platform/tenant-service';
 import { listPlatformAudit } from '@/lib/platform/global-repository';
 import { TENANT_PLAN_LABELS, TENANT_STATUS_LABELS } from '@/domain/platform/platform-rules';
@@ -36,9 +37,10 @@ export default async function PlatformTenantDetailPage({
 }: {
   params: Promise<{ tenantId: string }>;
 }) {
-  await requirePlatformPermission();
+  const resolvedParams = await params;
+  const tenantId = requireUuidParam(resolvedParams, 'tenantId');
 
-  const { tenantId } = await params;
+  await requirePlatformPermission();
 
   const detail = await getTenantDetail(tenantId);
   if (!detail) notFound();

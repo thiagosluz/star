@@ -3,7 +3,7 @@ import { Trophy } from 'lucide-react';
 
 import { Section } from '@/components/events/theme-scope';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import type { PublicRaffleResult } from '@/lib/raffles/raffle-service';
+import type { PublicRaffleResult } from '@/lib/raffles/raffle-public-view-service';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════

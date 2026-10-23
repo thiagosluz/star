@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { ArrowLeft, History, KeyRound, MonitorPlay, ShieldCheck, Trophy } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RAFFLE_SCOPE_LABELS } from '@/domain/raffles/raffle-rules';
@@ -14,7 +15,7 @@ import {
   raffleFilterIsActive,
 } from '@/domain/raffles/stage-rules';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
-import { listRaffles } from '@/lib/raffles/raffle-service';
+import { listRaffles } from '@/lib/raffles/raffle-read-service';
 import { seedVaultStatus } from '@/lib/raffles/seed-vault';
 import {
   raffleAuditPath,
@@ -67,7 +68,9 @@ export default async function RafflesPage({
     ate?: string;
   }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
   const { pagina, situacao, de, ate } = await searchParams;
 
   const { tenantId } = await requirePagePermission({

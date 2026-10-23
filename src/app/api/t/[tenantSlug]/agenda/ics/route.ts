@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import { getTenantContext } from '@/lib/events/event-repository';
 import {
   exportActivityIcs,
@@ -7,6 +5,8 @@ import {
   icsResponse,
   resolveAgendaIcsUser,
 } from '@/lib/events/agenda-export';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -64,26 +64,30 @@ export async function GET(
 
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) {
-    return NextResponse.json(
-      { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
-      { status: 404 },
-    );
+    return tenantApiError(404, 'NOT_FOUND', 'Instituição não encontrada.');
   }
 
   // ── UMA ATIVIDADE ───────────────────────────────────────────────────────────
   if (atividade.length > 0) {
+    /**
+     * ─── AQUI O ID NA QUERY É O ENDEREÇO DO ARQUIVO (FASE 76) ──────────────────
+     * `?atividade=` escolhe UMA atividade — não é recorte de lista, é o recurso que
+     * o arquivo representa. A rota já responde 404 quando a atividade existe e não é
+     * visível; um texto sem forma de uuid é a mesma resposta, decidida ANTES de
+     * consultar. Sem isto, o serviço engolia o `P2023` num `catch` e a rota devolvia
+     * 500 — para um endereço que simplesmente não é um id.
+     */
+    if (!isUuid(atividade)) {
+      return tenantApiError(404, 'ATIVIDADE_NAO_ENCONTRADA', 'Atividade não encontrada.');
+    }
+
     const result = await exportActivityIcs({
       tenantId: tenant.tenantId,
       activityId: atividade,
     });
 
     if (!result.ok) {
-      const status = result.code === 'INTERNAL' ? 500 : 404;
-
-      return NextResponse.json(
-        { ok: false, code: result.code, message: result.message },
-        { status },
-      );
+      return tenantApiError(result.code === 'INTERNAL' ? 500 : 404, result.code, result.message);
     }
 
     return icsResponse(result);
@@ -91,22 +95,35 @@ export async function GET(
 
   // ── A MINHA GRADE ───────────────────────────────────────────────────────────
   if (token.length === 0 || evento.length === 0) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: 'INVALID_INPUT',
-        message: 'Informe o endereço da sua agenda pessoal (token e evento).',
-      },
-      { status: 400 },
+    return tenantApiError(
+      400,
+      'INVALID_INPUT',
+      'Informe o endereço da sua agenda pessoal (token e evento).',
+    );
+  }
+
+  /**
+   * O `evento` também é id na query, e também chegava ao Prisma sem conferência: o
+   * `catch` de `exportAgendaIcs` transformava o texto torto em 500 `INTERNAL`. A
+   * resposta agora é a MESMA de um evento que existe e não é exportável — 404, com o
+   * código que o serviço já usa. O formato é conferido antes de resolver o token
+   * porque nenhum token válido torna `nao-e-uuid` um evento.
+   */
+  if (!isUuid(evento)) {
+    return tenantApiError(
+      404,
+      'EVENTO_NAO_ENCONTRADO',
+      'Este evento não está disponível para exportação.',
     );
   }
 
   const userId = await resolveAgendaIcsUser({ tenantId: tenant.tenantId, token });
 
   if (!userId) {
-    return NextResponse.json(
-      { ok: false, code: 'TOKEN_INVALID', message: 'Este endereço de agenda não é válido.' },
-      { status: 404 },
+    return tenantApiError(
+      404,
+      'TOKEN_INVALID',
+      'Este endereço de agenda não é válido.',
     );
   }
 
@@ -124,12 +141,7 @@ export async function GET(
   });
 
   if (!result.ok) {
-    const status = result.code === 'INTERNAL' ? 500 : 404;
-
-    return NextResponse.json(
-      { ok: false, code: result.code, message: result.message },
-      { status },
-    );
+    return tenantApiError(result.code === 'INTERNAL' ? 500 : 404, result.code, result.message);
   }
 
   return icsResponse(result);

@@ -35,9 +35,33 @@ export interface ActionGuardState {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Por que a guarda recusou — separado do `code`, porque dois motivos diferentes
+ * compartilham o MESMO código.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO EXISTE (FASE 75 · fatia 2)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  "Sem vínculo ativo" e "sem permissão" devolvem `FORBIDDEN` e são coisas
+ *  diferentes para quem chama: a primeira manda a pessoa entrar de novo (ou pedir
+ *  vínculo), a segunda é um erro de autorização que precisa ser VISÍVEL. A guarda
+ *  de `registration-actions` traduz exatamente essa diferença — `null` no primeiro
+ *  caso, exceção no segundo —, e antes da FASE 75 ela conseguia isso porque tinha a
+ *  própria cópia da checagem. Ler a mensagem para adivinhar o motivo seria frágil;
+ *  o motivo passa a ser DADO.
+ *
+ *  `FORBIDDEN` é sempre falta de PERMISSÃO (o código do estado continua o mesmo de
+ *  antes: o catálogo de mensagens das actions é contrato).
+ */
+export type GuardFailureReason =
+  | 'NOT_AUTHENTICATED'
+  | 'TENANT_NOT_FOUND'
+  | 'NO_MEMBERSHIP'
+  | 'FORBIDDEN';
+
 export type GuardedAction<TState extends ActionGuardState> =
   | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: TState };
+  | { ok: false; reason: GuardFailureReason; state: TState };
 
 /**
  * Autoriza uma Server Action.
@@ -53,19 +77,41 @@ export async function guardAction<TState extends ActionGuardState = ActionGuardS
   allowedScopes?: readonly ('TENANT' | 'EVENT' | 'ACTIVITY' | 'PLATFORM')[];
   /** Evento da operação, quando o escopo de EVENTO autoriza. */
   eventId?: string | null;
+  /**
+   * Mensagem própria para a recusa por PERMISSÃO (o `code` continua `FORBIDDEN`).
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  POR QUE UMA MENSAGEM POR CHAMADOR (FASE 75 · fatia 2)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A mensagem padrão — `Permissão negada: <permissão>.` — fala na linguagem da
+   *  matriz de papéis, e é a certa para quase todas as portas. Duas delas falam com
+   *  quem NÃO é da equipe e precisam dizer o que fazer: a página pública da
+   *  instituição ("só quem administra a instituição edita a página pública") e o
+   *  cancelamento de inscrição ("fale com a organização do evento").
+   *
+   *  Sem este parâmetro, migrar essas duas guardas para cá exigiria manter duas
+   *  cópias da checagem só por causa de uma frase — que é exatamente o que a fase
+   *  veio apagar. É OPCIONAL: as outras 44 chamadas seguem sem passar nada.
+   */
+  deniedMessage?: string;
 }): Promise<GuardedAction<TState>> {
-  const fail = (code: string, message: string): GuardedAction<TState> =>
-    ({ ok: false, state: { ok: false, code, message } as TState });
+  const fail = (
+    reason: GuardFailureReason,
+    code: string,
+    message: string,
+  ): GuardedAction<TState> => ({ ok: false, reason, state: { ok: false, code, message } as TState });
 
   const user = await getAuthenticatedUser();
-  if (!user) return fail('NOT_AUTHENTICATED', 'Sessão expirada. Entre novamente.');
+  if (!user) {
+    return fail('NOT_AUTHENTICATED', 'NOT_AUTHENTICATED', 'Sessão expirada. Entre novamente.');
+  }
 
   const tenant = await adminPrisma.tenant.findUnique({
     where: { slug: input.tenantSlug },
     select: { id: true },
   });
 
-  if (!tenant) return fail('NOT_FOUND', 'Instituição não encontrada.');
+  if (!tenant) return fail('TENANT_NOT_FOUND', 'NOT_FOUND', 'Instituição não encontrada.');
 
   const membership = await adminPrisma.userTenantProfile.findFirst({
     where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
@@ -73,7 +119,11 @@ export async function guardAction<TState extends ActionGuardState = ActionGuardS
   });
 
   if (!membership || membership.status !== 'ACTIVE') {
-    return fail('FORBIDDEN', 'Você não tem vínculo ativo com esta instituição.');
+    return fail(
+      'NO_MEMBERSHIP',
+      'FORBIDDEN',
+      'Você não tem vínculo ativo com esta instituição.',
+    );
   }
 
   const principal = await loadPrincipal(user.id, tenant.id, membership.status);
@@ -107,7 +157,11 @@ export async function guardAction<TState extends ActionGuardState = ActionGuardS
   );
 
   if (!authorized) {
-    return fail('FORBIDDEN', `Permissão negada: ${input.permission}.`);
+    return fail(
+      'FORBIDDEN',
+      'FORBIDDEN',
+      input.deniedMessage ?? `Permissão negada: ${input.permission}.`,
+    );
   }
 
   return { ok: true, userId: user.id, tenantId: tenant.id, principal };

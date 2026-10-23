@@ -54,7 +54,22 @@
 > de 5 rascunhos com arquivo** (corrida de duas abas pode criar um a mais, deliberado e sem
 > teste paralelo), o **seed com a chamada de minicursos `false`** (a migração não faz backfill —
 > herdar é escolha do organizador) e o **`isBlind` das atribuições antigas**, que não é
-> reescrito pela migração.
+> reescrito pela migração. A **FASE 75** (o refactor que mede antes) **não quitou nem declarou
+> item** deste levantamento: é um refactor com rede de testes (`66` casos de caracterização
+> escritos antes do movimento, as `16` guardas migradas para `guardAction`, a leitura extraída
+> dos dois serviços e o contexto resolvido uma vez por render) mais as **páginas de erro por
+> área** que o app não tinha (`error.tsx`/`not-found.tsx`, de `0` para `6` arquivos). Os pontos
+> de atenção dela estão no documento da fase — sem `cache()` do contexto, os dois checks de
+> convite do shell não unificados, os tipos do sorteio morando no irmão de leitura, o contrato
+> `context` ainda sem consumidor em todas as páginas e o **id malformado na URL respondendo
+> 500** (armadilha 25, **pré-existente**) — e **não** ganharam código de dívida. A **FASE 76**
+> (o mutirão dos 500 que deviam ser 404) **fechou** o ponto de atenção do id malformado: o
+> formato agora é 404 **antes** da consulta (23 páginas / 24 params e 9 rotas / 11 params),
+> a query malformada é ignorada e anunciada, e a API da instituição tem um envelope único
+> (`{ ok:false, code, message }`). Ela **declarou UM item**: a **E89**, o fallback silencioso
+> de `?evento=` em cinco telas (credenciamento, crachás, meu-cracha e minha-agenda caem no
+> primeiro evento; participantes cai em "todos") — o mesmo defeito de família da query, sem
+> 500 e reprodutível. A contagem passa de **41 para 42**.
 >
 > **Numeração dos temas:** cada tema tem um número FIXO — o número identifica o tema, não a
 > ordem de entrega. A FASE 15 (Comunicação) segue pendente e a FASE 16 (Sorteios) foi
@@ -136,12 +151,12 @@
 | B. Confiabilidade e operação | 6 | 2 | Baixo — log estruturado parcial e sem coletor; **o agendamento das partições foi entregue na FASE 36** (rotina do worker); restam a varredura dos `catch` silenciosos das contagens (B10, declarada na FASE 70) e o custo da prévia da API (B11, declarado na FASE 72) |
 | C. Quotas e billing | 1 | 0 | Médio — quota de armazenamento e ciclo de vida do membro entregues na FASE 21; restam a reconciliação banco × bucket e o acesso de participante na remoção |
 | D. Comunicação e comunidade | 3 | 2 | Médio — o e-mail agora sai, mas sem domínio verificado só chega a um endereço, e não há webhook de entrega nem central de preferências por tipo de aviso (o **recado em massa** tem opt-out desde a FASE 67 — ver D9) |
-| E. Jornada do participante | 21 | 1 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP**, **a autorização da foto é declarada, não guardada**, **a arte da carta entra por URL sem passar pelo acervo** e **a suíte de credenciamento depende da ordem dos testes**; a FASE 67 acrescentou **E87** (sem revogação individual do endereço de descadastro) — o **E88** (o descadastro não pergunta o motivo) foi **quitado na FASE 69** |
+| E. Jornada do participante | 22 | 1 | Médio — atrito e listas sem paginação; o acervo cresce sem miniatura nem busca, não há como retirar uma submissão enviada, a trilha do rascunho só muda recriando, o evento lotado não tem fila de espera, a sala de uma atividade aberta não limita o público do evento, a lista auditável do sorteio não pode ser comprometida antes da apuração, o prêmio anunciado de uma rodada não pode ser corrigido pela tela, o balcão não deixa pedir "só entrada", o arquivo exportado não tem prazo nem controle de destino, o recado é mão única, a proposta de uma chamada não aceita anexo, não há prazo-limite da atividade, o quadro de demandas carrega todos os cartões de uma vez e não reordena por teclado, a contagem que congela a rubrica da trilha é conservadora, o contato de patrocinador aceito não consome quota de equipe, não há teto de QR por patrocinador, não há lista de arquivados nem restauração, o XP da inscrição não é estornado no cancelamento, **não há mensagem entre participantes**, **não há visão da pessoa entre instituições**, **não há moderação nem denúncia do que é público**, **o bloco de equipe não tem ordem manual**, **quem está na equipe aparece sem opt-out próprio do nome**, **o acervo anterior à FASE 46 não é reconvertido para WebP**, **a autorização da foto é declarada, não guardada**, **a arte da carta entra por URL sem passar pelo acervo** e **a suíte de credenciamento depende da ordem dos testes**; a FASE 67 acrescentou **E87** (sem revogação individual do endereço de descadastro) — o **E88** (o descadastro não pergunta o motivo) foi **quitado na FASE 69**; a FASE 76 acrescentou **E89** (o `?evento=` inválido cai em outro evento, em silêncio) |
 | F. Gamificação | 5 | 0 | Baixo — mecânicas já existem sem gatilho automático |
 | G. Sorteios | 0 | 0 | ~~Médio~~ **Zerado na FASE 22**: as seis dívidas do tema (G8–G13) foram quitadas — desfazer entrega, busca no histórico, premiar N revisores, página do resultado, chave versionada e prévia ao vivo |
 | H. Design e acessibilidade | 1 | 0 | Baixo — aparência consistente; composição heterogênea |
 | I. Plataforma e diretório | 0 | 0 | Baixo — ~~resta a sigla × nome na detecção de conflito~~ a FASE 60 fechou as duas linhas abertas (I1 e I2) |
-| **Total** | **41** | **5** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — · **5 na FASE 69** — E82, E83, E84, E86 e E88 — · **2 declarados na FASE 70** — A7 e B10 — · **1 declarado na FASE 72** — B11 — mais o escopo próprio da FASE 25 e as revisões) |
+| **Total** | **42** | **5** | (as fases quitadas estão item a item nas tabelas: 8 na FASE 12 · 5 na FASE 13 · 3 na FASE 14 · 7 na FASE 15 · 8 na FASE 16 · 4 na FASE 17 · 2 na FASE 21 · 6 na FASE 22 · 5 na FASE 23 · 4 na FASE 24 · 1 na FASE 33 · **3 na FASE 36** — A3, B7 e E47 — · **2 na FASE 37** — E41 e E48 — · **1 na FASE 44** — E35 — · **5 na FASE 69** — E82, E83, E84, E86 e E88 — · **2 declarados na FASE 70** — A7 e B10 — · **1 declarado na FASE 72** — B11 — · **1 declarado na FASE 76** — E89 — mais o escopo próprio da FASE 25 e as revisões) |
 
 > **Contagem na FASE 72.** O total medido linha por linha é **41**: os 40 anteriores mais
 > **B11** (o custo da prévia da API — 5 chamadas de handler por render). O defeito do upload
@@ -161,6 +176,28 @@
 > porque o anexo inline na página pública não foi entregue —, fechou o **beco** do anexo pelo
 > caminho do autor e registrou os três pontos de atenção acima no documento da fase. "E46
 > quitada" seria falso; "re-escopada" é o fato.
+
+> **Contagem na FASE 75.** O total continua **41** (A=4, B=6, C=1, D=3, E=21, F=5, H=1, I=0):
+> o refactor **não quitou nem declarou** item. Os pontos de atenção da fase estão no documento
+> dela e **não** ganharam código de dívida: (a) sem `cache()`, layout e página seguem
+> resolvendo o contexto cada um; (b) os dois checks de convite do shell não foram unificados;
+> (c) `RaffleErrorCode`/`RaffleResult` moram no irmão de leitura; (d) o contrato `context`
+> devolvido pela guarda ainda não tem consumidor em todas as páginas; e (e) um **id malformado
+> na URL responde 500** (armadilha 25) em todas as rotas com id no painel — **pré-existente**,
+> encontrado ao medir a página de erro, e que merece uma fase de mutirão (validar o formato e
+> responder `notFound()`). Nenhum é dívida deste levantamento, e por isso a contagem **não
+> muda**.
+
+> **Contagem na FASE 76.** O total passa de **41 para 42** (A=4, B=6, C=1, D=3,
+> **E=22**, F=5, H=1, I=0): a fase **declarou UM item**, a **E89** — o fallback
+> silencioso de `?evento=` em cinco telas. O critério é o mesmo da E87 e da E85: o
+> valor que não casa com um evento existente é tratado como AUSÊNCIA, e a tela cai
+> em outro evento (ou em "todos") sem dizer. É **defeito reprodutível**, não limite
+> de desenho; por isso entra na contagem em vez de ficar só como ponto de atenção.
+> A fase **não quitou** item numerado: o **id malformado respondendo 500** era um
+> ponto de atenção da F75 (armadilha 25, pré-existente) e **não** tinha código de
+> dívida — a F76 o fechou, e isso está registrado no documento da fase, não como
+> quitação desta lista.
 
 > **Correção de contagem (FASE 36).** O total publicado aqui dizia **55**, e ele somava as
 > linhas que já estavam **riscadas** — a FASE 35 quitou E38, E39, E40 e E43 e riscou as linhas
@@ -553,6 +590,7 @@
 | ~~E86~~ | ~~**O choque de horário não considera a margem de deslocamento entre salas**~~ | FASE 65 (novo, decisão do humano no plano) | **QUITADO na FASE 69** — a margem virou **parâmetro da regra pura** (`intervalsClash`/`findClashPairs`), com o padrão **declarado** no domínio (`ROOM_TRAVEL_MARGIN_MINUTES = 15`, `src/domain/agenda/overlap-rules.ts:201`); quem termina numa sala e começa em outra com menos de 15 minutos entre o fim de um e o início do outro **avisa**, e o aviso diz que o motivo é o deslocamento, com o número no texto. **Margem zero ≡ régua da FASE 65** (preso por teste, 9 pares) e **não há configuração por evento** (ponto de atenção declarado: o caminho seria coluna + tela + decisão de produto) | — | — | — |
 | E87 | **Não há revogação individual do endereço de descadastro** | FASE 67 (novo, ADR-338) | O token é DERIVADO do par (instituição, pessoa) — não há linha de token por endereço para revogar. Desativar o vínculo corta o acesso na hora; "gerar um link novo" não existe. É o mesmo custo declarado do `.ics` da FASE 65 | Quem desconfia que o endereço vazou não tem como invalidá-lo sem trocar o `BETTER_AUTH_SECRET` (o que invalida TODOS os endereços de todos os caminhos que usam o segredo) | M | Não |
 | ~~E88~~ | ~~**O descadastro não pergunta o motivo**~~ | FASE 67 (novo) | **QUITADO na FASE 69** — a página sem login pergunta o motivo (quatro opções em português + "prefiro não dizer", nenhuma obrigatória e **nenhum rádio `required`**), o motivo viaja no MESMO `POST` da saída e a coluna `reason` — que só era escrita no caminho `MANUAL` — passou a ser gravada no caminho `LINK`. A regra é pura no domínio (valor desconhecido vira `null` e **NUNCA** recusa a saída) e a equipe lê o agregado na aba "Segmentos", com o texto livre do telefone na mesma frase. Duas cautelas declaradas: **a frase É o valor gravado** (renomear opção é migração de dado) e a saída é **idempotente** (sair de novo não regrava o motivo) | — | — | — |
+| E89 | **O `?evento=` inválido cai em outro evento, em silêncio** | FASE 76 (novo) | Em `/credenciamento`, `/credenciamento/crachas`, `/meu-cracha` e `/minha-agenda`, `evento && events.some(...) ? evento : events[0]?.id ?? null` trata o id que não casa com um evento existente como AUSÊNCIA e cai no primeiro evento; em `/participantes`, cai em "todos". É a mesma família do filtro da F76, sem 500: falta **descartar e anunciar** (ou decidir que o evento pedido é endereço, com 404), como as três telas de query passaram a fazer | A pessoa pede um evento e vê outro; a operação de balcão pode credenciar no evento errado sem perceber | M | Não |
 | # | Item | Origem | O que falta exatamente | Impacto | Esforço | Verificado |
 |---|---|---|---|---|---|---|
 | F2 | **Trocas e crafting de duplicatas** | F5 | `UserCard.quantity` acumula; não há conversão nem troca | Duplicata sem valor percebido | G | Decorrente |

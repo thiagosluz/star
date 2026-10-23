@@ -23,12 +23,14 @@ import { withTenant } from '../../src/lib/db/tenant-client';
 import {
   createRaffle,
   drawRaffle,
-  listPublicRaffleResults,
-  listRaffles,
   markPrizeDelivered,
-  previewEligibility,
   setRaffleVisibility,
 } from '../../src/lib/raffles/raffle-service';
+import {
+  listRaffles,
+  previewEligibility,
+} from '../../src/lib/raffles/raffle-read-service';
+import { listPublicRaffleResults } from '../../src/lib/raffles/raffle-public-view-service';
 import { verifySeed } from '../../src/domain/raffles/raffle-rules';
 import {
   awardTopReviewers,

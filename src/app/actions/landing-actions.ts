@@ -24,9 +24,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { ASSET_TARGETS, type AssetTarget } from '@/domain/events/image-rules';
@@ -56,61 +54,15 @@ export interface LandingActionState {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Guarda
 // ───────────────────────────────────────────────────────────────────────────────
-async function guard(input: {
-  tenantSlug: string;
-  /**
-   * A tela usa `page:manage`; o logotipo do patrocinador usa `sponsor:manage`; a foto
-   * do palestrante (FASE 46) usa `speaker:manage` — a esteira é a mesma, a porta é a
-   * da tela que a chamou.
-   */
-  permission:
-    | typeof PERMISSIONS.PAGE_MANAGE
-    | typeof PERMISSIONS.SPONSOR_MANAGE
-    | typeof PERMISSIONS.SPEAKER_MANAGE;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: LandingActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true, slug: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, input.permission, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${input.permission}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
-}
+/**
+ * A esteira de imagem é UMA; a porta é a da tela que chamou.
+ *
+ * A tela usa `page:manage`; o logotipo do patrocinador usa `sponsor:manage`; a foto
+ * do palestrante (FASE 46) usa `speaker:manage`. Até a FASE 75 isso era uma guarda
+ * local com a permissão como parâmetro — a MESMA checagem de `guardAction`, com a
+ * permissão como parâmetro também. A cópia saiu: o que resta é a escolha da
+ * permissão em cada porta.
+ */
 
 /** A página pública e o editor precisam das duas rotas revalidadas. */
 function revalidateLanding(tenantSlug: string, eventId: string): void {
@@ -156,7 +108,7 @@ export async function ensureHomePageAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await ensureHomePage({
@@ -306,7 +258,7 @@ export async function savePageSettingsAction(
     };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   /**
@@ -375,7 +327,7 @@ export async function addBlockAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Selecione um tipo de bloco.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await addPageBlock({
@@ -405,7 +357,7 @@ export async function seedRecommendedBlocksAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await seedRecommendedBlocks({
@@ -528,7 +480,7 @@ export async function updateBlockAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados do bloco inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await updatePageBlock({
@@ -567,7 +519,7 @@ export async function moveBlockAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await movePageBlock({
@@ -601,7 +553,7 @@ export async function deleteBlockAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await deletePageBlock({
@@ -643,7 +595,7 @@ export async function restorePageVersionAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await restorePageVersion({
@@ -694,7 +646,7 @@ export async function deleteMediaAssetAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
+  const context = await guardAction<LandingActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.PAGE_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await deleteMediaAsset({
@@ -767,7 +719,7 @@ export async function requestAssetUploadAction(
     };
   }
 
-  const context = await guard({
+  const context = await guardAction<LandingActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: permissionForTarget(parsed.data.target),
   });
@@ -833,7 +785,7 @@ export async function confirmAssetUploadAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados de confirmação inválidos.' };
   }
 
-  const context = await guard({
+  const context = await guardAction<LandingActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: permissionForTarget(parsed.data.target),
   });

@@ -25,6 +25,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
+import { guardAction } from '@/lib/auth/guard-action';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant } from '@/lib/db/tenant-client';
 import { can, holdsPermission, type Principal } from '@/domain/rbac/authorization';
@@ -141,54 +142,6 @@ async function resolveTenant(tenantSlug: string): Promise<{ id: string; slug: st
     where: { slug: tenantSlug },
     select: { id: true, slug: true },
   });
-}
-
-/** Guarda da organização: vínculo ATIVO + permissão no escopo do tenant. */
-async function organizationGuard(input: {
-  tenantSlug: string;
-}): Promise<GuardOk | { ok: false; state: SpeakerActionState }> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await resolveTenant(input.tenantSlug);
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, PERMISSIONS.SPEAKER_MANAGE, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${PERMISSIONS.SPEAKER_MANAGE}.` },
-    };
-  }
-
-  return {
-    ok: true,
-    userId: user.id,
-    userEmail: user.email,
-    tenantId: tenant.id,
-    tenantSlug: tenant.slug,
-    principal,
-  };
 }
 
 /**
@@ -370,7 +323,10 @@ export async function saveSpeakerProfileAction(
     };
   }
 
-  const auth = await organizationGuard({ tenantSlug: parsed.data.tenantSlug });
+  const auth = await guardAction<SpeakerActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SPEAKER_MANAGE,
+  });
   if (!auth.ok) return auth.state;
 
   const result = await saveSpeakerProfile({
@@ -438,7 +394,10 @@ export async function linkSpeakerAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Escolha a atividade e o palestrante.' };
   }
 
-  const auth = await organizationGuard({ tenantSlug: parsed.data.tenantSlug });
+  const auth = await guardAction<SpeakerActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SPEAKER_MANAGE,
+  });
   if (!auth.ok) return auth.state;
 
   const result = await linkSpeakerToActivity({
@@ -481,7 +440,10 @@ export async function unlinkSpeakerAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Vínculo inválido.' };
   }
 
-  const auth = await organizationGuard({ tenantSlug: parsed.data.tenantSlug });
+  const auth = await guardAction<SpeakerActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SPEAKER_MANAGE,
+  });
   if (!auth.ok) return auth.state;
 
   const result = await unlinkSpeakerFromActivity({
@@ -518,7 +480,10 @@ export async function regenerateSpeakerInviteAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Palestrante inválido.' };
   }
 
-  const auth = await organizationGuard({ tenantSlug: parsed.data.tenantSlug });
+  const auth = await guardAction<SpeakerActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SPEAKER_MANAGE,
+  });
   if (!auth.ok) return auth.state;
 
   const result = await regenerateSpeakerInvite({

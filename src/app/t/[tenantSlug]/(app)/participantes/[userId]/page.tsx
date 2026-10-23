@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, Award, Layers, Mail, Sparkles, UserRound } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -48,7 +49,9 @@ export default async function ParticipantProfilePage({
 }: {
   params: Promise<{ tenantSlug: string; userId: string }>;
 }) {
-  const { tenantSlug, userId } = await params;
+  const resolvedParams = await params;
+  const userId = requireUuidParam(resolvedParams, 'userId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId, tenantName, userId: actorId } = await requirePagePermission({
     tenantSlug,

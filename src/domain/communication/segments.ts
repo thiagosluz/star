@@ -59,6 +59,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { isPersonPubliclyVisible, maskPersonName } from '@/domain/profile/public-profile-rules';
+import { isUuid } from '@/domain/validation/id-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Parâmetros
@@ -111,7 +112,6 @@ export interface SegmentParameter {
 /** Texto usado quando um parâmetro obrigatório chega sem valor à frase. */
 export const UNSET_PARAMETER_TEXT = '(não informado)';
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -189,7 +189,16 @@ function validateParameterValue(parameter: SegmentParameter, entry: unknown): Se
 
   switch (parameter.kind) {
     case 'uuid':
-      return typeof text === 'string' && UUID_PATTERN.test(text) ? text.toLowerCase() : null;
+      /**
+       * ─── A POLÍTICA AQUI É RECUSAR, E CONTINUA SENDO ─────────────────────────
+       * `isUuid` só responde a pergunta de FORMA. O `trim` e a CAIXA BAIXA são
+       * decisões deste chamador: o valor vai gravado no snapshot do segmento, e
+       * normalizar a caixa é o que faz dois ids do mesmo evento compararem iguais.
+       * Sem forma de uuid, o retorno é `null` — e quem chama transforma isso em
+       * problema visível na tela. Recusar, e não ignorar, é o que impede a seleção
+       * de crescer em silêncio.
+       */
+      return typeof text === 'string' && isUuid(text) ? text.toLowerCase() : null;
 
     case 'data':
       return typeof text === 'string' && isRealDay(text) ? text : null;

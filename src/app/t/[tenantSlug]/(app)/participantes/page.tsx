@@ -5,7 +5,6 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { getRequestContext } from '@/lib/auth/session';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listParticipants } from '@/lib/participants/participant-service';
 import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
@@ -65,16 +64,18 @@ export default async function ParticipantsPage({
   const { tenantSlug } = await params;
   const { busca, evento, certificado, presente, pagina, exportacao, erro } = await searchParams;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  /**
+   * O principal vem da GUARDA (FASE 75 · fatia 4): ela já o resolveu para decidir
+   * `participant:read`. Chamar `getRequestContext()` outra vez aqui repetia a
+   * leitura de vínculos e a transação do principal no mesmo render.
+   */
+  const { tenantId, tenantName, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.PARTICIPANT_READ,
   });
 
-  const context = await getRequestContext();
-
   /** A permissão de LER não implica a de FALAR: quem não pode enviar não vê o painel. */
-  const canMessage =
-    can(context?.principal ?? null, PERMISSIONS.PARTICIPANT_MESSAGE, { scope: 'TENANT' }) === true;
+  const canMessage = can(principal, PERMISSIONS.PARTICIPANT_MESSAGE, { scope: 'TENANT' }) === true;
 
   const events = await withTenant(tenantId, (tx) =>
     tx.event.findMany({

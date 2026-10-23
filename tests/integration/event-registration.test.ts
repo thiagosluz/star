@@ -23,11 +23,13 @@ import { withTenant } from '../../src/lib/db/tenant-client';
 import { deleteActivity, getAdminEvent, saveActivity } from '../../src/lib/admin/catalog-service';
 import {
   cancelRegistration,
-  findMyEventRegistration,
-  listMyRegistrations,
   registerForActivity,
   registerForEvent,
 } from '../../src/lib/events/registration-service';
+import {
+  findMyEventRegistration,
+  listMyRegistrations,
+} from '../../src/lib/events/registration-read-service';
 
 const RUN = randomUUID().slice(0, 8);
 const EVENT_SLUG = `evento-geral-${RUN}`;

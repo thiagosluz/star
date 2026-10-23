@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-import { getRequestContext, loadPrincipal } from '@/lib/auth/session';
+import { getRequestContext } from '@/lib/auth/session';
 import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 import { hasPendingSpeakerInvite } from '@/lib/speakers/speaker-portal-service';
 import {
@@ -94,12 +94,24 @@ export default async function TenantLayout({
     redirect('/selecionar-instituicao');
   }
 
-  // ── 5. Principal RBAC sob RLS ──────────────────────────────────────────────
-  const principal = await loadPrincipal(
-    context.user.id,
-    tenant.id,
-    membership.status,
-  );
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O PRINCIPAL JÁ VEIO NA RESOLUÇÃO DO CONTEXTO (FASE 75 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `getRequestContext` carrega o principal da instituição ATIVA sob RLS, e o
+   *  passo 4 provou que a ativa é esta da URL. Chamar `loadPrincipal` de novo
+   *  aqui era a MESMA consulta, com os mesmos argumentos (usuário da sessão,
+   *  instituição do vínculo), na mesma requisição — uma transação e uma query a
+   *  mais por render do shell, sem chance de a resposta divergir.
+   *
+   *  A checagem abaixo é fail-closed e não deveria disparar: o principal só é nulo
+   *  quando não há instituição ativa, e o passo 4 já redirecionou nesse caso. Ela
+   *  existe para o tipo ser honesto sem um `!` que esconderia a regra.
+   */
+  const principal = context.principal;
+  if (!principal) {
+    redirect('/selecionar-instituicao');
+  }
 
   return (
     <AppShell

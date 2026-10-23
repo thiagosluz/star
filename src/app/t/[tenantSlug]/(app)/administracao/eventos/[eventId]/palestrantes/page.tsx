@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { CalendarDays, Mic, ShieldCheck, UserCheck, UserX } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { listSpeakers, listEventActivitiesForSpeakers } from '@/lib/speakers/speaker-service';
@@ -46,7 +47,9 @@ export default async function EventSpeakersPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,

@@ -6,6 +6,8 @@ import { adminPrisma } from '@/lib/db/admin-client';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { resolveMaterialDownload, resolveMaterialViewer } from '@/lib/speakers/material-service';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -44,9 +46,21 @@ export async function GET(
 ): Promise<NextResponse> {
   const { tenantSlug, materialId } = await context.params;
 
+  /**
+   * ─── O ID MALFORMADO NÃO É "PROIBIDO", É INEXISTENTE (FASE 76) ──────────────
+   * Antes, com um visitante autenticado, a consulta por `materialId` estourava no
+   * Prisma e a rota respondia 500 sem corpo; anônimo caía no `catch` do serviço e
+   * recebia 403 com `code: "INTERNAL"` — dizer "proibido" sobre um id que nem tem
+   * forma de id. O formato é conferido ANTES de qualquer decisão de acesso, e a
+   * resposta é a mesma de um material inexistente: 404 com o envelope.
+   */
+  if (!isUuid(materialId)) {
+    return tenantApiError(404, 'NOT_FOUND', 'Material não encontrado.');
+  }
+
   const tenant = await getTenantContext(tenantSlug);
   if (!tenant) {
-    return NextResponse.json({ ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' }, { status: 404 });
+    return tenantApiError(404, 'NOT_FOUND', 'Instituição não encontrada.');
   }
 
   /**
@@ -83,13 +97,9 @@ export async function GET(
   });
 
   if (!result.ok) {
-    return NextResponse.json(
-      { ok: false, code: result.code, message: result.message },
-      {
-        status: result.httpStatus,
-        headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
-      },
-    );
+    return tenantApiError(result.httpStatus, result.code, result.message, {
+      'x-robots-tag': 'noindex, nofollow',
+    });
   }
 
   /**

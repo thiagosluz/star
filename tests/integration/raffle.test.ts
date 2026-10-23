@@ -21,9 +21,11 @@ import {
   cancelRaffle,
   createRaffle,
   drawRaffle,
+} from '../../src/lib/raffles/raffle-service';
+import {
   listRaffles,
   previewEligibility,
-} from '../../src/lib/raffles/raffle-service';
+} from '../../src/lib/raffles/raffle-read-service';
 import { listAuditLog } from '../../src/lib/admin/audit';
 import { buildResultPayload, hashResult, verifyResult } from '../../src/domain/raffles/raffle-rules';
 

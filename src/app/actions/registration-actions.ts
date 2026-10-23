@@ -26,20 +26,17 @@ import {
   validateFormResponses,
 } from '@/domain/events/registration-form-spec-rules';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { guardSelfServiceAction } from '@/lib/auth/guard-action';
-import { adminPrisma } from '@/lib/db/admin-client';
+import { guardAction, guardSelfServiceAction, type ActionPermission } from '@/lib/auth/guard-action';
 import {
   cancelRegistration,
-  readEventRegistrationFields,
   registerForActivity,
   registerForEvent,
   acceptPromotion,
   updateEventRegistrationData,
   type RegistrationOutcome,
 } from '@/lib/events/registration-service';
+import { readEventRegistrationFields } from '@/lib/events/registration-read-service';
 import { eraseMyFormResponses } from '@/lib/events/registration-response-service';
-import { can, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 
@@ -76,60 +73,68 @@ export interface RegistrationActionState {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  Guarda de autorização
+//  Guarda de autorização — o contrato PRÓPRIO da inscrição, traduzido
 // ───────────────────────────────────────────────────────────────────────────────
 interface GuardResult {
   userId: string;
   tenantId: string;
-  principal: Principal;
 }
 
 /**
- * Carrega o principal e verifica a permissão exigida.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  POR QUE ESTA GUARDA NÃO DEVOLVE ESTADO COMO AS OUTRAS (e continua sendo UMA)
+ * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Devolve `null` (e o chamador redireciona ao login) quando não há sessão ou
- * vínculo ativo. Lança quando há sessão mas falta permissão — um erro de
- * autorização precisa ser visível, não silencioso.
+ *  As ações desta tela são as do PARTICIPANTE, e a experiência de quem chega sem
+ *  sessão é diferente da de quem chegou e não pode: a primeira pessoa precisa
+ *  ENTRAR (o chamador redireciona ao login preservando o destino), a segunda
+ *  precisa VER o motivo (uma exceção, que a página de erro mostra).
+ *
+ *  É por isso que o contrato daqui é `null` × `throw` — e não `{ ok: false, state }`
+ *  como nas outras guardas. Ele é o contrato que os chamadores já consomem, e a
+ *  FASE 75 o manteve: o teste #10 de `f75-guardas-caracterizacao` prende os DOIS
+ *  lados (sem sessão → redireciona; sem permissão → lança com a mensagem).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A CHECAGEM NÃO É MAIS UMA CÓPIA: ELA É O `guardAction`, TRADUZIDO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 75 esta função refazia sessão, instituição, vínculo e `can()` — a
+ *  mesma checagem de `guardAction`, mantida em paralelo. Agora ela DELEGA e só
+ *  traduz o resultado, usando o motivo estruturado (`reason`) em vez de adivinhar
+ *  pela mensagem:
+ *
+ *    • `NOT_AUTHENTICATED` / `TENANT_NOT_FOUND` / `NO_MEMBERSHIP` → `null`
+ *      (o chamador manda para o login);
+ *    • `FORBIDDEN` → **lança** com a mensagem da casa.
+ *
+ *  `FORBIDDEN` é, por construção do `guardAction`, SEMPRE falta de permissão: o
+ *  vínculo tem motivo próprio (`NO_MEMBERSHIP`). É essa separação que torna a
+ *  tradução exata, e não uma leitura frágil de texto.
+ *
+ *  A POSSE continua resolvida: numa permissão `:own`, o `guardAction` passa
+ *  `ownerId` = pessoa da sessão (o dono do RECURSO segue conferido no serviço, com
+ *  o id vindo do banco — a lição da F74). Nada de `ownership` vindo do formulário.
  */
-async function guard(
+async function requireRegistrationActor(
   tenantSlug: string,
-  permission: (typeof PERMISSIONS)[keyof typeof PERMISSIONS],
-  options: { ownership?: { ownerId: string }; allowAnonymous?: boolean } = {},
+  permission: ActionPermission,
 ): Promise<GuardResult | null> {
-  const user = await getAuthenticatedUser();
-  if (!user) return null;
-
-  // Resolve o tenant pelo slug do contexto ativo. A consulta é global
-  // (`tenants` não tem RLS por tenantId) e o slug vem da URL, não do cliente.
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: tenantSlug },
-    select: { id: true },
-  });
-  if (!tenant) return null;
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') return null;
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  const allowed = can(
-    principal,
+  const auth = await guardAction<RegistrationActionState>({
+    tenantSlug,
     permission,
-    { scope: 'TENANT' },
-    options.ownership,
-  );
+    /**
+     * A mensagem é a da tela, e não a da matriz de papéis: quem chega aqui é o
+     * participante, e "fale com a organização do evento" é o que ele pode fazer.
+     * O teste #10 prende a frase inteira.
+     */
+    deniedMessage: `Permissão negada: ${permission}. Fale com a organização do evento.`,
+  });
 
-  if (!allowed) {
-    throw new Error(
-      `Permissão negada: ${permission}. Fale com a organização do evento.`,
-    );
-  }
+  if (auth.ok) return { userId: auth.userId, tenantId: auth.tenantId };
 
-  return { userId: user.id, tenantId: tenant.id, principal };
+  if (auth.reason !== 'FORBIDDEN') return null;
+
+  throw new Error(auth.state.message ?? `Permissão negada: ${permission}. Fale com a organização do evento.`);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -692,30 +697,18 @@ export async function cancelRegistrationAction(
 
   /**
    * Cancelamento é uma permissão `:own`, e `can()` NEGA quando a posse não é
-   * informada (fail-closed, por design). Por isso passamos `ownership`
-   * explicitamente.
-   *
-   * Isso não é uma brecha: o "dono" aqui é o próprio usuário autenticado, cujo
-   * id vem da SESSÃO — nunca do formulário. O cliente não pode declarar posse
-   * da inscrição de outra pessoa porque o id de dono não é dado de entrada. E o
+   * informada (fail-closed, por design). A posse é resolvida DENTRO do
+   * `requireRegistrationActor`: numa action, o dono de uma permissão `:own` é a
+   * pessoa da SESSÃO, nunca um id do formulário. O cliente não pode declarar posse
+   * da inscrição de outra pessoa porque o id de dono não é dado de entrada — e o
    * serviço de aplicação ainda filtra por `userId` na consulta.
    *
-   * Este erro (chamar `can()` sem `ownership`) fazia o cancelamento falhar
-   * SEMPRE, com "Permissão negada". Descoberto pelo E2E de cancelamento.
+   * Este erro (chamar `can()` sem `ownerId`) fazia o cancelamento falhar SEMPRE,
+   * com "Permissão negada". Descoberto pelo E2E de cancelamento.
    */
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    redirect(
-      `/login?redirectTo=${encodeURIComponent(
-        tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`),
-      )}`,
-    );
-  }
-
-  const context = await guard(
+  const context = await requireRegistrationActor(
     data.tenantSlug,
     PERMISSIONS.REGISTRATION_CANCEL_OWN,
-    { ownership: { ownerId: user.id } },
   );
 
   if (!context) {
@@ -805,18 +798,10 @@ export async function eraseMyFormResponsesAction(
 
   const data = parsed.data;
 
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    redirect(
-      `/login?redirectTo=${encodeURIComponent(
-        tenantPath(data.tenantSlug, '/minhas-inscricoes'),
-      )}`,
-    );
-  }
-
-  const context = await guard(data.tenantSlug, PERMISSIONS.REGISTRATION_CANCEL_OWN, {
-    ownership: { ownerId: user.id },
-  });
+  const context = await requireRegistrationActor(
+    data.tenantSlug,
+    PERMISSIONS.REGISTRATION_CANCEL_OWN,
+  );
 
   if (!context) {
     redirect(
@@ -853,10 +838,10 @@ export async function eraseMyFormResponsesAction(
  *  ACEITAR A VAGA OFERTADA (dívida E1)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- *  A permissão é `registration:create` com POSSE explícita — aceitar a vaga é o ato de
- *  completar a própria inscrição, e a posse é o que impede o cliente de declarar dono
- *  (o `userId` vem da sessão, nunca do formulário; sem `ownership`, `can()` nega por
- *  desenho — a armadilha que fez o cancelamento falhar sempre).
+ *  A permissão é `registration:create` — a de se inscrever, que é o que aceitar a vaga
+ *  COMPLETA. Aqui não há posse a declarar: `can()` só exige `ownerId` para permissões
+ *  `:own`, e esta não é. Quem impede o cliente de agir sobre a inscrição de outra
+ *  pessoa é o `userId` do serviço — ele vem da SESSÃO, nunca do formulário.
  *
  *  A autorização é conferida AQUI e o serviço ainda filtra por `userId` no `where`:
  *  duas linhas de defesa, e a segunda é a que vale se alguém chamar o serviço por outro
@@ -884,18 +869,7 @@ export async function acceptPromotionAction(
 
   const data = parsed.data;
 
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    redirect(
-      `/login?redirectTo=${encodeURIComponent(
-        tenantPath(data.tenantSlug, '/minhas-inscricoes'),
-      )}`,
-    );
-  }
-
-  const context = await guard(data.tenantSlug, PERMISSIONS.REGISTRATION_CREATE, {
-    ownership: { ownerId: user.id },
-  });
+  const context = await requireRegistrationActor(data.tenantSlug, PERMISSIONS.REGISTRATION_CREATE);
 
   if (!context) {
     redirect(

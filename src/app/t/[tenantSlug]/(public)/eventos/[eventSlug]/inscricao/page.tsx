@@ -14,7 +14,7 @@ import {
 } from '@/domain/events/public-registration-rules';
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { adminPrisma } from '@/lib/db/admin-client';
-import { findMyEventRegistration } from '@/lib/events/registration-service';
+import { findMyEventRegistration } from '@/lib/events/registration-read-service';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';

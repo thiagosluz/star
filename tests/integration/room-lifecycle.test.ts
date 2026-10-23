@@ -30,9 +30,9 @@ import {
 import { listAuditLog } from '../../src/lib/admin/audit';
 import {
   cancelRegistration,
-  readActivityCounters,
   registerForActivity,
 } from '../../src/lib/events/registration-service';
+import { readActivityCounters } from '../../src/lib/events/registration-read-service';
 import { getPublicActivity, getPublicEvent } from '../../src/lib/events/event-repository';
 
 const RUN = randomUUID().slice(0, 8);

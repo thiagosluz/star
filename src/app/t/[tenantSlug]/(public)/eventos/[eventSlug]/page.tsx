@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { getTenantContext } from '@/lib/events/event-repository';
 import { buildEventMetadata } from '@/domain/events/landing-page';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { listPublicRaffleResults } from '@/lib/raffles/raffle-service';
+import { listPublicRaffleResults } from '@/lib/raffles/raffle-public-view-service';
 import { listPublicCalls } from '@/lib/proposals/call-service';
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
 import { getMyAgenda } from '@/lib/events/agenda-service';

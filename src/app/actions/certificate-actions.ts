@@ -17,9 +17,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CERTIFICATE_KINDS, type CertificateKind } from '@/domain/certificates/certificate-rules';
@@ -57,65 +55,6 @@ export interface CertificateActionState {
   data?: Record<string, unknown>;
 }
 
-async function guard(input: {
-  tenantSlug: string;
-  permission: (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-  requiresOwnership?: boolean;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: CertificateActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Você não tem vínculo ativo com esta instituição.',
-      },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  const allowed = can(
-    principal,
-    input.permission,
-    { scope: 'TENANT' },
-    input.requiresOwnership ? { ownerId: user.id } : undefined,
-  );
-
-  if (!allowed) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: `Permissão negada: ${input.permission}.` },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
-}
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Participante: pedir o próprio certificado
@@ -142,10 +81,9 @@ export async function requestMyCertificateAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para emitir o certificado.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<CertificateActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_READ_OWN,
-    requiresOwnership: true,
   });
 
   if (!auth.ok) return auth.state;
@@ -217,7 +155,7 @@ export async function issueEventCertificatesAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Selecione ao menos um tipo de certificado.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<CertificateActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   });
@@ -292,7 +230,7 @@ export async function revokeCertificateAction(
     };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<CertificateActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_REVOKE,
   });
@@ -338,10 +276,9 @@ export async function requestCertificateDownloadAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para o download.' };
   }
 
-  const auth = await guard({
+  const auth = await guardAction<CertificateActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_READ_OWN,
-    requiresOwnership: true,
   });
 
   if (!auth.ok) return auth.state;
@@ -437,7 +374,7 @@ export async function saveCertificateTemplateAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para salvar o modelo.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
+  const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const hasRows = formData.getAll('elementKind').length > 0;
@@ -511,7 +448,7 @@ export async function previewCertificateTemplateAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para a prévia.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
+  const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const current = parsed.data.templateId
@@ -600,7 +537,7 @@ export async function uploadTemplateBackgroundAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Modelo não identificado.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
+  const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const file = formData.get('background');
@@ -642,7 +579,7 @@ export async function clearTemplateBackgroundAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Modelo não identificado.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
+  const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await clearTemplateBackground({ tenantId: auth.tenantId, templateId: parsed.data.templateId });
@@ -668,7 +605,7 @@ export async function deleteCertificateTemplateAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Modelo não identificado.' };
   }
 
-  const auth = await guard({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
+  const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
   const result = await deleteCertificateTemplate({ tenantId: auth.tenantId, templateId: parsed.data.templateId });

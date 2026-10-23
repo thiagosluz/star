@@ -38,6 +38,7 @@ import {
   segmentCondition,
   type SegmentDefinition,
 } from '@/domain/communication/segments';
+import { isUuid } from '@/domain/validation/id-rules';
 
 /**
  * Quantos filtros a tela oferece de uma vez.
@@ -233,8 +234,6 @@ export function segmentQuery(
 // ───────────────────────────────────────────────────────────────────────────────
 //  O evento do endereço
 // ───────────────────────────────────────────────────────────────────────────────
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * O evento informado tem forma de uuid?
  *
@@ -245,9 +244,15 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  *  "sem evento": a campanha passaria a ser da INSTITUIÇÃO INTEIRA, que é mais gente
  *  do que o organizador pediu. A resposta certa é a recusa, dita na tela — e é por
  *  isso que a pergunta é feita aqui, antes de qualquer consulta.
+ *
+ *  ─── A POLÍTICA AQUI É "AUSENTE PASSA, TORTO NÃO" ───────────────────────────
+ *  `null` significa "não escolhi evento" e é legítimo; por isso ele é aceito antes
+ *  da pergunta de forma. O teste é direto sobre o valor: este chamador NÃO faz
+ *  `trim` — o valor veio de um campo de formulário e vai virar consulta, e espaço em
+ *  volta não vira uuid por conta própria.
  */
 export function isSegmentEventIdShaped(value: string | null): boolean {
-  return value === null || UUID_PATTERN.test(value);
+  return value === null || isUuid(value);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

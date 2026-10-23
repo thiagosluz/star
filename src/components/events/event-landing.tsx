@@ -16,7 +16,7 @@ import {
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 import type { PublicEventDetail } from '@/lib/events/event-repository';
-import type { PublicRaffleResult } from '@/lib/raffles/raffle-service';
+import type { PublicRaffleResult } from '@/lib/raffles/raffle-public-view-service';
 import { BlockRenderer } from '@/components/events/block-renderer';
 import type { CallView } from '@/lib/proposals/call-service';
 import { RaffleResults } from '@/components/raffles/raffle-results';

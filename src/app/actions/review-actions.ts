@@ -31,9 +31,7 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -71,79 +69,6 @@ export interface ActionState {
   data?: Record<string, unknown>;
 }
 
-/**
- * Guarda de autorização.
- *
- * Resolve tenant e vínculo, carrega o `Principal` sob RLS e verifica a permissão
- * — com posse quando a permissão termina em `:own`, porque `can()` NEGA sem
- * `ownership` e essa negação é intencional.
- */
-async function guard(input: {
-  tenantSlug: string;
-  permission: (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-  requiresOwnership?: boolean;
-}): Promise<
-  | { ok: true; userId: string; tenantId: string; principal: Principal }
-  | { ok: false; state: ActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: input.tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' },
-    };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: 'Você não tem vínculo ativo com esta instituição.',
-      },
-    };
-  }
-
-  const principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  const allowed = can(
-    principal,
-    input.permission,
-    { scope: 'TENANT' },
-    input.requiresOwnership ? { ownerId: user.id } : undefined,
-  );
-
-  if (!allowed) {
-    return {
-      ok: false,
-      state: {
-        ok: false,
-        code: 'FORBIDDEN',
-        message: `Permissão negada: ${input.permission}.`,
-      },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id, principal };
-}
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Criação de submissão
@@ -196,7 +121,7 @@ export async function createSubmissionAction(
 
   const data = parsed.data;
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_CREATE,
   });
@@ -293,10 +218,9 @@ export async function updateSubmissionDraftAction(
     };
   }
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -359,10 +283,9 @@ export async function deleteDraftSubmissionAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -403,8 +326,9 @@ const withdrawSubmissionSchema = z.object({
  *  RETIRAR A PRÓPRIA SUBMISSÃO (FASE 56 · dívida E31)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- *  A permissão é `submission:update:own` com posse obrigatória (`requiresOwnership`): o
- *  `ownerId` é o da SESSÃO, nunca o do formulário — sem ele, `can()` NEGA por desenho
+ *  A permissão é `submission:update:own`, e a posse exigida por `can()` é resolvida
+ *  pelo PRÓPRIO `guardAction` (o dono de uma permissão `:own` numa action é a pessoa
+ *  da sessão): o `ownerId` nunca vem do formulário — sem ele, `can()` NEGA por desenho
  *  (fail-closed). O serviço ainda confere `submittedById` no `where`, então há duas
  *  linhas de defesa e a segunda é a que vale se alguém chamar o serviço por outro
  *  caminho.
@@ -427,10 +351,9 @@ export async function withdrawSubmissionAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -501,10 +424,9 @@ export async function requestUploadAction(
 
   const data = parsed.data;
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -580,10 +502,9 @@ export async function confirmUploadAction(
 
   const data = parsed.data;
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -639,10 +560,9 @@ export async function submitSubmissionAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -713,10 +633,9 @@ export async function saveSubmissionAuthorsAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: parsed.data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -796,7 +715,7 @@ export async function assignReviewerAction(
 
   const data = parsed.data;
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_ASSIGN_REVIEWER,
   });
@@ -858,10 +777,9 @@ export async function submitReviewAction(
 
   const data = parsed.data;
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: data.tenantSlug,
     permission: PERMISSIONS.REVIEW_SUBMIT_OWN,
-    requiresOwnership: true,
   });
 
   if (!context.ok) return context.state;
@@ -943,7 +861,7 @@ export async function recordDecisionAction(
 
   const data = parsed.data;
 
-  const context = await guard({
+  const context = await guardAction<ActionState>({
     tenantSlug: data.tenantSlug,
     permission: PERMISSIONS.SUBMISSION_DECIDE,
   });

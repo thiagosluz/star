@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import { CheckCircle2, Clock, FileText, AlertCircle } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
+import { requireUuidParam } from '@/lib/validation/id';
 import { loadSubmissionPageAccess } from '@/lib/review/submission-access';
 import {
   canChangeSubmissionTrackOf,
@@ -62,7 +63,9 @@ export default async function SubmissionDetailPage({
   params: Promise<{ tenantSlug: string; submissionId: string }>;
   searchParams: Promise<{ novo?: string; rascunho?: string }>;
 }) {
-  const { tenantSlug, submissionId } = await params;
+  const resolvedParams = await params;
+  const submissionId = requireUuidParam(resolvedParams, 'submissionId');
+  const { tenantSlug } = resolvedParams;
   const { novo, rascunho } = await searchParams;
 
   const context = await getRequestContext();

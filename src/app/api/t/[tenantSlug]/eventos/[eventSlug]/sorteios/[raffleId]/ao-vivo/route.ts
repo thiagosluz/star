@@ -42,12 +42,11 @@
 import { NextResponse } from 'next/server';
 
 import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository';
+import { getLiveEligibility, type LiveEligibility } from '@/lib/raffles/raffle-read-service';
 import {
-  getLiveEligibility,
   getRaffleLiveState,
-  type LiveEligibility,
   type RaffleLiveState,
-} from '@/lib/raffles/raffle-service';
+} from '@/lib/raffles/raffle-public-view-service';
 import type { RaffleConfig } from '@/domain/raffles/raffle-rules';
 
 export const dynamic = 'force-dynamic';

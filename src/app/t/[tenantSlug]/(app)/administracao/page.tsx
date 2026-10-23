@@ -15,7 +15,6 @@ import {
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { can } from '@/domain/rbac/authorization';
-import { getRequestContext } from '@/lib/auth/session';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminOverview } from '@/lib/admin/catalog-service';
 import { listAuditLog } from '@/lib/admin/audit';
@@ -63,13 +62,16 @@ export default async function AdminHomePage({
 }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  /**
+   * O principal vem da GUARDA (FASE 75 · fatia 4): ela já o resolveu para decidir
+   * `tenant:member:invite`, e chamar `getRequestContext()` de novo aqui repetia a
+   * leitura de vínculos e a transação do principal no MESMO render. O que a tela
+   * usa é só o principal — que a guarda devolve pronto.
+   */
+  const { tenantId, tenantName, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
-
-  const context = await getRequestContext();
-  const principal = context?.principal;
 
   const [overview, audit, storage] = await Promise.all([
     getAdminOverview(tenantId),

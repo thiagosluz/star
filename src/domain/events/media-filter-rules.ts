@@ -25,6 +25,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
+
 /**
  * Teto de imagens que a listagem traz de uma vez.
  *
@@ -83,21 +85,27 @@ export function normalizeMediaMimeType(raw: string | null | undefined): string |
   return trimmed.slice(0, MEDIA_MIME_MAX_LENGTH);
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Evento de origem do arquivo, ou `null` para "todos".
  *
  * Devolve o sentinela de "sem evento" quando é ele que veio; qualquer outro valor que
  * não seja UUID é descartado (ver o bloco do topo: filtro malformado vira "sem
  * filtro", e a consulta nunca recebe um id que a faria lançar).
+ *
+ * ─── A DECISÃO É A MESMA DA TELA, E VEM DE UM LUGAR SÓ ───────────────────────
+ * A tela precisa saber não só QUAL filtro aplicar, mas se um valor foi DESCARTADO
+ * (para anunciar). Em vez de repetir a conta aqui e lá, esta função delega à regra de
+ * `query-filter-rules.ts`, com o sentinela entre os valores aceitos. Assim o serviço e
+ * o aviso nunca discordam sobre o que é "id válido".
  */
 export function parseMediaSourceEvent(raw: string | null | undefined): string | null {
-  const value = (raw ?? '').trim();
-  if (!value) return null;
-  if (value === MEDIA_NO_SOURCE_EVENT) return MEDIA_NO_SOURCE_EVENT;
+  const decision = resolveUuidQueryFilter({
+    value: raw,
+    label: 'evento de origem',
+    extraValues: [MEDIA_NO_SOURCE_EVENT],
+  });
 
-  return UUID_PATTERN.test(value) ? value : null;
+  return decision?.kind === 'applied' ? decision.value : null;
 }
 
 /**

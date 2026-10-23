@@ -23,9 +23,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { can, type Principal } from '@/domain/rbac/authorization';
+import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -54,51 +52,6 @@ export interface SponsorActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
-}
-
-async function guard(tenantSlug: string): Promise<
-  | { ok: true; userId: string; tenantId: string }
-  | { ok: false; state: SponsorActionState }
-> {
-  const user = await getAuthenticatedUser();
-  if (!user) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'NOT_AUTHENTICATED', message: 'Sessão expirada. Entre novamente.' },
-    };
-  }
-
-  const tenant = await adminPrisma.tenant.findUnique({
-    where: { slug: tenantSlug },
-    select: { id: true },
-  });
-
-  if (!tenant) {
-    return { ok: false, state: { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' } };
-  }
-
-  const membership = await adminPrisma.userTenantProfile.findFirst({
-    where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
-    select: { status: true },
-  });
-
-  if (!membership || membership.status !== 'ACTIVE') {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Você não tem vínculo ativo com esta instituição.' },
-    };
-  }
-
-  const principal: Principal = await loadPrincipal(user.id, tenant.id, membership.status);
-
-  if (!can(principal, PERMISSIONS.SPONSOR_MANAGE, { scope: 'TENANT' })) {
-    return {
-      ok: false,
-      state: { ok: false, code: 'FORBIDDEN', message: 'Permissão negada: sponsor:manage.' },
-    };
-  }
-
-  return { ok: true, userId: user.id, tenantId: tenant.id };
 }
 
 function revalidateSponsors(tenantSlug: string, eventId: string): void {
@@ -221,7 +174,7 @@ export async function saveTierAction(
     };
   }
 
-  const context = await guard(data.tenantSlug);
+  const context = await guardAction({ tenantSlug: data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await saveSponsorTier({
@@ -272,7 +225,7 @@ export async function deleteTierAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await deleteSponsorTier({
@@ -364,7 +317,7 @@ export async function saveSponsorAction(
     };
   }
 
-  const context = await guard(data.tenantSlug);
+  const context = await guardAction({ tenantSlug: data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await saveSponsor({
@@ -427,7 +380,7 @@ export async function setSponsorActiveAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await setSponsorActive({
@@ -480,7 +433,7 @@ export async function copySponsorAction(
     };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await copySponsorToEvent({
@@ -529,7 +482,7 @@ export async function syncSponsorAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await syncSponsorFromSource({
@@ -577,7 +530,7 @@ export async function removeSponsorAction(
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos.' };
   }
 
-  const context = await guard(parsed.data.tenantSlug);
+  const context = await guardAction({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
   if (!context.ok) return context.state;
 
   const result = await removeSponsor({

@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { renderBadgeLabelSheetPdf } from '@/lib/credentials/badge-renderer';
@@ -9,6 +7,8 @@ import {
   labelLayoutFromParams,
   thermalConfigFromParams,
 } from '@/domain/events/badge-print-rules';
+import { tenantApiError } from '@/lib/api/tenant-api-error';
+import { isUuid } from '@/domain/validation/id-rules';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -62,20 +62,30 @@ export async function GET(
   const format = url.searchParams.get('formato') ?? '';
 
   if (eventId.length === 0) {
-    return NextResponse.json(
-      { ok: false, code: 'INVALID_INPUT', message: 'Informe o evento da impressão.' },
-      { status: 400 },
+    return tenantApiError(400, 'INVALID_INPUT', 'Informe o evento da impressão.');
+  }
+
+  /**
+   * ─── MESMA ESCOLHA DA FOLHA: 400 PARA O `?eventId=` MALFORMADO (FASE 76) ─────
+   * O evento é parâmetro OBRIGATÓRIO da operação, não o endereço do recurso. A rota
+   * já responde 400 quando ele falta; um texto sem forma de uuid é o mesmo pedido
+   * malformado, e 400 o distingue do 404 de "evento não encontrado" — que continua
+   * vindo de `prepareBadgePrint` para um uuid bem formado e inexistente. As duas
+   * rotas de crachá (`folha` e `impressao`) usam o MESMO status, de propósito.
+   */
+  if (!isUuid(eventId)) {
+    return tenantApiError(
+      400,
+      'INVALID_INPUT',
+      'O evento da impressão não é um identificador válido.',
     );
   }
 
   if (!isPrintFormat(format)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: 'INVALID_INPUT',
-        message: `Formato desconhecido: use ${FORMATS.join(' ou ')}.`,
-      },
-      { status: 400 },
+    return tenantApiError(
+      400,
+      'INVALID_INPUT',
+      `Formato desconhecido: use ${FORMATS.join(' ou ')}.`,
     );
   }
 
@@ -91,26 +101,17 @@ export async function GET(
   });
 
   if (!auth.ok) {
-    return NextResponse.json(
-      { ok: false, code: auth.state.code, message: auth.state.message },
-      { status: 403 },
-    );
+    return tenantApiError(403, auth.state.code ?? 'FORBIDDEN', auth.state.message ?? 'Permissão negada.');
   }
 
   const layoutResult = format === 'etiquetas' ? labelLayoutFromParams(url.searchParams) : null;
   if (layoutResult && !layoutResult.ok) {
-    return NextResponse.json(
-      { ok: false, code: layoutResult.code, message: layoutResult.message },
-      { status: 400 },
-    );
+    return tenantApiError(400, layoutResult.code, layoutResult.message);
   }
 
   const thermalResult = format === 'zpl' ? thermalConfigFromParams(url.searchParams) : null;
   if (thermalResult && !thermalResult.ok) {
-    return NextResponse.json(
-      { ok: false, code: 'INVALID_INPUT', message: thermalResult.message },
-      { status: 400 },
-    );
+    return tenantApiError(400, 'INVALID_INPUT', thermalResult.message);
   }
 
   const userIds = (url.searchParams.get('userIds') ?? '')
@@ -126,9 +127,10 @@ export async function GET(
   });
 
   if (!prepared.ok) {
-    return NextResponse.json(
-      { ok: false, code: prepared.code, message: prepared.message },
-      { status: prepared.code === 'NOT_FOUND' ? 404 : 400 },
+    return tenantApiError(
+      prepared.code === 'NOT_FOUND' ? 404 : 400,
+      prepared.code,
+      prepared.message,
     );
   }
 

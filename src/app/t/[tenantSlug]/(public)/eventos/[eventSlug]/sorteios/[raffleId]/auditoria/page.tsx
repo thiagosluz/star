@@ -4,7 +4,11 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, FileText, ShieldCheck, Trophy } from 'lucide-react';
 
 import { getPublicEvent, getTenantContext } from '@/lib/events/event-repository';
-import { auditPoolDocument, getRaffleAudit, type RaffleAuditRound } from '@/lib/raffles/raffle-service';
+import {
+  auditPoolDocument,
+  getRaffleAudit,
+  type RaffleAuditRound,
+} from '@/lib/raffles/raffle-public-view-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { RAFFLE_SCOPE_LABELS } from '@/domain/raffles/raffle-rules';
 import { RaffleAuditPanel, type RaffleAuditModel } from '@/components/raffles/raffle-audit';

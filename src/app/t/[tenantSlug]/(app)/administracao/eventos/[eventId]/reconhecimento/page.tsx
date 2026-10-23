@@ -5,6 +5,7 @@ import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { requirePagePermission } from '@/lib/auth/guard-page';
+import { requireUuidParam } from '@/lib/validation/id';
 import { getRequestContext } from '@/lib/auth/session';
 import { getReviewerRanking } from '@/lib/gamification/achievement-service';
 import { SectionHeading } from '@/components/ui';
@@ -39,7 +40,9 @@ export default async function ReviewerRecognitionPage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
 }) {
-  const { tenantSlug, eventId } = await params;
+  const resolvedParams = await params;
+  const eventId = requireUuidParam(resolvedParams, 'eventId');
+  const { tenantSlug } = resolvedParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
