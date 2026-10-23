@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { CalendarDays, Mic, ShieldCheck, UserCheck, UserX } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
@@ -23,6 +22,8 @@ import {
   SpeakerLinkForm,
   SpeakerUnlinkButton,
 } from '@/components/speakers/admin-speaker-panel';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -65,23 +66,19 @@ export default async function EventSpeakersPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Organização</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Mic className="size-6 text-primary" aria-hidden />
-          Palestrantes
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Quem conduz as atividades deste evento. O cadastro aqui alimenta a vitrine pública, a
-          ficha de cada atividade e o portal do palestrante.
-        </p>
-        <Link
-          href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-          className="text-sm underline underline-offset-4"
-        >
-          ← Voltar ao evento
-        </Link>
-      </header>
+      <PageHeader
+        title="Palestrantes"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Mic className="size-6 text-primary" aria-hidden />}
+        description="Quem conduz as atividades deste evento. O cadastro aqui alimenta a vitrine pública, a ficha de cada atividade e o portal do palestrante."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: 'Evento', href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Palestrantes' },
+        ]}
+      />
 
       <SpeakerCreateForm
         tenantSlug={tenantSlug}

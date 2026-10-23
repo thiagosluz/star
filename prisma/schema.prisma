@@ -3611,6 +3611,16 @@ model IdentityAuditLog {
 enum DataExportKind {
   PARTICIPANTS_CSV
   SPONSOR_CONTACTS_CSV
+  /// Presenças por atividade, em FORMATO LONGO (FASE 77 · fatia 2).
+  ///
+  /// O diretório entrega uma linha por PESSOA com números agregados; este tipo
+  /// entrega uma linha por PRESENÇA (pessoa × atividade × sessão). É outro dado, e
+  /// não uma coluna a mais: um evento com 20 atividades não cabe no formato curto
+  /// (uma coluna por atividade) dentro do teto de 5.000 linhas.
+  ///
+  /// O valor entra no enum do BANCO porque o `kind` do pedido é dado histórico: um
+  /// arquivo de 2027 precisa continuar sabendo o que foi exportado.
+  ATTENDANCES_CSV
 }
 
 /// Evento de segurança da identidade — espelhado no domínio

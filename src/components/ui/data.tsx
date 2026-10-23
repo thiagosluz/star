@@ -129,7 +129,23 @@ export function StatCard({
   );
 }
 
-/** Par rótulo/valor para cabeçalhos de detalhe (data, local, carga horária). */
+/**
+ * Par rótulo/valor para cabeçalhos de detalhe (data, local, carga horária).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O `<div>` DE DENTRO É AGRUPAMENTO, NÃO CAIXA (FASE 77)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 77 este componente desenhava `dl > div > div > dt + dd`: o `<div>`
+ *  interno existia para empilhar rótulo e valor, e deixava o `dt`/`dd` netos do
+ *  `<dl>` — o que a especificação NÃO permite (o único agrupamento aceito dentro de
+ *  `dl` é UM `div` com os pares). Nenhuma outra tela usa `MetaList`, então o defeito
+ *  ficou invisível até a tela do evento de exemplo entrar no portão WCAG AA: o `axe`
+ *  reprovou `definition-list` e `dlitem` com 4 + 34 nós.
+ *
+ *  O conserto mantém o empilhamento sem caixa intermediária: o `div` é o próprio
+ *  grupo (`grid gap-1`), o ícone entra DENTRO do `dt` e o par continua alinhado à
+ *  esquerda. A isenção seria o caminho curto e é o que o portão existe para impedir.
+ */
 export function MetaList({ className, ...props }: ComponentProps<'dl'>) {
   return <dl className={cn('grid gap-4 sm:grid-cols-2', className)} {...props} />;
 }
@@ -146,12 +162,12 @@ export function MetaItem({
   className?: string;
 }) {
   return (
-    <div className={cn('flex items-start gap-2.5', className)}>
-      {icon ? <span className="mt-0.5 shrink-0 text-on-surface-variant">{icon}</span> : null}
-      <div className="min-w-0">
-        <dt className="label-caps">{label}</dt>
-        <dd className="text-sm text-foreground">{children}</dd>
-      </div>
+    <div className={cn('grid gap-1', className)}>
+      <dt className="label-caps flex items-center gap-2.5">
+        {icon ? <span className="shrink-0 text-on-surface-variant">{icon}</span> : null}
+        {label}
+      </dt>
+      <dd className="min-w-0 text-sm text-foreground">{children}</dd>
     </div>
   );
 }

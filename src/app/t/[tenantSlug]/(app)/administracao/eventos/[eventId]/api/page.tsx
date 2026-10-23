@@ -30,6 +30,8 @@ import {
 import { isPublicEventStatus } from '@/domain/events/public-registration-rules';
 import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
 import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { EventApiKeyPanel } from '@/components/admin/event-api-key-panel';
 import { EventApiSectionsForm } from '@/components/admin/event-api-sections-form';
 import {
@@ -160,22 +162,18 @@ export default async function EventApiPage({
 
   return (
     <main className="max-w-4xl space-y-8" data-testid="event-api-page">
-      <div className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden />
-            Voltar ao evento
-          </Link>
-        </nav>
-
-        <SectionHeading
-          title="API do evento"
-          description={`${apiEvent.title} · uma API somente leitura, por evento, para um site externo consumir o que já está publicado.`}
-        />
-      </div>
+      <PageHeader
+        title="API do evento"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description={`${apiEvent.title} · uma API somente leitura, por evento, para um site externo consumir o que já está publicado.`}
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: apiEvent.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'API do evento' },
+        ]}
+      />
 
       {/* ── O ESTADO DE PUBLICAÇÃO: a porta da API ─────────────────────────── */}
       <section aria-label="Estado de publicação" data-testid="event-api-publication">

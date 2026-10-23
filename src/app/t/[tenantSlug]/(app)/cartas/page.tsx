@@ -11,6 +11,8 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { CardVisual, EmptyCardSlot } from '@/components/gamification/card-visual';
 import { HoloCard } from '@/components/gamification/holo-card';
 import { PinCardButton } from '@/components/gamification/pin-card-button';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { pinCardAction } from '@/app/actions/gamification-actions';
 
 export const metadata = { title: 'Meu álbum' };
@@ -67,16 +69,12 @@ export default async function AlbumPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Layers className="size-6 text-tier-epic" aria-hidden />
-          Meu álbum de cartas
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Cartas são liberadas por presença, submissões, pareceres e missões. Variantes holográficas
-          (foil) contam como itens separados na coleção.
-        </p>
-      </header>
+      <PageHeader
+        title="Meu álbum de cartas"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Layers className="size-6 text-tier-epic" aria-hidden />}
+        description="Cartas são liberadas por presença, submissões, pareceres e missões. Variantes holográficas (foil) contam como itens separados na coleção."
+      />
 
       <section
         className="grid gap-4 rounded-xl border border-border bg-card p-6 sm:grid-cols-4"

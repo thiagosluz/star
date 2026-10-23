@@ -1,11 +1,12 @@
-import Link from 'next/link';
-import { ArrowLeft, ChartColumn } from 'lucide-react';
+import { ChartColumn } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getInstitutionIntelligence } from '@/lib/participants/insight-service';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   INTELLIGENCE_RANGES,
   INTELLIGENCE_RANGE_LABELS,
@@ -54,7 +55,7 @@ export default async function PanoramaPage({
   const { tenantSlug } = await params;
   const { periodo, de, ate } = await searchParams;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  const { tenantId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.TENANT_ANALYTICS_READ,
   });
@@ -77,27 +78,16 @@ export default async function PanoramaPage({
 
   return (
     <main className="max-w-6xl space-y-6" data-testid="panorama">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/dashboard')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Painel
-          </Link>
-        </nav>
-
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ChartColumn className="size-6 text-primary" aria-hidden />
-          Panorama
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          A vida da instituição no período escolhido: quem passou por aqui, quem apareceu de fato, o
-          tempo que isso representou e o que foi entregue e conversado.
-        </p>
-      </header>
+      <PageHeader
+        title="Panorama"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<ChartColumn className="size-6 text-primary" aria-hidden />}
+        description="A vida da instituição no período escolhido: quem passou por aqui, quem apareceu de fato, o tempo que isso representou e o que foi entregue e conversado."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Panorama' },
+        ]}
+      />
 
       {!result.ok ? (
         <p className="rounded-lg border border-destructive/40 bg-card p-4 text-sm text-destructive">

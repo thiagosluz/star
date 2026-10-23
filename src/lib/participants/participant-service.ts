@@ -35,7 +35,7 @@
  *  aparece quando há razão, e a razão fica registrada.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { withTenant } from '@/lib/db/tenant-client';
+import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import type { CsvValue } from '@/domain/participants/participant-rules';
 import { EXPORT_FILTER_LABELS, exportFiltersLine } from '@/domain/exports/export-rules';
 import { errorMessage } from '@/lib/db/prisma-errors';
@@ -122,6 +122,29 @@ export interface ParticipantListFilters {
   onlyAttended?: boolean;
 }
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O RECORTE DA PROJEÇÃO (FASE 77 · fatia 2)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até esta fase, `eventId` filtrava QUEM APARECE (um `EXISTS` sobre inscrição) e
+ *  as CTEs agregadas continuavam somando a instituição inteira. O CSV "do evento"
+ *  entregava as pessoas do evento com a vida delas na instituição: o organizador
+ *  lia "Visitas: 12" achando que eram do evento, e eram do histórico todo.
+ *
+ *  O defeito não era do filtro, era da PROJEÇÃO — e é por isso que ele é consertado
+ *  no SQL, e não na tela. Com o evento informado, TODA agregação que mede um fato
+ *  de evento (`registrations`, `attendances`, `certificates`, `user_cards`,
+ *  `xp_transactions`) recebe o mesmo recorte.
+ *
+ *  O que continua sendo da PESSOA — e por isso NÃO sai das CTEs recortadas:
+ *   • `events`/`attendedEvents`/`engagement`: "quantos eventos esta pessoa tem" é
+ *     uma pergunta sobre a pessoa. Recortá-la pelo evento daria 1 para todo mundo
+ *     e chamaria de "novo" quem participa há anos.
+ *
+ *  A carga desses três é feita em UMA consulta por página, e só quando há evento —
+ *  o diretório sem filtro continua com o SQL de antes, com os mesmos números.
+ */
+
 interface RosterRow {
   userId: string;
   name: string;
@@ -140,6 +163,18 @@ interface RosterRow {
   lastActivityAt: Date | null;
 }
 
+/** O que é da PESSOA, carregado fora do recorte do evento. */
+interface PersonFactsRow {
+  userId: string;
+  events: bigint | number;
+  attendedEvents: bigint | number;
+  visits: bigint | number;
+  minutes: bigint | number;
+  certificates: bigint | number;
+  cards: bigint | number;
+  xp: bigint | number;
+}
+
 /** O driver devolve `bigint` em `count`/`sum`: converter aqui, uma vez só. */
 function toNumber(value: bigint | number | null | undefined): number {
   if (value === null || value === undefined) return 0;
@@ -149,9 +184,12 @@ function toNumber(value: bigint | number | null | undefined): number {
 function buildFilters(input: { tenantId: string } & ParticipantListFilters): {
   where: string;
   params: unknown[];
+  /** O `$n` do evento, quando há — as CTEs usam o MESMO parâmetro. */
+  eventParam: string | null;
 } {
   const params: unknown[] = [input.tenantId];
   const clauses: string[] = [];
+  let eventParam: string | null = null;
 
   if (input.query?.trim()) {
     params.push(`%${input.query.trim()}%`);
@@ -160,17 +198,112 @@ function buildFilters(input: { tenantId: string } & ParticipantListFilters): {
 
   if (input.eventId) {
     params.push(input.eventId);
+    eventParam = `$${params.length}`;
     clauses.push(`EXISTS (
       SELECT 1 FROM registrations fr
        WHERE fr."tenantId" = $1::uuid AND fr."userId" = people."userId"
-         AND fr."eventId" = $${params.length}::uuid AND fr."deletedAt" IS NULL
+         AND fr."eventId" = ${eventParam}::uuid AND fr."deletedAt" IS NULL
     )`);
   }
 
   if (input.onlyWithCertificate) clauses.push(`COALESCE(cert.certificates, 0) > 0`);
   if (input.onlyAttended) clauses.push(`COALESCE(att.visits, 0) > 0`);
 
-  return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
+  return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params, eventParam };
+}
+
+/**
+ * O pedaço de `WHERE` que faz uma tabela respeitar o EVENTO.
+ *
+ * É a peça que faltava: sem ela as CTEs somavam a instituição inteira e o recorte
+ * ficava só no `EXISTS` de quem aparece. Com ela, "Visitas", "Minutos",
+ * "Certificados", "Cartas" e "XP" passam a ser do evento.
+ */
+function eventScope(eventParam: string | null, alias: string): string {
+  return eventParam ? `AND ${alias}."eventId" = ${eventParam}::uuid` : '';
+}
+
+/**
+ * O que é da PESSOA, para a página que está sendo exibida.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UMA CONSULTA SEPARADA (E SÓ QUANDO HÁ EVENTO)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  As CTEs da consulta principal passam a respeitar o evento, e isso é o conserto
+ *  do recorte. Mas três campos NÃO são do evento: quantos eventos a pessoa tem,
+ *  em quantos ela compareceu e os rótulos de engajamento. Recalculá-los do recorte
+ *  diria a um veterano que ele é novo na casa — e a tela tem uma coluna chamada
+ *  "Eventos", que passaria a valer 1 para todo mundo.
+ *
+ *  Então eles são lidos FORA do recorte, com os ids da página (no máximo 100) e em
+ *  uma consulta só. O diretório sem filtro de evento não paga nada: sem evento, a
+ *  consulta principal já é a da instituição e estes números vêm dela.
+ */
+async function loadPersonFacts(
+  tx: TxClient,
+  tenantId: string,
+  userIds: readonly string[],
+): Promise<Map<string, PersonFactsRow>> {
+  if (userIds.length === 0) return new Map();
+
+  /**
+   * Os ids vão como PARÂMETROS posicionais, e não interpolados: eles vêm da própria
+   * consulta anterior, mas a regra da casa é não montar SQL com valor de dado.
+   */
+  const values = userIds.map((_, index) => `($${index + 2}::uuid)`).join(', ');
+  const inIds = `IN (SELECT "userId" FROM ids)`;
+
+  const rows = await tx.$queryRawUnsafe<PersonFactsRow[]>(
+    `
+    WITH ids("userId") AS (VALUES ${values}),
+    reg AS (
+      SELECT r."userId" AS uid, count(DISTINCT r."eventId") AS events
+        FROM registrations r
+       WHERE r."tenantId" = $1::uuid AND r."deletedAt" IS NULL AND r."userId" ${inIds}
+       GROUP BY r."userId"
+    ),
+    att AS (
+      SELECT a."userId" AS uid,
+             count(*) AS visits,
+             count(DISTINCT a."eventId") AS "attendedEvents",
+             COALESCE(sum(COALESCE(a."minutesAttended", 0)), 0) AS minutes
+        FROM attendances a
+       WHERE a."tenantId" = $1::uuid AND a."userId" ${inIds}
+       GROUP BY a."userId"
+    ),
+    cert AS (
+      SELECT "userId" AS uid, count(*) AS certificates
+        FROM certificates
+       WHERE "tenantId" = $1::uuid AND status = 'ISSUED' AND "userId" ${inIds}
+       GROUP BY "userId"
+    ),
+    cards AS (
+      SELECT "userId" AS uid, COALESCE(sum(quantity), 0) AS cards
+        FROM user_cards
+       WHERE "tenantId" = $1::uuid AND "userId" ${inIds}
+       GROUP BY "userId"
+    )
+    SELECT ids."userId" AS "userId",
+           COALESCE(reg.events, 0) AS events,
+           COALESCE(att."attendedEvents", 0) AS "attendedEvents",
+           COALESCE(att.visits, 0) AS visits,
+           COALESCE(att.minutes, 0) AS minutes,
+           COALESCE(cert.certificates, 0) AS certificates,
+           COALESCE(cards.cards, 0) AS cards,
+           COALESCE(xp."totalXp", 0) AS xp
+      FROM ids
+      LEFT JOIN reg ON reg.uid = ids."userId"
+      LEFT JOIN att ON att.uid = ids."userId"
+      LEFT JOIN cert ON cert.uid = ids."userId"
+      LEFT JOIN cards ON cards.uid = ids."userId"
+      LEFT JOIN user_xp_profiles xp
+             ON xp."userId" = ids."userId" AND xp."tenantId" = $1::uuid
+    `,
+    tenantId,
+    ...userIds,
+  );
+
+  return new Map(rows.map((row) => [row.userId, row]));
 }
 
 /**
@@ -205,12 +338,14 @@ export async function listParticipants(
           SELECT "userId" AS uid, count(*) AS certificates
             FROM certificates
            WHERE "tenantId" = $1::uuid AND status = 'ISSUED'
+             ${eventScope(filters.eventParam, 'certificates')}
            GROUP BY "userId"
         ),
         att AS (
           SELECT "userId" AS uid, count(*) AS visits
             FROM attendances
            WHERE "tenantId" = $1::uuid
+             ${eventScope(filters.eventParam, 'attendances')}
            GROUP BY "userId"
         )
         SELECT count(*) AS total
@@ -230,40 +365,74 @@ export async function listParticipants(
         total: Math.min(total, PARTICIPANT_LIMIT),
       });
 
+      /**
+       * Com o evento, o XP do recorte vem do LIVRO-RAZÃO (`xp_transactions.eventId`),
+       * porque `user_xp_profiles.totalXp` é um acumulado da instituição e não tem
+       * como ser recortado. Sem evento, a leitura é a de sempre (o perfil), e o
+       * número do diretório não muda.
+       *
+       * A lista de CTEs é montada por PARTES e juntada com vírgula: escrever o
+       * `WITH` como texto corrido deixava uma vírgula sobrando quando o XP recortado
+       * não existia — e o PostgreSQL recusa a consulta inteira (erro de sintaxe, não
+       * de dado).
+       */
+      const ctes = [
+        `people AS (${PARTICIPANT_UNION_SQL})`,
+        `reg AS (
+           SELECT r."userId" AS uid,
+                  count(DISTINCT r."eventId") AS events,
+                  count(*) FILTER (WHERE r.status IN ('CONFIRMED', 'ATTENDED')) AS confirmed,
+                  count(*) FILTER (WHERE r.status = 'ATTENDED') AS attended
+             FROM registrations r
+            WHERE r."tenantId" = $1::uuid AND r."deletedAt" IS NULL
+              ${eventScope(filters.eventParam, 'r')}
+            GROUP BY r."userId"
+         )`,
+        `att AS (
+           SELECT a."userId" AS uid,
+                  count(*) AS visits,
+                  count(DISTINCT a."eventId") AS "attendedEvents",
+                  COALESCE(sum(COALESCE(a."minutesAttended", 0)), 0) AS minutes,
+                  max(a."checkedInAt") AS "lastActivityAt"
+             FROM attendances a
+            WHERE a."tenantId" = $1::uuid
+              ${eventScope(filters.eventParam, 'a')}
+            GROUP BY a."userId"
+         )`,
+        `cert AS (
+           SELECT "userId" AS uid, count(*) AS certificates
+             FROM certificates
+            WHERE "tenantId" = $1::uuid AND status = 'ISSUED'
+              ${eventScope(filters.eventParam, 'certificates')}
+            GROUP BY "userId"
+         )`,
+        `cards AS (
+           SELECT "userId" AS uid, COALESCE(sum(quantity), 0) AS cards
+             FROM user_cards
+            WHERE "tenantId" = $1::uuid
+              ${eventScope(filters.eventParam, 'user_cards')}
+            GROUP BY "userId"
+         )`,
+        ...(filters.eventParam
+          ? [
+              `xp AS (
+                 SELECT t."userId" AS uid, COALESCE(sum(t.amount), 0) AS "totalXp"
+                   FROM xp_transactions t
+                  WHERE t."tenantId" = $1::uuid AND t."eventId" = ${filters.eventParam}::uuid
+                  GROUP BY t."userId"
+               )`,
+            ]
+          : []),
+      ];
+
+      const xpJoin = filters.eventParam
+        ? `LEFT JOIN xp ON xp.uid = people."userId"`
+        : `LEFT JOIN user_xp_profiles xp
+                 ON xp."userId" = people."userId" AND xp."tenantId" = $1::uuid`;
+
       const rows = await tx.$queryRawUnsafe<RosterRow[]>(
         `
-        WITH people AS (${PARTICIPANT_UNION_SQL}),
-        reg AS (
-          SELECT r."userId" AS uid,
-                 count(DISTINCT r."eventId") AS events,
-                 count(*) FILTER (WHERE r.status IN ('CONFIRMED', 'ATTENDED')) AS confirmed,
-                 count(*) FILTER (WHERE r.status = 'ATTENDED') AS attended
-            FROM registrations r
-           WHERE r."tenantId" = $1::uuid AND r."deletedAt" IS NULL
-           GROUP BY r."userId"
-        ),
-        att AS (
-          SELECT a."userId" AS uid,
-                 count(*) AS visits,
-                 count(DISTINCT a."eventId") AS "attendedEvents",
-                 COALESCE(sum(COALESCE(a."minutesAttended", 0)), 0) AS minutes,
-                 max(a."checkedInAt") AS "lastActivityAt"
-            FROM attendances a
-           WHERE a."tenantId" = $1::uuid
-           GROUP BY a."userId"
-        ),
-        cert AS (
-          SELECT "userId" AS uid, count(*) AS certificates
-            FROM certificates
-           WHERE "tenantId" = $1::uuid AND status = 'ISSUED'
-           GROUP BY "userId"
-        ),
-        cards AS (
-          SELECT "userId" AS uid, COALESCE(sum(quantity), 0) AS cards
-            FROM user_cards
-           WHERE "tenantId" = $1::uuid
-           GROUP BY "userId"
-        )
+        WITH ${ctes.join(',\n')}
         SELECT people."userId" AS "userId",
                person.name AS name,
                person.email AS email,
@@ -285,8 +454,7 @@ export async function listParticipants(
           LEFT JOIN att ON att.uid = people."userId"
           LEFT JOIN cert ON cert.uid = people."userId"
           LEFT JOIN cards ON cards.uid = people."userId"
-          LEFT JOIN user_xp_profiles xp
-                 ON xp."userId" = people."userId" AND xp."tenantId" = $1::uuid
+          ${xpJoin}
           LEFT JOIN user_tenant_profiles profile
                  ON profile."userId" = people."userId" AND profile."tenantId" = $1::uuid
           ${filters.where}
@@ -298,6 +466,22 @@ export async function listParticipants(
         page.skip,
       );
 
+      /**
+       * ───────────────────────────────────────────────────────────────────────────
+       *  O QUE É DA PESSOA NÃO É RECORTADO PELO EVENTO
+       * ───────────────────────────────────────────────────────────────────────────
+       *  `events`, `attendedEvents` e os rótulos de engajamento respondem "quem é
+       *  esta pessoa na instituição". Passá-los pelo recorte daria 1 evento para
+       *  todo mundo e chamaria de "Primeira participação" quem está na casa desde a
+       *  primeira edição.
+       *
+       *  A leitura é UMA consulta, e só acontece quando há evento: o diretório sem
+       *  filtro continua com a mesma consulta (e os mesmos números) de antes.
+       */
+      const personFacts = filters.eventParam
+        ? await loadPersonFacts(tx, input.tenantId, rows.map((row) => row.userId))
+        : new Map<string, PersonFactsRow>();
+
       const entries: ParticipantListEntry[] = rows.map((row) => {
         const confirmed = toNumber(row.confirmed);
         const attended = toNumber(row.attended);
@@ -305,8 +489,21 @@ export async function listParticipants(
         const visits = toNumber(row.visits);
         const certificates = toNumber(row.certificates);
         const cards = toNumber(row.cards);
-        const events = toNumber(row.events);
-        const attendedEvents = toNumber(row.attendedEvents);
+
+        /** Recortado pelo evento, quando há um; a vida na instituição, quando não há. */
+        const facts = personFacts.get(row.userId);
+        const events = facts ? toNumber(facts.events) : toNumber(row.events);
+        const attendedEvents = facts ? toNumber(facts.attendedEvents) : toNumber(row.attendedEvents);
+        const engagement = facts
+          ? engagementOf({
+              events,
+              visits: toNumber(facts.visits),
+              minutes: toNumber(facts.minutes),
+              certificates: toNumber(facts.certificates),
+              cards: toNumber(facts.cards),
+              xp: toNumber(facts.xp),
+            })
+          : engagementOf({ events, visits, minutes, certificates, cards, xp: toNumber(row.xp) });
 
         return {
           userId: row.userId,
@@ -325,7 +522,7 @@ export async function listParticipants(
           cards,
           xp: toNumber(row.xp),
           rate: attendanceRate({ confirmed, attended }),
-          engagement: engagementOf({ events, visits, minutes, certificates, cards, xp: toNumber(row.xp) }),
+          engagement,
           lastActivityAt: row.lastActivityAt,
         };
       });
@@ -351,24 +548,135 @@ export async function listParticipants(
 // ───────────────────────────────────────────────────────────────────────────────
 //  Exportação (CSV)
 // ───────────────────────────────────────────────────────────────────────────────
-/** Cabeçalho do arquivo — a MESMA ordem das colunas montadas abaixo. */
-export const PARTICIPANT_CSV_HEADER = Object.freeze([
-  'Nome',
-  'E-mail',
-  'Origem',
-  'Eventos',
-  'Inscrições confirmadas',
-  'Presenças',
-  'Eventos com presença',
-  'Visitas',
-  'Minutos',
-  'Comparecimento (%)',
-  'Certificados',
-  'Cartas',
-  'XP',
-  'Rótulos',
-  'Última presença',
+/**
+ * As colunas do arquivo do DIRETÓRIO (a instituição inteira).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A COLUNA E A CÉLULA SÃO A MESMA DECLARAÇÃO (FASE 77 · fatia 2)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Antes o cabeçalho era uma lista e a linha era OUTRA lista, na mesma ordem por
+ *  convenção. Quando o arquivo passou a ter duas formas (instituição × evento), a
+ *  convenção deixaria de ser suficiente: bastava acrescentar uma coluna de um lado
+ *  para o CSV inteiro sair deslocado. Aqui cada coluna declara o rótulo E como o
+ *  valor sai, e o cabeçalho é derivado — desalinhar deixa de ser possível.
+ */
+type ParticipantCsvKey =
+  | 'name'
+  | 'email'
+  | 'origin'
+  | 'events'
+  | 'confirmed'
+  | 'attended'
+  | 'attendedEvents'
+  | 'visits'
+  | 'minutes'
+  | 'rate'
+  | 'certificates'
+  | 'cards'
+  | 'xp'
+  | 'engagement'
+  | 'lastActivity';
+
+interface ParticipantCsvColumn {
+  key: ParticipantCsvKey;
+  label: string;
+}
+
+const PARTICIPANT_CSV_COLUMNS: readonly ParticipantCsvColumn[] = Object.freeze([
+  { key: 'name', label: 'Nome' },
+  { key: 'email', label: 'E-mail' },
+  { key: 'origin', label: 'Origem' },
+  { key: 'events', label: 'Eventos' },
+  { key: 'confirmed', label: 'Inscrições confirmadas' },
+  { key: 'attended', label: 'Presenças' },
+  { key: 'attendedEvents', label: 'Eventos com presença' },
+  { key: 'visits', label: 'Visitas' },
+  { key: 'minutes', label: 'Minutos' },
+  { key: 'rate', label: 'Comparecimento (%)' },
+  { key: 'certificates', label: 'Certificados' },
+  { key: 'cards', label: 'Cartas' },
+  { key: 'xp', label: 'XP' },
+  { key: 'engagement', label: 'Rótulos' },
+  { key: 'lastActivity', label: 'Última presença' },
 ]);
+
+/**
+ * O que NÃO entra no arquivo do EVENTO — e por quê.
+ *
+ *  • `Eventos` e `Eventos com presença`: recortados pelo evento, valeriam 1 (ou 0)
+ *    para todo mundo. Um número que não varia não é informação: é a coluna dizendo
+ *    "esta pessoa está neste evento", o que a linha inteira já diz.
+ *  • `Rótulos`: engajamento é classificação da PESSOA na instituição (veterano,
+ *    assíduo, colecionador). Calculá-lo do recorte chamaria de "Primeira
+ *    participação" quem está na casa há anos — e a decisão desta fatia é que o que
+ *    não pode ser recortado SAI do arquivo recortado, em vez de mudar de sentido.
+ *
+ * As demais colunas FICAM, agora com o número do evento: inscrições confirmadas,
+ * presenças, visitas, minutos, comparecimento, certificados (têm `eventId`), cartas
+ * (têm `eventId`, nulo quando a carta é da instituição) e XP (livro-razão com
+ * `eventId`).
+ */
+const EVENT_ONLY_EXCLUDED: readonly ParticipantCsvKey[] = Object.freeze([
+  'events',
+  'attendedEvents',
+  'engagement',
+]);
+
+const PARTICIPANT_EVENT_CSV_COLUMNS: readonly ParticipantCsvColumn[] = Object.freeze(
+  PARTICIPANT_CSV_COLUMNS.filter((column) => !EVENT_ONLY_EXCLUDED.includes(column.key)),
+);
+
+/** Cabeçalho do arquivo do diretório — a MESMA ordem das colunas montadas abaixo. */
+export const PARTICIPANT_CSV_HEADER = Object.freeze(
+  PARTICIPANT_CSV_COLUMNS.map((column) => column.label),
+);
+
+/** Cabeçalho do arquivo do EVENTO — sem as colunas que não têm recorte. */
+export const PARTICIPANT_EVENT_CSV_HEADER = Object.freeze(
+  PARTICIPANT_EVENT_CSV_COLUMNS.map((column) => column.label),
+);
+
+/** O valor de UMA célula. O `switch` é exaustivo: coluna nova não compila sem valor. */
+function participantCsvValue(
+  key: ParticipantCsvKey,
+  entry: ParticipantListEntry,
+  timezone: string,
+): CsvValue {
+  switch (key) {
+    case 'name':
+      return entry.name;
+    case 'email':
+      return entry.email;
+    case 'origin':
+      return PARTICIPANT_ORIGIN_LABELS[entry.origin];
+    case 'events':
+      return entry.events;
+    case 'confirmed':
+      return entry.confirmed;
+    case 'attended':
+      return entry.attended;
+    case 'attendedEvents':
+      return entry.attendedEvents;
+    case 'visits':
+      return entry.visits;
+    case 'minutes':
+      return entry.minutes;
+    case 'rate':
+      return entry.rate.percent;
+    case 'certificates':
+      return entry.certificates;
+    case 'cards':
+      return entry.cards;
+    case 'xp':
+      return entry.xp;
+    case 'engagement':
+      return entry.engagement.map((tag) => ENGAGEMENT_LABELS[tag]).join(' · ');
+    case 'lastActivity':
+      return entry.lastActivityAt
+        ? instantToZonedWallTime(entry.lastActivityAt, timezone).replace('T', ' ')
+        : null;
+  }
+}
 
 /**
  * Monta as LINHAS do diretório para exportação (FASE 49).
@@ -384,7 +692,10 @@ export const PARTICIPANT_CSV_HEADER = Object.freeze([
  *
  *  A ORDEM DAS COLUNAS É CONTRATO: quem importa a planilha o faz por posição. A
  *  coluna da marca d'água entra depois de todas (em `buildWatermarkedCsv`), nunca
- *  no meio.
+ *  no meio. E a FORMA do arquivo depende do recorte: com evento, saem as colunas
+ *  que não têm recorte por evento (ver `EVENT_ONLY_EXCLUDED`) — o arquivo do evento
+ *  não pode ter a mesma cara do arquivo da instituição, senão o organizador lê um
+ *  total global achando que é do evento.
  */
 export async function collectParticipantExportRows(input: {
   tenantId: string;
@@ -431,27 +742,19 @@ export async function collectParticipantExportRows(input: {
         collected.length = CSV_MAX_ROWS;
       }
 
-      const rows: CsvValue[][] = collected.map((entry) => [
-        entry.name,
-        entry.email,
-        PARTICIPANT_ORIGIN_LABELS[entry.origin],
-        entry.events,
-        entry.confirmed,
-        entry.attended,
-        entry.attendedEvents,
-        entry.visits,
-        entry.minutes,
-        entry.rate.percent,
-        entry.certificates,
-        entry.cards,
-        entry.xp,
-        entry.engagement.map((tag) => ENGAGEMENT_LABELS[tag]).join(' · '),
-        entry.lastActivityAt
-          ? instantToZonedWallTime(entry.lastActivityAt, tenant.timezone).replace('T', ' ')
-          : null,
-      ]);
+      /** O recorte decide a FORMA do arquivo, e não só o conteúdo das células. */
+      const columns = input.filters?.eventId ? PARTICIPANT_EVENT_CSV_COLUMNS : PARTICIPANT_CSV_COLUMNS;
 
-      return { ok: true as const, header: PARTICIPANT_CSV_HEADER, rows, timezone: tenant.timezone };
+      const rows: CsvValue[][] = collected.map((entry) =>
+        columns.map((column) => participantCsvValue(column.key, entry, tenant.timezone)),
+      );
+
+      return {
+        ok: true as const,
+        header: columns.map((column) => column.label),
+        rows,
+        timezone: tenant.timezone,
+      };
     });
   } catch (error) {
     console.error(`[participants] falha ao montar a exportação: ${errorMessage(error)}`);

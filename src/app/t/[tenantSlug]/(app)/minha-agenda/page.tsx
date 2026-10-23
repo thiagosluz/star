@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { AlertCircle, ArrowLeft, CalendarCheck, CheckCircle2, Video } from 'lucide-react';
+import { AlertCircle, CalendarCheck, CheckCircle2, Video } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getMyAgenda } from '@/lib/events/agenda-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { AgendaMarks } from '@/components/events/agenda-marks';
 import { AgendaClashNotice } from '@/components/events/agenda-clash-notice';
 import { FavoriteButton } from '@/components/events/favorite-button';
@@ -201,26 +203,17 @@ export default async function MyAgendaPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/minhas-inscricoes')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Minhas inscrições
-          </Link>
-        </nav>
-
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <CalendarCheck className="size-6 text-primary" aria-hidden />
-          Minha agenda
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          O que você marcou como favorito e o que você já garantiu em {tenantName}. Marcar
-          não reserva vaga — quem garante lugar é a inscrição.
-        </p>
-      </header>
+      <PageHeader
+        title="Minha agenda"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<CalendarCheck className="size-6 text-primary" aria-hidden />}
+        description={`O que você marcou como favorito e o que você já garantiu em ${tenantName}. Marcar não reserva vaga — quem garante lugar é a inscrição.`}
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Minhas inscrições', href: tenantPath(tenantSlug, '/minhas-inscricoes') },
+          { label: 'Minha agenda' },
+        ]}
+      />
 
       {/**
         * A FALHA DO ÚLTIMO CLIQUE, quando houve. `role="alert"` porque é uma

@@ -48,6 +48,8 @@ const createSchema = z.object({
   returnTo: z.string().trim().min(1).max(300),
   busca: z.string().trim().max(120).optional(),
   evento: z.string().uuid().optional(),
+  /** Atividade do recorte, quando a exportação é de presenças (FASE 77 · fatia 2). */
+  atividade: z.string().uuid().optional(),
   certificado: z.literal('1').optional(),
   presente: z.literal('1').optional(),
   sponsorId: z.string().uuid().optional(),
@@ -60,6 +62,7 @@ export async function createExportAction(formData: FormData): Promise<void> {
     returnTo: formData.get('returnTo'),
     busca: formData.get('busca') || undefined,
     evento: formData.get('evento') || undefined,
+    atividade: formData.get('atividade') || undefined,
     certificado: formData.get('certificado') || undefined,
     presente: formData.get('presente') || undefined,
     sponsorId: formData.get('sponsorId') || undefined,
@@ -102,6 +105,7 @@ export async function createExportAction(formData: FormData): Promise<void> {
     filters: {
       query: parsed.data.busca,
       eventId: parsed.data.evento,
+      activityId: parsed.data.atividade,
       onlyWithCertificate: parsed.data.certificado === '1',
       onlyAttended: parsed.data.presente === '1',
       sponsorId: parsed.data.sponsorId,

@@ -15,6 +15,7 @@ import { requirePlatformPermission } from '@/lib/platform/guard';
 import { getPlatformMetrics, listPlatformAudit } from '@/lib/platform/global-repository';
 import { countOpenReports } from '@/lib/platform/profile-moderation';
 import { Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -46,8 +47,9 @@ export default async function PlatformOverviewPage() {
     <main className="space-y-8" data-testid="platform-overview">
       <PageHeader
         title="Métricas da plataforma"
+        eyebrow={PLATFORM_NAV_GROUP}
         description="Consolidação de todas as instituições. Números agregados — o painel não expõe dados de participantes."
-        breadcrumbs={[{ label: 'Plataforma' }, { label: 'Métricas' }]}
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Métricas' }]}
         badge={<Badge tone="primary">SuperAdmin</Badge>}
         actions={
           <p className="text-xs text-muted-foreground" data-testid="metrics-generated-at">

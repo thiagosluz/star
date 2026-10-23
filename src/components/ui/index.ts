@@ -43,10 +43,12 @@ export {
   fieldAria,
   fieldControlClasses,
 } from './form';
-export {
-  Breadcrumbs,
-  NavLink,
-  PageHeader,
-  TabNav,
-  type Crumb,
-} from './navigation';
+/**
+ * O topo (`PageHeader`/`Breadcrumbs`) vem de um módulo SERVER desde a FASE 78; o
+ * menu (`NavLink`/`TabNav`) continua no módulo `'use client'`. Reexportar os
+ * dois daqui mantém o caminho único de import (`@/components/ui`) sem arrastar o
+ * cliente para quem só quer o cabeçalho — o barrel não tem diretiva, e cada
+ * símbolo carrega a fronteira do arquivo onde foi definido.
+ */
+export { Breadcrumbs, PageHeader, type Crumb } from './page-header';
+export { NavLink, TabNav } from './navigation';

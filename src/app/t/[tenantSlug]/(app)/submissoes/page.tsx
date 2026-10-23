@@ -8,6 +8,8 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { deleteDraftSubmissionAction } from '@/app/actions/review-actions';
 import { DeleteDraftButton } from '@/components/review/delete-draft-button';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Minhas submissões' };
 export const dynamic = 'force-dynamic';
@@ -154,24 +156,22 @@ export default async function MySubmissionsPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Minhas submissões</h1>
-          <p className="text-sm text-muted-foreground">
-            Trabalhos submetidos em {context.activeTenant.tenantName}.
-          </p>
-        </div>
-
-        {openEvents.length > 0 ? (
-          <Link
-            href={tenantPath(tenantSlug, '/submissoes/nova')}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-          >
-            <Plus className="size-4" aria-hidden />
-            Nova submissão
-          </Link>
-        ) : null}
-      </header>
+      <PageHeader
+        title="Minhas submissões"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        description={`Trabalhos submetidos em ${context.activeTenant.tenantName}.`}
+        actions={
+          openEvents.length > 0 ? (
+            <Link
+              href={tenantPath(tenantSlug, '/submissoes/nova')}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              <Plus className="size-4" aria-hidden />
+              Nova submissão
+            </Link>
+          ) : null
+        }
+      />
 
       {submissions.length === 0 ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6">

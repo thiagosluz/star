@@ -20,7 +20,8 @@ import {
 import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { AssetUploader } from '@/components/admin/asset-uploader';
-import { Alert } from '@/components/ui';
+import { Alert, PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   confirmAssetUploadAction,
   deleteMediaAssetAction,
@@ -140,26 +141,33 @@ export default async function EventMediaLibraryPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Página pública
-          </Link>
-        </nav>
-        <h1 className="text-2xl font-semibold tracking-tight">Biblioteca de mídia</h1>
-        <p className="text-xs text-muted-foreground" data-testid="media-summary">
-          {library.library.count} imagem(ns) no acervo da instituição · {library.library.inUse} em
-          uso · {library.library.megabytes} MB ocupados
-        </p>
-        <p className="text-xs text-muted-foreground">
-          O acervo é da instituição inteira: uma imagem enviada em outra edição pode ser
-          reaproveitada aqui. A quota de armazenamento do plano ainda não bloqueia o envio
-          (dívida C4) — esta tela apenas mede.
-        </p>
-      </header>
+      <PageHeader
+        title="Biblioteca de mídia"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        descriptionTestId="media-summary"
+        description={
+          <>
+            {library.library.count} imagem(ns) no acervo da instituição · {library.library.inUse} em
+            uso · {library.library.megabytes} MB ocupados
+            <span className="mt-1 block">
+              O acervo é da instituição inteira: uma imagem enviada em outra edição pode ser
+              reaproveitada aqui. A quota de armazenamento do plano ainda não bloqueia o envio
+              (dívida C4) — esta tela apenas mede.
+            </span>
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          {
+            label: 'Página pública',
+            href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`),
+          },
+          { label: 'Biblioteca de mídia' },
+        ]}
+      />
 
       {sourceEventFilter?.kind === 'discarded' ? (
         <Alert tone="warning" data-testid="media-filter-notice">

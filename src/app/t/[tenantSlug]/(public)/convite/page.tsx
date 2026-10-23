@@ -11,6 +11,7 @@ import { findInvitationByToken } from '@/lib/communication/invitation-service';
 import { invitationConsequence } from '@/domain/communication/invitation-rules';
 import { normalizeEmailAddress } from '@/domain/communication/email-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
 import { AcceptInvitationForm } from '@/components/communication/accept-invitation-form';
 
 /**
@@ -65,17 +66,11 @@ export default async function MemberInvitePage({
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-6 py-12">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide opacity-60">{tenant.name}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <UserRoundPlus className="size-6" aria-hidden />
-          Convite para a equipe
-        </h1>
-        <p className="text-sm opacity-80">
-          Este convite dá acesso à operação da instituição no EventFlow. O vínculo é criado no
-          momento em que você aceita.
-        </p>
-      </header>
+      <PageHeader
+        title="Convite para a equipe"
+        icon={<UserRoundPlus className="size-6 text-muted-foreground" aria-hidden />}
+        description="Este convite dá acesso à operação da instituição no EventFlow. O vínculo é criado no momento em que você aceita."
+      />
 
       {!invite ? (
         <div className="ef-card space-y-3 p-5" data-testid="invitation-not-found">

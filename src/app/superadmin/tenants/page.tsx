@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { Building2, Search } from 'lucide-react';
 
 import { ProvisionTenantForm } from '@/components/platform/platform-forms';
-import { Badge, buttonClasses } from '@/components/ui';
+import { Badge, buttonClasses, PageHeader } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { getTenantSummaries } from '@/lib/platform/tenant-service';
 import { TENANT_STATUSES, TENANT_STATUS_LABELS, type TenantStatus } from '@/domain/platform/platform-rules';
@@ -64,15 +65,13 @@ export default async function PlatformTenantsPage({
 
   return (
     <main className="space-y-8" data-testid="platform-tenants">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Instituições</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {metrics.tenants.total} no total · {metrics.tenants.active} ativas ·{' '}
-            {metrics.tenants.suspended} suspensas
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title="Instituições"
+        description={`${metrics.tenants.total} no total · ${metrics.tenants.active} ativas · ${metrics.tenants.suspended} suspensas`}
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Instituições' }]}
+        badge={<Badge tone="primary">SuperAdmin</Badge>}
+      />
 
       <ProvisionTenantForm />
 

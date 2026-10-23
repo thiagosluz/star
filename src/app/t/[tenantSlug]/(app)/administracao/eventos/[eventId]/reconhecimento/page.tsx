@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { GraduationCap } from 'lucide-react';
 
 import { can } from '@/domain/rbac/authorization';
@@ -8,7 +7,8 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
 import { getRequestContext } from '@/lib/auth/session';
 import { getReviewerRanking } from '@/lib/gamification/achievement-service';
-import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { ReviewerAwardPanel } from '@/components/reviews/reviewer-award';
 
 export const metadata = { title: 'Reconhecimento do comitê científico' };
@@ -56,21 +56,18 @@ export default async function ReviewerRecognitionPage({
 
   return (
     <main className="max-w-5xl space-y-8" data-testid="reviewer-recognition-page">
-      <div className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Voltar ao evento
-          </Link>
-        </nav>
-
-        <SectionHeading
-          title="Reconhecimento do comitê científico"
-          description="Quem mais revisou neste evento — e a carta que a organização concede a essas pessoas."
-        />
-      </div>
+      <PageHeader
+        title="Reconhecimento do comitê científico"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description="Quem mais revisou neste evento — e a carta que a organização concede a essas pessoas."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: 'Evento', href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Reconhecimento do comitê científico' },
+        ]}
+      />
 
       <section data-testid="reviewer-award-section">
         {reviewerRanking.ok ? (

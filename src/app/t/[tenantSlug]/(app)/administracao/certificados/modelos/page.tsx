@@ -25,6 +25,8 @@ import {
 } from '@/lib/certificates/certificate-template-service';
 import { renderCertificateLayoutSvg } from '@/lib/certificates/layout-renderer';
 import { Card, CardContent, SectionHeading, Alert } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import {
   CertificateTemplateEditor,
@@ -155,25 +157,24 @@ export default async function CertificateTemplatesPage({
    */
   return (
     <main className="max-w-7xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao/certificados')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Certificados
-          </Link>
-        </nav>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <FileBadge className="size-6 text-brand" aria-hidden />
-          Modelos de certificado
-        </h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          A arte de fundo é da instituição (logotipo no topo, chancelas no rodapé) e o texto é montado com variáveis —
-          nome, evento, atividade, carga horária, código de validação. O desenho fica <strong>congelado</strong> em cada
-          certificado no momento da emissão: editar o modelo depois não altera documento já emitido.
-        </p>
-      </header>
+      <PageHeader
+        title="Modelos de certificado"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<FileBadge className="size-6 text-brand" aria-hidden />}
+        description={
+          <>
+            A arte de fundo é da instituição (logotipo no topo, chancelas no rodapé) e o texto é montado com variáveis —
+            nome, evento, atividade, carga horária, código de validação. O desenho fica <strong>congelado</strong> em cada
+            certificado no momento da emissão: editar o modelo depois não altera documento já emitido.
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Certificados', href: tenantPath(tenantSlug, '/administracao/certificados') },
+          { label: 'Modelos de certificado' },
+        ]}
+      />
 
       {templateFilter?.kind === 'discarded' ? (
         <Alert tone="warning" data-testid="template-filter-notice">

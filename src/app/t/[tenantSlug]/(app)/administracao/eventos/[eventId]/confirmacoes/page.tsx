@@ -12,6 +12,8 @@ import { listEventWaitlist } from '@/lib/events/registration-read-service';
 import { confirmRegistrationAction, resolveConfirmationItemAction } from '@/app/actions/admin-actions';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { CONFIRMATION_ITEM_STATUS_LABELS } from '@/domain/events/confirmation-item-rules';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Confirmações de vaga' };
 export const dynamic = 'force-dynamic';
@@ -88,12 +90,18 @@ export default async function EventConfirmationsPage({
 
   return (
     <main className="space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Confirmações de vaga</h1>
-        <p className="text-sm text-muted-foreground">
-          {event.title} · quem confirma é a equipe, no local combinado com o participante.
-        </p>
-      </header>
+      <PageHeader
+        title="Confirmações de vaga"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description={`${event.title} · quem confirma é a equipe, no local combinado com o participante.`}
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Confirmações de vaga' },
+        ]}
+      />
 
       {queue.activities.length === 0 ? (
         <div className="space-y-3 rounded-lg border border-border bg-card p-6">

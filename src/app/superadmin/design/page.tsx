@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Award, Inbox, Sparkles, Users } from 'lucide-react';
+import { Award, ClipboardList, Inbox, Sparkles, Users } from 'lucide-react';
 
 import {
   Alert,
@@ -27,6 +27,7 @@ import {
   TableWrapper,
   Textarea,
 } from '@/components/ui';
+import { PLATFORM_CRUMB } from '@/components/shell/tenant-nav';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 
 /**
@@ -156,6 +157,32 @@ function Section({
   );
 }
 
+/**
+ * Moldura de uma AMOSTRA do cabeçalho (FASE 78).
+ *
+ * A amostra não é uma maquete: é o `PageHeader` de verdade, com o rótulo do caso
+ * em cima. Quem migra uma tela na fatia 2 copia daqui a combinação de slots — e
+ * um token que mudar muda a amostra junto, que é o motivo de a vitrine existir.
+ * `headingLevel={2}` rebaixa o título da amostra porque a página do guia já tem
+ * o `<h1>` dela (ver o comentário da prop).
+ */
+function HeaderSample({
+  caption,
+  testId,
+  children,
+}: {
+  caption: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2" data-testid={testId}>
+      <p className="label-caps text-muted-foreground">{caption}</p>
+      <div className="rounded-lg border border-border bg-card p-5">{children}</div>
+    </div>
+  );
+}
+
 export default async function DesignCatalogPage() {
   await requirePlatformPermission();
 
@@ -163,7 +190,7 @@ export default async function DesignCatalogPage() {
     <main className="space-y-12" data-testid="design-catalog">
       <PageHeader
         title="Guia de estilo"
-        breadcrumbs={[{ label: 'Plataforma', href: '/superadmin/metricas' }, { label: 'Guia de estilo' }]}
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Guia de estilo' }]}
         description="A identidade do EventFlow renderizada pelo próprio código do produto. Um módulo novo copia daqui — e o teste de guarda impede cor ou tamanho fora de token."
         badge={<Badge tone="primary">FASE 11A</Badge>}
       />
@@ -294,6 +321,88 @@ export default async function DesignCatalogPage() {
             ))}
           </CardContent>
         </Card>
+      </Section>
+
+      <Section
+        title="Cabeçalho de página"
+        description="O topo único do produto (FASE 78). A trilha vem de breadcrumbs, o grupo de navegação de eyebrow (um parágrafo, nunca dentro do título) e a volta é DERIVADA do penúltimo item da trilha — por isso ela sempre nomeia o destino. As seis amostras abaixo são o componente de verdade, na combinação de slots que as telas usam."
+        testId="design-page-header"
+      >
+        <div className="grid gap-5 lg:grid-cols-2">
+          <HeaderSample caption="Sem eyebrow — o caso base" testId="design-header-base">
+            <PageHeader
+              headingLevel={2}
+              title="Visão geral"
+              description="O título e a frase que dizem o que a tela faz. É o mínimo que toda página entrega."
+            />
+          </HeaderSample>
+
+          <HeaderSample caption="Com eyebrow — o grupo de navegação" testId="design-header-eyebrow">
+            <PageHeader
+              headingLevel={2}
+              eyebrow="Operação"
+              title="Credenciamento"
+              description="O eyebrow diz ONDE a pessoa está (o grupo do menu); o título, o que a tela faz."
+            />
+          </HeaderSample>
+
+          <HeaderSample caption="Com ícone — decorativo, aria-hidden" testId="design-header-icon">
+            <PageHeader
+              headingLevel={2}
+              icon={<ClipboardList className="size-7" aria-hidden />}
+              eyebrow="Operação"
+              title="Credenciamento"
+              description="O ícone é irmão do título e não tem nome: quem lê ouve o título, não o desenho."
+            />
+          </HeaderSample>
+
+          <HeaderSample
+            caption="Com trilha — a volta é derivada do penúltimo item"
+            testId="design-header-breadcrumbs"
+          >
+            <PageHeader
+              headingLevel={2}
+              breadcrumbs={[
+                PLATFORM_CRUMB,
+                { label: 'Instituições', href: '/superadmin/tenants' },
+                { label: 'Equipe' },
+              ]}
+              title="Equipe e participantes"
+              description="A trilha mostra o caminho; o link à direita diz para onde volta, com o destino escrito."
+            />
+          </HeaderSample>
+
+          <HeaderSample caption="Com ações — a operação da tela" testId="design-header-actions">
+            <PageHeader
+              headingLevel={2}
+              eyebrow="Comitê científico"
+              title="Chamadas de propostas"
+              description="As ações ficam no mesmo canto em toda tela: um primário, o resto em contorno."
+              actions={
+                <>
+                  <Button variant="outline" size="sm">
+                    Exportar
+                  </Button>
+                  <Button size="sm">Nova chamada</Button>
+                </>
+              }
+            />
+          </HeaderSample>
+
+          <HeaderSample caption="Com badge — só estado" testId="design-header-badge">
+            <PageHeader
+              headingLevel={2}
+              eyebrow="Minha participação"
+              title="Evento de exemplo"
+              badge={
+                <Badge tone="warning" withDot>
+                  Exemplo
+                </Badge>
+              }
+              description="O badge diz o ESTADO da tela (Exemplo, SuperAdmin). O nome da instituição já vive na casca."
+            />
+          </HeaderSample>
+        </div>
       </Section>
 
       <Section

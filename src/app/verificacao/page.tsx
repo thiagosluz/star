@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { BadgeCheck, ShieldAlert } from 'lucide-react';
 
 import { getAuthenticatedUser } from '@/lib/auth/session';
-import { buttonClasses } from '@/components/ui';
+import { buttonClasses, PageHeader } from '@/components/ui';
+import { PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Confirmação de e-mail' };
 export const dynamic = 'force-dynamic';
@@ -39,31 +40,32 @@ export default async function VerificationPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6 py-16">
-      <div className="space-y-3 text-center" data-testid="verification-result">
-        {failed ? (
-          <ShieldAlert className="mx-auto size-10 text-warning" aria-hidden />
-        ) : (
-          <BadgeCheck className="mx-auto size-10 text-success-strong" aria-hidden />
-        )}
-
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="verification-title">
-          {failed ? 'O link não valeu' : 'E-mail confirmado!'}
-        </h1>
-
-        <p className="text-sm text-muted-foreground">
-          {failed
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title={failed ? 'O link não valeu' : 'E-mail confirmado!'}
+        titleTestId="verification-title"
+        icon={
+          failed ? (
+            <ShieldAlert className="size-7 text-warning" aria-hidden />
+          ) : (
+            <BadgeCheck className="size-7 text-success-strong" aria-hidden />
+          )
+        }
+        description={
+          failed
             ? 'O link de confirmação expirou ou já foi usado. Entre na sua conta e peça outro — o novo chega em instantes.'
-            : 'Seu endereço está confirmado. É o que permite recuperar a senha e receber os avisos dos eventos.'}
-        </p>
+            : 'Seu endereço está confirmado. É o que permite recuperar a senha e receber os avisos dos eventos.'
+        }
+        data-testid="verification-result"
+      />
 
-        <p className="text-xs text-muted-foreground">
-          {user
-            ? `Você está na conta ${user.email}.`
-            : 'Você pode fechar esta aba e voltar ao seu e-mail.'}
-        </p>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        {user
+          ? `Você está na conta ${user.email}.`
+          : 'Você pode fechar esta aba e voltar ao seu e-mail.'}
+      </p>
 
-      <div className="flex flex-wrap justify-center gap-3">
+      <div className="flex flex-wrap gap-3">
         {user ? (
           <Link href="/selecionar-instituicao" className={buttonClasses({ variant: 'primary' })}>
             Ir para as minhas instituições

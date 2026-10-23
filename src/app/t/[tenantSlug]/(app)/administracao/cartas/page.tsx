@@ -22,6 +22,8 @@ import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { deleteCardTemplateAction, saveCardTemplateAction } from '@/app/actions/admin-actions';
 import { restoreCardTemplateAction } from '@/app/actions/catalog-archive-actions';
 import { grantCardAction } from '@/app/actions/gamification-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Cartas' };
 export const dynamic = 'force-dynamic';
@@ -333,24 +335,22 @@ export default async function AdminCardsPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Administração
-          </Link>
-        </nav>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Layers className="size-6 text-tier-epic" aria-hidden />
-          Cartas colecionáveis
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          A paleta e a arte são validadas ao salvar: cores fora do formato (hex ou <span className="code-data">oklch()</span>)
-          e URLs não-http(s) são descartadas.
-        </p>
-      </header>
+      <PageHeader
+        title="Cartas colecionáveis"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Layers className="size-6 text-tier-epic" aria-hidden />}
+        description={
+          <>
+            A paleta e a arte são validadas ao salvar: cores fora do formato (hex ou <span className="code-data">oklch()</span>)
+            e URLs não-http(s) são descartadas.
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Cartas colecionáveis' },
+        ]}
+      />
 
       {/*
         O FILTRO É UM LINK — sem JavaScript, com endereço próprio e sem estado escondido.

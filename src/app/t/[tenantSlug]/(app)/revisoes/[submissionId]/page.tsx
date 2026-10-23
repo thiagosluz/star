@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect, notFound } from 'next/navigation';
 import { Download, EyeOff, ShieldAlert } from 'lucide-react';
 
@@ -10,6 +9,8 @@ import { canAccessSubmissionFile } from '@/domain/review/review-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { submitReviewAction } from '@/app/actions/review-actions';
 import { ReviewForm } from '@/components/review/review-form';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,45 +150,42 @@ export default async function ReviewSubmissionPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <nav>
-        <Link
-          href={tenantPath(tenantSlug, '/revisoes')}
-          className="text-xs text-muted-foreground underline underline-offset-4"
-        >
-          ← Minhas revisões
-        </Link>
-      </nav>
-
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
-            {submission.protocol}
-          </span>
-          {assignment.isBlind ? (
-            <span className="inline-flex items-center gap-1 rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong">
-              <EyeOff className="size-3" aria-hidden />
-              Revisão cega
+      <PageHeader
+        title={submission.title}
+        eyebrow={TENANT_NAV_GROUPS.comite}
+        description={
+          <>
+            {submission.event.title}
+            {submission.track?.name ? ` · ${submission.track.name}` : ''}
+            {assignment.dueAt
+              ? ` · prazo ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(assignment.dueAt)}`
+              : ''}
+          </>
+        }
+        badge={
+          <>
+            <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
+              {submission.protocol}
             </span>
-          ) : null}
-          {review?.submittedAt ? (
-            <span className="rounded border border-success/40 px-2 py-0.5 text-xs text-success-strong">
-              Parecer enviado
-            </span>
-          ) : null}
-        </div>
-
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">
-          {submission.title}
-        </h1>
-
-        <p className="text-xs text-muted-foreground">
-          {submission.event.title}
-          {submission.track?.name ? ` · ${submission.track.name}` : ''}
-          {assignment.dueAt
-            ? ` · prazo ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(assignment.dueAt)}`
-            : ''}
-        </p>
-      </header>
+            {assignment.isBlind ? (
+              <span className="inline-flex items-center gap-1 rounded border border-warning/40 px-2 py-0.5 text-xs text-warning-strong">
+                <EyeOff className="size-3" aria-hidden />
+                Revisão cega
+              </span>
+            ) : null}
+            {review?.submittedAt ? (
+              <span className="rounded border border-success/40 px-2 py-0.5 text-xs text-success-strong">
+                Parecer enviado
+              </span>
+            ) : null}
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Minhas revisões', href: tenantPath(tenantSlug, '/revisoes') },
+          { label: submission.title },
+        ]}
+      />
 
       {/* ── Aviso de revisão cega ─────────────────────────────────────────── */}
       {assignment.isBlind ? (

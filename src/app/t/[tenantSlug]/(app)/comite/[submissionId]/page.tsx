@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Ban, CalendarPlus, ShieldCheck, Star, UserPlus } from 'lucide-react';
 
@@ -18,6 +17,8 @@ import { assignReviewerAction, recordDecisionAction } from '@/app/actions/review
 import { DecisionForm } from '@/components/review/decision-form';
 import { AssignReviewerButton } from '@/components/review/assign-reviewer-button';
 import { ProposalAcceptancePanel } from '@/components/proposals/proposal-acceptance-panel';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,36 +109,32 @@ export default async function ChairSubmissionPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <nav>
-        <Link
-          href={tenantPath(tenantSlug, '/comite')}
-          className="text-xs text-muted-foreground underline underline-offset-4"
-        >
-          ← Comitê científico
-        </Link>
-      </nav>
-
-      <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
-            {board.protocol}
-          </span>
-          <span
-            className={`rounded border px-2 py-0.5 text-xs ${
-              panel.quorum.satisfied
-                ? 'border-success/40 text-success-strong'
-                : 'border-warning/40 text-warning-strong'
-            }`}
-            data-testid="panel-quorum"
-          >
-            {panel.quorum.message}
-          </span>
-        </div>
-
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">
-          {board.title}
-        </h1>
-      </header>
+      <PageHeader
+        title={board.title}
+        eyebrow={TENANT_NAV_GROUPS.comite}
+        badge={
+          <>
+            <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
+              {board.protocol}
+            </span>
+            <span
+              className={`rounded border px-2 py-0.5 text-xs ${
+                panel.quorum.satisfied
+                  ? 'border-success/40 text-success-strong'
+                  : 'border-warning/40 text-warning-strong'
+              }`}
+              data-testid="panel-quorum"
+            >
+              {panel.quorum.message}
+            </span>
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: TENANT_NAV_GROUPS.comite, href: tenantPath(tenantSlug, '/comite') },
+          { label: board.title },
+        ]}
+      />
 
       {/* ── Distribuição de revisores ─────────────────────────────────────── */}
       <section className="space-y-4">

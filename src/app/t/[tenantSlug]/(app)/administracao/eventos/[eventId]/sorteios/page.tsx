@@ -1,7 +1,6 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import QRCode from 'qrcode';
-import { ArrowLeft, History, KeyRound, MonitorPlay, ShieldCheck, Trophy } from 'lucide-react';
+import { History, KeyRound, MonitorPlay, ShieldCheck, Trophy } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -41,6 +40,8 @@ import {
   updateRoundAnnouncementAction,
 } from '@/app/actions/raffle-actions';
 import { setBigscreenVisibilityAction } from '@/app/actions/bigscreen-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Sorteios' };
 export const dynamic = 'force-dynamic';
@@ -201,25 +202,24 @@ export default async function RafflesPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Gerenciar {event.title}
-          </Link>
-        </nav>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Trophy className="size-6 text-warning" aria-hidden />
-          Sorteios
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Elegibilidade por <strong>presença real</strong>: só concorre quem compareceu, conforme o
-          credenciamento registrado. A apuração usa gerador criptográfico e fica auditada por hash.
-        </p>
-      </header>
+      <PageHeader
+        title="Sorteios"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Trophy className="size-6 text-warning" aria-hidden />}
+        description={
+          <>
+            Elegibilidade por <strong>presença real</strong>: só concorre quem compareceu, conforme o
+            credenciamento registrado. A apuração usa gerador criptográfico e fica auditada por hash.
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Sorteios' },
+        ]}
+      />
 
       {activities.length === 0 ? (
         <p className="rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm text-warning-strong">

@@ -26,6 +26,8 @@ import {
   setCallPublishedAction,
 } from '@/app/actions/call-actions';
 import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { RubricEditor } from '@/components/admin/rubric-editor';
@@ -233,24 +235,19 @@ export default async function EventCallsPage({
 
   return (
     <main className="max-w-5xl space-y-8" data-testid="calls-panel">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Organização</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Megaphone className="size-6 text-primary" aria-hidden />
-          Chamadas de propostas
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Cada chamada é um convite com tipo próprio: artigo, palestrante, minicurso, oficina,
-          mesa-redonda ou outra atividade. Publicar a chamada é o que a torna visível — e o
-          bloco “Chamadas de propostas” da página pública é onde você escolhe exibi-la.
-        </p>
-        <p className="flex flex-wrap items-center gap-4 text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="underline underline-offset-4"
-          >
-            ← Voltar ao evento
-          </Link>
+      <PageHeader
+        title="Chamadas de propostas"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Megaphone className="size-6 text-primary" aria-hidden />}
+        description="Cada chamada é um convite com tipo próprio: artigo, palestrante, minicurso, oficina, mesa-redonda ou outra atividade. Publicar a chamada é o que a torna visível — e o bloco “Chamadas de propostas” da página pública é onde você escolhe exibi-la."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Chamadas de propostas' },
+        ]}
+        actions={
           <Link
             href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`)}
             className="underline underline-offset-4"
@@ -258,8 +255,8 @@ export default async function EventCallsPage({
           >
             Editar a página pública →
           </Link>
-        </p>
-      </header>
+        }
+      />
 
       {/* ── Nova chamada ─────────────────────────────────────────────────── */}
       <details className="rounded-xl border border-border bg-card p-5" data-testid="create-call-section">

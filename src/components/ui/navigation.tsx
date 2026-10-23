@@ -2,110 +2,31 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronRight } from 'lucide-react';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils/cn';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  NAVEGAÇÃO — trilha, título de página e itens de menu (FASE 11A)
+ *  NAVEGAÇÃO — itens de menu e abas (FASE 11A · dividida na FASE 78)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE ESTA FASE CHAMA DE "NAVEGABILIDADE"
+ *  ESTE ARQUIVO É `'use client'`, E O TOPO NÃO É
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Não é só um menu melhor: é a pessoa saber ONDE ESTÁ e COMO VOLTAR. As três
- *  peças abaixo cobrem isso em qualquer tela:
- *    • `Breadcrumbs` — o caminho até aqui, com o último item não clicável;
- *    • `PageHeader`   — o título da tela e as ações dela, no mesmo lugar sempre;
- *    • `NavLink`      — item de menu que sabe se está ativo (por rota, não por
- *      prop passada à mão, que é como os menus divergiam entre as telas).
+ *  `NavLink` e `TabNav` dependem de `usePathname` para saber onde a pessoa
+ *  está — é o que impede menu e tela de divergirem (a tela não avisa o menu,
+ *  o menu lê a rota). Isso exige cliente.
  *
- *  O estado ativo é derivado de `usePathname`: a tela nova não precisa avisar
- *  nada ao menu, e por isso não há como esquecer de avisar.
+ *  `PageHeader` e `Breadcrumbs` NÃO dependem de nada disso: são desenho puro,
+ *  e moram em `page-header.tsx` (server) desde a FASE 78. Eles ficavam aqui e,
+ *  como este módulo é `'use client'`, cada tela que passasse a usar o cabeçalho
+ *  viraria uma ilha de cliente. A separação não é cosmética: é o que torna a
+ *  migração das 87 telas restantes possível sem pagar JavaScript por página.
+ *
+ *  A catraca `tests/unit/f78-page-header.test.ts` prende as duas metades — o
+ *  `'use client'` não sai daqui, e não entra no arquivo do topo.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-export interface Crumb {
-  label: string;
-  href?: string;
-}
-
-export function Breadcrumbs({ items, className }: { items: readonly Crumb[]; className?: string }) {
-  if (items.length === 0) return null;
-
-  return (
-    <nav aria-label="Trilha de navegação" className={cn('flex items-center gap-1.5', className)}>
-      {items.map((item, index) => {
-        const isLast = index === items.length - 1;
-
-        return (
-          <span key={`${item.label}-${index}`} className="flex items-center gap-1.5">
-            {index > 0 ? (
-              <ChevronRight className="size-3.5 text-on-surface-variant/60" aria-hidden />
-            ) : null}
-            {item.href && !isLast ? (
-              <Link
-                href={item.href}
-                className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-              >
-                {item.label}
-              </Link>
-            ) : (
-              <span
-                aria-current={isLast ? 'page' : undefined}
-                className="text-xs font-medium text-foreground"
-              >
-                {item.label}
-              </span>
-            )}
-          </span>
-        );
-      })}
-    </nav>
-  );
-}
-
-/**
- * Cabeçalho padrão de tela.
- *
- * Toda página do sistema começa por aqui: mesma trilha, mesmo tamanho de título,
- * mesmas ações à direita. É o que faz telas diferentes parecerem o mesmo produto.
- */
-export function PageHeader({
-  title,
-  description,
-  breadcrumbs,
-  actions,
-  badge,
-  className,
-  ...props
-}: ComponentProps<'header'> & {
-  title: string;
-  description?: ReactNode;
-  breadcrumbs?: readonly Crumb[];
-  actions?: ReactNode;
-  badge?: ReactNode;
-}) {
-  return (
-    <header className={cn('space-y-4', className)} {...props}>
-      {breadcrumbs && breadcrumbs.length > 0 ? <Breadcrumbs items={breadcrumbs} /> : null}
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-display text-title-lg text-foreground">{title}</h1>
-            {badge}
-          </div>
-          {description ? (
-            <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-      </div>
-    </header>
-  );
-}
 
 /**
  * Item de menu com estado ativo derivado da rota.

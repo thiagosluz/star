@@ -8,6 +8,8 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { CancelRegistrationButton } from '@/components/events/cancel-registration-button';
 import { AcceptPromotionButton } from '@/components/events/accept-promotion-button';
 import { EraseFormResponsesButton } from '@/components/events/erase-form-responses-button';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Minhas inscrições' };
 export const dynamic = 'force-dynamic';
@@ -49,35 +51,35 @@ export default async function MyRegistrationsPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Minhas inscrições</h1>
-        <p className="text-sm text-muted-foreground">
-          Atividades em que você se inscreveu em {context.activeTenant.tenantName}.
-        </p>
-        {/**
-          * ── A PORTA PARA A AGENDA (FASE 65 · fatia 2) ─────────────────────────────
-          *
-          *  A inscrição é LUGAR e o favorito é INTENÇÃO: as duas coisas convivem na
-          *  grade do dia, e esta tela é a irmã dela — o link fica AQUI, ao lado das
-          *  inscrições, e não na barra lateral.
-          *
-          *  A decisão é da fatia 5, e o motivo é medido: um item de menu mexeria em ~10
-          *  linhas de base de PIXEL (a barra inteira, a recolhida, a gaveta, o painel e
-          *  o diretório, nos dois modos) para oferecer um caminho que já está a um
-          *  clique daqui. A catraca visual da F62 existe para pegar o que ninguém pensou
-          *  em medir — usá-la para carimbar um link novo é o caminho mais curto para
-          *  ninguém revisar as imagens.
-          */}
-        <p className="text-sm">
-          <Link
-            href={tenantPath(tenantSlug, '/minha-agenda')}
-            className="text-muted-foreground underline underline-offset-4"
-            data-testid="minha-agenda-link"
-          >
-            Ver a minha agenda do dia
-          </Link>
-        </p>
-      </header>
+      <PageHeader
+        title="Minhas inscrições"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        description={`Atividades em que você se inscreveu em ${context.activeTenant.tenantName}.`}
+      />
+
+      {/**
+        * ── A PORTA PARA A AGENDA (FASE 65 · fatia 2) ─────────────────────────────
+        *
+        *  A inscrição é LUGAR e o favorito é INTENÇÃO: as duas coisas convivem na
+        *  grade do dia, e esta tela é a irmã dela — o link fica AQUI, ao lado das
+        *  inscrições, e não na barra lateral.
+        *
+        *  A decisão é da fatia 5, e o motivo é medido: um item de menu mexeria em ~10
+        *  linhas de base de PIXEL (a barra inteira, a recolhida, a gaveta, o painel e
+        *  o diretório, nos dois modos) para oferecer um caminho que já está a um
+        *  clique daqui. A catraca visual da F62 existe para pegar o que ninguém pensou
+        *  em medir — usá-la para carimbar um link novo é o caminho mais curto para
+        *  ninguém revisar as imagens.
+        */}
+      <p className="text-sm">
+        <Link
+          href={tenantPath(tenantSlug, '/minha-agenda')}
+          className="text-muted-foreground underline underline-offset-4"
+          data-testid="minha-agenda-link"
+        >
+          Ver a minha agenda do dia
+        </Link>
+      </p>
 
       {registrations.length === 0 ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6">

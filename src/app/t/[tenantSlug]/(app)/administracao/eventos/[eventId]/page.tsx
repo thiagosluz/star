@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   Award,
@@ -28,21 +29,29 @@ import { requireUuidParam } from '@/lib/validation/id';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import {
-  EVENT_AREAS,
+  EMPTY_EVENT_AREA_COUNTS,
+  eventAreaMetric,
+  findEventAreaByTestId,
   groupEventAreas,
   visibleEventAreas,
   type EventAreaGroupView,
 } from '@/domain/events/event-areas';
 import {
-  EMPTY_EVENT_AREA_COUNTS,
-  eventAreaMetric,
-} from '@/domain/events/event-areas';
+  EVENT_LAUNCH_NOTE,
+  EVENT_LAUNCH_STATE_LABEL,
+  eventLaunchPath,
+} from '@/domain/events/event-launch-path';
 import { getEventAreaCounts } from '@/lib/events/event-area-counts';
 import { eventReadiness } from '@/domain/events/event-readiness';
+import { canExportEventData } from '@/domain/exports/export-rules';
+import { getDataExport, listRecentDataExports, RECENT_EXPORTS_LIMIT, type ExportRecordView } from '@/lib/exports/export-service';
+import { EventExportPanel } from '@/components/exports/event-export-panel';
+import { isUuid } from '@/domain/validation/id-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { formatEventPeriod } from '@/domain/events/event-rules';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
-import { Card, CardContent, SectionHeading } from '@/components/ui';
+import { Badge, Card, CardContent, PageHeader, SectionHeading } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Gerenciar evento' };
 export const dynamic = 'force-dynamic';
@@ -59,12 +68,25 @@ export const dynamic = 'force-dynamic';
  */
 export default async function AdminEventDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
+  /**
+   * Opcional porque a página também é renderizada FORA do roteador — o teste de
+   * integração da FASE 77 (caminho de partida) chama o componente com `params` só.
+   * No Next, `searchParams` sempre chega.
+   */
+  searchParams?: Promise<{
+    /** Exportação recém-criada: a tela volta com o identificador do pedido (FASE 49). */
+    exportacao?: string;
+    /** Motivo da recusa, quando o pedido não deu certo. */
+    erro?: string;
+  }>;
 }) {
   const resolvedParams = await params;
   const eventId = requireUuidParam(resolvedParams, 'eventId');
   const { tenantSlug } = resolvedParams;
+  const { exportacao, erro } = (await searchParams) ?? {};
 
   const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
@@ -153,6 +175,78 @@ export default async function AdminEventDetailPage({
     pendingConfirmations,
   };
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  O CAMINHO DE PARTIDA (FASE 77 · fatia 1)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  Três fatias, os MESMOS fatos que a prontidão e o selo já carregaram: nenhuma
+   *  consulta nova. O guia não é o painel — ele responde "por onde começo", e o
+   *  painel responde "o que atrapalha agora" —, por isso os dois convivem na mesma
+   *  seção sem que um corrija o outro.
+   */
+  const caminhoDePartida = eventLaunchPath({
+    registrationHasDeadline: event.registrationClosesAt !== null,
+    activityCount: event.activityCount,
+    pagePublished: contagens.pagePublished,
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A EXPORTAÇÃO DO EVENTO (FASE 77 · fatia 2)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  O painel da F49 existia inteiro e não tinha porta na raiz: quem queria os
+   *  inscritos de UM evento saía da tela, ia ao diretório e escolhia no `<select>` —
+   *  que esconde eventos em `DRAFT`. Aqui o recorte do evento já vem preenchido.
+   *
+   *  A LEITURA só acontece para quem pode exportar (`participant:read`): a raiz
+   *  exige `event:update`, e as duas permissões não vêm juntas. Quem não tem a
+   *  segunda não vê o painel e não paga a consulta.
+   *
+   *  A lista de recentes é filtrada pelo EVENTO (e não a da instituição): uma linha
+   *  de "3 linhas · Ana" de outro evento faria o organizador achar que o arquivo
+   *  dele já existe.
+   */
+  const podeExportarDados = canExportEventData(principal);
+
+  let createdExport: ExportRecordView | null = null;
+  let exportacoesRecentes: ExportRecordView[] = [];
+
+  if (podeExportarDados) {
+    /**
+     * `?exportacao=` é consulta, não endereço: id malformado não pode derrubar a
+     * tela (a régua da FASE 76) — aqui ele simplesmente não é um pedido.
+     *
+     * A janela de recentes é maior que a que a tela mostra (`limit: 30`) porque o
+     * filtro pelo EVENTO acontece DEPOIS: pedir só as 5 últimas da instituição faria
+     * a exportação deste evento sumir da lista assim que cinco outros eventos
+     * exportassem. É a mesma janela que a tela de patrocínio usa.
+     */
+    const [recentesParticipantes, recentesPresencas, pedido] = await Promise.all([
+      listRecentDataExports({ tenantId, kind: 'PARTICIPANTS_CSV', limit: 30 }),
+      listRecentDataExports({ tenantId, kind: 'ATTENDANCES_CSV', limit: 30 }),
+      exportacao && isUuid(exportacao)
+        ? getDataExport({ tenantId, exportId: exportacao })
+        : Promise.resolve(null),
+    ]);
+
+    createdExport = pedido && pedido.eventId === event.id ? pedido : null;
+    exportacoesRecentes = [...recentesParticipantes, ...recentesPresencas]
+      .filter((registro) => registro.eventId === event.id)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, RECENT_EXPORTS_LIMIT);
+  }
+
+  const painelDeExportacao = (
+    <EventExportPanel
+      tenantSlug={tenantSlug}
+      eventId={event.id}
+      principal={principal}
+      created={createdExport}
+      recent={exportacoesRecentes}
+      error={erro ?? null}
+    />
+  );
+
   const gruposDeAreas = groupEventAreas(
     visibleEventAreas({
       allowed: (permission) =>
@@ -189,8 +283,17 @@ export default async function AdminEventDetailPage({
    *  não é mais a ordem dos grupos — as seções que se editam nesta tela (dados, salas,
    *  programação, reconhecimento) entram logo depois do grupo "Configurar", que é o
    *  grupo a que elas pertencem.
+   *
+   *  `extra` é o conteúdo que entra DEPOIS dos cartões do grupo, dentro da mesma
+   *  seção — hoje só o painel de exportação em "Operar". Ele não vira um cartão (o
+   *  mapa continua com 17) nem uma seção nova: a raiz tem CINCO `<section>` e o
+   *  painel entra como um bloco de `div` dentro da quarta.
+   *
+   *  O parâmetro é OPCIONAL e as chamadas passam uma função explícita: `.map(funcao)`
+   *  passaria o ÍNDICE como segundo argumento, e o React renderizaria "0"/"1"/"2"
+   *  no meio da página.
    */
-  const grupoDeAreas = (grupo: EventAreaGroupView) => (
+  const grupoDeAreas = (grupo: EventAreaGroupView, extra?: ReactNode) => (
         <section key={grupo.group} className="space-y-4" aria-labelledby={`areas-${grupo.group}`}>
           <SectionHeading title={grupo.label} description={grupo.hint} />
 
@@ -234,38 +337,41 @@ export default async function AdminEventDetailPage({
               );
             })}
           </ul>
+
+          {extra}
         </section>
   );
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao/eventos')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Eventos
-          </Link>
-        </nav>
-        <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
-        {/**
-          * ─────────────────────────────────────────────────────────────────────────
-          *  A MESMA RÉGUA DA PÁGINA PÚBLICA (FASE 68 · fatia 4)
-          * ─────────────────────────────────────────────────────────────────────────
-          *  Aqui havia `toLocaleDateString('pt-BR')` colado dos DOIS lados, e isso
-          *  produzia dois defeitos de uma vez: um evento de um dia virava "05/11/2026
-          *  a 05/11/2026" (duas vezes a mesma data), e a conversão usava o fuso do
-          *  PROCESSO — a família de defeito que já foi consertada duas vezes nesta
-          *  casa. `formatEventPeriod` trata o mesmo dia e formata no fuso do EVENTO,
-          *  que é o que a programação e a vitrine já usam.
-          */}
-        <p className="text-xs text-muted-foreground">
-          {formatEventPeriod(event, event.timezone)} ·{' '}
-          {event.registrationCount} inscrição(ões) · {event.activityCount} atividade(s) ·{' '}
-          {event.trackCount} trilha(s)
-        </p>
-      </header>
+      {/**
+        * ─────────────────────────────────────────────────────────────────────────
+        *  A MESMA RÉGUA DA PÁGINA PÚBLICA (FASE 68 · fatia 4)
+        * ─────────────────────────────────────────────────────────────────────────
+        *  Aqui havia `toLocaleDateString('pt-BR')` colado dos DOIS lados, e isso
+        *  produzia dois defeitos de uma vez: um evento de um dia virava "05/11/2026
+        *  a 05/11/2026" (duas vezes a mesma data), e a conversão usava o fuso do
+        *  PROCESSO — a família de defeito que já foi consertada duas vezes nesta
+        *  casa. `formatEventPeriod` trata o mesmo dia e formata no fuso do EVENTO,
+        *  que é o que a programação e a vitrine já usam.
+        */}
+      <PageHeader
+        title={event.title}
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description={
+          <>
+            {formatEventPeriod(event, event.timezone)} ·{' '}
+            {event.registrationCount} inscrição(ões) · {event.activityCount} atividade(s) ·{' '}
+            {event.trackCount} trilha(s)
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title },
+        ]}
+      />
 
       {/**
        * ═══════════════════════════════════════════════════════════════════════
@@ -285,6 +391,83 @@ export default async function AdminEventDetailPage({
           description="Pendências que atrapalham o fluxo, com o caminho para resolver cada uma."
         />
 
+        {/**
+         * ───────────────────────────────────────────────────────────────────────
+         *  O CAMINHO DE PARTIDA (FASE 77 · fatia 1)
+         * ───────────────────────────────────────────────────────────────────────
+         *  Fica DENTRO da seção de prontidão, acima da lista — não é uma 6ª seção.
+         *  A raiz tem 5 `<section>` no DOM e 17 cartões; uma seção nova entre a
+         *  prontidão e o mapa empurraria os cartões de Configurar para baixo da
+         *  dobra, e o organizador perderia justamente o atalho que o guia promete.
+         *
+         *  A lista é um `<ol>` de verdade e os números são TEXTO ("1.", "2.", "3."):
+         *  leitor de tela anuncia a sequência sem depender de contador de CSS, e a
+         *  tela funciona sem JavaScript (são links do servidor).
+         */}
+        <Card
+          elevated={false}
+          className="space-y-2 px-4 py-3"
+          data-testid="event-launch-path"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h3 className="text-sm font-medium text-foreground">Por onde começar</h3>
+            <p className="text-xs text-muted-foreground" data-testid="event-launch-path-summary">
+              {caminhoDePartida.summary}
+            </p>
+          </div>
+
+          <p className="text-xs text-muted-foreground">{EVENT_LAUNCH_NOTE}</p>
+
+          <ol className="divide-y divide-border/60">
+            {caminhoDePartida.steps.map((step, indice) => {
+              const area = findEventAreaByTestId(step.targetTestId);
+
+              const conteudo = (
+                <>
+                  <span className="font-medium text-foreground">
+                    {indice + 1}. {step.label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{step.hint}</span>
+                  <span className="ml-auto">
+                    <Badge
+                      tone={step.state === 'DONE' ? 'success' : 'neutral'}
+                      size="sm"
+                      withDot
+                    >
+                      {EVENT_LAUNCH_STATE_LABEL[step.state]}
+                    </Badge>
+                  </span>
+                </>
+              );
+
+              const classeLinha =
+                'flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-1 py-1.5 text-sm';
+
+              return (
+                <li key={step.id}>
+                  {area ? (
+                    <Link
+                      href={area.href(areaContext)}
+                      className={`${classeLinha} hover:bg-surface-high`}
+                      data-testid={`event-launch-path-step-${step.id}`}
+                    >
+                      {conteudo}
+                    </Link>
+                  ) : (
+                    /**
+                     * Inalcançável enquanto o catálogo tiver as três áreas (o domínio
+                     * derruba a renderização se não tiver), mas o fallback não inventa
+                     * link: melhor uma linha sem destino do que um href para lugar
+                     * nenhum.
+                     */
+                    <span className={classeLinha}>{conteudo}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </Card>
+
         {pendencias.length === 0 ? (
           <p
             className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-soft px-4 py-3 text-sm text-foreground"
@@ -296,9 +479,12 @@ export default async function AdminEventDetailPage({
         ) : (
           <ul className="space-y-2" data-testid="event-readiness-list">
             {pendencias.map((item) => {
-              const atalho = EVENT_AREAS.find(
-                (area) => (area.legacyTestId ?? `event-area-${area.id}`) === item.targetTestId,
-              );
+              /**
+               * A resolução do alvo é a MESMA do cartão e do caminho de partida
+               * (`eventAreaTestId`), e não uma segunda regra escrita aqui: era essa
+               * duplicação que deixava uma pendência apontar para um alvo morto.
+               */
+              const atalho = findEventAreaByTestId(item.targetTestId);
               const bloqueante = item.severity === 'BLOCKING';
 
               return (
@@ -352,7 +538,7 @@ export default async function AdminEventDetailPage({
        * entram logo abaixo dele (dentro do mesmo grupo), e os outros três grupos fecham
        * a página — antes as seções apareciam soltas no fim, sem pertencer a grupo nenhum.
        */}
-      {gruposDeAreas.filter((grupo) => grupo.group === 'CONFIGURAR').map(grupoDeAreas)}
+      {gruposDeAreas.filter((grupo) => grupo.group === 'CONFIGURAR').map((grupo) => grupoDeAreas(grupo))}
 
 
 
@@ -362,8 +548,15 @@ export default async function AdminEventDetailPage({
       {/**
        * Os outros três grupos fecham a página: eles são só navegação (cada cartão leva a
        * uma tela), enquanto o que se edita AQUI está no grupo Configurar, acima.
+       *
+       * O painel de exportação entra no fim de "Operar" — DEPOIS dos quatro cartões do
+       * grupo, para o mapa de 17 cartões não se mover: os cartões continuam na mesma
+       * ordem e nas mesmas posições, e o bloco novo fica onde a tarefa acontece (a
+       * exportação é trabalho do dia do evento, não configuração e nem resultado).
        */}
-      {gruposDeAreas.filter((grupo) => grupo.group !== 'CONFIGURAR').map(grupoDeAreas)}
+      {gruposDeAreas
+        .filter((grupo) => grupo.group !== 'CONFIGURAR')
+        .map((grupo) => grupoDeAreas(grupo, grupo.group === 'OPERAR' ? painelDeExportacao : undefined))}
 
       {/**
        * O RECONHECIMENTO DO COMITÊ FICA NO RESULTADO, e não em Configurar: ele não

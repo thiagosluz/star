@@ -11,6 +11,8 @@ import { listCertificates } from '@/lib/certificates/certificate-service';
 import { withTenant } from '@/lib/db/tenant-client';
 import { RequestCertificateForm } from '@/components/certificates/request-form';
 import { IssueBatchPanel, RevokeCertificateForm } from '@/components/certificates/issue-panel';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   issueEventCertificatesAction,
   requestMyCertificateAction,
@@ -43,7 +45,7 @@ export default async function CertificatesPage({
 }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, userId, tenantName } = await requirePagePermission({
+  const { tenantId, userId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_READ_OWN,
   });
@@ -73,18 +75,18 @@ export default async function CertificatesPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Award className="size-6 text-primary" aria-hidden />
-          Meus certificados
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Cada certificado tem um código público de validação: qualquer pessoa pode conferir a
-          autenticidade em <span className="code-data">/validar/&lt;código&gt;</span> ou lendo o QR
-          Code impresso no documento.
-        </p>
-      </header>
+      <PageHeader
+        title="Meus certificados"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Award className="size-6 text-primary" aria-hidden />}
+        description={
+          <>
+            Cada certificado tem um código público de validação: qualquer pessoa pode conferir a
+            autenticidade em <span className="code-data">/validar/&lt;código&gt;</span> ou lendo o QR
+            Code impresso no documento.
+          </>
+        }
+      />
 
       <section className="space-y-3" aria-labelledby="emitir">
         <h2 id="emitir" className="text-lg font-semibold tracking-tight">

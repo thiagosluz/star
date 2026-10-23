@@ -98,6 +98,7 @@ import {
   buttonClasses,
   fieldAria,
 } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Comunicação' };
 export const dynamic = 'force-dynamic';
@@ -240,13 +241,13 @@ export default async function CommunicationPage({
     <main className="space-y-8" data-testid="communication-page">
       <PageHeader
         title="Comunicação"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
         description="O que a plataforma enviou em nome da instituição — e para quem: convites, avisos, conquistas, certificados e as campanhas segmentadas."
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
           { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
           { label: 'Comunicação' },
         ]}
-        badge={<Badge tone="primary">{tenantName}</Badge>}
       />
 
       {driver === 'log' ? (

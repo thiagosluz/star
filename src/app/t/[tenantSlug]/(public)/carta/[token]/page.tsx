@@ -7,6 +7,7 @@ import { getTenantContext } from '@/lib/events/event-repository';
 import { readSharedCard } from '@/lib/gamification/card-share-service';
 import { RARITY_LABELS } from '@/domain/gamification/card-rules';
 import { HoloCard } from '@/components/gamification/holo-card';
+import { PageHeader } from '@/components/ui';
 import { tenantPath } from '@/domain/tenancy/resolution';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,24 @@ export const dynamic = 'force-dynamic';
  *  prévia lê uma terceira. Apenas o corpo pede `registerView`: contar as três
  *  faria de cada raspagem de robô uma "abertura" e o dono leria um número que
  *  ninguém viu.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TOPO VEM DO `PageHeader` — E O NOME DA INSTITUIÇÃO SAI DELE (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O topo antigo era um `<header>` centralizado com `<p>` do nome da instituição,
+ *  `<h1>` da carta e a linha do dono. Os dois fatos da tela continuam os mesmos,
+ *  agora no componente único: o `<h1>` é o nome da carta (com o `data-testid`
+ *  `shared-card-title`, que o E2E lê) e a linha do dono virou a `description`
+ *  (com o `shared-card-owner`), que é onde ela sempre pertenceu.
+ *
+ *  O nome da instituição NÃO vira `eyebrow`: o `PublicHeader` da casca pública
+ *  já o mostra, e repeti-lo gastaria a linha que pode dizer onde a pessoa está —
+ *  a mesma decisão que a F78 tomou para o painel. A tela continua dizendo de
+ *  quem é a casa no rodapé ("Ver os eventos de …"), que é onde o dado é ação.
+ *
+ *  O `generateMetadata` acima NÃO depende desta forma: ele monta o título e o
+ *  `openGraph` a partir do serviço (`readSharedCard`), e é por isso que o
+ *  `og:image` do link compartilhado continua vindo da rota `next/og`.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -93,15 +112,12 @@ export default async function SharedCardPage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-4xl space-y-8 px-4 py-10">
-      <header className="space-y-2 text-center">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenant.name}</p>
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="shared-card-title">
-          {card.cardName}
-        </h1>
-        <p className="text-sm text-muted-foreground" data-testid="shared-card-owner">
-          Conquistada por {card.displayName}
-        </p>
-      </header>
+      <PageHeader
+        title={card.cardName}
+        titleTestId="shared-card-title"
+        description={<>Conquistada por {card.displayName}</>}
+        descriptionTestId="shared-card-owner"
+      />
 
       <div className="flex justify-center">
         <HoloCard

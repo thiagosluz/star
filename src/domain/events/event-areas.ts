@@ -269,6 +269,34 @@ export const EVENT_AREAS: readonly EventArea[] = [
   },
 ];
 
+/**
+ * O `data-testid` do cartão desta área.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A DERIVAÇÃO VIVE AQUI (FASE 77)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O E2E de outras fases navega pelos atalhos antigos (`landing-link`,
+ *  `calls-link`…), então o testid do cartão é `legacyTestId ?? event-area-<id>`
+ *  (ADR-302). Três lugares precisam da MESMA resposta: o cartão, o painel de
+ *  prontidão e o caminho de partida. Repetir a regra em cada um é como o
+ *  `sem-programacao` passou a apontar para um `activities-section` que a FASE 55
+ *  removeu da RAIZ: o alvo continuou escrito à mão enquanto a tela mudou.
+ */
+export function eventAreaTestId(area: EventArea): string {
+  return area.legacyTestId ?? `event-area-${area.id}`;
+}
+
+/**
+ * O cartão a que um `data-testid` se refere.
+ *
+ * A resolução é a mesma do render, e é por isso que o alvo de uma pendência (ou
+ * de um passo do caminho de partida) pode ser provado como existente sem
+ * navegador.
+ */
+export function findEventAreaByTestId(testId: string): EventArea | undefined {
+  return EVENT_AREAS.find((area) => eventAreaTestId(area) === testId);
+}
+
 /** As áreas que esta pessoa pode ver (o menu esconde o que a tela recusaria). */
 export function visibleEventAreas(options: {
   allowed: (permission: string) => boolean;

@@ -225,6 +225,36 @@ import {
 **Se falta um primitivo:** acrescente-o a `src/components/ui/**` e exporte no
 `index.ts`. Não escreva a classe solta na tela — é assim que o padrão morre.
 
+### O topo único (FASE 78 · a dívida H1 fechada)
+
+**Toda tela começa por `PageHeader`** — a regra existe desde a FASE 11 (§5) e passou a
+ser **medida** na FASE 78 (81 das 96 páginas migradas; as 15 restantes estão numa
+allowlist com motivo). O componente mora em `src/components/ui/page-header.tsx` e é
+**Server Component**: ele não tem estado, efeito nem `usePathname` — quem precisa da
+rota é o menu (`navigation.tsx`, que continua `'use client'`). **Não adicione
+`'use client'` a ele**: cada página que o monta viraria uma ilha de cliente.
+
+| Slot | Obrigatório? | Regra |
+|---|---|---|
+| `title` | **Sim** | é o `<h1>` da tela, no token `text-title-lg` (28px) |
+| `titleTestId` | Não | leva ao `<h1>` o `data-testid` que o E2E já lia |
+| `breadcrumbs` | Em tela de detalhe | a **volta é derivada** do penúltimo item com `href`: o nome acessível é "Voltar para X". Não existe prop `back` |
+| `eyebrow` | Não | é o **grupo de navegação** — `TENANT_NAV_GROUPS` ou `PLATFORM_NAV_GROUP` —, **não** o nome da instituição (a casca já o mostra). É `<p>`, **fora** do `<h1>` |
+| `icon` | Não | decorativo, `aria-hidden`, irmão do `<h1>` |
+| `description` | Não | a linha de estado/contexto; `descriptionTestId` quando a tela publica um testid que o E2E lê |
+| `badge` | Não | só ESTADO ("Exemplo", "SuperAdmin") — nunca o nome da instituição |
+| `actions` | Não | as ações da tela, à direita |
+
+**A exceção é o TEMA DO EVENTO** (ADR-324/325), e só ele: nas páginas que o organizador
+desenha (evento, atividade, chamada, inscrição, telão, auditoria, ficha do palestrante e
+a prévia) o topo é o site dele, com a paleta e a tipografia dele — um `PageHeader` ali
+seria o topo do painel dentro da vitrine. Os heróis de marketing e a página da casa
+(FASE 64) têm renderizador próprio e também estão fora; os dois redirects não são tela.
+Tudo isso está na allowlist **motivada** de `tests/unit/f78-topo-unico.test.ts`, e a
+allowlist só pode encolher. O par de navegador (`tests/e2e/f78-topo-unico.spec.ts`)
+prova o HTML entregue em 12 telas: **um** `<h1>`, **um** `<h1>` no `<header>` e o
+`eyebrow` como `<p>` fora dele.
+
 ### Confirmações: nunca `window.confirm`
 
 A caixa nativa do navegador é a única tela do sistema que o design não desenha: aparece
@@ -409,18 +439,24 @@ do WCAG e reprova dizendo o número.
 ## 10. Regressão visual (FASE 62 · dívida H6)
 
 O sistema media contraste, contraste escuro, landmark e `axe` — e **não media a TELA**.
-A catraca que fecha isso é `tests/e2e/f62-regressao-visual.spec.ts`: **doze snapshots**
-com `toHaveScreenshot` cobrindo o **rodapé da barra lateral** (barra inteira, recolhida
-no claro e no escuro, e a gaveta do celular), o **painel** e o **diretório de
-participantes** — cada tela nos dois modos e nos dois tamanhos. Não é varredura: é o
-conjunto pequeno onde o desenho quebra (o rodapé de conta junta truncamento de texto,
-dois botões de tamanho fixo e um `<details>` na MESMA linha; a tabela de participantes
-é a tela mais densa do produto). Nada dinâmico entra na imagem: o e-mail de quem está
+A catraca que fecha isso é `tests/e2e/f62-regressao-visual.spec.ts`: **vinte e três
+snapshots** com `toHaveScreenshot` cobrindo **nove superfícies** — o **rodapé da barra
+lateral** (barra inteira, recolhida no claro e no escuro, e a gaveta do celular), o
+**painel**, o **diretório de participantes**, o **rodapé público da raiz**, a **página
+pública da instituição**, a **minha agenda**, a aba **"Acontecendo agora"**, o **bloco
+de local do evento** e a **inscrição do evento**. Não é varredura: é o conjunto
+pequeno onde o desenho quebra (o rodapé de conta junta truncamento de texto, dois
+botões de tamanho fixo e um `<details>` na MESMA linha; a tabela de participantes é a
+tela mais densa do produto). Nada dinâmico entra na imagem: o e-mail de quem está
 logado e a URL canônica (que carrega o slug da instituição) são **mascarados** — o
 magenta é proposital —, animação e cursor ficam congelados e a espera é determinística.
-A tolerância é medida, não escolhida no olho: `threshold: 0.04` (é o valor que reprova
-a troca do token de borda do escuro, que o padrão 0,2 deixa passar em silêncio) e
-`maxDiffPixelRatio: 0`, porque três execuções deram **zero** pixel de diferença.
+Na raiz, que **deixou de ser estática na FASE 71**, os dois blocos que leem o banco
+("Eventos em destaque" e "A força da nossa rede em números") também são **mascarados
+desde a FASE 78**; o desenho fixo em volta (herói, jornada, banner e rodapé) continua
+medido pixel a pixel. A tolerância é medida, não escolhida no olho:
+`threshold: 0.04` (é o valor que reprova a troca do token de borda do escuro, que o
+padrão 0,2 deixa passar em silêncio) e `maxDiffPixelRatio: 0`, porque três execuções
+deram **zero** pixel de diferença.
 
 Atualizar a linha de base é ato consciente, e vem com a obrigação de OLHAR a imagem
 nova antes de commitar (as imagens vivem em

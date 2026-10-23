@@ -30,7 +30,8 @@ import {
   Field,
   SelectField,
 } from '@/components/admin/admin-form';
-import { Alert, Card, CardContent, SectionHeading } from '@/components/ui';
+import { Alert, Card, CardContent, PageHeader, SectionHeading } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { savePublicProfileAction } from '@/app/actions/public-profile-actions';
 
 export const metadata = { title: 'Meu perfil público' };
@@ -90,7 +91,11 @@ export default async function MyPublicProfilePage({
   if (!result.ok) {
     return (
       <main className="max-w-3xl space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Meu perfil público</h1>
+        <PageHeader
+          title="Meu perfil público"
+          eyebrow={TENANT_NAV_GROUPS.participacao}
+          icon={<Globe className="size-6 text-primary" aria-hidden />}
+        />
         <Alert tone="danger">{result.message}</Alert>
       </main>
     );
@@ -100,19 +105,19 @@ export default async function MyPublicProfilePage({
 
   return (
     <main className="max-w-4xl space-y-8" data-testid="my-public-profile">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Minha participação</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Globe className="size-6 text-primary" aria-hidden />
-          Meu perfil público
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Um endereço para mostrar a sua participação. O seu <span className="code-data">@handle</span>{' '}
-          é o mesmo em todas as instituições, a decisão de quem vê cada campo também é uma só — e a
-          página existe em cada instituição onde você participa, com os eventos e o diretório
-          daquela casa.
-        </p>
-      </header>
+      <PageHeader
+        title="Meu perfil público"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Globe className="size-6 text-primary" aria-hidden />}
+        description={
+          <>
+            Um endereço para mostrar a sua participação. O seu <span className="code-data">@handle</span>{' '}
+            é o mesmo em todas as instituições, a decisão de quem vê cada campo também é uma só — e a
+            página existe em cada instituição onde você participa, com os eventos e o diretório
+            daquela casa.
+          </>
+        }
+      />
 
       {settings.username ? (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">

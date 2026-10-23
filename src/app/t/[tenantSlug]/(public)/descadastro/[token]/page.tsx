@@ -8,6 +8,7 @@ import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
 import { getTenantContext } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { readUnsubscribePage } from '@/lib/communication/unsubscribe-service';
+import { PageHeader } from '@/components/ui';
 import { ResubscribeForm, UnsubscribeForm } from '@/components/communication/unsubscribe-forms';
 
 /**
@@ -94,6 +95,21 @@ import { ResubscribeForm, UnsubscribeForm } from '@/components/communication/uns
  *
  *  Trocar o tom é mudar MECANISMO, não desenho: a hierarquia é a mesma, e o papel é
  *  o mesmo que o resto do painel usa para texto secundário.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TOPO VEM DO `PageHeader`, E O NOME DA INSTITUIÇÃO SAI DELE (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O topo era escrito à mão, com o nome da instituição num `<p>` acima do `<h1>`.
+ *  Esse `<p>` sai: o `PublicHeader` da casca pública já mostra a casa, e a tela
+ *  diz a instituição onde o dado é AÇÃO ("o que deixa de chegar de …", "ver a
+ *  programação de …"). O que sobra é o que a tela tem de próprio — o estado
+ *  ("Você está fora da lista" / "Parar de receber os recados"), a saudação pelo
+ *  primeiro nome e o ícone —, e os três cabem nos slots do componente.
+ *
+ *  A medição de contraste continua valendo, e agora por construção: a
+ *  `description` do `PageHeader` é `text-muted-foreground` (o token de TINTA,
+ *  8,82:1 sobre a superfície e 8,25:1 sobre o cartão), não `opacity`. É o mesmo
+ *  papel que o `<p>` migrado já usava.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const dynamic = 'force-dynamic';
@@ -138,20 +154,18 @@ export default async function UnsubscribePage({ params }: PageProps) {
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-6 py-12">
-      <header className="space-y-1.5">
-        {/* Texto secundário: TOKEN de tinta sobre o FUNDO da página — e não `opacity`, que compõe. */}
-        <p className="text-muted-foreground text-xs uppercase tracking-wide">{state.tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <MailX className="size-6" aria-hidden />
-          {state.isOut ? 'Você está fora da lista' : 'Parar de receber os recados'}
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          {firstName ? `${firstName}, ` : ''}
-          {state.isOut
-            ? 'você pediu para não receber mais os recados em massa desta instituição. Nada mais precisa ser feito — e você pode voltar quando quiser.'
-            : 'confira abaixo o que deixa de chegar e o que continua chegando. A decisão é sua, e é reversível.'}
-        </p>
-      </header>
+      <PageHeader
+        title={state.isOut ? 'Você está fora da lista' : 'Parar de receber os recados'}
+        icon={<MailX className="size-6" aria-hidden />}
+        description={
+          <>
+            {firstName ? `${firstName}, ` : ''}
+            {state.isOut
+              ? 'você pediu para não receber mais os recados em massa desta instituição. Nada mais precisa ser feito — e você pode voltar quando quiser.'
+              : 'confira abaixo o que deixa de chegar e o que continua chegando. A decisão é sua, e é reversível.'}
+          </>
+        }
+      />
 
       {/**
        * O ESTADO VIGENTE — lido do banco, não do que a última ação disse.

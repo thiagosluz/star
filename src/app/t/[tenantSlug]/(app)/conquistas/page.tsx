@@ -10,6 +10,8 @@ import { getXpProfile, getLeaderboard, listXpHistory } from '@/lib/gamification/
 import { listMissions } from '@/lib/gamification/task-service';
 import { XpProgressPanel } from '@/components/gamification/xp-progress';
 import { MissionList } from '@/components/gamification/mission-list';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { claimMissionAction } from '@/app/actions/gamification-actions';
 
 export const metadata = { title: 'Minhas conquistas' };
@@ -29,7 +31,7 @@ export default async function AchievementsPage({
 }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, userId, tenantName } = await requirePagePermission({
+  const { tenantId, userId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.XP_READ_OWN,
   });
@@ -60,16 +62,12 @@ export default async function AchievementsPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Trophy className="size-6 text-warning" aria-hidden />
-          Minhas conquistas
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Cada ação no evento vale XP. Missões concluídas precisam ser resgatadas por você.
-        </p>
-      </header>
+      <PageHeader
+        title="Minhas conquistas"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Trophy className="size-6 text-warning" aria-hidden />}
+        description="Cada ação no evento vale XP. Missões concluídas precisam ser resgatadas por você."
+      />
 
       <XpProgressPanel
         progress={profile.progress}

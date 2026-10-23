@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import QRCode from 'qrcode';
-import { ArrowLeft, IdCard, QrCode } from 'lucide-react';
+import { IdCard, QrCode } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { getRequestContext } from '@/lib/auth/session';
@@ -8,6 +7,8 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getOwnCredential } from '@/lib/events/credential-service';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { OwnBadge } from '@/components/credentials/own-badge';
 import { generateOwnCredentialAction } from '@/app/actions/credential-actions';
 
@@ -84,27 +85,17 @@ export default async function OwnBadgePage({
 
   return (
     <main className="mx-auto max-w-2xl space-y-6">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/minhas-inscricoes')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Minhas inscrições
-          </Link>
-        </nav>
-
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <IdCard className="size-6 text-primary" aria-hidden />
-          Meu crachá
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Mostre este QR Code no balcão para registrar a sua presença. Ele é o mesmo crachá em todas as
-          atividades do evento — quem escolhe a atividade é o monitor, na leitura.
-        </p>
-      </header>
+      <PageHeader
+        title="Meu crachá"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<IdCard className="size-6 text-primary" aria-hidden />}
+        description="Mostre este QR Code no balcão para registrar a sua presença. Ele é o mesmo crachá em todas as atividades do evento — quem escolhe a atividade é o monitor, na leitura."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Minhas inscrições', href: tenantPath(tenantSlug, '/minhas-inscricoes') },
+          { label: 'Meu crachá' },
+        ]}
+      />
 
       {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

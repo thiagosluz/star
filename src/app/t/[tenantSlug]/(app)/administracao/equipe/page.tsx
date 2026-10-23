@@ -32,6 +32,7 @@ import {
   Table,
   TableWrapper,
 } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Equipe' };
 export const dynamic = 'force-dynamic';
@@ -89,7 +90,7 @@ const STATUS_LABELS: Record<string, string> = {
 export default async function TeamPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, tenantName, userId: actorUserId } = await requirePagePermission({
+  const { tenantId, userId: actorUserId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
@@ -136,13 +137,13 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
     <main className="space-y-8" data-testid="team-page">
       <PageHeader
         title="Equipe e participantes"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
         description="Quem responde pela instituição e quem é público dos eventos. Só a equipe consome a quota de membros do plano."
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
           { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
           { label: 'Equipe' },
         ]}
-        badge={<Badge tone="primary">{tenantName}</Badge>}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="team-stats">

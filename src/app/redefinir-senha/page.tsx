@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Alert, Card, CardContent } from '@/components/ui';
+import { Alert, Card, CardContent, PageHeader } from '@/components/ui';
 
 import { ResetPasswordForm } from '@/components/auth/password-recovery-forms';
 import { resetPasswordAction } from '@/app/actions/auth-actions';
@@ -32,13 +32,10 @@ export default async function ResetPasswordPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-1.5">
-        <h1 className="font-display text-headline text-foreground">Definir nova senha</h1>
-        <p className="text-sm text-muted-foreground">
-          Escolha uma senha nova para a sua conta. Ela passa a valer imediatamente, e as sessões
-          abertas são encerradas.
-        </p>
-      </header>
+      <PageHeader
+        title="Definir nova senha"
+        description="Escolha uma senha nova para a sua conta. Ela passa a valer imediatamente, e as sessões abertas são encerradas."
+      />
 
       {linkProblem ? (
         <Alert tone="warning" title="Este link não vale mais" data-testid="reset-invalid-token">

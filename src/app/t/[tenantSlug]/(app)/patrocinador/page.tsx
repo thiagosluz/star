@@ -4,7 +4,8 @@ import { Handshake, Info, QrCode, ShieldCheck, Users } from 'lucide-react';
 import { requirePersonalPage } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { Card, CardContent, SectionHeading } from '@/components/ui';
+import { Card, CardContent, PageHeader, SectionHeading } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   getSponsorPortal,
   hasPendingSponsorInvite,
@@ -55,7 +56,7 @@ export default async function SponsorAreaPage({
   const { tenantSlug } = await params;
   const { patrocinador } = await searchParams;
 
-  const { tenantId, tenantName, userId, userEmail } = await requirePersonalPage({
+  const { tenantId, userId, userEmail } = await requirePersonalPage({
     tenantSlug,
     permission: PERMISSIONS.SPONSOR_READ,
     /**
@@ -76,13 +77,11 @@ export default async function SponsorAreaPage({
   if (convitePendente) {
     return (
       <main className="max-w-3xl space-y-6">
-        <header className="space-y-1.5">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Handshake className="size-6 text-primary" aria-hidden />
-            Área do patrocinador
-          </h1>
-        </header>
+        <PageHeader
+          title="Área do patrocinador"
+          eyebrow={TENANT_NAV_GROUPS.participacao}
+          icon={<Handshake className="size-6 text-primary" aria-hidden />}
+        />
 
         <Card>
           <CardContent className="space-y-3">
@@ -103,13 +102,11 @@ export default async function SponsorAreaPage({
   if (!portal.ok) {
     return (
       <main className="max-w-3xl space-y-6">
-        <header className="space-y-1.5">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Handshake className="size-6 text-primary" aria-hidden />
-            Área do patrocinador
-          </h1>
-        </header>
+        <PageHeader
+          title="Área do patrocinador"
+          eyebrow={TENANT_NAV_GROUPS.participacao}
+          icon={<Handshake className="size-6 text-primary" aria-hidden />}
+        />
 
         <Card>
           <CardContent className="space-y-2">
@@ -142,17 +139,12 @@ export default async function SponsorAreaPage({
 
   return (
     <main className="max-w-5xl space-y-8" data-testid="sponsor-area">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Handshake className="size-6 text-primary" aria-hidden />
-          Área do patrocinador
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Tudo aqui é informação que a organização cadastrou para você. Esta área é de leitura: para
-          alterar cota, contrato ou QR, fale com a organização.
-        </p>
-      </header>
+      <PageHeader
+        title="Área do patrocinador"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Handshake className="size-6 text-primary" aria-hidden />}
+        description="Tudo aqui é informação que a organização cadastrou para você. Esta área é de leitura: para alterar cota, contrato ou QR, fale com a organização."
+      />
 
       {sponsors.length > 1 ? (
         <nav className="flex flex-wrap gap-2" aria-label="Patrocinadores">

@@ -28,6 +28,8 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { deleteMissionAction, saveMissionAction } from '@/app/actions/admin-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { restoreMissionAction } from '@/app/actions/catalog-archive-actions';
 
 export const metadata = { title: 'Missões' };
@@ -217,23 +219,17 @@ export default async function AdminMissionsPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Administração
-          </Link>
-        </nav>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ListChecks className="size-6 text-primary" aria-hidden />
-          Missões
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          A missão avança quando o fato do gatilho acontece; o XP é creditado no RESGATE, feito pelo participante.
-        </p>
-      </header>
+      <PageHeader
+        title="Missões"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<ListChecks className="size-6 text-primary" aria-hidden />}
+        description="A missão avança quando o fato do gatilho acontece; o XP é creditado no RESGATE, feito pelo participante."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Missões' },
+        ]}
+      />
 
       {/* O filtro é um LINK: endereço próprio, sem JavaScript e sem estado escondido. */}
       <nav className="flex flex-wrap items-center gap-3 text-sm" aria-label="Escopo do catálogo de missões">

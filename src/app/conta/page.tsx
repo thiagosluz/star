@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
-  ArrowLeft,
   Fingerprint,
   KeyRound,
   ShieldCheck,
@@ -44,7 +43,7 @@ import {
 } from '@/components/account/account-forms';
 import { VerificationNotice } from '@/components/communication/verification-notice';
 import { ThemeChoice } from '@/components/theme/theme-choice';
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
+import { Button, buttonClasses, Card, CardContent, CardHeader, CardTitle, PageHeader } from '@/components/ui';
 
 export const metadata = { title: 'Minha conta' };
 export const dynamic = 'force-dynamic';
@@ -106,24 +105,33 @@ export default async function AccountPage({
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-6 py-10">
-      <header className="space-y-2">
-        <Link
-          href="/selecionar-instituicao"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline underline-offset-4"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Voltar
-        </Link>
-
-        <h1 className="flex items-center gap-2 font-display text-headline text-foreground">
-          <UserRound className="size-6 text-primary" aria-hidden />
-          Minha conta
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Seus dados de acesso valem em qualquer instituição — e existem mesmo para quem participa
-          sem vínculo.
-        </p>
-      </header>
+      {/**
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  A CONTA É GLOBAL — E O TOPO DIZ ISSO (FASE 78 · fatia 3)
+        * ─────────────────────────────────────────────────────────────────────────────
+        *  Título e descrição são os mesmos de antes; o que mudou foi a FORMA: o `<h1>`
+        *  escrito à mão usava `text-headline`, uma classe que não existe no
+        *  `globals.css` nem no `DESIGN.md` — o título da conta renderizava em 16px, o
+        *  menor de todas as telas. O `PageHeader` aplica o token de título de página
+        *  (`text-title-lg`, 28px), o mesmo das 73 telas migradas.
+        *
+        *  A volta continua existindo, mas agora NOMEIA o destino ("as minhas
+        *  instituições"): a tela é do grupo de autenticação e, por decisão da fatia,
+        *  não ganha trilha inventada — o caminho de saída é uma ação do topo.
+        */}
+      <PageHeader
+        title="Minha conta"
+        icon={<UserRound className="size-6 text-primary" aria-hidden />}
+        description="Seus dados de acesso valem em qualquer instituição — e existem mesmo para quem participa sem vínculo."
+        actions={
+          <Link
+            href="/selecionar-instituicao"
+            className={buttonClasses({ variant: 'outline', size: 'sm' })}
+          >
+            Voltar para as minhas instituições
+          </Link>
+        }
+      />
 
       {params.email === 'confirmado' ? (
         <p

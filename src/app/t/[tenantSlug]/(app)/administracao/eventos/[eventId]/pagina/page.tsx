@@ -37,6 +37,8 @@ import {
   seedRecommendedBlocksAction,
   updateBlockAction,
 } from '@/app/actions/landing-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Página pública do evento' };
 export const dynamic = 'force-dynamic';
@@ -125,59 +127,65 @@ export default async function EventLandingPageEditor({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← {landing.eventTitle}
-          </Link>
-        </nav>
-        <h1 className="text-2xl font-semibold tracking-tight">Página pública</h1>
-        <p className="text-xs text-muted-foreground" data-testid="landing-status">
-          {page
+      <PageHeader
+        title="Página pública"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        descriptionTestId="landing-status"
+        description={
+          page
             ? PUBLICATION_STATE_LABELS[page.publicationState]
-            : 'O evento ainda não tem página configurada.'}
-        </p>
-        <p className="flex flex-wrap items-center gap-4 text-xs">
-          {/*
-            A pré-visualização vem ANTES do link público de propósito: é o que o
-            organizador precisa enquanto monta (FASE 23, item E9). Sem ela, a única
-            forma de ver a página era publicar — e o rascunho ficava no ar no meio do
-            caminho.
-          */}
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina/previa`)}
-            className="font-medium underline underline-offset-4"
-            data-testid="preview-page"
-          >
-            Pré-visualizar →
-          </Link>
-          <Link
-            href={tenantPath(tenantSlug, `/eventos/${landing.eventSlug}`)}
-            target="_blank"
-            className="underline underline-offset-4"
-            data-testid="view-public-page"
-          >
-            Ver página pública →
-          </Link>
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`)}
-            className="underline underline-offset-4"
-            data-testid="sponsors-link"
-          >
-            Patrocinadores →
-          </Link>
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina/midia`)}
-            className="underline underline-offset-4"
-            data-testid="media-link"
-          >
-            Biblioteca de mídia ({library.assets.length}) →
-          </Link>
-        </p>
-      </header>
+            : 'O evento ainda não tem página configurada.'
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          {
+            label: landing.eventTitle,
+            href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`),
+          },
+          { label: 'Página pública' },
+        ]}
+        actions={
+          <>
+            {/*
+              A pré-visualização vem ANTES do link público de propósito: é o que o
+              organizador precisa enquanto monta (FASE 23, item E9). Sem ela, a única
+              forma de ver a página era publicar — e o rascunho ficava no ar no meio do
+              caminho.
+            */}
+            <Link
+              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina/previa`)}
+              className="font-medium underline underline-offset-4"
+              data-testid="preview-page"
+            >
+              Pré-visualizar →
+            </Link>
+            <Link
+              href={tenantPath(tenantSlug, `/eventos/${landing.eventSlug}`)}
+              target="_blank"
+              className="underline underline-offset-4"
+              data-testid="view-public-page"
+            >
+              Ver página pública →
+            </Link>
+            <Link
+              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`)}
+              className="underline underline-offset-4"
+              data-testid="sponsors-link"
+            >
+              Patrocinadores →
+            </Link>
+            <Link
+              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina/midia`)}
+              className="underline underline-offset-4"
+              data-testid="media-link"
+            >
+              Biblioteca de mídia ({library.assets.length}) →
+            </Link>
+          </>
+        }
+      />
 
       {/* ── Sem página: criar ─────────────────────────────────────────────── */}
       {!page ? (

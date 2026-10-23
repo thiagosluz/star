@@ -131,7 +131,21 @@ export function eventReadiness(facts: EventReadinessFacts): readonly ReadinessIt
       title: 'O evento está no ar e não tem nenhuma atividade na programação',
       detail: 'Sem atividade não há inscrição por atividade, presença nem certificado.',
       severity: 'BLOCKING',
-      targetTestId: 'activities-section',
+      /**
+       * ─── O ALVO É O CARTÃO DA PROGRAMAÇÃO (FASE 77 · fatia 1) ────────────────
+       *
+       *  Era `activities-section`, o `<details>` que a FASE 55 desfez na RAIZ ao
+       *  transformar as seções em páginas (o testid sobreviveu lá dentro, mas na raiz
+       *  não existe mais). O alvo virou um link MORTO: o título da pendência não era
+       *  clicável porque nenhum cartão de `EVENT_AREAS` respondia por ele — o render
+       *  só linka quando o `targetTestId` casa com um testid do catálogo.
+       *
+       *  O cartão da Programação é o destino que existe — e é o certo: criar a
+       *  atividade é o que resolve a pendência. Não foi criado cartão novo porque a
+       *  área já existe desde a F55; duplicá-la seria uma segunda entrada para a
+       *  mesma tela.
+       */
+      targetTestId: 'event-area-programacao',
     });
   }
 

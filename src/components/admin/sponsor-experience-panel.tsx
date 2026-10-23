@@ -356,7 +356,7 @@ export function SponsorExperiencePanel({
                 */}
               <ExportPanel
                 tenantSlug={tenantSlug}
-                kind="SPONSOR_CONTACTS_CSV"
+                kinds={['SPONSOR_CONTACTS_CSV']}
                 returnTo={returnTo}
                 sponsorId={sponsor.id}
                 created={createdExport}

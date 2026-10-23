@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { AuthForm } from '@/components/auth/auth-form';
+import { PageHeader } from '@/components/ui';
 import { signUpAction } from '@/app/actions/auth-actions';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 
@@ -28,13 +29,10 @@ export default async function SignUpPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Criar conta</h1>
-        <p className="text-sm text-muted-foreground">
-          Sua conta é única na plataforma: com ela você participa de quantas
-          instituições quiser, com papéis diferentes em cada uma.
-        </p>
-      </header>
+      <PageHeader
+        title="Criar conta"
+        description="Sua conta é única na plataforma: com ela você participa de quantas instituições quiser, com papéis diferentes em cada uma."
+      />
 
       <AuthForm mode="signup" action={signUpAction} redirectTo={redirectTo} />
 

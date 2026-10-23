@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Clock, MessageSquare, Users } from 'lucide-react';
+import { Clock, MessageSquare, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -20,6 +19,8 @@ import {
   deleteDemandAction,
   updateDemandAction,
 } from '@/app/actions/demand-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Demanda' };
 export const dynamic = 'force-dynamic';
@@ -76,46 +77,46 @@ export default async function DemandDetailPage({
 
   return (
     <main className="space-y-8">
-      <header className="space-y-2">
-        <Link
-          href={tenantPath(tenantSlug, basePath)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Voltar ao quadro
-        </Link>
-
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="demand-detail-title">
-          {detail.card.title}
-        </h1>
-
-        <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span data-testid="demand-detail-situation">{detail.card.situationLabel}</span>
-          <span>{detail.card.priorityLabel}</span>
-          {detail.card.dueLabel ? (
-            <span className="flex items-center gap-1" data-testid="demand-detail-due">
-              <Clock className="size-3" aria-hidden />
-              {detail.card.dueLabel}
+      <PageHeader
+        title={detail.card.title}
+        titleTestId="demand-detail-title"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description={
+          <span className="flex flex-wrap items-center gap-3">
+            <span data-testid="demand-detail-situation">{detail.card.situationLabel}</span>
+            <span>{detail.card.priorityLabel}</span>
+            {detail.card.dueLabel ? (
+              <span className="flex items-center gap-1" data-testid="demand-detail-due">
+                <Clock className="size-3" aria-hidden />
+                {detail.card.dueLabel}
+              </span>
+            ) : null}
+            <span>
+              {detail.card.teamName ? `${detail.card.teamName} · ` : ''}
+              {detail.card.assignees.length > 0
+                ? detail.card.assignees.map((assignee) => assignee.name).join(', ')
+                : 'sem responsável'}
             </span>
-          ) : null}
-          <span>
-            {detail.card.teamName ? `${detail.card.teamName} · ` : ''}
-            {detail.card.assignees.length > 0
-              ? detail.card.assignees.map((assignee) => assignee.name).join(', ')
-              : 'sem responsável'}
+            <span>
+              {detail.createdByName ? `criada por ${detail.createdByName} em ` : 'criada em '}
+              {formatter.format(detail.createdAt)}
+            </span>
           </span>
-          <span>
-            {detail.createdByName ? `criada por ${detail.createdByName} em ` : 'criada em '}
-            {formatter.format(detail.createdAt)}
-          </span>
-        </p>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: 'Demandas do evento', href: tenantPath(tenantSlug, basePath) },
+          { label: detail.card.title },
+        ]}
+      />
 
-        {detail.card.description ? (
-          <p className="max-w-3xl whitespace-pre-line text-sm" data-testid="demand-detail-description">
-            {detail.card.description}
-          </p>
-        ) : null}
-      </header>
+      {detail.card.description ? (
+        <p className="max-w-3xl whitespace-pre-line text-sm" data-testid="demand-detail-description">
+          {detail.card.description}
+        </p>
+      ) : null}
 
       {/* ── Responsáveis e equipe ───────────────────────────────────────────── */}
       {canAssign ? (

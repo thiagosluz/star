@@ -9,6 +9,7 @@ import { getTenantContext } from '@/lib/events/event-repository';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 import { loadSpeakerPendingInvites } from '@/lib/speakers/speaker-portal-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
 import { ClaimInviteForm } from '@/components/speakers/portal-forms';
 import { claimSpeakerInviteAction } from '@/app/actions/speaker-actions';
 
@@ -30,6 +31,19 @@ import { claimSpeakerInviteAction } from '@/app/actions/speaker-actions';
  *
  *  A página é pública porque o convite é que autoriza; exige apenas estar
  *  autenticado, e diz isso a quem chega deslogado, preservando o destino.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TOPO VEM DO `PageHeader` — E SEM `eyebrow` DE INSTITUIÇÃO (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O nome da instituição era um `<p>` acima do título; ele sai, porque o
+ *  `PublicHeader` da casca já mostra a casa — e o convite é sobre o que a PESSOA
+ *  ganha ao aceitar, não sobre quem convidou. Título, ícone e descrição cabem nos
+ *  slots do componente, e o `data-testid` do código (`invite-code-present`)
+ *  continua na página porque ele é ESTADO do convite, não topo.
+ *
+ *  De quebra, a descrição deixou de ser `opacity-80` e passou ao token de tinta
+ *  secundária: `opacity` COMPÕE o texto com o fundo (foi o defeito de contraste
+ *  medido na F67), enquanto `text-muted-foreground` escolhe uma cor de texto.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const dynamic = 'force-dynamic';
@@ -70,17 +84,11 @@ export default async function SpeakerInvitePage({
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-6 py-12">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide opacity-60">{tenant.name}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Mic className="size-6" aria-hidden />
-          Convite de palestrante
-        </h1>
-        <p className="text-sm opacity-80">
-          A organização cadastrou você como palestrante. Ao aceitar, você passa a editar seu perfil
-          público, publicar materiais das atividades que ministra e emitir seu certificado.
-        </p>
-      </header>
+      <PageHeader
+        title="Convite de palestrante"
+        icon={<Mic className="size-6" aria-hidden />}
+        description="A organização cadastrou você como palestrante. Ao aceitar, você passa a editar seu perfil público, publicar materiais das atividades que ministra e emitir seu certificado."
+      />
 
       {!user ? (
         <div className="ef-card space-y-3 p-5">

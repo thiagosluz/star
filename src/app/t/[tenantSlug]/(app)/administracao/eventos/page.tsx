@@ -17,6 +17,8 @@ import {
 } from '@/domain/events/event-modality-rules';
 import { EVENT_CATEGORY_OPTIONS } from '@/domain/events/event-category-rules';
 import { toLocalInput } from '@/lib/events/activity-presentation';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Eventos' };
 export const dynamic = 'force-dynamic';
@@ -90,24 +92,17 @@ export default async function AdminEventsPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Administração
-          </Link>
-        </nav>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <CalendarPlus className="size-6 text-primary" aria-hidden />
-          Eventos
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          O evento é a raiz de tudo: atividades, salas, chamada de trabalhos, inscrições e certificados
-          pertencem a ele.
-        </p>
-      </header>
+      <PageHeader
+        title="Eventos"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<CalendarPlus className="size-6 text-primary" aria-hidden />}
+        description="O evento é a raiz de tudo: atividades, salas, chamada de trabalhos, inscrições e certificados pertencem a ele."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos' },
+        ]}
+      />
 
       <section className="space-y-3" aria-labelledby="lista-eventos">
         <h2 id="lista-eventos" className="text-lg font-semibold tracking-tight">
@@ -115,12 +110,33 @@ export default async function AdminEventsPage({
         </h2>
 
         {events.length === 0 ? (
-          <p
-            className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
+          <div
+            className="space-y-1 rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
             data-testid="events-empty"
           >
-            Nenhum evento cadastrado. Crie o primeiro no formulário abaixo.
-          </p>
+            <p>Nenhum evento cadastrado. Crie o primeiro no formulário abaixo.</p>
+            {/**
+             * ─────────────────────────────────────────────────────────────────────
+             *  A PORTA PARA O EXEMPLO (FASE 77 · fatia 3)
+             * ─────────────────────────────────────────────────────────────────────
+             *  O organizador novo chega nesta tela com a lista vazia e sem saber
+             *  como é um evento por dentro. O exemplo é a resposta barata: uma tela
+             *  de LEITURA com dados fictícios, que não cria nada, não consome a
+             *  quota e não deixa lixo para apagar (o porquê está no documento da
+             *  fatia). O link fica AQUI, no estado vazio, e não no menu: ele é uma
+             *  ajuda para quem está começando, não uma área do produto.
+             */}
+            <p>
+              <Link
+                href={tenantPath(tenantSlug, '/exemplo')}
+                data-testid="events-empty-demo-link"
+                className="font-medium text-brand underline underline-offset-4"
+              >
+                Ver um evento de exemplo, sem cadastrar nada
+              </Link>{' '}
+              — dados fictícios, nada é gravado.
+            </p>
+          </div>
         ) : (
           <ul className="divide-y divide-border rounded-lg border border-border bg-card" data-testid="admin-event-list">
             {events.map((event) => (

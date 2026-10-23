@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, ExternalLink, Globe, Mail, UserCog } from 'lucide-react';
+import { ExternalLink, Globe, Mail, UserCog } from 'lucide-react';
 
+import { PageHeader } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { TenantMemberForm, TenantPlanForm, TenantProfileForm, TenantStatusForm } from '@/components/platform/platform-forms';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -52,41 +54,40 @@ export default async function PlatformTenantDetailPage({
 
   return (
     <main className="space-y-8" data-testid="platform-tenant-detail" data-tenant-slug={tenant.slug}>
-      <header className="space-y-4">
-        <Link
-          href="/superadmin/tenants"
-          className="inline-flex items-center gap-2 text-xs text-muted-foreground underline-offset-4 hover:underline"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Instituições
-        </Link>
-
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground" data-testid="tenant-detail-name">
-              {tenant.name}
-            </h1>
-            <p className="mt-1 code-data text-muted-foreground">/{tenant.slug}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <span
-              data-testid="tenant-detail-status"
-              data-status={tenant.status}
-              className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground"
-            >
-              {TENANT_STATUS_LABELS[tenant.status]}
-            </span>
-            <Link
-              href={publicPath}
-              className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted"
-            >
-              <ExternalLink className="size-3.5" aria-hidden />
-              Abrir página pública
-            </Link>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title={tenant.name}
+        titleTestId="tenant-detail-name"
+        description={<span className="code-data">/{tenant.slug}</span>}
+        /**
+         * O penúltimo item tem `href` — é dele que o `PageHeader` deriva a volta
+         * ("Voltar para Instituições"). Antes da fatia 3 este topo tinha um link
+         * "← Instituições" escrito à mão ao lado do título, sem relação com a trilha.
+         */
+        breadcrumbs={[
+          PLATFORM_CRUMB,
+          { label: 'Instituições', href: '/superadmin/tenants' },
+          { label: tenant.name },
+        ]}
+        badge={
+          <span
+            data-testid="tenant-detail-status"
+            data-status={tenant.status}
+            className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-foreground"
+          >
+            {TENANT_STATUS_LABELS[tenant.status]}
+          </span>
+        }
+        actions={
+          <Link
+            href={publicPath}
+            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs hover:bg-muted"
+          >
+            <ExternalLink className="size-3.5" aria-hidden />
+            Abrir página pública
+          </Link>
+        }
+      />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="tenant-detail-metrics">
         {[

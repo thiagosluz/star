@@ -8,6 +8,8 @@ import { listCertificatesForAdmin } from '@/lib/admin/gamification-admin-service
 import { listAdminEvents } from '@/lib/admin/catalog-service';
 import { AdminForm, Field } from '@/components/admin/admin-form';
 import { Alert } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import { retryCertificateAction, revokeCertificateAdminAction } from '@/app/actions/admin-actions';
 
@@ -67,39 +69,34 @@ export default async function AdminCertificatesPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Administração
-          </Link>
-        </nav>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-              <FileBadge className="size-6 text-primary" aria-hidden />
-              Certificados
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {certificates.length} documento(s) listado(s)
-              {failed.length > 0 ? ` · ${failed.length} com falha de geração` : ''}
-            </p>
-          </div>
+      <PageHeader
+        title="Certificados"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<FileBadge className="size-6 text-primary" aria-hidden />}
+        description={
+          <>
+            {certificates.length} documento(s) listado(s)
+            {failed.length > 0 ? ` · ${failed.length} com falha de geração` : ''}
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Certificados' },
+        ]}
+        actions={
+          <>
+            {/*
+              ─── O LOTE EM ZIP (FASE 36) ────────────────────────────────────────────
+              O download é por EVENTO — é assim que a instituição entrega os documentos
+              ("os certificados do congresso"), e é a única granularidade em que o lote
+              faz sentido: um ZIP com a instituição inteira misturaria eventos e não
+              caberia em memória nenhuma.
 
-          {/*
-            ─── O LOTE EM ZIP (FASE 36) ────────────────────────────────────────────
-            O download é por EVENTO — é assim que a instituição entrega os documentos
-            ("os certificados do congresso"), e é a única granularidade em que o lote
-            faz sentido: um ZIP com a instituição inteira misturaria eventos e não
-            caberia em memória nenhuma.
-
-            Com um evento escolhido no filtro, o botão aparece e leva ao lote daquele
-            evento. Sem ele, a tela diz o que fazer — em vez de oferecer um botão que
-            baixaria tudo.
-          */}
-          <div className="flex flex-wrap items-center gap-3">
+              Com um evento escolhido no filtro, o botão aparece e leva ao lote daquele
+              evento. Sem ele, a tela diz o que fazer — em vez de oferecer um botão que
+              baixaria tudo.
+            */}
             {/*
               ─── O EDITOR VISUAL (FASE 40) ──────────────────────────────────────────
               A tela de modelos é a outra metade deste módulo: aqui se EMITE e se
@@ -130,9 +127,9 @@ export default async function AdminCertificatesPage({
                 Escolha um evento no filtro para baixar o lote em ZIP.
               </p>
             )}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {eventFilter?.kind === 'discarded' ? (
         <Alert tone="warning" data-testid="certificate-filter-notice">

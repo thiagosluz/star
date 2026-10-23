@@ -38,6 +38,8 @@ import {
 import { tenantBlockRows, tenantPageStatus } from '@/domain/tenancy/tenant-page-editor';
 import { buildTenantThemeScope } from '@/domain/tenancy/tenant-page-theme-rules';
 import { readThemeMode } from '@/lib/theme/theme-mode-server';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { getAdminTenantPage } from '@/lib/tenancy/tenant-public-page-view';
 import { getPublicTenantPage } from '@/lib/tenancy/tenant-public-page-view';
 import type {
@@ -185,23 +187,22 @@ export default async function TenantPageEditor({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/administracao')}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Administração
-          </Link>
-        </nav>
-
-        <h1 className="text-2xl font-semibold tracking-tight">Página pública da instituição</h1>
-
-        <p className="text-sm text-muted-foreground" data-testid="tenant-page-status">
-          {status.label}
-        </p>
-
-        <p className="flex flex-wrap items-center gap-4 text-xs">
+      <PageHeader
+        title="Página pública da instituição"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        descriptionTestId="tenant-page-status"
+        description={
+          <>
+            {status.label}{' '}
+            <span className="text-muted-foreground">{status.detail}</span>
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Página pública da instituição' },
+        ]}
+        actions={
           <Link
             href={publicHref}
             target="_blank"
@@ -211,9 +212,8 @@ export default async function TenantPageEditor({
             <Globe className="mr-1 inline size-3.5" aria-hidden />
             Ver a página pública →
           </Link>
-          <span className="text-muted-foreground">{status.detail}</span>
-        </p>
-      </header>
+        }
+      />
 
       {/* ── Publicação ─────────────────────────────────────────────────────── */}
       <section className="space-y-3 rounded-xl border border-border bg-card p-5" data-testid="tenant-page-publication">

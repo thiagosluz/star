@@ -386,7 +386,13 @@ describe('o crédito continua um por pessoa POR QR', () => {
         consent: false,
       });
 
-      expect(scan.ok).toBe(true);
+      /**
+       * A MENSAGEM NA ASSERÇÃO (FASE 77) — a leitura deste QR falhou UMA vez na
+       * bateria completa e passou em isolamento, e o teste não dizia POR QUÊ:
+       * `ok:false` é o mesmo booleano para "QR desativado", "QR não encontrado" e
+       * "o banco não respondeu". Sem o motivo, a investigação começa do zero.
+       */
+      expect(scan.ok, JSON.stringify(scan)).toBe(true);
     }
 
     /** Bruno lê só o primeiro: 1 × QR_XP. */
@@ -397,7 +403,7 @@ describe('o crédito continua um por pessoa POR QR', () => {
       consent: false,
     });
 
-    expect(brunoScan.ok).toBe(true);
+    expect(brunoScan.ok, JSON.stringify(brunoScan)).toBe(true);
 
     const ana = await getXpProfile(tenantId, anaId);
     const bruno = await getXpProfile(tenantId, brunoId);

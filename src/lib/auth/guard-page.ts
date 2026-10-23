@@ -135,6 +135,69 @@ export async function requirePagePermission(input: {
 }
 
 /**
+ * Guarda de uma tela que exige VÍNCULO, e não PERMISSÃO (FASE 77 · fatia 3).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ESTA PORTA EXISTE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A tela do evento de exemplo precisa abrir para quem ACABOU de criar a
+ *  instituição — inclusive para o dono que ainda não configurou nada e para o
+ *  participante que só tem vínculo. Exigir uma permissão de organização
+ *  (`event:update`, `tenant:read`) faria a tela depender de um papel que nem
+ *  toda pessoa da instituição tem; o próprio `(app)/layout.tsx` já decidiu que
+ *  vínculo ATIVO é a porta da casca, e a página não pode ser mais restritiva que
+ *  o menu que leva até ela.
+ *
+ *  O que a guarda NÃO abre: ela não devolve nem autoriza dado algum. O exemplo é
+ *  uma fixture fixa (ver `src/domain/demo/demo-event.ts`), então não há consulta
+ *  para proteger. As telas que mostram dado real continuam usando
+ *  `requirePagePermission`.
+ *
+ *  As três checagens são as MESMAS do layout, na mesma ordem — sessão, vínculo
+ *  ativo nesta instituição e contexto ativo batendo com a URL. Repeti-las na
+ *  página é o padrão da casa (o layout protege a casca; a página se protege se um
+ *  dia mudar de grupo de rotas), e é o ponto que o teste unitário exercita.
+ */
+export async function requirePageMembership(input: {
+  tenantSlug: string;
+  /** Caminho interno para onde voltar depois do login. */
+  fallbackPath?: string;
+}): Promise<{ tenantId: string; tenantName: string; userId: string }> {
+  const context = await getRequestContext();
+
+  if (!context) {
+    redirect(
+      `/login?redirectTo=${encodeURIComponent(
+        tenantPath(input.tenantSlug, input.fallbackPath ?? '/dashboard'),
+      )}`,
+    );
+  }
+
+  const membership = context.memberships.find(
+    (candidate) => candidate.tenantSlug === input.tenantSlug && candidate.status === 'ACTIVE',
+  );
+
+  /**
+   * O contexto ativo precisa ser ESTA instituição: é ele que a RLS usa nas
+   * consultas das páginas filhas. Sem esse cruzamento, um cookie apontando para
+   * outra instituição faria a tela abrir sob o contexto errado.
+   */
+  if (
+    !membership ||
+    !context.activeTenant ||
+    context.activeTenant.tenantSlug !== input.tenantSlug
+  ) {
+    redirect('/selecionar-instituicao');
+  }
+
+  return {
+    tenantId: context.activeTenant.tenantId,
+    tenantName: context.activeTenant.tenantName,
+    userId: context.user.id,
+  };
+}
+
+/**
  * Guarda de uma tela PESSOAL, em que o conjunto de alvos é definido pela POSSE.
  *
  * ─────────────────────────────────────────────────────────────────────────────

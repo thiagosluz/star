@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { getRequestContext } from '@/lib/auth/session';
@@ -6,6 +5,8 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { createSubmissionAction } from '@/app/actions/review-actions';
 import { CreateSubmissionForm } from '@/components/review/create-submission-form';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Nova submissão' };
 export const dynamic = 'force-dynamic';
@@ -79,22 +80,16 @@ export default async function NewSubmissionPage({
 
   return (
     <main className="max-w-3xl space-y-8">
-      <nav>
-        <Link
-          href={tenantPath(tenantSlug, '/submissoes')}
-          className="text-xs text-muted-foreground underline underline-offset-4"
-        >
-          ← Minhas submissões
-        </Link>
-      </nav>
-
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Nova submissão</h1>
-        <p className="text-sm text-muted-foreground">
-          O rascunho é salvo imediatamente. Você anexa o arquivo e envia para
-          avaliação quando estiver pronto.
-        </p>
-      </header>
+      <PageHeader
+        title="Nova submissão"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        description="O rascunho é salvo imediatamente. Você anexa o arquivo e envia para avaliação quando estiver pronto."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Minhas submissões', href: tenantPath(tenantSlug, '/submissoes') },
+          { label: 'Nova submissão' },
+        ]}
+      />
 
       <CreateSubmissionForm
         tenantSlug={tenantSlug}

@@ -11,6 +11,8 @@ import {
 
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { listInstitutionLeads } from '@/lib/platform/global-repository';
+import { Badge, buttonClasses, PageHeader } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import {
   LEAD_STATUS_LABELS,
   isLeadStatus,
@@ -49,30 +51,23 @@ export default async function PlatformLeadsPage({ searchParams }: LeadsPageProps
 
   return (
     <main className="space-y-8" data-testid="platform-leads-page">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
-            <Building2 className="size-4" aria-hidden />
-            Expansão Institucional
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl mt-1">
-            Contatos e Leads Institucionais
-          </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Universidades, faculdades, sociedades científicas e empresas interessadas no EventFlow.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title="Contatos e Leads Institucionais"
+        icon={<Building2 className="size-6 text-muted-foreground" aria-hidden />}
+        description="Universidades, faculdades, sociedades científicas e empresas interessadas no EventFlow."
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Leads de Expansão' }]}
+        badge={<Badge tone="primary">SuperAdmin</Badge>}
+        actions={
           <Link
             href="/para-instituicoes"
             target="_blank"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3.5 py-2 text-xs font-medium text-foreground hover:bg-muted"
+            className={buttonClasses({ variant: 'outline', size: 'sm' })}
           >
             Ver página pública
           </Link>
-        </div>
-      </header>
+        }
+      />
 
       {/* ─── FILTROS DE STATUS ──────────────────────────────────────────────── */}
       <section className="flex flex-wrap items-center gap-2 border-b border-border pb-4" data-testid="leads-filter-tabs">

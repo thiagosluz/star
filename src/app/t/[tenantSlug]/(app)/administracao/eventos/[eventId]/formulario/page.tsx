@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, ClipboardList, Info } from 'lucide-react';
+import { AlertTriangle, ClipboardList, Info } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -24,6 +23,8 @@ import {
   removeRegistrationFormFieldAction,
 } from '@/app/actions/registration-form-actions';
 import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Formulário de inscrição' };
 export const dynamic = 'force-dynamic';
@@ -83,22 +84,18 @@ export default async function EventRegistrationFormPage({
 
   return (
     <main className="max-w-3xl space-y-8" data-testid="registration-form-page">
-      <div className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden />
-            Voltar ao evento
-          </Link>
-        </nav>
-
-        <SectionHeading
-          title="Formulário de inscrição"
-          description={`${event.title} · o que o participante responde ao se inscrever neste evento. Sem nenhum campo declarado, vale o formulário de sempre.`}
-        />
-      </div>
+      <PageHeader
+        title="Formulário de inscrição"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description={`${event.title} · o que o participante responde ao se inscrever neste evento. Sem nenhum campo declarado, vale o formulário de sempre.`}
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Formulário de inscrição' },
+        ]}
+      />
 
       {/**
         * O AVISO (requisito da fase), logo acima do editor: a decisão de liberar

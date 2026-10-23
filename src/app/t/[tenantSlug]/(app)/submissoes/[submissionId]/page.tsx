@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect, notFound } from 'next/navigation';
 import { CheckCircle2, Clock, FileText, AlertCircle } from 'lucide-react';
 
@@ -36,6 +35,8 @@ import { AuthorEditor } from '@/components/review/author-editor';
 import { DeleteDraftButton } from '@/components/review/delete-draft-button';
 import { WithdrawSubmissionButton } from '@/components/review/withdraw-submission-button';
 import { SubmissionDraftForm } from '@/components/review/submission-draft-form';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const dynamic = 'force-dynamic';
 
@@ -222,18 +223,22 @@ export default async function SubmissionDetailPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <nav>
-        <Link
-          href={tenantPath(tenantSlug, '/submissoes')}
-          className="text-xs text-muted-foreground underline underline-offset-4"
-        >
-          ← Minhas submissões
-        </Link>
-      </nav>
-
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title={submission.title}
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        description={
+          <>
+            {submission.trackName ?? 'Sem trilha'}
+            {submission.submittedAt
+              ? ` · enviada em ${new Intl.DateTimeFormat('pt-BR', {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                }).format(submission.submittedAt)}`
+              : ' · não enviada'}
+          </>
+        }
+        badge={
+          <>
             <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
               {submission.protocol}
             </span>
@@ -248,91 +253,85 @@ export default async function SubmissionDetailPage({
                 Revisão cega
               </span>
             ) : null}
-          </div>
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Minhas submissões', href: tenantPath(tenantSlug, '/submissoes') },
+          { label: submission.title },
+        ]}
+        actions={
+          <>
+            {/* Excluir é ação sem volta, e só o rascunho a oferece. */}
+            {/* Excluir é para o RASCUNHO; retirar é para o trabalho já enviado. */}
+            {withdrawable ? (
+              <WithdrawSubmissionButton
+                tenantSlug={tenantSlug}
+                submissionId={submissionId}
+                title={submission.title}
+                action={withdrawSubmissionAction}
+              />
+            ) : null}
 
-          {/* Excluir é ação sem volta, e só o rascunho a oferece. */}
-          {/* Excluir é para o RASCUNHO; retirar é para o trabalho já enviado. */}
-          {withdrawable ? (
-            <WithdrawSubmissionButton
-              tenantSlug={tenantSlug}
-              submissionId={submissionId}
-              title={submission.title}
-              action={withdrawSubmissionAction}
-            />
-          ) : null}
+            {deletable ? (
+              <DeleteDraftButton
+                tenantSlug={tenantSlug}
+                submissionId={submissionId}
+                title={submission.title}
+                action={deleteDraftSubmissionAction}
+                testId="delete-draft"
+              />
+            ) : null}
+          </>
+        }
+      />
 
-          {deletable ? (
-            <DeleteDraftButton
-              tenantSlug={tenantSlug}
-              submissionId={submissionId}
-              title={submission.title}
-              action={deleteDraftSubmissionAction}
-              testId="delete-draft"
-            />
-          ) : null}
-        </div>
+      {/*
+        ─── O AVISO QUE EXPLICA A CHEGADA (FASE 74 · ajuste da fatia 2) ───
+        A action redireciona para cá com `?rascunho=1` quando o envio pela página
+        pública recusa por prontidão. Sem esta frase, a pessoa que acabou de
+        clicar em "Enviar proposta" cairia num rascunho sem saber se o envio
+        funcionou ou por que ela está ali.
 
-        {/*
-          ─── O AVISO QUE EXPLICA A CHEGADA (FASE 74 · ajuste da fatia 2) ───
-          A action redireciona para cá com `?rascunho=1` quando o envio pela página
-          pública recusa por prontidão. Sem esta frase, a pessoa que acabou de
-          clicar em "Enviar proposta" cairia num rascunho sem saber se o envio
-          funcionou ou por que ela está ali.
+        O TEXTO VEM DO DOMÍNIO (`SUBMISSION_DRAFT_ARRIVAL_NOTICE`), e não é escrito
+        nesta tela: a mesma frase é o contrato do teste, e a superfície que a
+        mostra não pode ter a própria versão dela.
 
-          O TEXTO VEM DO DOMÍNIO (`SUBMISSION_DRAFT_ARRIVAL_NOTICE`), e não é escrito
-          nesta tela: a mesma frase é o contrato do teste, e a superfície que a
-          mostra não pode ter a própria versão dela.
+        ELE NÃO SUBSTITUI OS BLOQUEIOS: o aviso diz por que a pessoa chegou; a
+        lista de "Enviar para avaliação", logo abaixo, continua dizendo o que falta
+        — e é a MESMA régua que o servidor aplica.
 
-          ELE NÃO SUBSTITUI OS BLOQUEIOS: o aviso diz por que a pessoa chegou; a
-          lista de "Enviar para avaliação", logo abaixo, continua dizendo o que falta
-          — e é a MESMA régua que o servidor aplica.
-
-          O `?rascunho=1` FICA na URL depois do reload, de propósito: ele descreve o
-          fato (a chegada por uma recusa), e não um evento de uso único. Consumir o
-          parâmetro exigiria estado de cliente ou um cookie de "já avisei" — e a
-          pessoa que recarrega a página justamente para conferir o que falta perderia
-          a explicação no exato momento em que voltou a ela.
-        */}
-        {rascunho === '1' ? (
-          <p
-            className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-strong"
-            data-testid="draft-arrival-notice"
-          >
-            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {SUBMISSION_DRAFT_ARRIVAL_NOTICE}
-          </p>
-        ) : null}
-
-        {/*
-          ─── O AVISO QUE SUBSTITUI A PÁGINA INTERMEDIÁRIA (revisão da FASE 4) ───
-          A criação do rascunho agora cai AQUI, com `?novo=1`: em vez de uma tela
-          dizendo "rascunho criado" e devolvendo o autor à lista, a confirmação
-          aparece no lugar onde a submissão é completada.
-        */}
-        {novo ? (
-          <p
-            className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success-strong"
-            data-testid="draft-created"
-          >
-            <CheckCircle2 className="size-4 shrink-0" aria-hidden />
-            Rascunho criado. Anexe o arquivo e envie para avaliação quando estiver pronto.
-          </p>
-        ) : null}
-
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">
-          {submission.title}
-        </h1>
-
-        <p className="text-xs text-muted-foreground">
-          {submission.trackName ?? 'Sem trilha'}
-          {submission.submittedAt
-            ? ` · enviada em ${new Intl.DateTimeFormat('pt-BR', {
-                dateStyle: 'short',
-                timeStyle: 'short',
-              }).format(submission.submittedAt)}`
-            : ' · não enviada'}
+        O `?rascunho=1` FICA na URL depois do reload, de propósito: ele descreve o
+        fato (a chegada por uma recusa), e não um evento de uso único. Consumir o
+        parâmetro exigiria estado de cliente ou um cookie de "já avisei" — e a
+        pessoa que recarrega a página justamente para conferir o que falta perderia
+        a explicação no exato momento em que voltou a ela.
+      */}
+      {rascunho === '1' ? (
+        <p
+          className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-strong"
+          data-testid="draft-arrival-notice"
+        >
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {SUBMISSION_DRAFT_ARRIVAL_NOTICE}
         </p>
-      </header>
+      ) : null}
+
+      {/*
+        ─── O AVISO QUE SUBSTITUI A PÁGINA INTERMEDIÁRIA (revisão da FASE 4) ───
+        A criação do rascunho agora cai AQUI, com `?novo=1`: em vez de uma tela
+        dizendo "rascunho criado" e devolvendo o autor à lista, a confirmação
+        aparece no lugar onde a submissão é completada.
+      */}
+      {novo ? (
+        <p
+          className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success-strong"
+          data-testid="draft-created"
+        >
+          <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+          Rascunho criado. Anexe o arquivo e envie para avaliação quando estiver pronto.
+        </p>
+      ) : null}
 
       {/* ── Resultado da avaliação ────────────────────────────────────────── */}
       {submission.finalScore !== null || submission.decisionNotes ? (

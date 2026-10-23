@@ -28,6 +28,8 @@ import {
   SpeakerProfileForm,
 } from '@/components/speakers/portal-forms';
 import { CertificateRequestButton } from '@/components/certificates/request-button';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -71,7 +73,7 @@ export default async function SpeakerPortalPage({
 }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, tenantName, userId, userEmail } = await requirePersonalPage({
+  const { tenantId, userId, userEmail } = await requirePersonalPage({
     tenantSlug,
     permission: PERMISSIONS.SPEAKER_PROFILE_UPDATE_OWN,
     /**
@@ -102,18 +104,16 @@ export default async function SpeakerPortalPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Mic className="size-6 text-primary" aria-hidden />
-          Portal do palestrante
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {portal.profiles.length === 0 && portal.pendingInvites.length > 0
+      <PageHeader
+        title="Portal do palestrante"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Mic className="size-6 text-primary" aria-hidden />}
+        description={
+          portal.profiles.length === 0 && portal.pendingInvites.length > 0
             ? 'Você foi convidado a assumir um perfil de palestrante nesta instituição. Aceite o convite abaixo para editar seu perfil público, publicar materiais e emitir seu certificado.'
-            : 'Ajuste seu perfil público, publique os materiais das suas atividades e emita seu certificado. O que você salvar aqui aparece na página do evento.'}
-        </p>
-      </header>
+            : 'Ajuste seu perfil público, publique os materiais das suas atividades e emita seu certificado. O que você salvar aqui aparece na página do evento.'
+        }
+      />
 
       {portal.pendingInvites.length > 0 ? (
         <section className="space-y-3" aria-labelledby="convites" data-testid="pending-invite-section">

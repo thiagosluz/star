@@ -40,6 +40,7 @@ import { errorMessage } from '@/lib/db/prisma-errors';
 import { CSV_MAX_ROWS } from '@/domain/participants/participant-rules';
 import {
   EXPORT_KIND_LABELS,
+  EXPORT_KINDS,
   EXPORT_TTL_HOURS,
   EXPORT_WATERMARK_NOTICE,
   buildWatermarkedCsv,
@@ -54,6 +55,11 @@ import {
   listParticipants,
   participantFiltersLabel,
 } from '@/lib/participants/participant-service';
+import {
+  attendanceFiltersLabel,
+  collectAttendanceExportRows,
+  countAttendanceExportRows,
+} from '@/lib/exports/attendance-export-service';
 import { collectSponsorContactRows } from '@/lib/sponsors/sponsor-portal-service';
 
 export type ExportErrorCode = 'NOT_FOUND' | 'EXPIRED' | 'REVOKED' | 'INVALID_INPUT' | 'INTERNAL';
@@ -110,6 +116,14 @@ export interface ExportRecordView {
    * também, porque a autorização do patrocinador é por vínculo com ELE.
    */
   sponsorId: string | null;
+  /**
+   * Evento do pedido, quando o recorte é um evento (FASE 77 · fatia 2).
+   *
+   * O painel da raiz do evento mostra as exportações RECENTES daquele evento, e não
+   * as da instituição: uma linha "3 linhas · Ana" sem contexto faria o organizador
+   * achar que o arquivo do evento dele já existe quando o que existe é o de outro.
+   */
+  eventId: string | null;
   /** `ATIVA` · `EXPIRADA` · `REVOGADA` — o estado que a tela mostra. */
   status: 'ATIVA' | 'EXPIRADA' | 'REVOGADA';
   /** Quantas horas faltam (0 quando já venceu). */
@@ -131,8 +145,14 @@ function sponsorIdOf(filters: unknown): string | null {
   return typeof value.sponsorId === 'string' ? value.sponsorId : null;
 }
 
+/** O `eventId` dos filtros gravados — o recorte do arquivo, quando existe. */
+function eventIdOf(filters: unknown): string | null {
+  const value = (filters ?? {}) as Record<string, unknown>;
+  return typeof value.eventId === 'string' ? value.eventId : null;
+}
+
 function isKind(value: string): value is ExportKind {
-  return value === 'PARTICIPANTS_CSV' || value === 'SPONSOR_CONTACTS_CSV';
+  return (EXPORT_KINDS as readonly string[]).includes(value);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -216,6 +236,38 @@ async function countExportRows(input: {
       ok: true,
       rowCount: Math.min(total, CSV_MAX_ROWS),
       truncated: total > CSV_MAX_ROWS,
+      filters: pruneFilters(input.filters),
+    };
+  }
+
+  /**
+   * Presenças por atividade (FASE 77 · fatia 2).
+   *
+   * O recorte é SEMPRE um evento — sem ele, "presenças por atividade" seria a
+   * instituição inteira linha a linha. O serviço valida o evento (e a atividade)
+   * antes de contar: um id que não existe vira recusa, não um arquivo vazio.
+   */
+  if (input.kind === 'ATTENDANCES_CSV') {
+    const counted = await countAttendanceExportRows({
+      tenantId: input.tenantId,
+      filters: {
+        eventId: typeof input.filters.eventId === 'string' ? input.filters.eventId : undefined,
+        activityId: typeof input.filters.activityId === 'string' ? input.filters.activityId : undefined,
+      },
+    });
+
+    if (!counted.ok) {
+      return {
+        ok: false,
+        code: counted.code === 'NOT_FOUND' ? 'NOT_FOUND' : counted.code === 'INVALID_INPUT' ? 'INVALID_INPUT' : 'INTERNAL',
+        message: counted.message,
+      };
+    }
+
+    return {
+      ok: true,
+      rowCount: counted.rowCount,
+      truncated: counted.truncated,
       filters: pruneFilters(input.filters),
     };
   }
@@ -337,13 +389,32 @@ export async function buildDataExportFile(input: {
     const collected =
       record.kind === 'PARTICIPANTS_CSV'
         ? await collectParticipantExportRows({ tenantId: input.tenantId, filters })
-        : await collectSponsorContactRows({
-            tenantId: input.tenantId,
-            sponsorId: typeof filters.sponsorId === 'string' ? filters.sponsorId : '',
-          });
+        : record.kind === 'ATTENDANCES_CSV'
+          ? await collectAttendanceExportRows({
+              tenantId: input.tenantId,
+              filters: {
+                eventId: typeof filters.eventId === 'string' ? filters.eventId : undefined,
+                activityId: typeof filters.activityId === 'string' ? filters.activityId : undefined,
+              },
+            })
+          : await collectSponsorContactRows({
+              tenantId: input.tenantId,
+              sponsorId: typeof filters.sponsorId === 'string' ? filters.sponsorId : '',
+            });
 
     if (!collected.ok) {
-      return { ok: false, code: 'NOT_FOUND', message: collected.message };
+      /**
+       * O coletor de contatos não devolve código (só a mensagem), então o padrão é
+       * `NOT_FOUND`; os outros dois PRESERVAM o código, porque "atividade de outro
+       * evento" é entrada inválida (400) e não recurso inexistente (404).
+       */
+      const code = 'code' in collected ? collected.code : 'NOT_FOUND';
+
+      return {
+        ok: false,
+        code: code === 'INVALID_INPUT' ? 'INVALID_INPUT' : code === 'INTERNAL' ? 'INTERNAL' : 'NOT_FOUND',
+        message: collected.message,
+      };
     }
 
     const csv = buildWatermarkedCsv({
@@ -410,6 +481,11 @@ async function labelFor(
     });
 
     return name;
+  }
+
+  /** Presenças: o recorte tem DOIS nomes (evento e, quando escolhida, atividade). */
+  if (kind === 'ATTENDANCES_CSV') {
+    return attendanceFiltersLabel(tenantId, filters);
   }
 
   return participantFiltersLabel(tenantId, filters);
@@ -534,6 +610,7 @@ export async function listRecentDataExports(input: {
       authorName: row.requestedBy?.name ?? 'Conta removida',
       downloaders: [],
       sponsorId: sponsorIdOf(row.filters),
+      eventId: eventIdOf(row.filters),
       status: statusOf(row, now),
       hoursLeft: hoursLeft(row.expiresAt, now),
     }));
@@ -586,6 +663,7 @@ export async function getDataExport(input: {
     authorName: row.requestedBy?.name ?? 'Conta removida',
     downloaders: [],
     sponsorId: sponsorIdOf(row.filters),
+    eventId: eventIdOf(row.filters),
     status: statusOf(row, now),
     hoursLeft: hoursLeft(row.expiresAt, now),
   };

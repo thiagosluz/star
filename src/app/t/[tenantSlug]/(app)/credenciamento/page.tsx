@@ -12,6 +12,8 @@ import { CheckinQueue } from '@/components/gamification/checkin-queue';
 import { MonitorConsole, type MonitorActivity } from '@/components/credentials/monitor-console';
 import { checkInAction, checkOutAction } from '@/app/actions/attendance-actions';
 import { closeSessionsAction, recordPresenceAction } from '@/app/actions/credential-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Credenciamento' };
 export const dynamic = 'force-dynamic';
@@ -48,7 +50,7 @@ export default async function CheckinPage({
   const { tenantSlug } = await params;
   const { evento, q } = await searchParams;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  const { tenantId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.REGISTRATION_CHECKIN,
     /**
@@ -155,18 +157,18 @@ export default async function CheckinPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ScanLine className="size-6 text-primary" aria-hidden />
-          Credenciamento
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Leia o crachá para registrar a <strong>chegada ao evento</strong> ou a{' '}
-          <strong>frequência em uma atividade</strong> — são fatos diferentes: a frequência é o que
-          compõe a carga do certificado e o peso do sorteio.
-        </p>
-      </header>
+      <PageHeader
+        title="Credenciamento"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<ScanLine className="size-6 text-primary" aria-hidden />}
+        description={
+          <>
+            Leia o crachá para registrar a <strong>chegada ao evento</strong> ou a{' '}
+            <strong>frequência em uma atividade</strong> — são fatos diferentes: a frequência é o que
+            compõe a carga do certificado e o peso do sorteio.
+          </>
+        }
+      />
 
       {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

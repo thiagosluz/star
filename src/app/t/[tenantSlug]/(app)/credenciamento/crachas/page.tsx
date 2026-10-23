@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import { ArrowLeft, IdCard, Search } from 'lucide-react';
+import { IdCard, Search } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -10,6 +9,8 @@ import { CREDENTIAL_CATEGORY_LIST, resolveCredentialCategory } from '@/domain/ev
 import { BadgeRoster, type RosterCategoryOption, type RosterEntry } from '@/components/credentials/badge-roster';
 import { issueCredentialsAction, revokeCredentialAction } from '@/app/actions/credential-actions';
 import { setCredentialCategoryAction } from '@/app/actions/credential-category-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Crachás' };
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,7 @@ export default async function BadgesPage({
   const { tenantSlug } = await params;
   const { evento, q, faltando, categoria } = await searchParams;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  const { tenantId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.ATTENDANCE_MANAGE,
     allowedScopes: ['TENANT', 'EVENT'],
@@ -134,29 +135,24 @@ export default async function BadgesPage({
 
   return (
     <main className="max-w-5xl space-y-6">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/credenciamento')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Credenciamento
-          </Link>
-        </nav>
-
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <IdCard className="size-6 text-primary" aria-hidden />
-          Crachás
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Um crachá por pessoa no evento, com o código que o balcão lê. O QR Code carrega só o código —
-          nome, e-mail e identificador de pessoa <strong>não</strong> vão na etiqueta. A{' '}
-          <strong>categoria</strong> é a faixa de cor da etiqueta: num evento grande, é o que faz a
-          recepção achar a pessoa certa sem ler o crachá.
-        </p>
-      </header>
+      <PageHeader
+        title="Crachás"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<IdCard className="size-6 text-primary" aria-hidden />}
+        description={
+          <>
+            Um crachá por pessoa no evento, com o código que o balcão lê. O QR Code carrega só o código —
+            nome, e-mail e identificador de pessoa <strong>não</strong> vão na etiqueta. A{' '}
+            <strong>categoria</strong> é a faixa de cor da etiqueta: num evento grande, é o que faz a
+            recepção achar a pessoa certa sem ler o crachá.
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Credenciamento', href: tenantPath(tenantSlug, '/credenciamento') },
+          { label: 'Crachás' },
+        ]}
+      />
 
       <form method="get" className="flex flex-wrap items-end gap-3" data-testid="badge-filters">
         <label className="space-y-1 text-xs font-medium">

@@ -13,6 +13,12 @@ export const dynamic = 'force-dynamic';
  * de montagem, porque a página personalizada da instituição cai nesta listagem
  * quando nunca foi publicada. O que fica aqui é só a leitura e o `<main>` — o
  * landmark é de cada TELA, e esta tela tem exatamente um.
+ *
+ * O TOPO também vem de lá (FASE 78 · fatia 4): o `PageHeader` ("Eventos" + a
+ * contagem do serviço) mora no componente compartilhado, e não nesta página, para
+ * que os dois pontos de montagem desenhem o MESMO cabeçalho. A catraca da F78
+ * registra a delegação (`TOPO_COMPARTILHADO`) e confere que o componente usa o
+ * topo único — esta página não escreve `<h1>` nem `<header>` nenhum.
  */
 export default async function PublicEventsPage({
   searchParams,

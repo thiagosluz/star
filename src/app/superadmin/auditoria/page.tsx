@@ -16,6 +16,7 @@ import {
   identityAuditTone,
 } from '@/domain/identity/identity-audit-rules';
 import { Badge, Card, EmptyState, PageHeader, SectionHeading } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Auditoria' };
 export const dynamic = 'force-dynamic';
@@ -85,8 +86,9 @@ export default async function PlatformAuditPage({
     <main className="space-y-8" data-testid="platform-audit-page">
       <PageHeader
         title="Auditoria"
+        eyebrow={PLATFORM_NAV_GROUP}
         description="Duas trilhas: as ações de governança da plataforma e os fatos de segurança das contas (senha, segundo fator, códigos, e-mail e sessões). Nenhuma delas guarda segredo."
-        breadcrumbs={[{ label: 'Plataforma' }, { label: 'Auditoria' }]}
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Auditoria' }]}
         badge={<Badge tone="primary">SuperAdmin</Badge>}
         actions={
           <p className="text-xs text-muted-foreground" data-testid="identity-critical-30d">

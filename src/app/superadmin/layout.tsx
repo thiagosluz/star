@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { AccountBlock } from '@/components/shell/account-block';
 import { AppShell } from '@/components/shell/app-shell';
-import { buildPlatformNav } from '@/components/shell/tenant-nav';
+import { buildPlatformNav, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 
 /**
@@ -37,7 +37,7 @@ export default async function SuperAdminLayout({ children }: { children: React.R
     <AppShell
       variant="platform"
       brand={{ label: 'EventFlow', tagline: 'Governança da plataforma' }}
-      context={{ name: 'Plataforma', detail: operator.email, testId: 'platform-operator' }}
+      context={{ name: PLATFORM_NAV_GROUP, detail: operator.email, testId: 'platform-operator' }}
       navGroups={buildPlatformNav()}
       account={<AccountBlock user={{ name: operator.name, email: operator.email }} />}
     >

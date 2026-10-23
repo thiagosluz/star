@@ -50,7 +50,7 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *  encolheu, o item de menu que sumiu, o contraste que ficou lavado no escuro).
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O CONJUNTO É PEQUENO DE PROPÓSITO: VINTE E DOIS SNAPSHOTS, OITO SUPERFÍCIES
+ *  O CONJUNTO É PEQUENO DE PROPÓSITO: VINTE E TRÊS SNAPSHOTS, NOVE SUPERFÍCIES
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Quarenta telas dariam quarenta linhas de base para revisar a cada mudança de
  *  design — e uma linha de base que ninguém revisa é pior que nenhuma. A escolha
@@ -117,10 +117,29 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *  sobreposto a última seção ou sido empurrada para fora da viewport.
  *
  *  Por isso o snapshot é da PÁGINA INTEIRA (`page`), com o rodapé NO LUGAR dele,
- *  depois da última seção. A raiz é curta, estática e sem máscara nenhuma (não há
- *  dado de execução nela), então medir a página toda custa pouco e é o que prende o
+ *  depois da última seção. Medir a página toda custa pouco e é o que prende o
  *  desenho como um todo — inclusive a quebra de linha do rodapé, que é o que muda
  *  quando um dos três botões ganha ou perde `padding`.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A RAIZ DEIXOU DE SER ESTÁTICA NA FASE 71 — E ESTA SUÍTE SÓ SOUBE DISSO NA 78
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 70 a raiz era uma página de venda fixa: nenhum dado de banco, nenhuma
+ *  data, nada derivado do `RUN_ID`. A FASE 71 a transformou em **vitrine viva** —
+ *  "Eventos em destaque" e "A força da nossa rede em números" leem o banco a cada
+ *  render. O comentário antigo continuou dizendo "estática" e as DUAS linhas de base
+ *  do rodapé ficaram vermelhas: a primeira banda de diferença é a linha 988, o
+ *  título "Próximos eventos", e o topo (0–987, herói + busca) é idêntico. O defeito
+ *  não era o rodapé — era o diagnóstico.
+ *
+ *  A decisão da FASE 78: **mascarar os dois blocos dinâmicos** (`featured-events-
+ *  section` e `public-metrics-section`) e re-basear UMA vez, com o motivo escrito.
+ *  Deixá-las vermelhas "para não esconder regressão" esconde a próxima de verdade:
+ *  um vermelho que todo mundo já conhece ensina a ignorar a suíte. A máscara cobre
+ *  só o DADO (cards de eventos de outras instituições e os quatro contadores); o
+ *  herói, a jornada, o banner de instituições e o rodapé continuam medidos pixel a
+ *  pixel. A alternativa descartada — re-basear "com banco limpo" — não resolve: o
+ *  banco do dia seguinte tem outro destaque, e a linha volta a piscar.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O RÓTULO DO CONTROLE FOI CORRIGIDO NA FASE 63 — E AS DUAS LINHAS DE BASE
@@ -182,8 +201,9 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *      um critério de escolha: a raiz do evento imprime `startsAt` a `endsAt` e o
  *      quadro de demandas imprime prazo relativo a hoje, então os dois mudariam de
  *      linha de base a cada dia. Data que muda todo dia não é regressão visual. A raiz
- *      pública (item 4) passa pelo mesmo crivo: ela é estática — nenhum dado de banco,
- *      nenhuma data, nada derivado do `RUN_ID`.
+ *      pública (item 4) passa pelo mesmo crivo desde a FASE 78: ela **não é mais
+ *      estática** (a FASE 71 pôs nela os destaques e as métricas), então os dois
+ *      blocos que leem o banco são MASCARADOS — ver a seção própria no fim do arquivo.
  *    • **Animações** — `animations: 'disabled'` (e o estilo injetado em
  *      `estabilizar`) congela transição e animação do Tailwind no estado final.
  *    • **Cursor e foco** — `caret: 'hide'`; nenhum teste clica em campo de texto, e o
@@ -337,7 +357,8 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *
  *  A **página pública do EVENTO** continua de fora (o parágrafo acima é sobre ela), e
  *  a distinção importa: o que entrou na FASE 63 foi o rodapé das páginas públicas da
- *  PLATAFORMA — a raiz, que é estática e é de todo mundo. A página do evento carrega a
+ *  PLATAFORMA — a raiz, que é de todo mundo e cujo desenho em volta do rodapé é fixo
+ *  (o miolo dinâmico é mascarado, ver a seção da raiz). A página do evento carrega a
  *  identidade visual que o ORGANIZADOR escolheu, e por isso mediria a cor de outra
  *  pessoa.
  *
@@ -509,6 +530,75 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *  As **8 linhas de base** tocadas foram medidas com a caixa dos pixels diferentes, e a
  *  conferência de estabilidade — duas execuções seguidas com **zero pixel** de
  *  diferença nas 21 — está no documento da fase. O que NÃO mudou: o desenho.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 78 RE-BASEOU ONZE LINHAS — E O MOTIVO É O TOPO (medido, não suposto)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A migração para o `PageHeader` mudou exclusivamente o TOPO das telas de gestão: o
+ *  `eyebrow` passou a ser o GRUPO DE NAVEGAÇÃO ("Geral", "Operação"), a trilha
+ *  derivada substituiu o link "← Painel" (e a volta passou a NOMEAR o destino:
+ *  "Voltar para Painel"), e o nome da instituição saiu do badge — a casca já o
+ *  mostra. Nenhum conteúdo abaixo do cabeçalho foi tocado.
+ *
+ *  As ONZE linhas de base re-basadas, com o motivo de cada uma:
+ *
+ *    • `painel-desktop-claro` / `painel-desktop-escuro` ....... eyebrow "Geral"
+ *      (o título e a descrição continuam os mesmos);
+ *    • `painel-celular-claro` / `painel-celular-escuro` ....... o mesmo topo, na
+ *      viewport do celular com a gaveta aberta;
+ *    • `participantes-desktop-claro` / `-escuro` .............. eyebrow "Operação"
+ *      e o "Voltar para Painel" da trilha no lugar do "← Painel";
+ *    • `participantes-celular-claro` / `-escuro` .............. o mesmo, no celular;
+ *    • `minha-agenda-claro` / `minha-agenda-escuro` ........... a trilha
+ *      "Minhas inscrições → Minha agenda" no lugar do link "← Minhas inscrições";
+ *    • `comunicacao-segmentos` ................................ eyebrow "Operação" e
+ *      o BADGE com o nome da instituição REMOVIDO (decisão da F78).
+ *
+ *  As imagens foram OLHADAS antes de entrar — o que mudou é o desenho do topo, e o
+ *  resto da tela é o mesmo. Nada foi mascarado para esconder o cabeçalho: as
+ *  máscaras continuam sendo só as de DADO (e-mail, URL canônica, prévia da lista e
+ *  carimbo). A prova de estabilidade é a de sempre e está no documento da fase: DUAS
+ *  execuções seguidas com `maxDiffPixelRatio: 0` deram **ZERO pixel** de diferença.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FATIA 4 RE-BASEOU **UMA** LINHA — a única pública que muda de topo
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A fatia 4 migrou as páginas públicas para o `PageHeader`, e a pergunta que esta
+ *  suíte responde é: **quantas das 23 imagens são de uma tela migrada?** UMA —
+ *  `descadastro.png` (teste 21). As outras telas públicas que a fase tocou não têm
+ *  linha de base aqui, e as que têm não foram migradas (o motivo de cada uma está
+ *  abaixo, na lista das que NÃO mudaram).
+ *
+ *  O que mudou na imagem do descadastro é o TOPO, e só ele:
+ *
+ *    • o `<p>` com o NOME DA INSTITUIÇÃO saiu — o `PublicHeader` da casca pública
+ *      já o mostra, e repeti-lo gastava a única linha que pode dizer onde a pessoa
+ *      está (a decisão da F78);
+ *    • o título passou ao token de página (`text-title-lg`, 28px): era 24px escrito
+ *      à mão, e é o mesmo tamanho das outras telas do produto;
+ *    • o ícone do `MailX` foi para o slot `icon` (decorativo, `aria-hidden`), e a
+ *      frase de estado virou a `description` — em `text-muted-foreground`, que é o
+ *      token de TINTA (a medição de contraste da F67 continua valendo por
+ *      construção, e não por acidente).
+ *
+ *  Nada abaixo do cabeçalho foi tocado: os dois cartões da promessa, o bloco de
+ *  situação, os dois formulários e o link de volta continuam idênticos. A imagem
+ *  nova foi OLHADA, e a prova de estabilidade é a de sempre: DUAS execuções seguidas
+ *  do arquivo com `maxDiffPixelRatio: 0` deram **ZERO pixel** de diferença.
+ *
+ *  As OUTRAS linhas de base públicas NÃO foram tocadas, e cada uma por um motivo:
+ *
+ *    • `rodape-publico-claro` / `-escuro` (a raiz) — é herói de marketing, fora do
+ *      escopo declarado da F78, e as duas continuavam vermelhas pelo DADO da vitrine
+ *      (a FASE 71 pôs destaques e métricas na raiz; a primeira banda de diferença é
+ *      a linha 988, "Próximos eventos"). A fatia 5 **mascarou os dois blocos
+ *      dinâmicos e re-baseou UMA vez**, com o motivo acima: são as duas únicas
+ *      linhas de base do arquivo que medem uma tela de marketing, e o que elas
+ *      medem agora é o desenho fixo em volta (herói, jornada, banner e rodapé);
+ *    • `pagina-da-instituicao-claro` / `-escuro` — a página da casa tem renderizador
+ *      próprio (F64 · ADR-332), e o topo é dela;
+ *    • `evento-aba-agora`, `evento-bloco-de-local`, `evento-inscricao` — tema do
+ *      evento: quem manda no topo e na cor é o organizador.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -1649,6 +1739,26 @@ function mascaraDaUrlCanonica(page: Page): Locator {
 }
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  OS DOIS BLOCOS DINÂMICOS DA RAIZ (FASE 78)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 71 transformou a raiz em vitrine viva. `featured-events-section` lista os
+ *  próximos eventos de TODAS as instituições (com título, data e cidade vindos do
+ *  banco) e `public-metrics-section` imprime quatro contadores agregados. Nenhum dos
+ *  dois é desenho da plataforma: são DADO do dia, e mantê-los na imagem faria a
+ *  linha de base mudar a cada evento publicado — ou a cada execução, porque as
+ *  fixtures de outras specs também aparecem ali.
+ *
+ *  Mascarar não é esconder o que se quer medir: o alvo desta suíte é o RODAPÉ e o
+ *  desenho fixo que o cerca. As duas seções ficam visíveis na imagem como blocos
+ *  magenta — quem revisa vê que existem, e o tamanho delas continua participando da
+ *  geometria (uma seção que muda de altura desloca o rodapé e ainda reprova).
+ */
+function mascaraDoBlocoDinamicoDaRaiz(page: Page): Locator[] {
+  return [page.getByTestId('featured-events-section'), page.getByTestId('public-metrics-section')];
+}
+
+/**
  * Abre a gaveta, espera ela ASSENTAR e mede a GEOMETRIA dela.
  *
  * ─────────────────────────────────────────────────────────────────────────────
@@ -1949,8 +2059,14 @@ test.describe('celular', () => {
 //  lado a lado num rótulo de texto mudo, com um deles preenchido pela variante
 //  `primary` — nada ali depende de dado, então `axe` e teste de unidade passam por
 //  cima, e um `padding` que muda de token ou um botão que perde o `border` só
-//  aparecem em pixel. Nenhuma máscara: a raiz é estática e não carrega `RUN_ID`,
-//  e-mail nem slug de instituição nenhuma (ver o cabeçalho, seção do recorte).
+//  aparecem em pixel.
+//
+//  A RAIZ NÃO É MAIS ESTÁTICA (FASE 71) — e a FASE 78 corrigiu o comentário e a
+//  linha de base. "Eventos em destaque" e "A força da nossa rede em números" leem o
+//  banco a cada render; as duas seções são MASCARADAS (o magenta é proposital), e o
+//  que continua medido é o desenho fixo em volta — herói, busca, jornada, banner de
+//  instituições e o rodapé, que é o alvo original. Ver a seção no cabeçalho do
+//  arquivo ("A RAIZ DEIXOU DE SER ESTÁTICA NA FASE 71").
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('rodapé público da plataforma', () => {
   test.use({ viewport: DESKTOP });
@@ -1975,8 +2091,15 @@ test.describe('rodapé público da plataforma', () => {
      * gaveta de 64 px passou por todas as catracas porque cada uma media um nó
      * sozinho). Aqui a imagem também denuncia o rodapé que estoura a largura de
      * `main` ou que invade a última seção.
+     *
+     * Os dois blocos que leem o banco vão mascarados desde a FASE 78 (ver a seção
+     * "A RAIZ DEIXOU DE SER ESTÁTICA NA FASE 71" no cabeçalho e o motivo do
+     * `mascaraDoBlocoDinamicoDaRaiz`).
      */
-    await expect(page).toHaveScreenshot('rodape-publico-claro.png', PAGINA_INTEIRA);
+    await expect(page).toHaveScreenshot('rodape-publico-claro.png', {
+      ...PAGINA_INTEIRA,
+      mask: mascaraDoBlocoDinamicoDaRaiz(page),
+    });
   });
 
   test('14. o rodapé público da raiz no escuro', async ({ page }) => {
@@ -1988,8 +2111,12 @@ test.describe('rodapé público da plataforma', () => {
     /**
      * O escuro é uma ESCALA NOVA, e é onde o botão marcado troca de par de contraste
      * (`primary` sobre `primary-foreground`): a segunda linha de base da FASE 63.
+     * Mesmo recorte e mesma máscara do claro — o que muda é o modo.
      */
-    await expect(page).toHaveScreenshot('rodape-publico-escuro.png', PAGINA_INTEIRA);
+    await expect(page).toHaveScreenshot('rodape-publico-escuro.png', {
+      ...PAGINA_INTEIRA,
+      mask: mascaraDoBlocoDinamicoDaRaiz(page),
+    });
   });
 });
 

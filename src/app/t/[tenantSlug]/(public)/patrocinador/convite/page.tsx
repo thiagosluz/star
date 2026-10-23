@@ -6,6 +6,7 @@ import { Handshake } from 'lucide-react';
 import { getTenantContext } from '@/lib/events/event-repository';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
 import { AdminForm } from '@/components/admin/admin-form';
 import { acceptSponsorInviteAction } from '@/app/actions/sponsor-portal-actions';
 
@@ -25,6 +26,15 @@ import { acceptSponsorInviteAction } from '@/app/actions/sponsor-portal-actions'
  *  Aqui a prova é o CÓDIGO (o token do convite) somado ao E-MAIL da conta: o token
  *  prova a posse do link, o e-mail prova quem é. O vínculo com a instituição e o
  *  papel `SPONSOR` nascem COMO CONSEQUÊNCIA do aceite.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TOPO VEM DO `PageHeader` — E SEM `eyebrow` DE INSTITUIÇÃO (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O nome da instituição era um `<p>` acima do título e sai pelo mesmo motivo das
+ *  outras públicas: o `PublicHeader` da casca já o mostra, e a linha acima do
+ *  título é o único lugar que pode dizer ONDE a pessoa está — repetir a casa ali
+ *  gasta essa linha. Título e ícone vão no componente; a explicação do que o
+ *  aceite concede continua no cartão, que é onde o botão vive.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const dynamic = 'force-dynamic';
@@ -50,13 +60,10 @@ export default async function SponsorInvitePage({
 
   return (
     <main className="mx-auto max-w-xl space-y-6 px-4 py-10">
-      <header className="space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenant.name}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Handshake className="size-6 text-primary" aria-hidden />
-          Convite de patrocinador
-        </h1>
-      </header>
+      <PageHeader
+        title="Convite de patrocinador"
+        icon={<Handshake className="size-6 text-primary" aria-hidden />}
+      />
 
       <section className="space-y-4 rounded-lg border border-border bg-card p-5">
         {!user ? (

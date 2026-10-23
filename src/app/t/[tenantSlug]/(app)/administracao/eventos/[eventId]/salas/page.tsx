@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DoorOpen } from 'lucide-react';
 
@@ -9,7 +8,8 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { roomCapacityLabel } from '@/domain/events/event-rules';
 import { deleteRoomAction, saveRoomAction } from '@/app/actions/admin-actions';
-import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { AdminForm, Field } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 
@@ -56,21 +56,18 @@ export default async function EventRoomsPage({
 
   return (
     <main className="max-w-3xl space-y-8" data-testid="event-rooms-page">
-      <div className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Voltar ao evento
-          </Link>
-        </nav>
-
-        <SectionHeading
-          title="Salas"
-          description="Os espaços do evento e a capacidade de cada um — a sala é o teto das vagas da atividade."
-        />
-      </div>
+      <PageHeader
+        title="Salas"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description="Os espaços do evento e a capacidade de cada um — a sala é o teto das vagas da atividade."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Salas' },
+        ]}
+      />
 
       <section data-testid="rooms-section" className="space-y-4">
         <p className="flex items-center gap-2 text-xs text-muted-foreground">

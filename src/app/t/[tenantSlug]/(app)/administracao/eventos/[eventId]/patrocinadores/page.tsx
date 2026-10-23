@@ -41,6 +41,8 @@ import {
   setSponsorActiveAction,
   syncSponsorAction,
 } from '@/app/actions/sponsor-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Patrocinadores do evento' };
 export const dynamic = 'force-dynamic';
@@ -203,29 +205,33 @@ export default async function EventSponsorsPage({
 
   return (
     <main className="max-w-4xl space-y-8">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← {event.title}
-          </Link>
-        </nav>
-        <h1 className="text-2xl font-semibold tracking-tight">Patrocinadores</h1>
-        <p className="text-xs text-muted-foreground" data-testid="sponsor-status">
-          {board.sponsors.length} cadastrado(s) · {board.publicCount} visível(is) na página pública ·{' '}
-          {board.tiers.length} cota(s)
-        </p>
-        <p className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`)}
-            className="underline underline-offset-4"
-          >
-            ← Voltar ao editor da página
-          </Link>
-        </p>
-      </header>
+      <PageHeader
+        title="Patrocinadores"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        descriptionTestId="sponsor-status"
+        description={
+          <>
+            {board.sponsors.length} cadastrado(s) · {board.publicCount} visível(is) na página pública ·{' '}
+            {board.tiers.length} cota(s)
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Patrocinadores' },
+        ]}
+      />
+
+      <p className="text-xs">
+        <Link
+          href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`)}
+          className="underline underline-offset-4"
+        >
+          ← Voltar ao editor da página
+        </Link>
+      </p>
 
       {/* ── Cotas ────────────────────────────────────────────────────────── */}
       <section className="space-y-4 rounded-xl border border-border bg-card p-5" data-testid="tier-section">

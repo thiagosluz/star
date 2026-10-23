@@ -30,6 +30,8 @@ import {
   toTimelineDemands,
 } from '@/lib/events/demand-timeline';
 import { timelineWindow } from '@/domain/events/demand-timeline-rules';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   createColumnAction,
   createDemandAction,
@@ -252,22 +254,26 @@ export default async function EventDemandsPage({
 
   return (
     <main className="space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <LayoutGrid className="size-5" aria-hidden />
-          Demandas do evento
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {event.title} · o que a equipe precisa fazer, quem está com cada frente e o que
-          está atrasado.
-        </p>
-        <p className="text-xs text-muted-foreground">
-          <Link href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/equipes`)} className="underline">
-            Equipes do evento
-          </Link>{' '}
-          · as pessoas atribuídas saem da equipe ativa da instituição.
-        </p>
-      </header>
+      <PageHeader
+        title="Demandas do evento"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<LayoutGrid className="size-5" aria-hidden />}
+        description={`${event.title} · o que a equipe precisa fazer, quem está com cada frente e o que está atrasado.`}
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Demandas do evento' },
+        ]}
+      />
+
+      <p className="text-xs text-muted-foreground">
+        <Link href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/equipes`)} className="underline">
+          Equipes do evento
+        </Link>{' '}
+        · as pessoas atribuídas saem da equipe ativa da instituição.
+      </p>
 
       {/**
         * ─────────────────────────────────────────────────────────────────────────────

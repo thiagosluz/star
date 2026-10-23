@@ -5,6 +5,8 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { activeRoles, summarizeRoles } from '@/domain/rbac/authorization';
 import { permissionsForRole } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Painel' };
 
@@ -52,14 +54,11 @@ export default async function DashboardPage({
 
   return (
     <main className="max-w-6xl space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Painel de {context.activeTenant.tenantName}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Contexto ativo resolvido com isolamento por Row-Level Security.
-        </p>
-      </header>
+      <PageHeader
+        title={`Painel de ${context.activeTenant.tenantName}`}
+        eyebrow={TENANT_NAV_GROUPS.geral}
+        description="Contexto ativo resolvido com isolamento por Row-Level Security."
+      />
 
       {/* ── Métricas lidas sob RLS ─────────────────────────────────────────── */}
       <section className="grid gap-4 sm:grid-cols-3" data-testid="stats">

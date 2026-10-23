@@ -5,6 +5,8 @@ import { Lock, ShieldAlert } from 'lucide-react';
 
 import { blockedNotice, isTrafficAllowed } from '@/domain/platform/platform-rules';
 import { findTenantNotice } from '@/lib/platform/global-repository';
+import { PageHeader } from '@/components/ui';
+import { PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -74,22 +76,25 @@ export default async function BlockedTenantPage({
       data-tenant-status={tenant.status}
     >
       <div className="w-full max-w-xl rounded-xl border border-border bg-card p-8 shadow-sm">
-        <div className="flex items-center gap-3">
-          <span
-            className={`flex size-11 shrink-0 items-center justify-center rounded-full ${
-              suspended ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'
-            }`}
-          >
-            {suspended ? <Lock className="size-5" aria-hidden /> : <ShieldAlert className="size-5" aria-hidden />}
-          </span>
-
-          <div className="min-w-0">
-            <p className="label-caps text-muted-foreground">
-              {tenant.slug}
-            </p>
-            <h1 className="text-xl font-semibold text-foreground">{notice.title}</h1>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow={PLATFORM_NAV_GROUP}
+          title={notice.title}
+          icon={
+            suspended ? (
+              <Lock className="size-6 text-destructive" aria-hidden />
+            ) : (
+              <ShieldAlert className="size-6 text-warning-strong" aria-hidden />
+            )
+          }
+          /** O nome e o endereço da instituição são o assunto da tela: o `<p>` do
+           *  eyebrow não pode carregá-los (ele é o grupo), então eles vão aqui. */
+          description={
+            <>
+              Instituição <span className="font-medium text-foreground">{tenant.name}</span>{' '}
+              <span className="code-data">/{tenant.slug}</span>
+            </>
+          }
+        />
 
         <p className="mt-5 text-sm leading-relaxed text-muted-foreground">{notice.body}</p>
 

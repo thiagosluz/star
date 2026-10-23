@@ -36,6 +36,61 @@ import type { ShellNavGroup } from '@/components/shell/app-shell';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
+ *  OS GRUPOS DA NAVEGAÇÃO — a FONTE ÚNICA do agrupamento (FASE 78)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O `eyebrow` do `PageHeader` é o grupo de navegação da tela ("Operação",
+ *  "Minha participação"), e não o nome da instituição — a casca já mostra o nome.
+ *  Para que as ~50 telas migradas não criem uma segunda lista de grupos (que
+ *  envelheceria separada desta), os rótulos saem DAQUI: `buildTenantNav` monta o
+ *  menu com estas constantes e as páginas passam a mesma constante ao
+ *  `PageHeader`. A catraca da F78 reprova qualquer tela do painel cujo eyebrow
+ *  não seja um destes valores.
+ *
+ *  A chave é estável e o valor é o rótulo visível: renomear um grupo é uma
+ *  edição aqui, e menu e topo mudam juntos.
+ */
+export const TENANT_NAV_GROUPS = {
+  geral: 'Geral',
+  participacao: 'Minha participação',
+  comite: 'Comitê científico',
+  operacao: 'Operação',
+} as const;
+
+/** O rótulo de um grupo — o tipo que o `eyebrow` de uma tela pode receber. */
+export type TenantNavGroup = (typeof TENANT_NAV_GROUPS)[keyof typeof TENANT_NAV_GROUPS];
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  O GRUPO E A RAIZ DA TRILHA DA PLATAFORMA (FASE 78 · fatia 3)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  As telas de `/superadmin` não pertencem a nenhum dos quatro grupos da
+ *  instituição — o grupo delas é a PLATAFORMA. O rótulo mora aqui, ao lado do
+ *  `buildPlatformNav`, pela mesma razão dos `TENANT_NAV_GROUPS`: o menu e o topo
+ *  não podem ter duas listas que envelhecem separadas.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A TRILHA TEM `href` (o que a fatia 1 deixou aberto)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A "volta" do `PageHeader` é derivada do penúltimo item da trilha. Enquanto o
+ *  item "Plataforma" existisse sem destino, o penúltimo de uma tela de primeiro
+ *  nível não teria para onde voltar e nenhum link seria desenhado — era o estado
+ *  das cinco telas de plataforma migradas na fatia 2.
+ *
+ *  O destino é `/superadmin/metricas`, e não `/superadmin`: o índice de
+ *  `/superadmin` é um `redirect` para as métricas, e a trilha aponta para a tela
+ *  final em vez de fazer a pessoa passar por um salto a mais. (O guia de estilo
+ *  já usava este mesmo destino.)
+ */
+export const PLATFORM_NAV_GROUP = 'Plataforma' as const;
+
+/** O primeiro item da trilha de qualquer tela de plataforma — com destino. */
+export const PLATFORM_CRUMB = {
+  label: PLATFORM_NAV_GROUP,
+  href: '/superadmin/metricas',
+} as const satisfies { label: string; href: string };
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
  *  NAVEGAÇÃO DA INSTITUIÇÃO — agrupada por intenção (FASE 11A)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -172,7 +227,7 @@ export function buildTenantNav(input: {
     }[];
   }[] = [
     {
-      title: 'Geral',
+      title: TENANT_NAV_GROUPS.geral,
       items: [
         { href: href('/dashboard'), label: 'Painel', icon: <Gauge className="size-4" aria-hidden />, exact: true },
         {
@@ -184,7 +239,7 @@ export function buildTenantNav(input: {
       ],
     },
     {
-      title: 'Minha participação',
+      title: TENANT_NAV_GROUPS.participacao,
       items: [
         {
           href: href('/minhas-inscricoes'),
@@ -289,7 +344,7 @@ export function buildTenantNav(input: {
       ],
     },
     {
-      title: 'Comitê científico',
+      title: TENANT_NAV_GROUPS.comite,
       items: [
         {
           href: href('/comite'),
@@ -306,7 +361,7 @@ export function buildTenantNav(input: {
       ],
     },
     {
-      title: 'Operação',
+      title: TENANT_NAV_GROUPS.operacao,
       items: [
         {
           href: href('/credenciamento'),

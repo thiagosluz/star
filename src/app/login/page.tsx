@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { AuthForm } from '@/components/auth/auth-form';
+import { PageHeader } from '@/components/ui';
 import { signInAction } from '@/app/actions/auth-actions';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 
@@ -25,12 +26,10 @@ export default async function LoginPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
-        <p className="text-sm text-muted-foreground">
-          Acesse com sua conta para gerenciar seus eventos e inscrições.
-        </p>
-      </header>
+      <PageHeader
+        title="Entrar"
+        description="Acesse com sua conta para gerenciar seus eventos e inscrições."
+      />
 
       {params.senha === 'redefinida' ? (
         <p

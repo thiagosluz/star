@@ -8,7 +8,8 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { saveEventAction } from '@/app/actions/admin-actions';
-import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { toLocalInput } from '@/lib/events/activity-presentation';
 import { onlineRoomFieldVisibility } from '@/domain/events/event-form-defaults';
 import { EVENT_MODALITY_OPTIONS } from '@/domain/events/event-modality-rules';
@@ -98,21 +99,18 @@ export default async function EventDataPage({
 
   return (
     <main className="max-w-3xl space-y-8" data-testid="event-data-page">
-      <div className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Voltar ao evento
-          </Link>
-        </nav>
-
-        <SectionHeading
-          title="Dados do evento"
-          description="Nome, datas, local, modalidade, capacidade e os prazos de inscrição."
-        />
-      </div>
+      <PageHeader
+        title="Dados do evento"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description="Nome, datas, local, modalidade, capacidade e os prazos de inscrição."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Dados do evento' },
+        ]}
+      />
 
       <section data-testid="event-details">
           <AdminForm action={saveEventAction} submitLabel="Salvar evento" testId="edit-event">

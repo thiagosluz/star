@@ -27,7 +27,7 @@ import {
 } from '@/domain/profile/public-contacts';
 import { type CardRarity } from '@/domain/gamification/types';
 import { getPublicProfile } from '@/lib/profile/public-profile-service';
-import { Avatar, Badge, Card, CardContent, SectionHeading } from '@/components/ui';
+import { Avatar, Badge, Card, CardContent, PageHeader, SectionHeading } from '@/components/ui';
 import { ProfileReportForm } from '@/components/profile/profile-report-form';
 import { CardVisual } from '@/components/gamification/card-visual';
 import { resolveArt, resolvePalette } from '@/domain/gamification/card-rules';
@@ -53,6 +53,28 @@ export const dynamic = 'force-dynamic';
  *  Perfil privado ou inexistente chega como `NOT_FOUND` do serviço: a página nunca
  *  sabe a diferença, e por isso não vaza a existência de um handle que a pessoa
  *  decidiu não revelar.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TOPO VEM DO `PageHeader` — E A INSTITUIÇÃO SAI DO `eyebrow` (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O `<header>` escrito à mão (nome da instituição, foto, `<h1>` do nome, handle,
+ *  título profissional, nível, links e contatos) virou o componente único:
+ *
+ *    • o `<h1>` é o NOME — e continua com `data-testid="profile-name"`, que é o
+ *      que o E2E lê;
+ *    • a FOTO vai no slot `icon`: ela é decorativa ao lado do nome (o nome está
+ *      escrito ali), e o `alt` vazio é a consequência honesta disso — antes o
+ *      `alt` repetia o nome para quem ouve a tela duas vezes;
+ *    • handle e título profissional vão na `description`, que é a linha de
+ *      identificação logo abaixo do nome (os dois `data-testid` preservados);
+ *    • nível, XP, links e contatos descem para logo depois do cabeçalho: eles são
+ *      DADO da pessoa, e não a hierarquia da tela.
+ *
+ *  O nome da instituição NÃO vira `eyebrow`: o `PublicHeader` da casca já o mostra,
+ *  e a F78 decidiu que essa linha (quando existe) diz ONDE a pessoa está — num
+ *  perfil público não há grupo de menu a anunciar. A instituição continua na tela
+ *  onde ela é informação: a casca pública e o `generateMetadata` acima (título e
+ *  `robots`). O `generateMetadata` NÃO depende da forma do JSX: ele lê o serviço.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export async function generateMetadata({
@@ -139,18 +161,15 @@ export default async function PublicProfilePage({
           data-testid="profile-hidden"
           data-reason={page.hiddenReason}
         >
-          <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-            <EyeOff className="size-3.5 shrink-0" aria-hidden />
-            {page.tenantName}
-          </p>
-
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Este perfil está oculto por decisão da moderação
-          </h1>
-
-          <p className="text-sm text-muted-foreground" data-testid="profile-hidden-reason">
-            Motivo registrado: {page.hiddenReason}
-          </p>
+          <PageHeader
+            title="Este perfil está oculto por decisão da moderação"
+            icon={<EyeOff className="size-6 text-muted-foreground" aria-hidden />}
+            description={
+              <span data-testid="profile-hidden-reason">
+                Motivo registrado: {page.hiddenReason}
+              </span>
+            }
+          />
 
           <p className="text-sm text-muted-foreground">
             O conteúdo deste perfil deixou de aparecer publicamente em todas as instituições. A conta e o
@@ -194,40 +213,45 @@ export default async function PublicProfilePage({
         </p>
       ) : null}
 
-      <header className="space-y-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{page.tenantName}</p>
-
-        <div className="flex flex-wrap items-start gap-4">
-          {profile.avatarUrl ? (
-            /**
-             * A foto vem do acervo (bucket público) e é a MESMA do perfil na
-             * plataforma. O `Avatar` de iniciais fica para quem não subiu foto.
-             */
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.avatarUrl}
-              alt={profile.displayName ?? page.username}
-              className="size-20 shrink-0 rounded-full border border-border object-cover"
-              data-testid="profile-avatar"
-            />
-          ) : (
-            <Avatar name={profile.displayName ?? page.username} size="lg" />
-          )}
-
-          <div className="min-w-0 space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight" data-testid="profile-name">
-              {profile.displayName ?? `@${page.username}`}
-            </h1>
-            <p className="code-data text-sm text-muted-foreground" data-testid="profile-handle">
-              @{page.username}
-            </p>
-            {profile.headline ? (
-              <p className="text-sm text-muted-foreground" data-testid="profile-headline">
-                {profile.headline}
-              </p>
-            ) : null}
-          </div>
-        </div>
+      <div className="space-y-4">
+        <PageHeader
+          title={profile.displayName ?? `@${page.username}`}
+          titleTestId="profile-name"
+          icon={
+            profile.avatarUrl ? (
+              /**
+               * A foto vem do acervo (bucket público) e é a MESMA do perfil na
+               * plataforma. O `Avatar` de iniciais fica para quem não subiu foto.
+               *
+               * `alt=""` porque o slot `icon` é decorativo por contrato: o nome
+               * está no `<h1>` ao lado, e repeti-lo no `alt` faria quem ouve a
+               * tela ouvir a mesma pessoa duas vezes.
+               */
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={profile.avatarUrl}
+                alt=""
+                className="size-20 rounded-full border border-border object-cover"
+                data-testid="profile-avatar"
+              />
+            ) : (
+              <Avatar name={profile.displayName ?? page.username} size="lg" />
+            )
+          }
+          description={
+            <>
+              <span className="code-data" data-testid="profile-handle">
+                @{page.username}
+              </span>
+              {profile.headline ? (
+                <>
+                  {' · '}
+                  <span data-testid="profile-headline">{profile.headline}</span>
+                </>
+              ) : null}
+            </>
+          }
+        />
 
         {profile.level !== undefined ? (
           <div className="flex flex-wrap items-center gap-2" data-testid="profile-level">
@@ -329,7 +353,7 @@ export default async function PublicProfilePage({
             })}
           </div>
         ) : null}
-      </header>
+      </div>
 
       {profile.bio ? (
         <section className="space-y-2" data-testid="profile-bio">

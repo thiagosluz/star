@@ -31,6 +31,7 @@ import {
   SectionHeading,
   StatCard,
 } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Administração' };
 export const dynamic = 'force-dynamic';
@@ -68,7 +69,7 @@ export default async function AdminHomePage({
    * leitura de vínculos e a transação do principal no MESMO render. O que a tela
    * usa é só o principal — que a guarda devolve pronto.
    */
-  const { tenantId, tenantName, principal } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
@@ -153,9 +154,9 @@ export default async function AdminHomePage({
     <main className="space-y-8">
       <PageHeader
         title="Administração"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
         description="Toda alteração feita aqui é registrada na trilha de auditoria com autor e horário."
         breadcrumbs={[{ label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') }, { label: 'Administração' }]}
-        badge={<Badge tone="primary">{tenantName}</Badge>}
       />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="admin-stats">

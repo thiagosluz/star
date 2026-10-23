@@ -5,6 +5,7 @@ import { formatEventPeriod, type EventStatus } from '@/domain/events/event-rules
 import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import type { PublicEventSummary, PublicEventsPage } from '@/lib/events/event-repository';
+import { PageHeader } from '@/components/ui';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -34,6 +35,21 @@ import type { PublicEventSummary, PublicEventsPage } from '@/lib/events/event-re
  *  Este componente NÃO tem `<main>`: ele é o CONTEÚDO. Cada tela tem exatamente um
  *  landmark, e o portão WCAG AA conta os `<main>` nos dois sentidos (zero pega a tela
  *  sem o seu; dois pega a casca voltando a ser landmark — o defeito H5).
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  QUEM DESENHA O TOPO É ESTE COMPONENTE — E ESSA É A DECISÃO (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O topo da listagem ("Eventos" + a contagem do serviço) saiu do `<header>` escrito
+ *  à mão e passou ao `PageHeader` AQUI, e não nas duas páginas que montam a lista.
+ *  Motivo: são DOIS pontos de montagem (`/t/<slug>/eventos` e o fallback da página
+ *  da casa, F64) e uma cópia do topo em cada um seria a segunda fonte que a F78
+ *  está eliminando. Com o topo no componente, os dois montam o MESMO cabeçalho —
+ *  a catraca da F78 declara esta delegação (`TOPO_COMPARTILHADO`) e continua
+ *  exigindo que este arquivo use o componente único.
+ *
+ *  Nenhum `eyebrow`: a página pública não pertence a um grupo de menu e o
+ *  `PublicHeader` da casca já nomeia a instituição. A linha que sobra é a
+ *  `description` com o número de eventos que o SERVIÇO contou — a tela não reconta.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -166,14 +182,14 @@ export function PublicEventList({
 }) {
   return (
     <>
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Eventos</h1>
-        <p className="text-muted-foreground">
-          {page.total === 0
+      <PageHeader
+        title="Eventos"
+        description={
+          page.total === 0
             ? 'Nenhum evento publicado no momento.'
-            : `${page.total} ${page.total === 1 ? 'evento disponível' : 'eventos disponíveis'} em ${tenantName}.`}
-        </p>
-      </header>
+            : `${page.total} ${page.total === 1 ? 'evento disponível' : 'eventos disponíveis'} em ${tenantName}.`
+        }
+      />
 
       {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

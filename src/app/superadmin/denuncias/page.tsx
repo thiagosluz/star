@@ -5,6 +5,7 @@ import { requirePlatformPermission } from '@/lib/platform/guard';
 import { listModerationQueue } from '@/lib/platform/profile-moderation';
 import { ModerationDecisionForm } from '@/components/platform/moderation-decision-form';
 import { Alert, Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   PROFILE_REPORT_CATEGORIES,
@@ -57,8 +58,9 @@ export default async function ProfileModerationPage() {
       <main className="space-y-8" data-testid="moderation-queue">
         <PageHeader
           title="Denúncias de perfil"
+          eyebrow={PLATFORM_NAV_GROUP}
           description="Denúncias de perfis públicos aguardando decisão da plataforma."
-          breadcrumbs={[{ label: 'Plataforma' }, { label: 'Denúncias' }]}
+          breadcrumbs={[PLATFORM_CRUMB, { label: 'Denúncias' }]}
           badge={<Badge tone="primary">SuperAdmin</Badge>}
         />
 
@@ -75,8 +77,9 @@ export default async function ProfileModerationPage() {
     <main className="space-y-8" data-testid="moderation-queue">
       <PageHeader
         title="Denúncias de perfil"
+        eyebrow={PLATFORM_NAV_GROUP}
         description="Denúncias abertas contra perfis públicos. A decisão é da PLATAFORMA porque o @handle é o mesmo em todas as instituições — e o efeito vale para todas elas."
-        breadcrumbs={[{ label: 'Plataforma' }, { label: 'Denúncias' }]}
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Denúncias' }]}
         badge={<Badge tone="primary">SuperAdmin</Badge>}
         actions={
           <p className="text-xs text-muted-foreground" data-testid="moderation-generated-at">

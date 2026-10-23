@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { AlertTriangle, BadgeCheck, Ban, ClipboardCheck, Info, XCircle } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { PageHeader } from '@/components/ui';
+import { PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { verifyCertificateBatch } from '@/lib/certificates/certificate-batch-service';
 import { CERTIFICATE_BATCH_LIMIT } from '@/domain/certificates/certificate-batch-rules';
 import { CERTIFICATE_KIND_LABELS } from '@/domain/certificates/certificate-rules';
@@ -80,17 +82,12 @@ export default async function CertificateBatchPage({
 
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-6 py-12">
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">EventFlow</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ClipboardCheck className="size-6" aria-hidden />
-          Conferência de certificados em lote
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Cole a lista de códigos para conferir vários certificados de uma vez. Não é
-          preciso ter conta: o código impresso no documento é a credencial.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title="Conferência de certificados em lote"
+        icon={<ClipboardCheck className="size-6 text-muted-foreground" aria-hidden />}
+        description="Cole a lista de códigos para conferir vários certificados de uma vez. Não é preciso ter conta: o código impresso no documento é a credencial."
+      />
 
       {/* ── Formulário (GET: funciona sem JavaScript) ─────────────────────── */}
       <form method="get" action="/validar/lote" className="space-y-3" data-testid="batch-form">

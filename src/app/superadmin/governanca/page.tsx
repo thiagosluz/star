@@ -1,5 +1,7 @@
 import { ShieldCheck } from 'lucide-react';
 
+import { Badge, PageHeader } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { RevokeSuperAdminButton, SuperAdminGrantForm } from '@/components/platform/platform-forms';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { listSuperAdmins } from '@/lib/platform/tenant-service';
@@ -32,13 +34,18 @@ export default async function PlatformGovernancePage() {
 
   return (
     <main className="space-y-8" data-testid="platform-governance">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Governança</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {superAdmins.length} pessoa(s) com governança de plataforma. Você está operando como{' '}
-          <span className="font-medium text-foreground">{operator.email}</span>.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title="Governança"
+        description={
+          <>
+            {superAdmins.length} pessoa(s) com governança de plataforma. Você está operando como{' '}
+            <span className="font-medium text-foreground">{operator.email}</span>.
+          </>
+        }
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Governança' }]}
+        badge={<Badge tone="primary">SuperAdmin</Badge>}
+      />
 
       <SuperAdminGrantForm />
 

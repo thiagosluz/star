@@ -1,10 +1,11 @@
-import Link from 'next/link';
-import { ArrowLeft, Inbox } from 'lucide-react';
+import { Inbox } from 'lucide-react';
 
 import { requirePersonalPage } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { listOwnMessages } from '@/lib/participants/message-service';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { OwnInbox, type InboxEntry } from '@/components/participants/own-inbox';
 import { markMessageReadAction, replyToParticipantMessageAction } from '@/app/actions/participant-actions';
 
@@ -37,7 +38,7 @@ export default async function MyMessagesPage({
 }) {
   const { tenantSlug } = await params;
 
-  const { tenantId, tenantName, userId } = await requirePersonalPage({
+  const { tenantId, userId } = await requirePersonalPage({
     tenantSlug,
     permission: PERMISSIONS.REGISTRATION_READ_OWN,
     fallbackPath: '/dashboard',
@@ -66,27 +67,16 @@ export default async function MyMessagesPage({
 
   return (
     <main className="max-w-3xl space-y-6">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/dashboard')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Painel
-          </Link>
-        </nav>
-
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Inbox className="size-6 text-primary" aria-hidden />
-          Minhas mensagens
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Os recados que a instituição enviou para você. Eles ficam aqui mesmo que o e-mail não tenha
-          chegado.
-        </p>
-      </header>
+      <PageHeader
+        title="Minhas mensagens"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<Inbox className="size-6 text-primary" aria-hidden />}
+        description="Os recados que a instituição enviou para você. Eles ficam aqui mesmo que o e-mail não tenha chegado."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Minhas mensagens' },
+        ]}
+      />
 
       {!result.ok ? (
         <p className="rounded-lg border border-destructive/40 bg-card p-4 text-sm text-destructive">

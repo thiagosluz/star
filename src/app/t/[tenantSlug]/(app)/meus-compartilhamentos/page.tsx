@@ -4,7 +4,8 @@ import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { SectionHeading } from '@/components/ui';
+import { PageHeader, SectionHeading } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { listMySponsorShares } from '@/lib/sponsors/sponsor-portal-service';
 import { revokeSponsorConsentAction } from '@/app/actions/sponsor-portal-actions';
@@ -45,16 +46,12 @@ export default async function MySponsorSharesPage({
 
   return (
     <main className="max-w-4xl space-y-6" data-testid="my-shares">
-      <header className="space-y-1.5">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ShieldCheck className="size-6 text-primary" aria-hidden />
-          Meus compartilhamentos
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          O que você autorizou ao ler o QR de um patrocinador. A revogação vale na hora: o
-          patrocinador deixa de ver os seus dados, e a visita continua contada sem identificar você.
-        </p>
-      </header>
+      <PageHeader
+        title="Meus compartilhamentos"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        icon={<ShieldCheck className="size-6 text-primary" aria-hidden />}
+        description="O que você autorizou ao ler o QR de um patrocinador. A revogação vale na hora: o patrocinador deixa de ver os seus dados, e a visita continua contada sem identificar você."
+      />
 
       {shares.length === 0 ? (
         <p

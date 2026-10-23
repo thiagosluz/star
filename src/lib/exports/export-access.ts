@@ -52,7 +52,14 @@ export async function authorizeDataExport(input: {
     return { ok: false, status: 404, code: 'NOT_FOUND', message: 'Instituição não encontrada.' };
   }
 
-  if (input.kind === 'PARTICIPANTS_CSV') {
+  /**
+   * DIRETÓRIO **e** PRESENÇAS (FASE 77 · fatia 2): os dois são dado pessoal com o
+   * mesmo público — quem lê o diretório. Não existe permissão de "presença" no
+   * catálogo, e criar uma só para o arquivo faria o organizador com `participant:read`
+   * exportar a lista de inscritos e não a de presença, que é a mesma pessoa no mesmo
+   * evento.
+   */
+  if (input.kind === 'PARTICIPANTS_CSV' || input.kind === 'ATTENDANCES_CSV') {
     const membership = await adminPrisma.userTenantProfile.findFirst({
       where: { tenantId: tenant.id, userId: user.id, deletedAt: null },
       select: { status: true },

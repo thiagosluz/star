@@ -5,6 +5,8 @@ import { requirePagePermission } from '@/lib/auth/guard-page';
 import { listSubmissionsForChair } from '@/lib/review/review-service';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Comitê científico' };
 export const dynamic = 'force-dynamic';
@@ -48,12 +50,11 @@ export default async function ChairConsolePage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Comitê científico</h1>
-        <p className="text-sm text-muted-foreground">
-          Fila de avaliação em {tenantName}.
-        </p>
-      </header>
+      <PageHeader
+        title="Comitê científico"
+        eyebrow={TENANT_NAV_GROUPS.comite}
+        description={`Fila de avaliação em ${tenantName}.`}
+      />
 
       {submissions.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

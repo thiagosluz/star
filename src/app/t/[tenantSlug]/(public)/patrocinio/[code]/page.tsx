@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ExternalLink, QrCode, ScanLine } from 'lucide-react';
+import { ExternalLink, QrCode } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { getTenantContext } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { formatSponsorQrCode } from '@/domain/events/sponsor-experience-rules';
 import { getPublicSponsorQr } from '@/lib/sponsors/sponsor-portal-service';
+import { PageHeader } from '@/components/ui';
 import { SponsorScanForm } from '@/components/sponsors/scan-form';
 import { scanSponsorQrAction } from '@/app/actions/sponsor-portal-actions';
 
@@ -28,6 +29,16 @@ import { scanSponsorQrAction } from '@/app/actions/sponsor-portal-actions';
  *  antes dos botões: consentimento condicionado a benefício não é consentimento
  *  livre (LGPD, art. 8º, §3º). Sem autorização, o patrocinador recebe só o número
  *  da visita.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O TOPO VEM DO `PageHeader` — E A LINHA DO QR VIROU `description` (FASE 78 · fatia 4)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O `<h1>` é o nome do PATROCINADOR (é ele que a pessoa acabou de ver no estande),
+ *  com o ícone do QR ao lado. A linha que dizia o que aquilo é — "Visita registrada
+ *  por QR" — e o contexto do evento continuam na tela, mas na `description`: o
+ *  `eyebrow` do componente é o GRUPO DE NAVEGAÇÃO da tela, e uma página pública não
+ *  pertence a grupo nenhum de menu (a mesma régua que a F78 aplicou ao painel).
+ *  Assim o topo tem UMA linha de contexto, e não duas empilhadas.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const metadata = { title: 'Visita ao patrocinador' };
@@ -58,19 +69,16 @@ export default async function SponsorQrPage({
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-4 py-10">
-      <header className="space-y-2">
-        <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
-          <ScanLine className="size-3.5" aria-hidden />
-          Visita registrada por QR
-        </p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <QrCode className="size-6 text-primary" aria-hidden />
-          {qr.sponsorName}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {qr.eventTitle} · {qr.label} · código {formatSponsorQrCode(qr.code)}
-        </p>
-      </header>
+      <PageHeader
+        title={qr.sponsorName}
+        icon={<QrCode className="size-6 text-primary" aria-hidden />}
+        description={
+          <>
+            Visita registrada por QR · {qr.eventTitle} · {qr.label} · código{' '}
+            {formatSponsorQrCode(qr.code)}
+          </>
+        }
+      />
 
       <section className="rounded-lg border border-border bg-card p-5" data-testid="sponsor-scan">
         {qr.sponsorLogoUrl ? (

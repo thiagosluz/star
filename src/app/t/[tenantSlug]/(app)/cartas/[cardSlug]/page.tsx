@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -13,6 +12,8 @@ import { HoloCard } from '@/components/gamification/holo-card';
 import { ShareCardPanel } from '@/components/gamification/share-card-panel';
 import { PinCardButton } from '@/components/gamification/pin-card-button';
 import { EmptyCardSlot } from '@/components/gamification/card-visual';
+import { Breadcrumbs, PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   pinCardAction,
   revokeCardShareAction,
@@ -58,7 +59,13 @@ export default async function CardPage({
   if (!result.ok) {
     return (
       <main className="max-w-4xl space-y-6">
-        <BackLink tenantSlug={tenantSlug} />
+        <Breadcrumbs
+          items={[
+            { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+            { label: 'Cartas', href: tenantPath(tenantSlug, '/cartas') },
+            { label: 'Carta' },
+          ]}
+        />
         <p
           className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
           data-testid="card-not-found"
@@ -95,25 +102,30 @@ export default async function CardPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <BackLink tenantSlug={tenantSlug} />
-
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight" data-testid="card-title">
-          {card.name}
-        </h1>
-        <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
-            {RARITY_LABELS[card.rarity]}
-          </span>
-          {card.isFoil ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-brand">
-              <Sparkles className="size-3" aria-hidden />
-              Variante holográfica
+      <PageHeader
+        title={card.name}
+        titleTestId="card-title"
+        eyebrow={TENANT_NAV_GROUPS.participacao}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium uppercase tracking-wide">
+              {RARITY_LABELS[card.rarity]}
             </span>
-          ) : null}
-          {card.owned ? null : <span>Você ainda não conquistou esta carta.</span>}
-        </p>
-      </header>
+            {card.isFoil ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-brand">
+                <Sparkles className="size-3" aria-hidden />
+                Variante holográfica
+              </span>
+            ) : null}
+            {card.owned ? null : <span>Você ainda não conquistou esta carta.</span>}
+          </span>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Cartas', href: tenantPath(tenantSlug, '/cartas') },
+          { label: card.name },
+        ]}
+      />
 
       <div className="grid gap-8 lg:grid-cols-[auto_1fr] lg:items-start">
         <div className="flex justify-center lg:justify-start">
@@ -185,20 +197,6 @@ export default async function CardPage({
         </div>
       </div>
     </main>
-  );
-}
-
-function BackLink({ tenantSlug }: { tenantSlug: string }) {
-  return (
-    <nav className="text-xs">
-      <Link
-        href={tenantPath(tenantSlug, '/cartas')}
-        className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-      >
-        <ArrowLeft className="size-3" aria-hidden />
-        Voltar para o álbum
-      </Link>
-    </nav>
   );
 }
 

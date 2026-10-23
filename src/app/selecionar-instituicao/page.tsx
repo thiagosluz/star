@@ -4,6 +4,7 @@ import { Building2 } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { signOutAction } from '@/app/actions/auth-actions';
+import { PageHeader } from '@/components/ui';
 import { TenantSwitcher } from '@/components/tenancy/tenant-switcher';
 
 export const metadata = { title: 'Selecionar instituição' };
@@ -25,17 +26,12 @@ export default async function SelectTenantPage() {
 
   if (memberships.length === 0) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-6 px-6 py-16 text-center">
-        <Building2 className="mx-auto size-8 text-muted-foreground" aria-hidden />
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Nenhuma instituição vinculada
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Sua conta ainda não está ligada a nenhuma instituição. Peça um convite
-            ao organizador do evento, ou aguarde a aprovação do seu cadastro.
-          </p>
-        </div>
+      <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-6 px-6 py-16">
+        <PageHeader
+          title="Nenhuma instituição vinculada"
+          icon={<Building2 className="size-6 text-muted-foreground" aria-hidden />}
+          description="Sua conta ainda não está ligada a nenhuma instituição. Peça um convite ao organizador do evento, ou aguarde a aprovação do seu cadastro."
+        />
         <form action={signOutAction}>
           <button
             type="submit"
@@ -50,16 +46,16 @@ export default async function SelectTenantPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Olá, {user.name.split(' ')[0]}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Você tem acesso a {memberships.length}{' '}
-          {memberships.length === 1 ? 'instituição' : 'instituições'}. Escolha onde
-          deseja trabalhar — você pode trocar a qualquer momento sem sair da conta.
-        </p>
-      </header>
+      <PageHeader
+        title={`Olá, ${user.name.split(' ')[0]}`}
+        description={
+          <>
+            Você tem acesso a {memberships.length}{' '}
+            {memberships.length === 1 ? 'instituição' : 'instituições'}. Escolha onde deseja
+            trabalhar — você pode trocar a qualquer momento sem sair da conta.
+          </>
+        }
+      />
 
       <TenantSwitcher
         options={memberships}

@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import { ArrowLeft, Award, Layers, Mail, Sparkles, UserRound } from 'lucide-react';
+import { Award, Layers, Mail, Sparkles, UserRound } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -12,6 +11,8 @@ import { getParticipantProfile } from '@/lib/participants/participant-service';
 import { ENGAGEMENT_LABELS, PARTICIPANT_ORIGIN_LABELS } from '@/domain/participants/participant-rules';
 import { MessageComposer } from '@/components/participants/message-composer';
 import { sendParticipantMessageAction } from '@/app/actions/participant-actions';
+import { Breadcrumbs, PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Ficha do participante' };
 export const dynamic = 'force-dynamic';
@@ -53,7 +54,7 @@ export default async function ParticipantProfilePage({
   const userId = requireUuidParam(resolvedParams, 'userId');
   const { tenantSlug } = resolvedParams;
 
-  const { tenantId, tenantName, userId: actorId } = await requirePagePermission({
+  const { tenantId, userId: actorId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.PARTICIPANT_READ,
     fallbackPath: '/participantes',
@@ -75,13 +76,13 @@ export default async function ParticipantProfilePage({
   if (!result.ok) {
     return (
       <main className="max-w-4xl space-y-4">
-        <Link
-          href={tenantPath(tenantSlug, '/participantes')}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-4"
-        >
-          <ArrowLeft className="size-3" aria-hidden />
-          Participantes
-        </Link>
+        <Breadcrumbs
+          items={[
+            { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+            { label: 'Participantes', href: tenantPath(tenantSlug, '/participantes') },
+            { label: 'Ficha do participante' },
+          ]}
+        />
 
         <p className="rounded-lg border border-border bg-card p-6 text-sm" data-testid="profile-not-found">
           {result.message}
@@ -94,38 +95,35 @@ export default async function ParticipantProfilePage({
 
   return (
     <main className="max-w-5xl space-y-6" data-testid="participant-profile">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/participantes')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Participantes
-          </Link>
-        </nav>
+      <PageHeader
+        title={profile.name}
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<UserRound className="size-6 text-primary" aria-hidden />}
+        descriptionTestId="profile-identity"
+        description={
+          <>
+            {profile.email} · {PARTICIPANT_ORIGIN_LABELS[profile.origin]}
+            {profile.profile ? ` · vínculo ${profile.profile.status.toLowerCase()}` : ''}
+            {profile.isPublicProfile ? ' · autoriza o nome no resultado público' : ' · nome mascarado no resultado público'}
+          </>
+        }
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Participantes', href: tenantPath(tenantSlug, '/participantes') },
+          { label: profile.name },
+        ]}
+      />
 
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <UserRound className="size-6 text-primary" aria-hidden />
-          {profile.name}
-        </h1>
-        <p className="text-sm text-muted-foreground" data-testid="profile-identity">
-          {profile.email} · {PARTICIPANT_ORIGIN_LABELS[profile.origin]}
-          {profile.profile ? ` · vínculo ${profile.profile.status.toLowerCase()}` : ''}
-          {profile.isPublicProfile ? ' · autoriza o nome no resultado público' : ' · nome mascarado no resultado público'}
-        </p>
-        <ul className="flex flex-wrap gap-1.5">
-          {profile.engagement.map((tag) => (
-            <li
-              key={tag}
-              className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground"
-            >
-              {ENGAGEMENT_LABELS[tag]}
-            </li>
-          ))}
-        </ul>
-      </header>
+      <ul className="flex flex-wrap gap-1.5">
+        {profile.engagement.map((tag) => (
+          <li
+            key={tag}
+            className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground"
+          >
+            {ENGAGEMENT_LABELS[tag]}
+          </li>
+        ))}
+      </ul>
 
       {/* ── Números ───────────────────────────────────────────────────────────── */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="profile-totals">

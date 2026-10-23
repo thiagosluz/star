@@ -4,6 +4,7 @@ import { requirePlatformPermission } from '@/lib/platform/guard';
 import { lastRunPerJob, listRecentJobRuns } from '@/lib/platform/job-runs';
 import { RunJobButton } from '@/components/platform/job-run-button';
 import { Alert, Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from '@/components/ui';
+import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import {
   JOB_CATALOG,
   JOB_HEALTH_LABELS,
@@ -106,8 +107,9 @@ export default async function PlatformJobsPage() {
     <main className="space-y-8" data-testid="platform-jobs">
       <PageHeader
         title="Rotinas automáticas"
+        eyebrow={PLATFORM_NAV_GROUP}
         description="O que a plataforma faz sozinha, quando cada rotina rodou pela última vez e o que aconteceu nas últimas passadas. Uma passada atende todas as instituições."
-        breadcrumbs={[{ label: 'Plataforma' }, { label: 'Rotinas' }]}
+        breadcrumbs={[PLATFORM_CRUMB, { label: 'Rotinas' }]}
         badge={<Badge tone="primary">SuperAdmin</Badge>}
         actions={
           <p className="text-xs text-muted-foreground" data-testid="jobs-generated-at">

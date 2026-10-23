@@ -2547,6 +2547,68 @@ test.describe('telas autenticadas', () => {
      */
     await expectNoCriticalViolations(page, `diretório de participantes (/t/${tenantSlug}/participantes)`);
   });
+
+  // ───────────────────────────────────────────────────────────────────────────────
+  //  A RAIZ DO EVENTO E A TELA DE EXEMPLO (FASE 77)
+  // ───────────────────────────────────────────────────────────────────────────────
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  DUAS SUPERFÍCIES NOVAS NA MESMA FASE, E NENHUMA DELAS É "MAIS UMA TELA"
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A raiz do evento ganhou **um bloco de texto com links** (o caminho de partida,
+   *  dentro da prontidão) e **um painel de formulário** (a exportação, dentro de
+   *  "Operar"). São justamente os dois lugares onde o `axe` morde: link com nome
+   *  ambíguo (`link-name` passa, `identical-links-same-purpose` é best-practice) e
+   *  formulário com botão sem rótulo próprio — e ainda a faixa de `Badge` com
+   *  `withDot`, que é um nó de cor a mais sobre a superfície do cartão.
+   *
+   *  A tela de exemplo é densa de outro jeito: sete seções, três tabelas e um
+   *  `Alert` de aviso (a variante de cor que a FASE 52 mediu e separou). Ela nasceu
+   *  **sem consulta** e **sem escrita**, mas isso não a dispensa do portão: quem
+   *  chega nela é, por definição, quem **não sabe usar** o produto.
+   *
+   *  As duas asserções antes da varredura são o que impede o caso de passar medindo
+   *  MENOS do que a fase entregou: sem `event-launch-path` visível, a raiz seria a
+   *  tela antiga; sem `event-export`, o painel não teria renderizado (o gate exige
+   *  `participant:read`, que a administradora tem — o teste NÃO pode passar se o
+   *  gate começar a negar por engano).
+   */
+  test('a raiz do evento com o caminho de partida e a exportação não tem violação crítica', async ({
+    page,
+  }) => {
+    await signInAs(page, adminEmail);
+
+    await page.goto(`/t/${tenantSlug}/administracao/eventos/${eventId}`);
+
+    await expect(page.getByTestId('event-launch-path')).toBeVisible();
+    await expect(page.getByTestId('event-launch-path-summary')).toBeVisible();
+    await expect(page.getByTestId('event-export')).toBeVisible();
+    await expect(page.getByTestId('event-export-create-participantes')).toBeVisible();
+    await expect(page.getByTestId('event-export-create-presencas')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `raiz do evento com caminho de partida e exportação (/t/${tenantSlug}/administracao/eventos/<id>)`,
+    );
+  });
+
+  test('a tela do evento de exemplo não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * A guarda é de VÍNCULO (a administradora tem), e a tela não busca nada: a
+     * varredura mede o render inteiro sem depender de fixture — o que ela prova é
+     * que a fixture estática também passa pelo mesmo portão das telas com dado.
+     */
+    await page.goto(`/t/${tenantSlug}/exemplo`);
+
+    await expect(page.getByTestId('demo-banner')).toBeVisible();
+    await expect(page.getByTestId('demo-evento')).toBeVisible();
+    await expect(page.getByTestId('demo-programacao')).toBeVisible();
+
+    await expectNoCriticalViolations(page, `evento de exemplo (/t/${tenantSlug}/exemplo)`);
+  });
+
   // ───────────────────────────────────────────────────────────────────────────────
   //  As VISTAS do quadro de demandas (FASE 57) — uma varredura por vista
   // ───────────────────────────────────────────────────────────────────────────────

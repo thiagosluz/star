@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, Contact, Search } from 'lucide-react';
+import { Contact, Search } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { can } from '@/domain/rbac/authorization';
@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listParticipants } from '@/lib/participants/participant-service';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
 import { ExportPanel } from '@/components/exports/export-panel';
 import { ENGAGEMENT_LABELS, PARTICIPANT_ORIGIN_LABELS } from '@/domain/participants/participant-rules';
@@ -69,7 +71,7 @@ export default async function ParticipantsPage({
    * `participant:read`. Chamar `getRequestContext()` outra vez aqui repetia a
    * leitura de vínculos e a transação do principal no mesmo render.
    */
-  const { tenantId, tenantName, principal } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.PARTICIPANT_READ,
   });
@@ -147,28 +149,16 @@ export default async function ParticipantsPage({
 
   return (
     <main className="max-w-6xl space-y-6">
-      <header className="space-y-1.5">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, '/dashboard')}
-            className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4"
-          >
-            <ArrowLeft className="size-3" aria-hidden />
-            Painel
-          </Link>
-        </nav>
-
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{tenantName}</p>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Contact className="size-6 text-primary" aria-hidden />
-          Participantes
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Todas as pessoas que já participaram de algum evento desta instituição — com presença,
-          certificados, cartas e XP somados. O e-mail aparece mascarado; a ficha mostra o endereço
-          completo e registra quem abriu.
-        </p>
-      </header>
+      <PageHeader
+        title="Participantes"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Contact className="size-6 text-primary" aria-hidden />}
+        description="Todas as pessoas que já participaram de algum evento desta instituição — com presença, certificados, cartas e XP somados. O e-mail aparece mascarado; a ficha mostra o endereço completo e registra quem abriu."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Participantes' },
+        ]}
+      />
 
       <form method="get" className="flex flex-wrap items-end gap-3" data-testid="participant-filters">
         <label className="space-y-1 text-xs font-medium">
@@ -248,6 +238,23 @@ export default async function ParticipantsPage({
               {listing.page.totalPages}
             </p>
 
+            {/**
+              * ─────────────────────────────────────────────────────────────────
+              *  O RECORTE É DITO NA TELA (FASE 77 · fatia 2)
+              * ─────────────────────────────────────────────────────────────────
+              *  Com um evento escolhido, as colunas de presença e entrega passam a
+              *  ser DAQUELE evento (é o que o CSV do evento também entrega). Sem
+              *  esta linha, o número mudaria de significado sem avisar — e o
+              *  organizador leria "Visitas: 2" como se fosse a vida da pessoa.
+              */}
+            {selectedEventId ? (
+              <p className="text-xs text-muted-foreground" data-testid="participant-event-scope">
+                Inscrições, presenças, visitas, minutos, comparecimento, certificados, cartas e XP
+                são deste evento. O total de eventos e os rótulos continuam sendo da pessoa na
+                instituição.
+              </p>
+            ) : null}
+
             {listing.truncated ? (
               <p className="text-xs text-warning-strong" data-testid="participant-truncated">
                 A lista mostra as primeiras pessoas do filtro — refine a busca ou exporte o CSV para o
@@ -258,7 +265,7 @@ export default async function ParticipantsPage({
 
           <ExportPanel
             tenantSlug={tenantSlug}
-            kind="PARTICIPANTS_CSV"
+            kinds={['PARTICIPANTS_CSV']}
             returnTo={tenantPath(tenantSlug, '/participantes') + (query.size > 0 ? `?${query}` : '')}
             filters={{
               busca: busca ?? undefined,

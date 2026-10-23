@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Crown, Users } from 'lucide-react';
+import { Crown, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -16,6 +16,8 @@ import {
   setTeamMembersAction,
 } from '@/app/actions/demand-actions';
 import { moveTeamOrderAction } from '@/app/actions/team-order-actions';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Equipes do evento' };
 export const dynamic = 'force-dynamic';
@@ -86,40 +88,39 @@ export default async function EventTeamsPage({
 
   return (
     <main className="space-y-8">
-      <header className="space-y-2">
-        <Link
-          href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/demandas`)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Voltar ao quadro
-        </Link>
+      <PageHeader
+        title="Equipes do evento"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Users className="size-5" aria-hidden />}
+        description={`${event.title} · quem executa as demandas. O líder distribui trabalho dentro da própria equipe.`}
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          {
+            label: 'Demandas do evento',
+            href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}/demandas`),
+          },
+          { label: 'Equipes do evento' },
+        ]}
+      />
 
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Users className="size-5" aria-hidden />
-          Equipes do evento
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {event.title} · quem executa as demandas. O líder distribui trabalho dentro da própria
-          equipe.
-        </p>
-        {/**
-         * O aviso não é decoração: a MESMA equipe pode virar vitrine na página pública
-         * (bloco "Equipe do evento", FASE 45). Quem cadastra precisa saber que o nome
-         * da equipe é a etiqueta que aparece embaixo da foto — e que a foto e o contato
-         * só saem se a pessoa autorizar no perfil público dela.
-         */}
-        <p className="text-xs text-muted-foreground" data-testid="teams-public-note">
-          Esta lista também pode aparecer na página pública do evento, no bloco{' '}
-          <strong>Equipe do evento</strong>: o nome da equipe vira a etiqueta de cada pessoa, e a
-          ordem mostra o líder primeiro. Foto e contato só aparecem se a própria pessoa autorizar no{' '}
-          <Link href={tenantPath(tenantSlug, '/meu-perfil-publico')} className="underline">
-            perfil público
-          </Link>
-          . As setas <strong>↑</strong> e <strong>↓</strong> definem a ordem das equipes nessa
-          vitrine — equipes sem ordem definida ficam depois das ordenadas, em ordem alfabética.
-        </p>
-      </header>
+      {/**
+        * O aviso não é decoração: a MESMA equipe pode virar vitrine na página pública
+        * (bloco "Equipe do evento", FASE 45). Quem cadastra precisa saber que o nome
+        * da equipe é a etiqueta que aparece embaixo da foto — e que a foto e o contato
+        * só saem se a pessoa autorizar no perfil público dela.
+        */}
+      <p className="text-xs text-muted-foreground" data-testid="teams-public-note">
+        Esta lista também pode aparecer na página pública do evento, no bloco{' '}
+        <strong>Equipe do evento</strong>: o nome da equipe vira a etiqueta de cada pessoa, e a
+        ordem mostra o líder primeiro. Foto e contato só aparecem se a própria pessoa autorizar no{' '}
+        <Link href={tenantPath(tenantSlug, '/meu-perfil-publico')} className="underline">
+          perfil público
+        </Link>
+        . As setas <strong>↑</strong> e <strong>↓</strong> definem a ordem das equipes nessa
+        vitrine — equipes sem ordem definida ficam depois das ordenadas, em ordem alfabética.
+      </p>
 
       {board.teams.length === 0 ? (
         <p className="text-sm text-muted-foreground" data-testid="teams-empty">

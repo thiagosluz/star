@@ -32,20 +32,60 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { csvCell, type CsvValue } from '@/domain/participants/participant-rules';
+import { can, type Principal } from '@/domain/rbac/authorization';
+import { PERMISSIONS } from '@/domain/rbac/permissions';
 
-export const EXPORT_KINDS = ['PARTICIPANTS_CSV', 'SPONSOR_CONTACTS_CSV'] as const;
+export const EXPORT_KINDS = ['PARTICIPANTS_CSV', 'SPONSOR_CONTACTS_CSV', 'ATTENDANCES_CSV'] as const;
 export type ExportKind = (typeof EXPORT_KINDS)[number];
 
 export const EXPORT_KIND_LABELS: Readonly<Record<ExportKind, string>> = {
   PARTICIPANTS_CSV: 'Diretório de participantes',
   SPONSOR_CONTACTS_CSV: 'Contatos de patrocinador',
+  ATTENDANCES_CSV: 'Presenças por atividade',
+};
+
+/**
+ * O rótulo do BOTÃO, que não é o rótulo do arquivo.
+ *
+ * `EXPORT_KIND_LABELS` nomeia o DADO (aparece no topo do CSV e na lista de
+ * exportações); este nomeia a AÇÃO, no vocabulário de quem está na tela do evento:
+ * "Inscritos no evento" é o que a pessoa procura quando quer a lista de quem se
+ * inscreveu. Só é usado quando o painel oferece mais de um tipo — com um botão só,
+ * o texto continua "Gerar exportação", que os E2E da F49 já conhecem.
+ */
+export const EXPORT_KIND_ACTION_LABELS: Readonly<Record<ExportKind, string>> = {
+  PARTICIPANTS_CSV: 'Inscritos no evento',
+  SPONSOR_CONTACTS_CSV: 'Contatos do patrocinador',
+  ATTENDANCES_CSV: 'Presenças por atividade',
 };
 
 /** Nome do arquivo (sem extensão) — o `slug` da instituição entra depois. */
 export const EXPORT_KIND_FILE_SLUG: Readonly<Record<ExportKind, string>> = {
   PARTICIPANTS_CSV: 'participantes',
   SPONSOR_CONTACTS_CSV: 'contatos',
+  ATTENDANCES_CSV: 'presencas',
 };
+
+/**
+ * A permissão que a EXPORTAÇÃO de dados pessoais exige — uma só, a mesma do
+ * diretório e a mesma que a Server Action reconfere na hora de criar o pedido.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE ISTO É FUNÇÃO DE DOMÍNIO (E NÃO UM `can(...)` NA TELA)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A raiz do evento passou a mostrar o painel de exportação (FASE 77 · fatia 2).
+ *  Se a tela e a action decidissem cada uma com a própria expressão, bastaria uma
+ *  delas mudar para o botão nascer morto — o organizador clica e recebe 403. Aqui
+ *  as duas leem a MESMA regra, e o teste monta os dois principals (com e sem
+ *  `participant:read`) sem banco e sem navegador.
+ *
+ *  O escopo é TENANT de propósito: um `participant:read` concedido só por EVENTO
+ *  não abre a exportação — e a tela não pode prometer o que a action recusaria.
+ */
+export function canExportEventData(principal: Principal | null | undefined): boolean {
+  return principal ? can(principal, PERMISSIONS.PARTICIPANT_READ, { scope: 'TENANT' }) : false;
+}
+
 
 /**
  * Prazo do link: 24 horas.
@@ -110,6 +150,7 @@ export function exportDownloadersLabel(input: {
 export const EXPORT_FILTER_LABELS: Readonly<Record<string, string>> = {
   query: 'Busca',
   eventId: 'Evento',
+  activityId: 'Atividade',
   onlyWithCertificate: 'Só com certificado',
   onlyAttended: 'Só quem compareceu',
   sponsorId: 'Patrocinador',

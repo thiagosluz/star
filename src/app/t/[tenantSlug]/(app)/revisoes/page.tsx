@@ -5,6 +5,8 @@ import { CheckCircle2, Clock, Download, EyeOff } from 'lucide-react';
 import { getRequestContext } from '@/lib/auth/session';
 import { listReviewerTasks } from '@/lib/review/review-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Revisões' };
 export const dynamic = 'force-dynamic';
@@ -52,12 +54,11 @@ export default async function ReviewerTasksPage({
 
   return (
     <main className="max-w-5xl space-y-8">
-      <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Revisões</h1>
-        <p className="text-sm text-muted-foreground">
-          Pareceres atribuídos a você em {context.activeTenant.tenantName}.
-        </p>
-      </header>
+      <PageHeader
+        title="Revisões"
+        eyebrow={TENANT_NAV_GROUPS.comite}
+        description={`Pareceres atribuídos a você em ${context.activeTenant.tenantName}.`}
+      />
 
       {tasks.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

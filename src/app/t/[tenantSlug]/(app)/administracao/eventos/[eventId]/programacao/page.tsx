@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CalendarRange } from 'lucide-react';
 
@@ -15,7 +14,8 @@ import {
   toLocalInput,
 } from '@/lib/events/activity-presentation';
 import { deleteActivityAction, saveActivityAction } from '@/app/actions/admin-actions';
-import { SectionHeading } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
+import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { onlineRoomFieldVisibility } from '@/domain/events/event-form-defaults';
 import { EVENT_MODALITY_OPTIONS } from '@/domain/events/event-modality-rules';
@@ -122,21 +122,18 @@ export default async function EventSchedulePage({
 
   return (
     <main className="max-w-4xl space-y-8" data-testid="event-schedule-page">
-      <div className="space-y-2">
-        <nav className="text-xs">
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-            className="text-muted-foreground underline underline-offset-4"
-          >
-            ← Voltar ao evento
-          </Link>
-        </nav>
-
-        <SectionHeading
-          title="Programação"
-          description="As atividades do evento: horário, sala, vagas e o que a presença vale."
-        />
-      </div>
+      <PageHeader
+        title="Programação"
+        eyebrow={TENANT_NAV_GROUPS.operacao}
+        description="As atividades do evento: horário, sala, vagas e o que a presença vale."
+        breadcrumbs={[
+          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+          { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
+          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+          { label: event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
+          { label: 'Programação' },
+        ]}
+      />
 
       <section data-testid="activities-section" className="space-y-4">
         <p className="flex items-center gap-2 text-xs text-muted-foreground">

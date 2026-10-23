@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 76** (**F56 a F76 entregues**)
-Testes ................. **4257** (Vitest: unit + integração, 235 arquivos) + **453** (Playwright E2E) + 1 skip
-ADRs ................... 368 (numeração GLOBAL e sequencial — a próxima é ADR-369)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 79** (**F56 a F79 entregues**)
+Testes ................. **4389** (Vitest: unit + integração, 246 arquivos) + **470** (Playwright E2E) + 1 skip
+ADRs ................... 375 (numeração GLOBAL e sequencial — a próxima é ADR-376)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -80,10 +80,14 @@ documentação, capacidades e contagens.
 **O teto deste arquivo: ~64.800 bytes.** O harness corta o `AGENTS.md` em **65.244 bytes** — e
 o corte **apaga conteúdo em silêncio** (aconteceu na FASE 68: uma linha da tabela de fases
 desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso quem atualiza o
-estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto,
-**condensa linhas históricas da tabela da §9** — corte em ~300 caracteres, num limite de
-palavra, fechando a linha com ` … | ✅ |` — em vez de deixar o corte escolher o que sai. O
-registro completo do que foi condensado vive no documento de cada fase e no `README.md`.
+estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto, a
+primeira opção é **mover o próximo bloco para o histórico**, não condensar: o mais antigo ainda
+na tabela da §9 vai para [`docs/fases-historico.md`](docs/fases-historico.md), que guarda as
+fases **1 a 25** desde a FASE 79 (movidas como estavam), e a **§9 carrega a tabela corrente**
+(as fases recentes) + o ponteiro para o histórico. Condensar **apaga detalhe**; mover
+**preserva**. Só quando não der para mover é que se **condensa a linha mais antiga ainda na tabela** —
+corte em ~300 caracteres, num limite de palavra, fechando a linha com ` … | ✅ |` —, e o
+registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `README.md`.
 
 ---
 
@@ -107,7 +111,7 @@ registro completo do que foi condensado vive no documento de cada fase e no `REA
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4257 testes passando (235 arquivos)
+npm test              # esperado: 4389 testes passando (246 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -122,7 +126,9 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 453 no total; medido na F76: **450 passando + 2 vermelhos PRÉ-EXISTENTES** (o snapshot do rodapé da raiz, §6.10 do doc da F76) + 1 skip
+npm run test:e2e      # esperado: 470 no total; medido na F78: **469 passando + 1 skip** (o f65
+                      # "Acontecendo agora" pode falhar intermitente; as 2 linhas do rodapé da
+                      # raiz estão VERDES desde o mask da F78)
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -699,33 +705,14 @@ tests/{unit,integration,e2e}
 
 ## 9. Estado por fase e próximos passos
 
+> As fases **1 a 25** não estão mais nesta tabela: na **FASE 79** elas foram movidas **como
+> estavam** para [`docs/fases-historico.md`](docs/fases-historico.md) — o registro completo de
+> cada uma segue em `docs/fase-NN-*.md` e no `README.md`. A tabela abaixo é a corrente.
+
 | Fase | Tema | Situação |
 |---|---|---|
-| 1 | Infraestrutura, modelagem, RLS | ✅ |
-| 2 | Autenticação, RBAC, multi-tenancy | ✅ |
-| 3 | Eventos, inscrições, landing pages (chamada por trilha, lotação atômica, lista de espera, landing modular) — **+ duas revisões pós-entrega**: inscrição no EVENTO incluindo as atividades abertas (`EVENT_AUTO`), editar/excluir atividade e **ciclo de vida da SALA** (capacidade opcional = sem … | ✅ |
-| 4 | Submissões e avaliação por pares (chamada por trilha, upload direto com SHA-256, afinidade, conflito de interesse, revisão cega, nota ponderada no servidor, decisão com quórum) — **+ revisão pós-entrega**: o rascunho cai direto na página da submissão, não nasce inválido e pode ser editado/excluído | ✅ |
-| 5 | Gamificação (XP, cartas, missões) | ✅ |
-| 6 | Certificação (PDF assinado, QR, fila) | ✅ |
-| 7 | Painel administrativo + E2E completo | ✅ |
-| 8 | Motor de sorteios por presença real | ✅ |
-| 9 | Diretório público de organizações e governança global (SuperAdmin) | ✅ |
-| 10 | Inscrição pública e vínculo automático de participante | ✅ |
-| 11A | Identidade visual, primitivos de UI e shell de navegação | ✅ |
-| 11B | Propagação do design a todas as telas e quitação da dívida (catraca zerada) | ✅ |
-| 12 | Mutirão de dívidas rápidas (I7, I3, I5, C2, I1, I2, H2, H4) | ✅ |
-| 13 | Operação e segurança (A1, B1, B2, B3, B4: rate limit em Redis, observabilidade, RLS na migração, particionamento da auditoria, PgBouncer) | ✅ |
-| 14 | Quotas e planos (C1, C3, I4: quota de membros aplicada, plano e quotas editáveis pela UI, membro × participante no modelo e nas listas) | ✅ |
-| 15 | Comunicação (D1–D6, A5: e-mail transacional com Resend atrás de um driver que por padrão NÃO envia, fila `emails` com outbox `email_messages`, 8 templates em funções puras, convite de equipe em `tenant_invitations` com aceite e quota no aceite, avisos de avaliação/prazo/carta/certificado e verificação de e-mail sem bloquear o login) | ✅ |
-| 16 | Sorteios de ponta a ponta (G1–G7 + F1: suplentes, entrega do prêmio por posição, peso por minutos, commit-reveal, resultado público mascarado, prévia ao vivo, gatilhos de marco) | ✅ |
-| 17 | Página pública e patrocínio (E3–E6: editor de blocos com validação por tipo, tema visual, capa e logotipo por upload, cotas e patrocinadores com limite de vagas, edição de coautores com ordem de crédito) | ✅ |
-| 23 | Conteúdo e mídia (E9–E13: pré-visualização do rascunho pelo mesmo componente da página pública, upload de imagem na galeria, cópia de patrocinador entre eventos, histórico de versões com restauração, publicação agendada decidida na leitura) | ✅ |
-| 24 | Mídia e agendamento (E14–E17: acervo com reaproveitamento por checksum, sincronia da cópia, janela de exibição e agendamento no fuso do evento) | ✅ |
-| 25 | **Portal do palestrante** (E21–E24) — perfil do palestrante como pessoa da instituição, convite por token hasheado e vínculo de conta em dois caminhos, portal com posse verificada no banco, materiais com visibilidade por visitante, vitrine com foto e bio e certificado `SPEAKER` com carga apurada; + revisão pós-entrega (ADR-119/120) | ✅ |
-| 21 | Ciclo de vida do membro e storage (C4, C5: troca de papéis e remoção lógica do membro pela tela de equipe com posse do OWNER protegida, quota de **armazenamento aplicada de verdade** em todo envio — submissão, mídia e material de palestrante — medida sobre tudo o que a instituição guarda) | ✅ |
-| 22 | **Operação de palco** — desfazer a entrega com motivo na trilha, filtro do histórico, premiar N revisores, endereço próprio do resultado, chave do cofre versionada e prévia ao vivo; o consentimento de perfil público passou a nascer DESLIGADO. ADR-139 | ✅ |
 | 29 | **Palco público e auditoria do sorteio** — telão com compromisso antes da apuração, contagem ao vivo e revelação automática; link + QR na tela de sorteios; lista publicada gravada na apuração e assinada no resultado; auditoria que refaz as contas no navegador | ✅ |
-| 30 | Sorteio ao vivo, em rodadas (cada rodada com o próprio compromisso, prêmio, patrocinador e resultado assinado; **"Criar para o palco"** para o telão existir antes da apuração; **roleta** com os nomes reais da lista publicada parando no ganhador; **payload v4** declarando o momento; auditoria e resultado público **por rodada**) | ✅ |
+| 30 | Sorteio ao vivo, em rodadas (compromisso, prêmio, patrocinador e resultado assinado por rodada; **"Criar para o palco"**, **roleta** com a lista publicada, **payload v4**; auditoria e resultado público por rodada) … | ✅ |
 | 31 | **Credenciamento e frequência por crachá** — um código por pessoa no evento, com o contexto da leitura decidindo o fato; chegada ≠ frequência (sessão por visita, minutos com teto no fim da atividade); emissão em massa, folha A4 em PDF, crachá online e modo monitor | ✅ |
 | 32 | **Central do participante** — diretório (união de vínculo e inscrição), ficha 360, recado por e-mail e caixa de entrada, panorama com taxa de comparecimento no fuso da instituição, exportação em CSV com trilha e ficha auditada | ✅ |
 | 33 | **Chamadas de propostas** — chamada como entidade (tipo, janela, cegueira, rubrica própria — CHAMADA → TRILHA → PADRÃO — e limite por autor por chamada); a proposta é uma submissão; formulário público; protocolo de aceite (o convite quita E25) | ✅ |
@@ -771,14 +758,17 @@ tests/{unit,integration,e2e}
 | 73 | **O resultado da chamada que o organizador publica** — publicar deixou de ser decidir: `SEM_RESULTADO`/`RASCUNHO`/`PARCIAL`/**`FINAL` travado**, lista derivada mas **escolhida**, quatro gestos sem JavaScript (ADR-357 … 359) … | ✅ |
 | 74 | **A proposta que exige anexo e não pede** — a POSSE do upload vem antes do `inspectObject`, a recusa `NOT_READY` devolve o rascunho e o link, rascunho deixa de ser proposta recebida e a cegueira HERDA da trilha. **E46 re-escopada** (ADR-360 … 362) … | ✅ |
 | 75 | **O refactor que mede antes** — a rede de **66 casos** veio antes do movimento; **16** guardas migradas para `guardAction` (+ a `registration` traduzida), com **4 exceções declaradas** (−760 linhas, não 1.500) e catálogo que reprova a cópia nova; a **leitura** extraída dos dois serviços (−2.324 linhas, escrita na mesma transação, catraca por AST); o **contexto** resolvido uma vez por render (2 + 2 → 1 + 1, ≈8 ms — em HTTP é ruído); e as **páginas de erro por área** (0 → 6 arquivos). ADR-363 … 365 | ✅ |
-| 76 | **O mutirão dos 500 que deviam ser 404** — o id malformado era **500 exclusivo do FORMATO** (25 de 42; o controle com uuid inexistente dava 404): `isUuid` puro no domínio + `requireUuidParam` (404 antes de consultar) em **23 páginas/24 params** e **9 rotas/11 params**; a query não é endereço (3 telas **ignoram e anunciam**), a API ganhou **um envelope** `{ok:false,code,message}` (51 chamadas em 9 rotas, QR mudou de contrato) e a régua **400 = entrada × 404 = endereço**; a **catraca de fonte achou 2 buracos** (`zip?evento=`, `raffle-live?activityId=`) e a **tabela de 35 casos** reprovou a si mesma (esperava 404, recebeu 400). ADR-366 … 368 | ✅ |
+| 76 | **O mutirão dos 500 que deviam ser 404** — o id malformado era **500 exclusivo do FORMATO** (25 de 42): `isUuid` no domínio + `requireUuidParam` (404 antes de consultar) em 23 páginas/24 params e 9 rotas/11 params; a query não é endereço (3 telas ignoram e anunciam), a API ganhou um envelope `{ok:false,code,message}` e a régua **400 = entrada × 404 = endereço**; a catraca achou 2 buracos e a tabela de 35 casos reprovou a si mesma. ADR-366 … 368 | ✅ |
+| 77 | **O organizador novo** — o **caminho de partida** (3 fatias com os fatos do render, dentro da prontidão, "pronto" proibido por varredura e o alvo resolvido NO CATÁLOGO — o que consertou o link morto de `sem-programacao`); a **exportação na raiz** (o recorte na PROJEÇÃO, 3/3/210 → 2/2/90, o XP do livro-razão, 3 colunas fora e o `ATTENDANCES_CSV` em formato longo, com migração); e o **demo de LEITURA** (`/t/<slug>/exemplo` por vínculo + catraca de escrita provada por hash). ADR-369 … 371 | ✅ |
+| 78 | **O topo único** — a dívida **H1** fechada: **PageHeader server** (split de `navigation.tsx`, sem ~96 ilhas de cliente), com `eyebrow` = grupo de navegação da fonte única, **volta derivada da trilha** e `descriptionTestId`; **81 das 96 páginas migradas** e **15 exceções** motivadas (tema do evento, heróis, renderizador próprio e redirects); **`text-headline`** (16px) eliminado e **6 telas sem `<h1>`** corrigidas. Catracas: **fonte** + **12 telas** no navegador. ADR-372 … 374 | ✅ |
+| 79 | **O `AGENTS.md` volta a respirar** — as fases **1 a 25** saíram da tabela da §9 e foram **movidas como estavam** para `docs/fases-historico.md` (nenhuma linha reescrita), com um ponteiro de três linhas no lugar; a tabela corrente ficou com folga real e uma catraca nova reprova fase histórica na tabela e fase corrente no histórico. ADR-375 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**42 itens abertos**; A=4, B=6, C=1, D=3, E=22, F=5, H=1, I=0) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento bate com ela desde a FASE 69.
-Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (**E84 para a PÁGINA DA INSTITUIÇÃO**), **F69** (**E86, E82, E83, E88 e E84 por inteiro**) e **F72** (o upload presigned recusado pelo MinIO novo — achado e corrigido na bateria). A **F66** não quitou nem declarou item: fechou o rótulo de seção e corrigiu a contagem. A **F73** também não quitou nem declarou item: publicou o resultado da chamada e deixou três pontos de atenção no documento (o `heading-order` dos `<h5>`, o `resultState` fora do `/api/v1` e a concorrência do `FOR UPDATE` sem teste paralelo). A **F74** não quitou item: **re-escopou a E46** (o beco do anexo está fechado — aviso, rascunho e link; o **anexo inline na página pública continua fora**, decisão A, com o custo de B registrado) e declarou os pontos de atenção do teto de 5 rascunhos com arquivo, do seed com minicursos `false` (sem backfill) e do `isBlind` da atribuição alinhado. A **F75** também não quitou nem declarou item: é um refactor com rede de testes e as páginas de erro por área; deixou pontos de atenção no documento (sem `cache()` do contexto, os dois checks de convite do shell não unificados, os tipos do sorteio no irmão de leitura, o `context` da guarda sem consumidor em todas as páginas e o id malformado na URL respondendo 500 — armadilha 25, pré-existente). A **F76** fechou aquele ponto de atenção (o id malformado agora é 404 **antes** da consulta) e **declarou a E89** (o `?evento=` inválido cai em outro evento, em silêncio). A contagem passa a **42**.
-Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **E89** (o `?evento=` inválido cai em outro evento, em silêncio — FASE 76), **A7** (o falso positivo do casamento por fragmento de tipo sensível), **B10** (a varredura dos `catch` silenciosos das contagens) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
+**Dívidas técnicas:** o levantamento consolidado (**43 itens abertos**; A=4, B=6, C=1, D=3, **E=23**, F=5, **H=0**, **I=1**) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento bate com ela desde a FASE 69. A **F79** **declarou a I8** (a segunda cópia das contagens no `README.md`): a contagem passa a **43**.
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo) e **F78** (a **H1** — o topo único). As fases **F66, F73, F74 e F75** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos e a **F74** **re-escopou a E46** (o anexo inline na página pública continua fora). A **F76** fechou o id malformado (404 **antes** da consulta) e **declarou a E89** (o `?evento=` inválido cai em outro evento). A **F77** também não quitou nem declarou item: fechou o link morto e o recorte da projeção — defeitos que ela mesma mediu — e deixou declarado o que ficou aberto (§8 do doc). A **F78** fechou a **H1** (o topo único) e **declarou a E90** (as classes do tema do evento fora do `.ef-theme`). A contagem passa a **43** porque 42 + 1 = 43 (a **I8**).
+Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **E89** (o `?evento=` inválido cai em outro evento, em silêncio — FASE 76), **E90** (o `.ef-card`/`.ef-button-outline` fora do tema — FASE 78), **I8** (a segunda cópia das contagens no `README.md` — FASE 79), **A7** (o falso positivo do casamento por fragmento de tipo sensível), **B10** (a varredura dos `catch` silenciosos das contagens) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
 
 ---
 
@@ -786,7 +776,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-76-500-que-deviam-ser-404.md`; antes, F75, F74, F73, F72, F71, F70, F69, F68, F67, F66 e F65; a
+   fase entregue** (`docs/fase-79-o-agents-que-respira.md`; antes, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69, F68 e F67; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EVENT_AREAS,
   EVENT_AREA_GROUPS,
+  eventAreaTestId,
   groupEventAreas,
   visibleEventAreas,
   type EventAreaContext,
@@ -122,15 +123,16 @@ describe('painel de prontidão', () => {
   });
 
   it('toda pendência aponta para um atalho que EXISTE na tela', () => {
-    const alvos = new Set([
-      'confirmations-link',
-      'calls-link',
-      'landing-link',
-      'event-area-salas',
-      'activities-section',
-      'tracks-section',
-      'event-area-dados',
-    ]);
+    /**
+     * FASE 77 — a lista de alvos deixou de ser escrita à mão.
+     *
+     * Enquanto ela era um `Set` de literais, `activities-section` continuou aceito
+     * depois que a FASE 55 removeu a seção do DOM: o teste passava com a pendência
+     * ligada a um alvo que não existia. Agora o conjunto é o dos `data-testid` REAIS
+     * dos cartões (legado quando há, ADR-302), então uma pendência só passa se o
+     * render tiver para onde linkar.
+     */
+    const alvos = new Set(EVENT_AREAS.map(eventAreaTestId));
 
     const todas = eventReadiness(
       fatos({

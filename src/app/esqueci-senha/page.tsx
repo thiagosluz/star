@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { RequestResetForm } from '@/components/auth/password-recovery-forms';
+import { PageHeader } from '@/components/ui';
 import { requestPasswordResetAction } from '@/app/actions/auth-actions';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 
@@ -30,13 +31,10 @@ export default async function ForgotPasswordPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-1.5">
-        <h1 className="font-display text-headline text-foreground">Esqueci minha senha</h1>
-        <p className="text-sm text-muted-foreground">
-          Informe o e-mail da sua conta. Enviamos um link para você definir uma nova senha — a
-          senha atual continua valendo até o link ser usado.
-        </p>
-      </header>
+      <PageHeader
+        title="Esqueci minha senha"
+        description="Informe o e-mail da sua conta. Enviamos um link para você definir uma nova senha — a senha atual continua valendo até o link ser usado."
+      />
 
       <RequestResetForm action={requestPasswordResetAction} />
 

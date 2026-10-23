@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { TwoFactorChallengeForm } from '@/components/auth/password-recovery-forms';
+import { PageHeader } from '@/components/ui';
 import { verifyTwoFactorLoginAction } from '@/app/actions/auth-actions';
 
 export const metadata = { title: 'Verificação em duas etapas' };
@@ -40,13 +41,10 @@ export default async function TwoFactorChallengePage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-1.5">
-        <h1 className="font-display text-headline text-foreground">Verificação em duas etapas</h1>
-        <p className="text-sm text-muted-foreground">
-          Sua conta tem o segundo fator ativo. Informe o código do aplicativo autenticador para
-          concluir a entrada.
-        </p>
-      </header>
+      <PageHeader
+        title="Verificação em duas etapas"
+        description="Sua conta tem o segundo fator ativo. Informe o código do aplicativo autenticador para concluir a entrada."
+      />
 
       <TwoFactorChallengeForm
         action={verifyTwoFactorLoginAction}

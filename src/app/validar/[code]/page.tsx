@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { AlertTriangle, BadgeCheck, Ban, FileText, QrCode, ShieldCheck, XCircle } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { PageHeader } from '@/components/ui';
+import { PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { getPublicCertificate } from '@/lib/certificates/certificate-service';
 import { CERTIFICATE_KIND_LABELS } from '@/domain/certificates/certificate-rules';
 
@@ -69,6 +71,11 @@ export default async function ValidateCertificatePage({
   if (!result.ok) {
     return (
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-16">
+        <PageHeader
+          eyebrow={PLATFORM_NAV_GROUP}
+          title="Validação de certificado"
+        />
+
         <p className="rounded-lg border border-destructive/40 bg-card p-6 text-sm text-destructive">
           {result.message}
         </p>
@@ -86,10 +93,10 @@ export default async function ValidateCertificatePage({
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-6 py-12">
-      <header className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">EventFlow</p>
-        <h1 className="text-2xl font-semibold tracking-tight">Validação de certificado</h1>
-      </header>
+      <PageHeader
+        eyebrow={PLATFORM_NAV_GROUP}
+        title="Validação de certificado"
+      />
 
       <section
         className={`space-y-2 rounded-xl border ${style.border} bg-card p-6`}
