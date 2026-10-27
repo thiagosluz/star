@@ -1441,6 +1441,43 @@ test.describe('telas públicas', () => {
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
+   *  A DESCOBERTA DE EVENTOS ENTRA NO PORTÃO (FASE 82 · fatia 3)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  `/eventos` deixou de ser só a vitrine de descoberta: com a regra de entrada,
+   *  ela é a TELA DE ENTRADA de quem não tem vínculo nenhum (o degrau 5 de
+   *  `resolveEntryDestination`). O seletor de instituição, no mesmo ramo, também
+   *  passou a apontar para cá — e nenhuma das duas telas estava no `axe`.
+   *
+   *  É a mesma forma do defeito da FASE 66 e da FASE 70: a tela que nasce como
+   *  porta de entrada ficava fora da catraca. O `axe` mede o que está no DOM —
+   *  uma busca, as abas, os cartões e o controle de aparência do visitante —, e
+   *  "a tela sumiu" não é violação de regra nenhuma; por isso o caso AFIRMA o
+   *  formulário, o cartão do evento da fixture e o controle de tema antes de
+   *  varrer.
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  UM CASO SÓ, E NÃO ANÔNIMO × LOGADO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A tela NÃO lê a sessão: o cabeçalho, a busca e os cartões são os mesmos para
+   *  visitante e para pessoa autenticada (não há variante de "Minha área" aqui,
+   *  ao contrário da raiz da plataforma). Um segundo caso com `signInAs` mediria
+   *  exatamente o mesmo DOM — e um caso que não muda de desenho só engorda a
+   *  suíte. A busca por `q=<RUN_ID>` é o que garante que o cartão da fixture está
+   *  na página 1, independentemente do que outras execuções deixaram no banco.
+   */
+  test('a descoberta de eventos não tem violação crítica', async ({ page }) => {
+    await page.goto(`/eventos?q=${RUN_ID}`);
+
+    await expect(page.getByTestId('public-events-directory')).toBeVisible();
+    await expect(page.getByTestId('events-search-form')).toBeVisible();
+    await expect(page.getByTestId(`event-card-${eventId}`)).toBeVisible();
+    await expect(page.locator('footer').getByTestId('theme-choice')).toBeVisible();
+
+    await expectNoCriticalViolations(page, `descoberta de eventos (/eventos?q=${RUN_ID})`);
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
    *  A PÁGINA PÚBLICA DA INSTITUIÇÃO TAMBÉM PASSA PELO PORTÃO (FASE 64)
    * ─────────────────────────────────────────────────────────────────────────────
    *  `/t/<slug>` deixou de ser um redirect para o painel e virou a VITRINE da casa:

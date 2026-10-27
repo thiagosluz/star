@@ -94,6 +94,17 @@ const TITULO_PALESTRA = `Palestra sobre cerâmica ${RUN_ID}`;
 
 /** A atividade EM CURSO: começou há 20 minutos e termina em 40. */
 let agoraId: string;
+/**
+ * O instante EXATO em que a atividade em curso começou (FASE 81).
+ *
+ * A fixture gravava `Date.now() - 20 min` e o caso (e) RECALCULAVA a mesma conta
+ * no momento da asserção. Se o minuto virasse entre a criação e a leitura, o
+ * rótulo da página (`13:30`) e a expectativa (`13:31`) divergiam — o flake de
+ * minuto registrado na §4 do `AGENTS.md`. Guardar o instante que FOI gravado é a
+ * correção honesta: a asserção compara a JANELA exibida com o dado que a gerou,
+ * não com um relógio que já andou.
+ */
+let agoraInicio: Date;
 const TITULO_AGORA = `Mesa ao vivo ${RUN_ID}`;
 
 /** O título com acento e vírgula: prende o escape do RFC e o nome do arquivo. */
@@ -162,10 +173,12 @@ test.beforeAll(async () => {
    * A atividade EM CURSO — criada pelo relógio, e não pelo calendário: o "agora" é o
    * único cenário que depende de o instante bater com o intervalo.
    */
+  agoraInicio = new Date(Date.now() - 20 * 60_000);
+
   agoraId = await criarAtividade({
     slug: `f65-agora-${RUN_ID}`,
     title: TITULO_AGORA,
-    startsAt: new Date(Date.now() - 20 * 60_000),
+    startsAt: agoraInicio,
     endsAt: new Date(Date.now() + 40 * 60_000),
     workloadMinutes: 60,
     roomId: sala.id,
@@ -660,7 +673,7 @@ test.describe('(c) o link do Google Calendar', () => {
 
       await expect(google).toHaveAttribute(
         'aria-label',
-        `Adicionar ao Google Calendar a próxima atividade: ${TITULO_MINICURSO}`,
+        `Adicionar a próxima ao Google Calendar: ${TITULO_MINICURSO}`,
       );
 
       const href = new URL((await google.getAttribute('href'))!);
@@ -769,17 +782,18 @@ test.describe('(e) a aba "Acontecendo agora"', () => {
       /**
        * O horário da SALA, no fuso do evento. A atividade começou há vinte minutos, e o
        * rótulo tem de trazer a HORA LOCAL dela — o mesmo defeito de fuso medido no caso
-       * (d) apareceria aqui como 13:xx em vez de 10:xx.
+       * (d) apareceria aqui como 13:xx em vez de 10:xx. A régua é o instante GRAVADO
+       * pela fixture (`agoraInicio`), não um `Date.now()` recalculado aqui: o minuto
+       * que vira entre a criação e a asserção não pode mudar a expectativa.
        */
-      const inicio = new Date(Date.now() - 20 * 60_000);
       const horaLocal = new Intl.DateTimeFormat('pt-BR', {
         hour: '2-digit',
         hourCycle: 'h23',
         timeZone: FUSO,
-      }).format(inicio);
+      }).format(agoraInicio);
 
       await expect(page.getByTestId(`agora-horario-${agoraId}`)).toContainText(
-        rotuloNoEvento(inicio),
+        rotuloNoEvento(agoraInicio),
       );
       await expect(page.getByTestId(`agora-horario-${agoraId}`)).toContainText(horaLocal);
 

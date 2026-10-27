@@ -239,6 +239,34 @@ export default async function PlatformHomePage() {
       </section>
 
       {/* ─── EVENTOS EM DESTAQUE NA PLATAFORMA ───────────────────────────────── */}
+      {/*
+        ─────────────────────────────────────────────────────────────────────────
+         A ALTURA DESTA SEÇÃO NÃO PODE DEPENDER DO BANCO (FASE 81)
+        ─────────────────────────────────────────────────────────────────────────
+        A seção lê "eventos em destaque" a cada render, e isso é proposital: a
+        vitrine é viva (FASE 71). O que NÃO pode ser vivo é a GEOMETRIA dela.
+
+        O `f62` fotografa a PÁGINA INTEIRA (`fullPage`) e mascara os dois blocos
+        dinâmicos — mas máscara esconde PIXEL, não LAYOUT: a seção continua
+        ocupando espaço na imagem, e o rodapé (o alvo real da linha de base) fica
+        onde ela terminar. Enquanto a altura seguir o dado, toda execução que
+        deixar um evento a mais no banco (a suíte de integração do Vitest deixa)
+        muda a altura da página e reprova o snapshot por um motivo que não é
+        desenho — o "defeito" seria a fixture, não a tela.
+
+        O desenho promete DUAS FILEIRAS de três cartões. O cartão passou a ter
+        altura fixa de 237 px (título em até duas linhas, resumo em uma, ficha e
+        rodapé), então a grade reserva 2 × 237 + 24 (o vão) = 498 px para
+        QUALQUER quantidade de 0 a 6 eventos. O `min-h` não corta conteúdo: ele é
+        MAIOR que o conteúdo máximo do cartão (225 px) — cortar exigiria uma
+        altura menor que o texto, que é justamente o que não se faz aqui.
+
+        O resumo perdeu a segunda linha (`line-clamp-1`): ele era o único bloco
+        do cartão cuja altura variava com o DADO (dois eventos da lista têm
+        resumo, três não; uns ocupam duas linhas, outros uma). Uma linha é o
+        mesmo tipo de recorte que o desenho já fazia em duas; a diferença é que
+        agora o teto do cartão é conhecido antes de o banco responder.
+      */}
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 space-y-8" data-testid="featured-events-section">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
@@ -261,7 +289,7 @@ export default async function PlatformHomePage() {
         </div>
 
         {featuredEvents.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center space-y-3">
+          <div className="flex min-h-[498px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-12 text-center space-y-3">
             <CalendarDays className="mx-auto size-10 text-muted-foreground" aria-hidden />
             <h3 className="text-base font-semibold text-foreground">Novos eventos sendo preparados</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
@@ -277,7 +305,7 @@ export default async function PlatformHomePage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid min-h-[498px] content-center gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {featuredEvents.map((event) => {
               const eventPublicUrl = buildTenantUrl({
                 slug: event.tenantSlug,
@@ -287,9 +315,9 @@ export default async function PlatformHomePage() {
               return (
                 <article
                   key={event.id}
-                  className="group flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition hover:border-primary/50 hover:shadow-md"
+                  className="group flex min-h-[237px] flex-col justify-between rounded-xl border border-border bg-card p-4 transition hover:border-primary/50 hover:shadow-md"
                 >
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="rounded-full border border-border bg-muted/60 px-2.5 py-0.5 font-medium text-foreground text-xs">
                         {getEventCategoryLabel(event.category)}
@@ -306,13 +334,13 @@ export default async function PlatformHomePage() {
                     </h3>
 
                     {event.summary ? (
-                      <p className="text-xs text-muted-foreground line-clamp-2">
+                      <p className="text-xs text-muted-foreground line-clamp-1">
                         {event.summary}
                       </p>
                     ) : null}
                   </div>
 
-                  <div className="mt-5 pt-4 border-t border-border/60 space-y-3">
+                  <div className="mt-3 pt-3 border-t border-border/60 space-y-2">
                     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1.5 truncate">
                         <CalendarDays className="size-3.5 shrink-0" aria-hidden />

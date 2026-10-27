@@ -47,6 +47,9 @@ const MEMBRO: TenantMembership = {
   tenantName: 'Instituto Exemplo',
   tenantLogoUrl: null,
   status: 'ACTIVE',
+  kind: 'MEMBER',
+  joinedAt: new Date('2026-01-01T00:00:00-03:00'),
+  createdAt: new Date('2026-01-01T00:00:00-03:00'),
   /**
    * SEM PAPEL. O vínculo é a única coisa que a guarda pode exigir; é este detalhe
    * que prende "não exigir permissão de organizador".

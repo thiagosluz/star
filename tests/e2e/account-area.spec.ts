@@ -127,7 +127,11 @@ async function signInWithTwoFactor(
   await page.waitForURL(/\/login\/dois-fatores/, { timeout: 30_000 });
   await page.getByTestId('challenge-code').fill(totpFromBase32(base32Key));
   await page.getByTestId('submit-challenge').click();
-  await page.waitForURL(/selecionar-instituicao/, { timeout: 30_000 });
+  /**
+   * A conta deste cenário NÃO tem vínculo com instituição: a regra de entrada
+   * (FASE 82) manda para a descoberta de eventos, e não mais para o seletor vazio.
+   */
+  await page.waitForURL(/\/eventos$/, { timeout: 30_000 });
 }
 
 async function signUp(api: import('@playwright/test').APIRequestContext, name: string) {
@@ -276,7 +280,8 @@ test.describe('área de conta', () => {
       await page.getByTestId('challenge-code').fill(totpFromBase32(manualKey));
       await page.getByTestId('submit-challenge').click();
 
-      await page.waitForURL(/selecionar-instituicao/, { timeout: 30_000 });
+      // Sem vínculo com instituição, o destino da regra é a descoberta (FASE 82).
+      await page.waitForURL(/\/eventos$/, { timeout: 30_000 });
 
       const session = await page.request.get('/api/auth/get-session');
       expect((await session.json())?.user?.email).toBe(email);
@@ -292,7 +297,7 @@ test.describe('área de conta', () => {
       await page.getByTestId('challenge-code').fill(firstBackupCode);
       await page.getByTestId('submit-challenge').click();
 
-      await page.waitForURL(/selecionar-instituicao/, { timeout: 30_000 });
+      await page.waitForURL(/\/eventos$/, { timeout: 30_000 });
 
       // O código é de USO ÚNICO: o segundo uso do mesmo código é recusado.
       await signInAs(page, email);

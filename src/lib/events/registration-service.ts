@@ -776,7 +776,19 @@ async function applyParticipantLink(
       invitedAt: null,
       invitedById: null,
     },
-    update: { status: 'ACTIVE', deletedAt: null, joinedAt: now },
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  `joinedAt` SÓ NASCE NO `create` (FASE 83)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O `update` existia para a corrida de duas inscrições simultâneas e para
+     *  ativar um convite pendente — e regravava `joinedAt = now` nos dois casos.
+     *  Só que `joinedAt` não é telemetria: é o degrau de ANTIGUIDADE do desempate
+     *  do vínculo ativo (`active-membership.ts`: MEMBER → mais antigo → tenantId).
+     *  Reescrevê-lo a cada inscrição apagava a data real do vínculo e mudava a
+     *  escolha implícita de instituição sem ninguém pedir. O vínculo que já existe
+     *  mantém a data que tem; quem a define é a CRIAÇÃO.
+     */
+    update: { status: 'ACTIVE', deletedAt: null },
     select: { id: true },
   });
 

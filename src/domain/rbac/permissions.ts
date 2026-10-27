@@ -308,6 +308,20 @@ export const ROLE_KEYS = [
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
 /**
+ * O valor é uma chave do catálogo?
+ *
+ * As chaves chegam do BANCO como `string` (`roleAssignments.role`), e o TypeScript
+ * não sabe que a coluna é um enum do domínio. Sem esta guarda, cada leitor de
+ * papel faria o próprio `as RoleKey` — e um valor legado ou digitado à mão
+ * passaria a ser tratado como papel válido em um lugar e não em outro. Quem não
+ * é do catálogo não tem rótulo próprio nem permissões: `roleLabel` cai no
+ * fallback (devolve a chave) e `permissionsForRole` devolve lista vazia.
+ */
+export function isRoleKey(value: string): value is RoleKey {
+  return (ROLE_KEYS as readonly string[]).includes(value);
+}
+
+/**
  * Rótulo do papel em português (FASE 21).
  *
  * ─────────────────────────────────────────────────────────────────────────────

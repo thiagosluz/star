@@ -31,8 +31,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { auth } from '@/lib/auth/auth';
+import { pickActiveMembership } from '@/lib/auth/active-membership';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant } from '@/lib/db/tenant-client';
+import type { MembershipKind } from '@/domain/tenancy/membership-rules';
 import type { PlatformPrincipal, Principal, RoleAssignment } from '@/domain/rbac/authorization';
 
 /** Nome do cookie que carrega a instituição ativa. */
@@ -108,6 +110,23 @@ export interface TenantMembership {
   tenantName: string;
   tenantLogoUrl: string | null;
   status: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'REMOVED';
+  /**
+   * Equipe (`MEMBER`) ou público de evento (`PARTICIPANT`) — FASE 83.
+   *
+   * Entra no tipo porque o DESEMPATE do vínculo ativo precisa dele: um vínculo
+   * criado por inscrição pública não pode virar a "casa" da pessoa só porque o
+   * nome da instituição vem antes no alfabeto. A tela de equipe já usa o mesmo
+   * conceito; aqui ele é lido, não classificado.
+   */
+  kind: MembershipKind;
+  /**
+   * Quando o vínculo passou a valer. Nulo em convite nunca aceito e em linha
+   * antiga (o backfill da FASE 14 não preencheu todas) — por isso o desempate
+   * tem `createdAt` como reserva.
+   */
+  joinedAt: Date | null;
+  /** Criação da linha; imutável, ao contrário de `joinedAt` (ver a nota em `active-membership.ts`). */
+  createdAt: Date;
   roles: readonly string[];
   isPrivileged: boolean;
 }
@@ -135,6 +154,17 @@ const PRIVILEGED = new Set(['OWNER', 'ADMIN', 'ORGANIZER']);
  * Esta consulta atravessa tenants por natureza ("a quais instituições pertenço?"),
  * então roda com a conexão admin. Ela é estritamente limitada ao `userId` da
  * sessão autenticada — nunca aceita um id vindo do cliente.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A ORDEM POR NOME CONTINUA AQUI (FASE 83)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O `orderBy` por `tenant.name` NÃO foi trocado pelo desempate do vínculo ativo
+ *  (que agora ordena em memória, em `pickActiveMembership`). Motivo: esta ordem é
+ *  a do SELETOR e do menu de conta — listar instituições em ordem alfabética é o
+ *  que a pessoa espera na hora de escolher. Se o desempate morasse aqui, o
+ *  vínculo ativo escolhido passaria a depender do que a tela mostra, e a lista
+ *  deixaria de ser alfabética para todo mundo (inclusive para quem só tem um
+ *  vínculo). O desempate é uma decisão de CONTEXTO, não uma ordenação de dados.
  */
 export async function loadMemberships(userId: string): Promise<TenantMembership[]> {
   const profiles = await adminPrisma.userTenantProfile.findMany({
@@ -147,6 +177,9 @@ export async function loadMemberships(userId: string): Promise<TenantMembership[
     select: {
       status: true,
       tenantId: true,
+      kind: true,
+      joinedAt: true,
+      createdAt: true,
       tenant: {
         select: { slug: true, name: true, logoUrl: true },
       },
@@ -180,6 +213,9 @@ export async function loadMemberships(userId: string): Promise<TenantMembership[
       tenantName: profile.tenant.name,
       tenantLogoUrl: profile.tenant.logoUrl,
       status: profile.status,
+      kind: profile.kind,
+      joinedAt: profile.joinedAt,
+      createdAt: profile.createdAt,
       roles,
       isPrivileged: roles.some((r) => PRIVILEGED.has(r)),
     };
@@ -373,15 +409,16 @@ export async function getRequestContext(): Promise<RequestContext | null> {
   const cookieStore = await cookies();
   const desiredSlug = parseActiveTenant(cookieStore.get(ACTIVE_TENANT_COOKIE)?.value);
 
-  // Só aceitamos o contexto se o vínculo existir E estiver ATIVO. Um convite
-  // pendente não concede contexto operacional (fail-closed).
-  const activeTenant =
-    (desiredSlug
-      ? memberships.find((m) => m.tenantSlug === desiredSlug && m.status === 'ACTIVE')
-      : undefined) ??
-    // Sem cookie válido: usa o primeiro vínculo ativo como padrão.
-    memberships.find((m) => m.status === 'ACTIVE') ??
-    null;
+  /**
+   * A escolha do vínculo ativo é a MESMA do fluxo de entrada (FASE 82 · fatia 2).
+   *
+   * Ela morava aqui e era copiada no adaptador de destino; duas cópias divergem no
+   * primeiro ajuste e o login mandaria a pessoa para uma instituição enquanto a
+   * casca renderizaria outra. O critério — cookie revalidado contra vínculos
+   * ATIVOS, senão o MELHOR ATIVO (tipo → antiguidade → id, FASE 83) — vive em
+   * `pickActiveMembership`.
+   */
+  const activeTenant = pickActiveMembership(memberships, desiredSlug);
 
   const principal = activeTenant
     ? await loadPrincipal(user.id, activeTenant.tenantId, activeTenant.status)

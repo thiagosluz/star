@@ -31,6 +31,7 @@ import {
 
 import { can, holdsPermission, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS, type RoleScope } from '@/domain/rbac/permissions';
+import { PLATFORM_HOME_PATH } from '@/domain/platform/platform-nav-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import type { ShellNavGroup } from '@/components/shell/app-shell';
 
@@ -80,13 +81,22 @@ export type TenantNavGroup = (typeof TENANT_NAV_GROUPS)[keyof typeof TENANT_NAV_
  *  `/superadmin` é um `redirect` para as métricas, e a trilha aponta para a tela
  *  final em vez de fazer a pessoa passar por um salto a mais. (O guia de estilo
  *  já usava este mesmo destino.)
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O CAMINHO VEM DO DOMÍNIO (FASE 82 · fatia 2)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A fatia 1 fez o caminho errado: o domínio importava `PLATFORM_CRUMB` daqui
+ *  para decidir o destino de entrada. O rótulo e a trilha são interface e podem
+ *  morar no componente; o ENDEREÇO é fato do produto e mora em
+ *  `src/domain/platform/platform-nav-rules.ts` — este arquivo passa a importá-lo,
+ *  e o domínio deixou de depender de `src/components`.
  */
 export const PLATFORM_NAV_GROUP = 'Plataforma' as const;
 
 /** O primeiro item da trilha de qualquer tela de plataforma — com destino. */
 export const PLATFORM_CRUMB = {
   label: PLATFORM_NAV_GROUP,
-  href: '/superadmin/metricas',
+  href: PLATFORM_HOME_PATH,
 } as const satisfies { label: string; href: string };
 
 /**
@@ -474,7 +484,14 @@ export function buildPlatformNav(): ShellNavGroup[] {
     {
       title: 'Governança',
       items: [
-        { href: '/superadmin/metricas', label: 'Métricas', icon: <Gauge className="size-4" aria-hidden />, exact: true },
+        {
+          // O primeiro item da trilha e o do menu são o MESMO endereço: a constante
+          // do domínio evita que "métricas" mude de tela em um lugar e não no outro.
+          href: PLATFORM_HOME_PATH,
+          label: 'Métricas',
+          icon: <Gauge className="size-4" aria-hidden />,
+          exact: true,
+        },
         {
           href: '/superadmin/tenants',
           label: 'Instituições',

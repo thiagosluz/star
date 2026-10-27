@@ -216,7 +216,17 @@ export async function linkUser(options: {
 export async function grantRole(options: {
   tenantId: string;
   userId: string;
-  role: 'OWNER' | 'ADMIN' | 'ORGANIZER' | 'CHAIR' | 'REVIEWER' | 'STAFF' | 'SPEAKER' | 'PARTICIPANT';
+  role:
+    | 'OWNER'
+    | 'ADMIN'
+    | 'ORGANIZER'
+    | 'FINANCE'
+    | 'CHAIR'
+    | 'REVIEWER'
+    | 'STAFF'
+    | 'SPEAKER'
+    | 'SPONSOR'
+    | 'PARTICIPANT';
   scope?: 'TENANT' | 'EVENT' | 'ACTIVITY';
   eventId?: string;
   /**

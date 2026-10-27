@@ -17,6 +17,9 @@ import { adminPrisma } from '@/lib/db/admin-client';
 import { recordIdentityEvent } from '@/lib/auth/identity-audit';
 import { maskEmail } from '@/domain/participants/participant-rules';
 import { ACTIVE_TENANT_COOKIE, serializeActiveTenant } from '@/lib/auth/session';
+import { resolveEntryDestinationForUser } from '@/lib/auth/entry-destination';
+import { isSafeEntryRedirect } from '@/domain/platform/entry-destination-rules';
+import { SELECT_INSTITUTION_PATH } from '@/domain/platform/vitrine-account-rules';
 import { cookies } from 'next/headers';
 import {
   PASSWORD_MAX_LENGTH,
@@ -95,6 +98,21 @@ function authErrorMessage(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * O id do usuário na resposta da biblioteca (`{ token, user }` ou
+ * `{ twoFactorRedirect: true }`).
+ *
+ * A resposta é tipada pela própria biblioteca, mas o formato do objeto de usuário
+ * é grande e muda entre versões menores: ler só o que a aplicação usa, com
+ * `typeof`, evita `any` e evita depender de um campo que pode não vir. `null`
+ * significa "a biblioteca não devolveu o usuário" — e quem chama decide o que
+ * fazer sem ele.
+ */
+function userIdFromAuthResult(result: unknown): string | null {
+  const user = (result as { user?: { id?: unknown } } | null)?.user;
+  return typeof user?.id === 'string' ? user.id : null;
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cadastro
 // ───────────────────────────────────────────────────────────────────────────────
@@ -115,8 +133,10 @@ export async function signUpAction(
     };
   }
 
+  let createdUserId: string | null = null;
+
   try {
-    await auth.api.signUpEmail({
+    const created = await auth.api.signUpEmail({
       body: {
         name: parsed.data.name,
         email: parsed.data.email,
@@ -124,6 +144,8 @@ export async function signUpAction(
       },
       headers: await headers(),
     });
+
+    createdUserId = userIdFromAuthResult(created);
   } catch (error) {
     return {
       ok: false,
@@ -133,18 +155,35 @@ export async function signUpAction(
 
   /**
    * Um visitante que se cadastra a partir da página de uma atividade deve voltar
-   * para lá, não para o seletor genérico. Aceitamos apenas caminho relativo.
+   * para lá, não para o destino padrão. A validação passou a ser a MESMA da regra
+   * (`isSafeEntryRedirect`), no lugar das duas comparações ad-hoc que aceitavam
+   * `/login` (laço) e `/\evil.test` (open redirect no navegador).
+   *
+   * O branch continua AQUI, e não só dentro da regra, por um motivo medido: quem
+   * chegou com um destino válido não precisa pagar a leitura de vínculos nem a
+   * consulta ADMINISTRATIVA de plataforma para saber para onde ir. A equivalência
+   * com o degrau 1 da regra é total — as duas chamam `isSafeEntryRedirect`.
    */
-  const intendedDestination = formData.get('redirectTo');
-  if (
-    typeof intendedDestination === 'string' &&
-    intendedDestination.startsWith('/') &&
-    !intendedDestination.startsWith('//')
-  ) {
+  const intendedDestination =
+    typeof formData.get('redirectTo') === 'string' ? String(formData.get('redirectTo')) : null;
+
+  if (isSafeEntryRedirect(intendedDestination)) {
     redirect(intendedDestination);
   }
 
-  redirect('/selecionar-instituicao');
+  /**
+   * Sem destino, QUEM entrou decide: operador de plataforma → governança; vínculo
+   * ativo → painel da instituição; convite pendente → seletor; nada → descoberta.
+   * Antes, o fim era `/selecionar-instituicao` para todo mundo — o SuperAdmin caía
+   * no seletor e quem não tinha vínculo caía numa tela sem caminho para `/eventos`.
+   */
+  if (createdUserId) {
+    redirect(
+      await resolveEntryDestinationForUser(createdUserId, { redirectTo: intendedDestination }),
+    );
+  }
+
+  redirect(SELECT_INSTITUTION_PATH);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -170,11 +209,14 @@ export async function signInAction(
    * Slug da instituição que originou o login. Quando o usuário entra por
    * `ufba.lvh.me/login`, já sabemos o contexto desejado — e o definimos ANTES
    * de redirecionar, para que ele caia direto no painel certo.
+   *
+   * O `redirectTo` NÃO depende desta prop (FASE 82): nenhuma tela passa
+   * `tenantSlug` ao `AuthForm`, então amarrar o destino a ela era o mesmo que
+   * ignorar o destino — era o defeito que esta fatia fecha.
    */
   const intendedTenant = formData.get('tenantSlug');
-  const redirectTo = typeof formData.get('redirectTo') === 'string'
-    ? String(formData.get('redirectTo'))
-    : null;
+  const redirectTo =
+    typeof formData.get('redirectTo') === 'string' ? String(formData.get('redirectTo')) : null;
 
   let result: unknown;
 
@@ -207,12 +249,29 @@ export async function signInAction(
     if (typeof intendedTenant === 'string' && intendedTenant.length > 0) {
       params.set('tenantSlug', intendedTenant);
     }
-    if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
+    if (isSafeEntryRedirect(redirectTo)) {
       params.set('redirectTo', redirectTo);
     }
 
     const query = params.toString();
     redirect(`/login/dois-fatores${query ? `?${query}` : ''}`);
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A VOLTA PARA ONDE A PESSOA ESTAVA — DEGRAU 1 DA PRECEDÊNCIA (FASE 82)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  É a única pergunta cuja resposta o USUÁRIO escolheu: quem clicou em "entrar e
+   *  continuar" numa atividade, num convite ou numa chamada volta para lá. Vem
+   *  antes do contexto de instituição e antes da regra padrão — e é o que faz o
+   *  `redirectTo` voltar a funcionar, porque até aqui ele só era lido dentro do
+   *  branch de `tenantSlug`, que ninguém preenche.
+   *
+   *  O `redirect()` fica FORA do `try`: ele sinaliza por exceção especial e um
+   *  `catch` em volta o engoliria.
+   */
+  if (isSafeEntryRedirect(redirectTo)) {
+    redirect(redirectTo);
   }
 
   if (typeof intendedTenant === 'string' && intendedTenant.length > 0) {
@@ -224,10 +283,20 @@ export async function signInAction(
       path: '/',
       maxAge: 60 * 60 * 24 * 30,
     });
-    redirect(redirectTo && redirectTo.startsWith('/') ? redirectTo : '/dashboard');
+    redirect('/dashboard');
   }
 
-  redirect('/selecionar-instituicao');
+  /**
+   * A REGRA ÚNICA decide o resto: operador de plataforma → governança; vínculo
+   * ativo (o do cookie, revalidado) → painel da instituição; convite pendente →
+   * seletor; nada → descoberta. Antes era `/selecionar-instituicao` para todos.
+   */
+  const signedInUserId = userIdFromAuthResult(result);
+  if (signedInUserId) {
+    redirect(await resolveEntryDestinationForUser(signedInUserId, { redirectTo }));
+  }
+
+  redirect(SELECT_INSTITUTION_PATH);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -277,14 +346,18 @@ export async function verifyTwoFactorLoginAction(
     };
   }
 
+  let verifiedUserId: string | null = null;
+
   try {
     if (totp) {
-      await auth.api.verifyTOTP({ body: { code: totp }, headers: await headers() });
+      const verified = await auth.api.verifyTOTP({ body: { code: totp }, headers: await headers() });
+      verifiedUserId = userIdFromAuthResult(verified);
     } else {
       const verified = await auth.api.verifyBackupCode({
         body: { code: backup! },
         headers: await headers(),
       });
+      verifiedUserId = userIdFromAuthResult(verified);
 
       /**
        * Código de recuperação usado = o aplicativo não estava à mão (ou foi perdido).
@@ -293,7 +366,7 @@ export async function verifyTwoFactorLoginAction(
        * código e não deixa rastro.
        */
       await recordIdentityEvent({
-        userId: (verified as unknown as { user?: { id?: string } }).user?.id ?? null,
+        userId: verifiedUserId,
         event: 'BACKUP_CODE_USED',
       });
     }
@@ -347,14 +420,29 @@ export async function verifyTwoFactorLoginAction(
       maxAge: 60 * 60 * 24 * 30,
     });
 
+    redirect(isSafeEntryRedirect(parsed.data.redirectTo) ? parsed.data.redirectTo : '/dashboard');
+  }
+
+  /**
+   * O segundo fator é uma PORTA DE ENTRADA como as outras (FASE 82): quem chegou
+   * com um destino volta para ele — e quem não chegou recebe a decisão da regra
+   * (governança, painel do vínculo, seletor do convite ou descoberta) em vez do
+   * seletor incondicional. As duas perguntas são independentes de `tenantSlug`,
+   * que nenhuma tela envia.
+   */
+  if (isSafeEntryRedirect(parsed.data.redirectTo)) {
+    redirect(parsed.data.redirectTo);
+  }
+
+  if (verifiedUserId) {
     redirect(
-      parsed.data.redirectTo && parsed.data.redirectTo.startsWith('/')
-        ? parsed.data.redirectTo
-        : '/dashboard',
+      await resolveEntryDestinationForUser(verifiedUserId, {
+        redirectTo: parsed.data.redirectTo ?? null,
+      }),
     );
   }
 
-  redirect('/selecionar-instituicao');
+  redirect(SELECT_INSTITUTION_PATH);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

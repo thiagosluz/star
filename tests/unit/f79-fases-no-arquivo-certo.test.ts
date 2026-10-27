@@ -17,11 +17,12 @@
  *  ou some do histórico —, e o teto volta a apertar sem que ninguém perceba. Por
  *  isso o invariante é teste, e ele morde nos dois sentidos:
  *
- *    • fase ≤ 25 NÃO pode aparecer como linha de tabela no `AGENTS.md`;
- *    • TODA fase > 25 conhecida precisa estar na tabela do `AGENTS.md`;
- *    • fase > 25 NÃO pode aparecer no arquivo histórico;
- *    • o arquivo histórico guarda as 23 fases históricas, e cada uma tem o seu
- *      documento (`docs/fase-NN-*.md`) — o registro não se apaga, muda de arquivo;
+ *    • fase MOVIDA NÃO pode aparecer como linha de tabela no `AGENTS.md`;
+ *    • TODA fase corrente conhecida precisa estar na tabela do `AGENTS.md`;
+ *    • fase que ninguém moveu NÃO pode aparecer no arquivo histórico;
+ *    • o arquivo histórico guarda as fases movidas (hoje 1–25, 29, 30, 31–35 e 36–42), e cada uma
+ *      tem o seu documento (`docs/fase-NN-*.md`) — o registro não se apaga, muda de
+ *      arquivo;
  *    • a §9 do `AGENTS.md` aponta para o arquivo novo (o ponteiro é o que impede
  *      alguém de "consertar" a ausência das fases antigas recolocando as linhas).
  *
@@ -54,7 +55,7 @@ const HISTORICO = 'docs/fases-historico.md';
 /** Linha de tabela cuja PRIMEIRA célula é o número da fase (`| 12 |`, `| 11A |`). */
 const LINHA_DE_FASE = /^\|\s*([0-9]+[A-Z]?)\s*\|/;
 
-/** O registro histórico: as fases que saíram da tabela corrente na FASE 79. */
+/** O registro histórico: as fases que saíram da tabela corrente na FASE 79, na FASE 82 e na FASE 83. */
 const FASES_HISTORICAS = [
   '1',
   '2',
@@ -79,14 +80,45 @@ const FASES_HISTORICAS = [
   '23',
   '24',
   '25',
+  // Movidas na FASE 82: as duas mais antigas que restavam na tabela corrente,
+  // quando a linha 82 fez o `AGENTS.md` encostar no teto outra vez.
+  '29',
+  '30',
+  // Movidas na FASE 83: as cinco mais antigas que restavam (64.825 bytes com a
+  // linha 83; as 31 a 35 desceram para o arquivo histórico).
+  '31',
+  '32',
+  '33',
+  '34',
+  '35',
+  // Movidas na FASE 84: as sete mais antigas que restavam (66.050 bytes com a
+  // linha 84 — acima do corte de 65.244 do harness); as 36 a 42 desceram juntas.
+  '36',
+  '37',
+  '38',
+  '39',
+  '40',
+  '41',
+  '42',
 ];
 
-/** A tabela corrente começa na F29 — a 26, a 27 e a 28 nunca existiram. */
-const FASES_CORRENTES = Array.from({ length: 51 }, (_, indice) => String(29 + indice));
+/**
+ * A tabela corrente começa na F43 — a 26, a 27 e a 28 nunca existiram; a 29 e a
+ * 30 desceram na F82, a 31 a 35 na F83, e a 36 a 42 na F84.
+ *
+ * A lista é DECLARADA, não derivada do `AGENTS.md`: é o gesto de declarar a fase
+ * nova que mantém a catraca honesta (o comentário do cabeçalho explica). A F80
+ * acrescentou a linha 80 à §9 sem estender esta lista e deixou a árvore vermelha
+ * (`expected [ '80' ] to deeply equal []`); a F81 estendeu até a 81, a F82 até a 82
+ * e o movimento das fases 29 e 30 baixou o começo para a 31; a F83 estendeu até a
+ * 83 e o movimento das 31 a 35 baixou o começo para a 36; a F84 estendeu até a 84 e o movimento das 36 a 42 baixou o começo para a 43.
+ */
+const FASES_CORRENTES = Array.from({ length: 42 }, (_, indice) => String(43 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',
-  '13', '14', '15', '16', '17', '23', '24', '25', '21', '22'];
+  '13', '14', '15', '16', '17', '23', '24', '25', '21', '22', '29', '30', '31', '32', '33', '34',
+  '35', '36', '37', '38', '39', '40', '41', '42'];
 
 function ler(caminho: string): string {
   return readFileSync(join(RAIZ, caminho), 'utf8');
@@ -117,9 +149,9 @@ function numeroDaFase(fase: string): number {
 const agents = tabelaDeFases(AGENTS);
 const historico = tabelaDeFases(HISTORICO);
 
-describe('FASE 79 · as fases 1 a 25 moram em docs/fases-historico.md', () => {
-  it('não há fase ≤ 25 como linha de tabela no AGENTS.md', () => {
-    const invasoras = agents.fases.filter((fase) => numeroDaFase(fase) <= 25);
+describe('FASE 79 · as fases movidas moram em docs/fases-historico.md', () => {
+  it('não há fase do histórico como linha de tabela no AGENTS.md', () => {
+    const invasoras = agents.fases.filter((fase) => FASES_HISTORICAS.includes(fase));
 
     expect(invasoras, 'estas fases voltaram para a tabela da §9; o lugar delas é o histórico').toEqual([]);
   });
@@ -132,20 +164,21 @@ describe('FASE 79 · as fases 1 a 25 moram em docs/fases-historico.md', () => {
     expect(desconhecidas, 'linha de fase que a catraca não conhece (declare-a em FASES_CORRENTES)').toEqual([]);
   });
 
-  it('o arquivo histórico guarda as 23 fases antigas, na ordem cronológica, e só elas', () => {
+  it('o arquivo histórico guarda as 37 fases movidas, na ordem cronológica, e só elas', () => {
     const emOrdemNumerica = [...historico.fases].sort(
       (a, b) => numeroDaFase(a) - numeroDaFase(b) || a.localeCompare(b),
     );
 
-    // O CONJUNTO: as 23 fases históricas, sem sobra e sem falta.
+    // O CONJUNTO: as 25 fases históricas, sem sobra e sem falta.
     expect(emOrdemNumerica).toEqual(FASES_HISTORICAS);
 
-    // A ORDEM: a cronológica da tabela original (a 21 e a 22 vêm depois da 25).
+    // A ORDEM: a cronológica da tabela original (a 21 e a 22 vêm depois da 25;
+    // a 29 e a 30, movidas na F82, entram no fim).
     expect(historico.fases).toEqual(ORDEM_CRONOLOGICA);
   });
 
-  it('o arquivo histórico não recebe fase > 25 (ele não cresce)', () => {
-    const jovens = historico.fases.filter((fase) => numeroDaFase(fase) > 25);
+  it('o arquivo histórico não recebe fase que ninguém moveu (ele não cresce sozinho)', () => {
+    const jovens = historico.fases.filter((fase) => !FASES_HISTORICAS.includes(fase));
 
     expect(jovens, 'fase recente no arquivo histórico: a tabela corrente é a do AGENTS.md').toEqual([]);
   });

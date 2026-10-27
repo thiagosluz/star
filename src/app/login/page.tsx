@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { PageHeader } from '@/components/ui';
 import { signInAction } from '@/app/actions/auth-actions';
+import { resolveEntryDestinationForUser } from '@/lib/auth/entry-destination';
+import { isSafeEntryRedirect } from '@/domain/platform/entry-destination-rules';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 
 export const metadata = { title: 'Entrar' };
@@ -13,16 +15,26 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ redirectTo?: string; senha?: string }>;
 }) {
-  // Já autenticado não tem o que fazer aqui.
-  if (await getAuthenticatedUser()) {
-    redirect('/selecionar-instituicao');
+  const params = await searchParams;
+
+  /**
+   * Já autenticado não tem o que fazer aqui — e o destino é o MESMO da entrada
+   * (FASE 82): a regra decide entre governança, painel do vínculo, seletor do
+   * convite e descoberta. Antes era `/selecionar-instituicao` para todo mundo, o
+   * que devolvia o SuperAdmin ao seletor toda vez que ele caísse nesta tela.
+   */
+  const user = await getAuthenticatedUser();
+  if (user) {
+    redirect(await resolveEntryDestinationForUser(user.id, { redirectTo: params.redirectTo }));
   }
 
-  const params = await searchParams;
-  const redirectTo =
-    params.redirectTo && params.redirectTo.startsWith('/') && !params.redirectTo.startsWith('//')
-      ? params.redirectTo
-      : undefined;
+  /**
+   * Aceita apenas caminho relativo. A validação é a da REGRA (`isSafeEntryRedirect`),
+   * não uma segunda cópia: ela já recusa `//evil.com`, `/\evil.com`, `https://…` e
+   * as próprias telas de entrada (voltar ao formulário que a pessoa acabou de
+   * preencher é laço, não destino).
+   */
+  const redirectTo = isSafeEntryRedirect(params.redirectTo) ? params.redirectTo : undefined;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">

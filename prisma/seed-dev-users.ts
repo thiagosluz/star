@@ -433,11 +433,22 @@ async function main() {
           },
           // Reafirma o estado a cada execução: o teste de "suspenso" precisa
           // continuar suspenso mesmo depois de alguém mexer na tela.
+          //
+          // ───────────────────────────────────────────────────────────────────
+          //  `joinedAt` NÃO ENTRA NO `update` — ELE É DADO, NÃO TELEMETRIA
+          // ───────────────────────────────────────────────────────────────────
+          //  Até a FASE 83 este bloco regravava `joinedAt = new Date()` em todo
+          //  vínculo ACTIVE, a cada `npm run db:seed:dev`. Isso não é telemetria:
+          //  `joinedAt` é um dos degraus do desempate do vínculo ativo
+          //  (`active-membership.ts`: MEMBER → vínculo mais antigo → tenantId).
+          //  Reescrevê-lo fazia o seed APAGAR a antiguidade que o banco já tinha —
+          //  e a escolha implícita de instituição mudava de dono só porque alguém
+          //  rodou o seed de novo. Quem define o campo é o `create`: um vínculo
+          //  existente mantém a data em que passou a valer.
           update: {
             status: link.status,
             kind: classifyMembershipKind(link.roles.map((grant) => grant.role)),
             deletedAt: null,
-            joinedAt: link.status === 'ACTIVE' ? new Date() : null,
           },
         });
 

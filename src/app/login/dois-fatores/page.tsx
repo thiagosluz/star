@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { TwoFactorChallengeForm } from '@/components/auth/password-recovery-forms';
 import { PageHeader } from '@/components/ui';
 import { verifyTwoFactorLoginAction } from '@/app/actions/auth-actions';
+import { isSafeEntryRedirect } from '@/domain/platform/entry-destination-rules';
 
 export const metadata = { title: 'Verificação em duas etapas' };
 
@@ -34,10 +35,14 @@ export default async function TwoFactorChallengePage({
 }) {
   const params = await searchParams;
   const tenantSlug = typeof params.tenantSlug === 'string' ? params.tenantSlug : undefined;
-  const redirectTo =
-    typeof params.redirectTo === 'string' && params.redirectTo.startsWith('/')
-      ? params.redirectTo
-      : undefined;
+
+  /**
+   * A validação do destino é a MESMA das outras portas de entrada (FASE 82):
+   * `startsWith('/')` sozinho aceitava `//evil.test`, e o valor viaja na URL até o
+   * `verifyTwoFactorLoginAction`. A action valida de novo — esta é a primeira das
+   * duas camadas, não a única.
+   */
+  const redirectTo = isSafeEntryRedirect(params.redirectTo) ? params.redirectTo : undefined;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">

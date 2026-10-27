@@ -104,12 +104,28 @@ docker exec eventflow-postgres psql -U eventflow_admin -d eventflow -c \
 
 | Conta | O que você vai ver | Por quê |
 |---|---|---|
-| `multi@` | Ao abrir `/t/ufba-demo/...` pela primeira vez, você é levado ao **seletor de instituição** | Com mais de um vínculo ativo não existe contexto implícito — a escolha é explícita (`/selecionar-instituicao`) |
+| `multi@` | Ao entrar **sem cookie de contexto**, você é levado ao **seletor de instituição** | Existe um contexto implícito **determinístico** (cookie válido vence; sem ele, `MEMBER` → vínculo mais antigo → `tenantId`), mas com **2 ou mais** vínculos ativos e **nenhuma escolha registrada** a entrada **pergunta** em vez de adivinhar. O seletor também aparece por URL direta, pelo menu ("Ver todas as instituições") e quando o slug da URL difere do contexto |
 | `organizador-evento@` | O painel geral (`/administracao`) **redireciona** ao painel; a página do evento abre normalmente | O papel tem escopo de EVENTO: ele administra aquele evento, não a instituição |
 | `convidado@` | Nenhuma instituição aparece | A plataforma é **fail-closed**: `INVITED` não concede contexto |
 | `suspenso@` | "Acesso bloqueado" na página da atividade | Decisão da instituição (ADR-061): a inscrição pública **não** readmite quem foi suspenso |
 | `patrocinador@` | "Inscrição não permitida" | Tem vínculo ativo, mas `SPONSOR` não tem `registration:create` — a fronteira entre "é membro" e "pode agir" |
 | `semvinculo@` | Formulário de inscrição, com aviso de que a conta passará a ser participante | Inscrição pública (FASE 10): o vínculo nasce da inscrição |
+
+> **Nota medida na FASE 83 — o resíduo que ainda está no banco local.** O
+> `participante@eventflow.test` tem **dois** vínculos `ACTIVE` no banco de
+> desenvolvimento deste ambiente: `ufba-demo` (seed) e `f21-apertada-035169fa`
+> ("Instituição sem espaço 035169fa"). A instituição foi criada pela fixture de
+> `tests/integration/member-lifecycle.test.ts` numa execução anterior e **não foi
+> apagada**; o vínculo do `participante@` nasceu depois, de uma inscrição pública
+> nessa instituição. A fixture passou a **apagar as duas instituições que cria**, e o
+> `db:seed:dev` deixou de reescrever `joinedAt`, então novas execuções não produzem
+> esse resíduo. O dado **já existente não foi apagado** (a remoção exigiria
+> autorização): enquanto ele estiver lá, essa conta continua com dois vínculos e a
+> entrada pergunta qual instituição — o que é o comportamento correto para 2+
+> vínculos. Proposta, com autorização explícita:
+> `DELETE FROM tenants WHERE slug = 'f21-apertada-035169fa';` (a cascata leva o
+> vínculo; o mesmo vale para as outras famílias medidas: `f21-membros-*`,
+> `f15-comunicacao-*`, `f15-quota-*` e `f22-outra-*`).
 
 ---
 
@@ -140,7 +156,11 @@ ausência do evento alheio.
    > O campo `user.passwordHash` é **legado e não é usado pelo Better Auth** — as
    > contas do seed principal (ana, bruno, carla, diego) não conseguem logar porque
    > não têm linha em `account`, e não por causa daquele campo.
-3. **Vínculo** — `user_tenant_profiles` (`ACTIVE`, `INVITED` ou `SUSPENDED`).
+3. **Vínculo** — `user_tenant_profiles` (`ACTIVE`, `INVITED` ou `SUSPENDED`). O
+   `joinedAt` de um vínculo **existente** é **preservado**: quem o define é o
+   `create`, e o `update` não toca nele — é a data que ordena o contexto
+   implícito (vínculo mais antigo), e o seed não pode reescrevê-la a cada
+   execução (FASE 83).
 4. **Papéis** — `role_assignments`, com `reason` marcado como deste script. As
    concessões do próprio script são apagadas e recriadas a cada execução, para que
    mudar um escopo aqui não deixe a concessão antiga vigente ao lado da nova.

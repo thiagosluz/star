@@ -62,8 +62,9 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *       de texto alheio (nome/e-mail da pessoa, nome da instituição), dois botões de
  *       tamanho fixo e um `<details>`. Quando a conta estoura, é AQUI.
  *    2. **O painel** (`/t/<slug>/dashboard`) — a tela de referência: shell + cabeçalho
- *       + cartões de indicador + listas + `code-data`. Se um token de superfície ou de
- *       texto mudar de valor, é a primeira a denunciar, e é a que todo mundo abre.
+ *       + cartões de indicador + os atalhos do perfil (FASE 84). Se um token de
+ *       superfície ou de texto mudar de valor, é a primeira a denunciar, e é a que
+ *       todo mundo abre.
  *    3. **O diretório de participantes** (`/t/<slug>/participantes`) — a tela mais
  *       DENSA do sistema num só lugar (o próprio portão de acessibilidade diz isso):
  *       formulário de filtro, painel de exportação, painel de recado, tabela de cinco
@@ -229,9 +230,13 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *       desenho: o que importa medir é que a linha trunca e que os dois botões ao lado
  *       continuam dentro da barra. Vale para a barra do desktop e para a gaveta do
  *       celular — sempre no contêiner que a tela realmente mostra.
- *    2. **A URL canônica do painel** (`code.code-data`, "URL canônica: /t/<slug>/dashboard")
- *       — traz o slug da instituição, que também carrega o `RUN_ID`. É texto de dado
- *       técnica dentro de um `<code>`; o desenho da linha continua medido.
+ *    2. **A URL canônica do painel SAIU DA TELA (FASE 84)** — e a máscara saiu junto.
+ *       Até a FASE 83 o rodapé do painel imprimia "URL canônica: /t/<slug>/dashboard"
+ *       num `code.code-data`, e o slug (que carrega o `RUN_ID`) era tapado. A fase
+ *       removeu aquele rodapé inteiro — ele era um placeholder falso ("Próximas fases
+ *       adicionam…") e um dado técnico que não interessa a quem abre o painel. Sem o
+ *       nó, não há o que mascarar: o painel passou a ser medido sem nenhum pixel
+ *       tapado além do e-mail da conta.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O DEFEITO QUE ESTA SUÍTE ACHOU — E A CORREÇÃO QUE ELA PRENDE
@@ -556,8 +561,9 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *
  *  As imagens foram OLHADAS antes de entrar — o que mudou é o desenho do topo, e o
  *  resto da tela é o mesmo. Nada foi mascarado para esconder o cabeçalho: as
- *  máscaras continuam sendo só as de DADO (e-mail, URL canônica, prévia da lista e
- *  carimbo). A prova de estabilidade é a de sempre e está no documento da fase: DUAS
+ *  máscaras continuam sendo só as de DADO (e-mail, prévia da lista e carimbo; a da
+ *  URL canônica do painel deixou de existir na FASE 84, junto com o rodapé). A prova
+ *  de estabilidade é a de sempre e está no documento da fase: DUAS
  *  execuções seguidas com `maxDiffPixelRatio: 0` deram **ZERO pixel** de diferença.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -599,6 +605,29 @@ import { composeSegment } from '../../src/domain/communication/segments';
  *      próprio (F64 · ADR-332), e o topo é dela;
  *    • `evento-aba-agora`, `evento-bloco-de-local`, `evento-inscricao` — tema do
  *      evento: quem manda no topo e na cor é o organizador.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 84 RE-BASEOU AS QUATRO LINHAS DO PAINEL — a tela mudou de PROPÓSITO
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O painel deixou de ser a prova do RBAC (papéis acumulados com UUID e a lista crua
+ *  de permissões) e passou a ser o painel de QUEM OLHA: os atalhos do perfil, os
+ *  contadores da instituição para quem gere e o botão de contexto no topo. É a
+ *  primeira mudança desta suíte que não é de token nem de topo — é de CONTEÚDO, e
+ *  por isso as quatro imagens mudam por inteiro, não por uma banda de pixels.
+ *
+ *    • `painel-desktop-claro` / `painel-desktop-escuro` ....... saíram as duas seções
+ *      (`role-summary` e `permissions`), o terceiro cartão ("Permissões efetivas") e
+ *      o rodapé com "URL canônica"; entraram o botão de contexto (nome + "Trocar"),
+ *      os cartões de atalho com o fato de cada um e, no perfil de gestão (a conta
+ *      desta fixture é OWNER), os dois contadores com `deletedAt`;
+ *    • `painel-celular-claro` / `painel-celular-escuro` ....... o mesmo conteúdo na
+ *      viewport do celular, com a gaveta aberta como sempre.
+ *
+ *  O que NÃO mudou: o título (`Painel de <instituição>`), o `eyebrow` "Geral", o
+ *  shell e a gaveta. As imagens foram OLHADAS antes de entrar. A semente do painel
+ *  continua determinística (`stats` conta os eventos/atividades da fixture, e os
+ *  atalhos imprimem contagens fixas) — a prova de estabilidade é a de sempre: duas
+ *  execuções seguidas com `maxDiffPixelRatio: 0` dão ZERO pixel.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -1733,11 +1762,6 @@ function mascaraDoEndereco(onde: Locator): Locator {
   return onde.getByText(emailDaConta, { exact: true });
 }
 
-/** A URL canônica do painel carrega o slug da instituição — que carrega o `RUN_ID`. */
-function mascaraDaUrlCanonica(page: Page): Locator {
-  return page.locator('main code.code-data');
-}
-
 /**
  * ─────────────────────────────────────────────────────────────────────────────
  *  OS DOIS BLOCOS DINÂMICOS DA RAIZ (FASE 78)
@@ -1826,8 +1850,17 @@ async function abrirGaveta(page: Page): Promise<void> {
 async function abrirPainel(page: Page): Promise<void> {
   await page.goto(`/t/${tenantSlug}/dashboard`);
 
-  /** Antes de fotografar: a tela é a que se espera, e não uma página de erro verde. */
+  /**
+   * Antes de fotografar: a tela é a que se espera, e não uma página de erro verde.
+   *
+   * `stats` continua sendo o contrato do PERFIL DE GESTÃO (a conta desta fixture é
+   * OWNER): a seção só existe para quem tem o bloco `gestao` (FASE 84). O botão de
+   * contexto é o contrato do topo novo — sem ele, a imagem poderia estar medindo a
+   * tela antiga, que também tinha `stats`.
+   */
   await expect(page.getByTestId('stats')).toBeVisible();
+  await expect(page.getByTestId('dashboard-context')).toBeVisible();
+  await expect(page.getByTestId('dashboard-blocks')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toContainText(TENANT_NAME);
 
   await estabilizar(page);
@@ -1942,7 +1975,7 @@ test.describe('desktop', () => {
 
     await expect(page).toHaveScreenshot('painel-desktop-claro.png', {
       ...TOLERANCIA,
-      mask: [mascaraDoEndereco(barraLateral(page)), mascaraDaUrlCanonica(page)],
+      mask: [mascaraDoEndereco(barraLateral(page))],
     });
   });
 
@@ -1954,7 +1987,7 @@ test.describe('desktop', () => {
 
     await expect(page).toHaveScreenshot('painel-desktop-escuro.png', {
       ...TOLERANCIA,
-      mask: [mascaraDoEndereco(barraLateral(page)), mascaraDaUrlCanonica(page)],
+      mask: [mascaraDoEndereco(barraLateral(page))],
     });
   });
 
@@ -2014,7 +2047,7 @@ test.describe('celular', () => {
 
     await expect(page).toHaveScreenshot('painel-celular-claro.png', {
       ...TOLERANCIA,
-      mask: [mascaraDoEndereco(gavetaDoCelular(page)), mascaraDaUrlCanonica(page)],
+      mask: [mascaraDoEndereco(gavetaDoCelular(page))],
     });
   });
 
@@ -2025,7 +2058,7 @@ test.describe('celular', () => {
 
     await expect(page).toHaveScreenshot('painel-celular-escuro.png', {
       ...TOLERANCIA,
-      mask: [mascaraDoEndereco(gavetaDoCelular(page)), mascaraDaUrlCanonica(page)],
+      mask: [mascaraDoEndereco(gavetaDoCelular(page))],
     });
   });
 

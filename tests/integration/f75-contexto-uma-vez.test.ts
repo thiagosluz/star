@@ -35,6 +35,15 @@
  *
  *  O que NÃO é substituído: `getRequestContext`, `loadMemberships`, `loadPrincipal`
  *  e as leituras das páginas — é o caminho real que se quer medir.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  O PAINEL ENTROU NESTA CATRACA NA FASE 84 · FATIA 2
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Ele não usava guarda e por isso ficou de fora da varredura da FASE 75: chamava
+ *  `getRequestContext()` e `loadPrincipal()` em sequência, pagando 2 + 2 em vez de
+ *  1 + 1. A fatia 2 removeu a segunda chamada, e o caso "o painel da instituição"
+ *  abaixo prende o número — a catraca agora cobre administração, raiz do evento,
+ *  participantes, painel e shell.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from 'node:crypto';
@@ -117,8 +126,15 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next/link', () => ({
-  default: (props: { href: string; children?: unknown }) =>
-    createElement('a', { href: props.href }, props.children as never),
+  /**
+   * O dublê repassa os atributos que não são `href`: o painel publica
+   * `data-testid` no link de contexto (FASE 84), e um dublê que só desenha `href`
+   * apagaria justamente o contrato que o teste quer ver no HTML.
+   */
+  default: (props: { href: string; children?: unknown; [key: string]: unknown }) => {
+    const { href, children, ...rest } = props;
+    return createElement('a', { href, ...rest }, children as never);
+  },
 }));
 
 /** Componente de cliente da tela: não participa da resolução de contexto. */
@@ -177,6 +193,17 @@ const { default: AdminEventDetailPage } = await import(
 );
 const { default: ParticipantsPage } = await import(
   '../../src/app/t/[tenantSlug]/(app)/participantes/page'
+);
+/**
+ * O PAINEL ENTROU NA CATRACA NA FASE 84 · FATIA 2.
+ *
+ * Ele chamava `loadPrincipal` por fora do contexto que já tinha vindo pronto:
+ * a SEGUNDA transação de `role_assignments` no mesmo render, com os mesmos
+ * argumentos e sem chance de a resposta divergir. A página deixou de chamar; o
+ * caso abaixo prende o número.
+ */
+const { default: DashboardPage } = await import(
+  '../../src/app/t/[tenantSlug]/(app)/dashboard/page'
 );
 const { default: TenantLayout } = await import('../../src/app/t/[tenantSlug]/(app)/layout');
 
@@ -346,6 +373,30 @@ describe('o contexto da requisição é resolvido UMA vez por render', () => {
     const html = await renderizar(pagina);
 
     expect(html).toContain('Participantes');
+    expect(contagem.memberships).toBe(1);
+    expect(contagem.principals).toBe(1);
+    /** Cross-check: cada resolução de contexto pergunta a sessão UMA vez. */
+    expect(contagem.sessoes).toBe(1);
+  });
+
+  /**
+   * O PAINEL MEDIA 2 + 2 — e passou a medir 1 + 1 (FASE 84 · fatia 2).
+   *
+   * Ele não usava guarda: chamava `getRequestContext()` e, logo abaixo,
+   * `loadPrincipal(context.user.id, tenantId, status)` com os MESMOS argumentos. A
+   * segunda transação não podia devolver outra coisa — o principal já estava no
+   * contexto. A página agora lê `context.principal` e o número abaixo é o contrato:
+   * se a chamada voltar, este caso reprova (e a catraca de fonte reprova sem banco).
+   */
+  it('o painel da instituição: 1 memberships + 1 principal', async () => {
+    const pagina = await DashboardPage({
+      params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+    });
+
+    const html = await renderizar(pagina);
+
+    expect(html).toContain(`Painel de Instituição do contexto único ${RUN}`);
+    expect(html).toContain('data-testid="dashboard-context"');
     expect(contagem.memberships).toBe(1);
     expect(contagem.principals).toBe(1);
     /** Cross-check: cada resolução de contexto pergunta a sessão UMA vez. */

@@ -114,7 +114,9 @@ async function signUpThroughUi(
     )
     .not.toBeNull();
 
-  await expect(page).toHaveURL(/selecionar-instituicao/);
+  // Sem vínculo e sem convite, a regra manda para a descoberta (FASE 82) — não
+  // mais para o seletor vazio, que só oferecia "Sair da conta".
+  await expect(page).toHaveURL(/\/eventos$/);
 
   return { id: userId!, email };
 }

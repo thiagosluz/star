@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 79** (**F56 a F79 entregues**)
-Testes ................. **4389** (Vitest: unit + integração, 246 arquivos) + **470** (Playwright E2E) + 1 skip
-ADRs ................... 375 (numeração GLOBAL e sequencial — a próxima é ADR-376)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 84** (**F56 a F84 entregues**)
+Testes ................. **4548** (Vitest: unit + integração, 254 arquivos) + **487** (Playwright E2E) + 1 skip
+ADRs ................... 383 (numeração GLOBAL e sequencial — a próxima é ADR-384)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -83,7 +83,8 @@ desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso 
 estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto, a
 primeira opção é **mover o próximo bloco para o histórico**, não condensar: o mais antigo ainda
 na tabela da §9 vai para [`docs/fases-historico.md`](docs/fases-historico.md), que guarda as
-fases **1 a 25** desde a FASE 79 (movidas como estavam), e a **§9 carrega a tabela corrente**
+fases **1 a 25** (FASE 79), **29 a 30** (FASE 82), **31 a 35** (FASE 83) e **36 a 42** (FASE 84), movidas como estavam,
+e a **§9 carrega a tabela corrente**
 (as fases recentes) + o ponteiro para o histórico. Condensar **apaga detalhe**; mover
 **preserva**. Só quando não der para mover é que se **condensa a linha mais antiga ainda na tabela** —
 corte em ~300 caracteres, num limite de palavra, fechando a linha com ` … | ✅ |` —, e o
@@ -111,7 +112,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4389 testes passando (246 arquivos)
+npm test              # esperado: 4548 testes passando (254 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -126,9 +127,8 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: 470 no total; medido na F78: **469 passando + 1 skip** (o f65
-                      # "Acontecendo agora" pode falhar intermitente; as 2 linhas do rodapé da
-                      # raiz estão VERDES desde o mask da F78)
+npm run test:e2e      # esperado: 487 no total; medido na F84: **486 passando + 1 skip** (os 6
+                      # casos novos são os do spec do painel por perfil; nenhum vermelho)
 ```
 
 **Armadilha crítica de verificação:** se o `--build` falhar, o `docker compose`
@@ -705,26 +705,13 @@ tests/{unit,integration,e2e}
 
 ## 9. Estado por fase e próximos passos
 
-> As fases **1 a 25** não estão mais nesta tabela: na **FASE 79** elas foram movidas **como
-> estavam** para [`docs/fases-historico.md`](docs/fases-historico.md) — o registro completo de
-> cada uma segue em `docs/fase-NN-*.md` e no `README.md`. A tabela abaixo é a corrente.
+> As fases **1 a 25** (FASE 79), **29 a 30** (FASE 82), **31 a 35** (FASE 83) e **36 a 42**
+> (FASE 84, quando a linha nova encostou no teto outra vez) foram movidas **como estavam** para
+> [`docs/fases-historico.md`](docs/fases-historico.md); o registro de cada uma segue em
+> `docs/fase-NN-*.md` e no `README.md`. A tabela abaixo é a corrente (**43 a 84**).
 
 | Fase | Tema | Situação |
 |---|---|---|
-| 29 | **Palco público e auditoria do sorteio** — telão com compromisso antes da apuração, contagem ao vivo e revelação automática; link + QR na tela de sorteios; lista publicada gravada na apuração e assinada no resultado; auditoria que refaz as contas no navegador | ✅ |
-| 30 | Sorteio ao vivo, em rodadas (compromisso, prêmio, patrocinador e resultado assinado por rodada; **"Criar para o palco"**, **roleta** com a lista publicada, **payload v4**; auditoria e resultado público por rodada) … | ✅ |
-| 31 | **Credenciamento e frequência por crachá** — um código por pessoa no evento, com o contexto da leitura decidindo o fato; chegada ≠ frequência (sessão por visita, minutos com teto no fim da atividade); emissão em massa, folha A4 em PDF, crachá online e modo monitor | ✅ |
-| 32 | **Central do participante** — diretório (união de vínculo e inscrição), ficha 360, recado por e-mail e caixa de entrada, panorama com taxa de comparecimento no fuso da instituição, exportação em CSV com trilha e ficha auditada | ✅ |
-| 33 | **Chamadas de propostas** — chamada como entidade (tipo, janela, cegueira, rubrica própria — CHAMADA → TRILHA → PADRÃO — e limite por autor por chamada); a proposta é uma submissão; formulário público; protocolo de aceite (o convite quita E25) | ✅ |
-| 34 | **Confirmação de vaga com prazo** — escolha por atividade (automática × exige confirmação, com prazo, o que é preciso e onde confirmar); a inscrição nasce retendo a vaga; avisos por e-mail e na plataforma; a vaga vencida é liberada e o próximo da fila é promovido | ✅ |
-| 35 | Resiliência de balcão e palco (**operação sem rede** no credenciamento, **sentido da leitura** no balcão — entrada × saída × alternar —, prêmio e patrocinador da rodada corrigíveis pela tela e **controles do palco** com pausa/replay/atalhos; quitou **E38, E39, E40 e E43**) — escopo definido pelo humano | ✅ |
-| 36 | Operação das rotinas automáticas (**histórico, saúde e "executar agora"** em `/superadmin/rotinas`, com a linha em `job_runs` servindo de registro E de exclusão mútua), **inspeção antivírus** dos arquivos (driver com o padrão em NÃO inspecionar, portão nos dois caminhos e ClamAV sob perfil), … | ✅ |
-| 37 | Crachá em **etiqueta adesiva** (PDF com grade configurável) e em **impressora térmica** (ZPL II configurável), e **confirmação de vaga por ITEM** (checklist snapshot da inscrição, com a vaga confirmada quando as obrigatórias acabam); quitou **E41** e **E48**) — escopo definido pelo humano | ✅ |
-| 38 | **Quadro de demandas internas do evento** — Kanban por evento com colunas configuráveis, equipes com líder, prazo no fuso do evento, comentários com menção e o cartão movido por arrastar **ou** por formulário (funciona sem JavaScript); quitou a METADE da E50 e declarou E51/E52 | ✅ |
-| 39 | **Rubrica com número livre de critérios** (1 a 12 critérios, com a chave **derivada do rótulo**; a **edição de trilha**, que não existia; e a rubrica **congelada a partir do primeiro parecer** — só rótulo, descrição e ordem seguem livres); declarou **E53**) — escopo definido pelo humano | ✅ |
-| 40 | **Editor visual do certificado** — arte de fundo, texto por variáveis, posicionamento por milímetros (arrastando ou digitando, sem JavaScript), cinco modelos e prévia pelo mesmo renderizador do PDF; o desenho congela no certificado e sem modelo vale o desenho antigo. Declarou E54/E55 | ✅ |
-| 41 | **Vitrine do patrocínio** — a cota define cor e tamanho da logo na página pública (Pequena · Média · Grande · Destaque), com prévia do cartão e amostras de cor; a coluna de cor existia desde a FASE 17 e não tinha leitor | ✅ |
-| 42 | **Experiência do patrocinador** — área de **só leitura** por **vínculo** (não pelo papel), **QR do estande** imprimível e XP/carta **uma vez por pessoa por QR**. … | ✅ |
 | 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não … | ✅ |
 | 44 | **Perfil público do participante** — `/u/<handle>` com **quinze campos** em três níveis (internet · quem participa da instituição · só eu), pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa** (o `user` é global: a … | ✅ |
 | 45 | **Equipe do evento na página pública** — bloco que o organizador adiciona ou não, com o corpo lido das equipes REAIS do evento na renderização; a etiqueta é o nome da equipe (quem está em duas aparece uma vez com as duas), líder … | ✅ |
@@ -762,13 +749,18 @@ tests/{unit,integration,e2e}
 | 77 | **O organizador novo** — o **caminho de partida** (3 fatias com os fatos do render, dentro da prontidão, "pronto" proibido por varredura e o alvo resolvido NO CATÁLOGO — o que consertou o link morto de `sem-programacao`); a **exportação na raiz** (o recorte na PROJEÇÃO, 3/3/210 → 2/2/90, o XP do livro-razão, 3 colunas fora e o `ATTENDANCES_CSV` em formato longo, com migração); e o **demo de LEITURA** (`/t/<slug>/exemplo` por vínculo + catraca de escrita provada por hash). ADR-369 … 371 | ✅ |
 | 78 | **O topo único** — a dívida **H1** fechada: **PageHeader server** (split de `navigation.tsx`, sem ~96 ilhas de cliente), com `eyebrow` = grupo de navegação da fonte única, **volta derivada da trilha** e `descriptionTestId`; **81 das 96 páginas migradas** e **15 exceções** motivadas (tema do evento, heróis, renderizador próprio e redirects); **`text-headline`** (16px) eliminado e **6 telas sem `<h1>`** corrigidas. Catracas: **fonte** + **12 telas** no navegador. ADR-372 … 374 | ✅ |
 | 79 | **O `AGENTS.md` volta a respirar** — as fases **1 a 25** saíram da tabela da §9 e foram **movidas como estavam** para `docs/fases-historico.md` (nenhuma linha reescrita), com um ponteiro de três linhas no lugar; a tabela corrente ficou com folga real e uma catraca nova reprova fase histórica na tabela e fase corrente no histórico. ADR-375 | ✅ |
+| 80 | **O ESLint 10, sem mudar uma linha de código** — `eslint` de `^9.39.5` para `^10.13.0` (o alvo medido): **920 arquivos lintados, 0/0** (o mesmo número de antes), `typecheck` 0, **4389 testes**, `build` OK e `npm ci` limpo com o lock novo; os três plugins do `eslint-config-next` (react, jsx-a11y e import) ainda declaram peer `^9` e o npm avisa `ERESOLVE` sem falhar — compatibilidade medida, não declarada; o E2E mediu **6 vermelhos** (3 de `label-content-name-mismatch`, expostos pelo `axe-core` 4.14; 2 de imagem pela seção mascarada que cresce com o dado; 1 intermitente de minuto no `f65`), nenhum do ESLint. ADR-376 | ✅ |
+| 81 | **O rótulo que cabe no nome · a altura que não depende do dado** — os **3 `aria-label`** passaram a **começar** pelo texto visível (`Baixar .ics…`, `Adicionar a próxima…`, `Baixar a minha agenda…`), com catraca de fonte de **6 casos**; a seção de destaques da raiz passou a reservar **duas fileiras de cartão** (498 px = 2 × 237 + vão) e o resumo a uma linha, então a página mede **714 px de seção / 3334 px de página** com 0 a 6 eventos — provado com **um evento a mais** e o `f62` **duas vezes a 0 px**, sem re-basear; o intermitente de minuto do `f65` virou determinístico (a expectativa usa o instante gravado); o portão fechou **39/39** e o `f62` **23/23**. ADR-377 | ✅ |
+| 82 | **A porta de entrada** — o destino de quem entra virou **regra pura** (`resolveEntryDestination`: `redirectTo` **OVERRIDE** → plataforma → vínculo `ACTIVE` → convite → `/eventos`, com **14 recusas** de destino), consumida só na ENTRADA por um adaptador que não derruba o login; o **`redirectTo` do login, morto**, voltou a valer sem `tenantSlug` e o `//evil.test` do 2FA foi fechado por **uma** validação; o rodapé do seletor passou a **"Ir ao painel da instituição"** (com um vínculo a linha é `<span>`, então era o único caminho) e o bloco de conta de `/superadmin` ganhou a **porta de volta**; `/eventos` no portão achou `select-name` nos **3 filtros**. **62** testes unit + **8** E2E. ADR-378/379 | ✅ |
+| 83 | **O vínculo com significado e o resíduo que ninguém apagava** — o contexto implícito deixou de ser "o primeiro vínculo `ACTIVE` na ordem alfabética" e passou a ter **desempate declarado** (`MEMBER` → `joinedAt` mais antigo → `tenantId`), com a **pergunta** (seletor) quando há **2+ vínculos e nenhuma escolha**; o cookie é a escolha já dada e vence a contagem. O vínculo criado por inscrição em `WAITLISTED` **permanece** (é como a pessoa vê a fila). **4 de 96 fixtures** (114 chamadas) deixaram de criar instituição sem apagar, presas por **catraca de AST** sem allowlist; o `joinedAt` deixou de ser reescrito pelo seed e pela inscrição (só o `create` o define), provado com o **seed real** e a data fixada em 2020; `docs/contas-de-teste.md:107` afirmava o contrário do código. **26 + 6 + 3** testes Vitest + **2** E2E; E2E **481 = 480 + 1 skip**. ADR-380/381 | ✅ |
+| 84 | **O painel é do perfil, e a prova do RBAC é da identidade** — o painel deixou de ser a **parede de 65 permissões** (chave crua + UUID de papel) e passou a responder "o que importa para MIM": **regra pura** `dashboardBlocksFor` com **9 blocos**, precedência declarada, **teto 5**, **colapso de destino repetido ANTES do teto** e a frase "e mais N atalhos" (o anúncio sai da MESMA decisão do corte). A prova do RBAC mudou para `/conta` (global): 7º cartão **"Seus acessos"** com instituição, `roleLabel()` e **nº de permissões efetivas** (14 participante · 65 instituição · 47 organizador+revisor), pagando **1 consulta**. O painel saiu `role-summary`, `permissions`, o cartão "Permissões efetivas", o placeholder falso e a URL canônica; entraram `DashboardContextLink` (testid novo `dashboard-context`), `stats` só da gestão (de `getAdminOverview`, **com `deletedAt`**; o `tx.*.count()` sem filtro saiu) e estado vazio com link para `/conta#seus-acessos`. A **2ª leitura do principal** saiu (`context.principal`) e a catraca da F75 cobriu o painel (1 + 1). **6 fontes de leitura** no pior perfil, com a **régua** declarada (≠ 6 comandos SQL: `listReviewerTasks` abre 2 transações e `getAdminOverview` roda 12 counts); `hasSpeakerProfile` pelo **PAPEL** (a permissão faria todo OWNER ver o portal) e patrocinador pelo **vínculo**. Declarados: **CHAIR** no estado vazio (bloco `comite` proposto), **FINANCE** vazio e `listAdminEvents` fora. **4 baselines** refeitas (2 execuções a 0 px); **46 + 9** Vitest + **6** E2E; dívidas **E91** e **I10**. ADR-382/383 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**43 itens abertos**; A=4, B=6, C=1, D=3, **E=23**, F=5, **H=0**, **I=1**) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento bate com ela desde a FASE 69. A **F79** **declarou a I8** (a segunda cópia das contagens no `README.md`): a contagem passa a **43**.
-Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo) e **F78** (a **H1** — o topo único). As fases **F66, F73, F74 e F75** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos e a **F74** **re-escopou a E46** (o anexo inline na página pública continua fora). A **F76** fechou o id malformado (404 **antes** da consulta) e **declarou a E89** (o `?evento=` inválido cai em outro evento). A **F77** também não quitou nem declarou item: fechou o link morto e o recorte da projeção — defeitos que ela mesma mediu — e deixou declarado o que ficou aberto (§8 do doc). A **F78** fechou a **H1** (o topo único) e **declarou a E90** (as classes do tema do evento fora do `.ef-theme`). A contagem passa a **43** porque 42 + 1 = 43 (a **I8**).
-Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **E89** (o `?evento=` inválido cai em outro evento, em silêncio — FASE 76), **E90** (o `.ef-card`/`.ef-button-outline` fora do tema — FASE 78), **I8** (a segunda cópia das contagens no `README.md` — FASE 79), **A7** (o falso positivo do casamento por fragmento de tipo sensível), **B10** (a varredura dos `catch` silenciosos das contagens) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
+**Dívidas técnicas:** o levantamento consolidado (**46 itens abertos**; A=4, B=6, C=1, D=3, **E=24**, F=5, **H=0**, **I=3**) está em **`docs/dividas-tecnicas.md`**. A contagem é **medida linha por linha**, e a tabela da §3 daquele documento bate com ela desde a FASE 69. A **F79** **declarou a I8** (a segunda cópia das contagens no `README.md`); a **F82** **declarou a I9** (o `sign-out` sem corpo responde 415 e não limpa sessão — 99 chamadas em 77 arquivos de teste): a contagem passa a **44**.
+Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo) e **F78** (a **H1** — o topo único). As fases **F66, F73, F74 e F75** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos e a **F74** **re-escopou a E46** (o anexo inline na página pública continua fora). A **F76** fechou o id malformado (404 **antes** da consulta) e **declarou a E89** (o `?evento=` inválido cai em outro evento). A **F77** também não quitou nem declarou item: fechou o link morto e o recorte da projeção — defeitos que ela mesma mediu — e deixou declarado o que ficou aberto (§8 do doc). A **F78** fechou a **H1** (o topo único) e **declarou a E90** (as classes do tema do evento fora do `.ef-theme`). A contagem passa a **43** porque 42 + 1 = 43 (a **I8**). As fases **F80** (o ESLint 10) e **F81** (o rótulo no nome) não quitaram nem declararam item: os defeitos que elas fecharam não tinham código de dívida. A **F82** **declarou a I9** — o `POST /api/auth/sign-out` **sem corpo** responde **415** e não limpa sessão, no padrão de **99 chamadas em 77 arquivos de teste**: a contagem passa a **44** (I=2). A **F83** **não quitou nem declarou item**: o resíduo de **50 instituições** no banco de **desenvolvimento** é **dado local** (a catraca impede resíduo novo, e a limpeza está proposta em `docs/fase-83-vinculo-e-residuo.md` §8.1); a catraca por AST tem limite **declarado** (forma, não efeito) e a duplicação do menu de conta é ponto de atenção — **a contagem permanece 44**. A **F84** **declarou DUAS**: a **E91** — o `tenant:billing:manage` **não tem leitor** (o `FINANCE` recebe a permissão de cobrança e não existe tela de financeiro; o painel dele nasce vazio, de propósito) — e a **I10** — o `listSponsorAccess` é pago **duas vezes** no mesmo render (layout + página): a contagem passa a **46** (E=24, I=3).
+Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **E89** (o `?evento=` inválido cai em outro evento, em silêncio — FASE 76), **E90** (o `.ef-card`/`.ef-button-outline` fora do tema — FASE 78), **I8** (a segunda cópia das contagens no `README.md` — FASE 79), **I9** (o `sign-out` sem corpo responde 415 e não limpa sessão: 99 chamadas em 77 arquivos de teste — FASE 82), **E91** (o `tenant:billing:manage` sem leitor: não existe tela de financeiro — FASE 84), **I10** (o `listSponsorAccess` pago 2× no render: layout + página — FASE 84), **A7** (o falso positivo do casamento por fragmento de tipo sensível), **B10** (a varredura dos `catch` silenciosos das contagens) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
 
 ---
 
@@ -776,7 +768,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-79-o-agents-que-respira.md`; antes, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69, F68 e F67; a
+   fase entregue** (`docs/fase-84-painel-e-acessos.md`; antes, F83, F82, F81, F80, F79, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69 e F68; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

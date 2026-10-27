@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { PageHeader } from '@/components/ui';
 import { signUpAction } from '@/app/actions/auth-actions';
+import { resolveEntryDestinationForUser } from '@/lib/auth/entry-destination';
+import { isSafeEntryRedirect } from '@/domain/platform/entry-destination-rules';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 
 export const metadata = { title: 'Criar conta' };
@@ -13,19 +15,23 @@ export default async function SignUpPage({
 }: {
   searchParams: Promise<{ redirectTo?: string }>;
 }) {
-  if (await getAuthenticatedUser()) {
-    redirect('/selecionar-instituicao');
+  const params = await searchParams;
+
+  /**
+   * Quem já tem sessão não cria outra conta — e sai por onde a regra manda
+   * (FASE 82): governança, painel do vínculo, seletor do convite ou descoberta.
+   * O `redirectTo` continua vencendo, porque é a única resposta que a pessoa
+   * escolheu.
+   */
+  const user = await getAuthenticatedUser();
+  if (user) {
+    redirect(await resolveEntryDestinationForUser(user.id, { redirectTo: params.redirectTo }));
   }
 
-  const params = await searchParams;
-  // Aceita apenas caminho relativo: `//evil.com` e `https://evil.com` são
-  // rejeitados, evitando open redirect.
-  const redirectTo =
-    params.redirectTo &&
-    params.redirectTo.startsWith('/') &&
-    !params.redirectTo.startsWith('//')
-      ? params.redirectTo
-      : undefined;
+  // Aceita apenas caminho relativo. A validação é a da REGRA — `isSafeEntryRedirect`
+  // recusa `//evil.com`, `/\evil.com`, `https://…` e as próprias telas de entrada,
+  // evitando open redirect e o laço de volta ao formulário.
+  const redirectTo = isSafeEntryRedirect(params.redirectTo) ? params.redirectTo : undefined;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-8 px-6 py-16">

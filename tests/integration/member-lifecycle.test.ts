@@ -157,6 +157,29 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A FIXTURE APAGA O QUE CRIOU — AS DUAS INSTITUIÇÕES (FASE 83)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até aqui este arquivo só DESCONECTAVA. As duas instituições ficavam no banco
+   *  de desenvolvimento, e uma delas (`f21-apertada-…`) virou o segundo vínculo do
+   *  `participante@eventflow.test` quando a inscrição pública de outro teste caiu
+   *  nela — o resíduo que a FASE 83 mediu. A ordem é a mesma do `prisma/seed.ts`:
+   *  a instituição primeiro (a cascata leva perfis, papéis, eventos, inscrições e
+   *  auditoria), e as pessoas depois, porque elas são GLOBAIS e sobreviveriam à
+   *  cascata.
+   *
+   *  Limite honesto: a catraca `f83-fixtures-sem-residuo` prova a FORMA (esta
+   *  limpeza existe no `afterAll`), não o efeito; quem prova o efeito é rodar este
+   *  arquivo e conferir que nenhuma instituição `f21-*` sobra no banco.
+   */
+  if (tenantId || tightTenantId) {
+    await adminPrisma.tenant.deleteMany({
+      where: { id: { in: [tenantId, tightTenantId].filter(Boolean) } },
+    });
+  }
+
+  await adminPrisma.user.deleteMany({ where: { email: { contains: RUN } } });
   await adminPrisma.$disconnect().catch(() => undefined);
 });
 

@@ -241,6 +241,25 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS DUAS INSTITUIÇÕES DA FIXTURE SAEM NO FIM (FASE 83)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A limpeza antiga só fechava a fila e desconectava: `f15-comunicacao-…` e
+   *  `f15-quota-…` sobreviviam à execução. A primeira é um segundo vínculo em
+   *  potencial para qualquer pessoa que se inscreva nele; a segunda ocupa uma vaga
+   *  de equipe. A cascata da instituição leva perfis, convites, mensagens e
+   *  auditoria; as pessoas são GLOBAIS e por isso saem depois, pelo sufixo da
+   *  execução.
+   */
+  if (tenantId || smallTenantId) {
+    await adminPrisma.tenant.deleteMany({
+      where: { id: { in: [tenantId, smallTenantId].filter(Boolean) } },
+    });
+  }
+
+  await adminPrisma.user.deleteMany({ where: { email: { contains: RUN } } });
+
   // A fila fica aberta se não for encerrada — e o processo de teste não termina.
   await closeEmailQueue().catch(() => undefined);
   await adminPrisma.$disconnect().catch(() => undefined);

@@ -443,8 +443,18 @@ describe('G11 — página pública de UM sorteio', () => {
       data: { id: outra, slug: `f22-outra-${RUN}`, name: `Outra ${RUN}`, status: 'ACTIVE', plan: 'FREE' },
     });
 
-    const resultado = await getPublicRaffleResult(outra, eventId, randomUUID());
-    expect(resultado).toBeNull();
+    /**
+     * A instituição criada AQUI não entra no `afterAll` (que só conhece a
+     * instituição da fixture) e por isso é apagada no `finally`: o caso não pode
+     * depender de o teste passar para não deixar resíduo — foi assim que
+     * `f22-outra-…` virou sobra em todas as execuções (FASE 83).
+     */
+    try {
+      const resultado = await getPublicRaffleResult(outra, eventId, randomUUID());
+      expect(resultado).toBeNull();
+    } finally {
+      await adminPrisma.tenant.deleteMany({ where: { id: outra } });
+    }
   });
 });
 

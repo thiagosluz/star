@@ -23,7 +23,14 @@ function MenuItem({
   currentSlug,
 }: {
   membership: MembershipSummary;
-  currentSlug: string;
+  /**
+   * O contexto atual, quando a casca sabe qual é.
+   *
+   * No painel de PLATAFORMA a pessoa não está "dentro" de instituição nenhuma:
+   * o menu continua listando os vínculos (é a porta de volta), mas nenhum deles
+   * é marcado como atual — daí o `undefined` ser legítimo aqui.
+   */
+  currentSlug?: string;
 }) {
   const [state, formAction] = useActionState<SwitchContextState | null, FormData>(
     switchTenantAction,
@@ -31,7 +38,7 @@ function MenuItem({
   );
   const { pending } = useFormStatus();
 
-  const isCurrent = membership.tenantSlug === currentSlug;
+  const isCurrent = currentSlug !== undefined && membership.tenantSlug === currentSlug;
   const isInvite = membership.status === "INVITED";
 
   return (
@@ -93,7 +100,16 @@ export function TenantMenu({
   label,
 }: {
   memberships: readonly MembershipSummary[];
-  currentSlug: string;
+  /**
+   * O contexto atual — opcional desde a FASE 82 · fatia 3.
+   *
+   * A casca da instituição sempre passa o slug da instituição ativa. A da
+   * PLATAFORMA não tem "instituição atual" (o operador está na governança), mas
+   * precisa do menu mesmo assim: é dele que saem "Minha conta" e "Ver todas as
+   * instituições" — as duas portas que a ausência do bloco fechava. Sem slug,
+   * nenhuma linha é marcada como atual e TODAS as ativas viram botão "Entrar".
+   */
+  currentSlug?: string;
   children: React.ReactNode;
   /**
    * Barra recolhida (FASE 59): o gatilho vira quadrado.
@@ -131,6 +147,7 @@ export function TenantMenu({
     <details className="group relative min-w-0">
       <summary
         aria-label={label}
+        data-testid="account-tenant-menu"
         className={cn(
           'flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md border border-border text-sm transition hover:bg-accent',
           compact ? 'size-9 justify-center p-0' : 'px-3 py-1.5',
@@ -150,7 +167,22 @@ export function TenantMenu({
           Trocar de instituição
         </p>
 
-        {memberships.length > 1 ? (
+        {/**
+         * ───────────────────────────────────────────────────────────────────────────
+         *  QUANDO A LISTA APARECE (FASE 82 · fatia 3)
+         * ───────────────────────────────────────────────────────────────────────────
+         *  Com UM vínculo e um contexto atual (a casca da instituição), a linha do
+         *  seletor é "Contexto atual" — ela já é o lugar onde a pessoa está, e um
+         *  botão "Entrar" ali não teria destino diferente do atual.
+         *
+         *  Na casca de PLATAFORMA não existe "contexto atual" (`currentSlug`
+         *  ausente): TODOS os vínculos entram na lista, inclusive quando há um só.
+         *  É o que dá ao operador o caminho DIRETO de volta para a instituição —
+         *  a porta que a ausência do menu fechava. Sem vínculo nenhum a lista não
+         *  teria conteúdo, e a frase abaixo diz a verdade em vez de "apenas esta
+         *  instituição", que seria falsa.
+         */}
+        {memberships.length > 1 || (currentSlug === undefined && memberships.length > 0) ? (
           <ul className="max-h-72 overflow-y-auto py-1">
             {memberships.map((membership) => (
               <MenuItem
@@ -160,9 +192,13 @@ export function TenantMenu({
               />
             ))}
           </ul>
-        ) : (
+        ) : memberships.length === 1 ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">
             Você tem acesso a apenas esta instituição.
+          </p>
+        ) : (
+          <p className="px-3 py-3 text-xs text-muted-foreground">
+            Sua conta ainda não está vinculada a nenhuma instituição.
           </p>
         )}
 

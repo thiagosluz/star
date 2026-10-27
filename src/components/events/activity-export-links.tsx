@@ -34,12 +34,20 @@ import { googleCalendarUrl, type CalendarItem } from '@/lib/calendar/ics';
  *  derivado de um id ou de um token, nunca copiado de um parâmetro solto.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O RÓTULO ACESSÍVEL DIZ A AÇÃO **E** O ALVO
+ *  O RÓTULO ACESSÍVEL COMEÇA PELO TEXTO VISÍVEL — E SÓ DEPOIS DIZ O ALVO
  *  ─────────────────────────────────────────────────────────────────────────────
  *  Numa programação de vinte atividades, "Baixar .ics" repetido vinte vezes não diz
  *  nada a quem navega por leitor de tela (a mesma lição do botão de favoritar). O
  *  `aria-label` acrescenta o título, e o TEXTO VISÍVEL continua contido nele (WCAG
  *  2.5.3, "rótulo no nome") — o comando de voz segue funcionando.
+ *
+ *  A ordem não é enfeite: quem fala "clique em Baixar .ics" só acerta o alvo se o
+ *  nome acessível COMEÇAR por "Baixar .ics". Um nome que começa diferente ("Baixar o
+ *  arquivo .ics…") contém as palavras visíveis, mas não como prefixo contíguo — e a
+ *  regra `label-content-name-mismatch` do `axe` reprova exatamente isso. Por isso o
+ *  complemento (o título, a próxima atividade, o evento) vem DEPOIS do texto da tela,
+ *  nunca antes. O teste `f81-rotulo-no-nome` lê este arquivo e prende os quatro
+ *  nomes, para o defeito não voltar sem navegador.
  */
 
 /** As classes dos dois vocabulários em que os links aparecem (tema do evento × painel). */
@@ -106,7 +114,7 @@ export function ActivityExportLinks({
       <a
         href={icsHref}
         className={linkClass}
-        aria-label={`Baixar o arquivo .ics desta atividade: ${title}`}
+        aria-label={`Baixar .ics desta atividade: ${title}`}
         data-testid="exportar-ics-atividade"
       >
         <Download className="size-3.5 shrink-0" aria-hidden />
@@ -161,7 +169,7 @@ export function AgendaExportLinks({
           target="_blank"
           rel="noopener noreferrer"
           className={linkClass}
-          aria-label={`Adicionar ao Google Calendar a próxima atividade: ${nextTitle}`}
+          aria-label={`Adicionar a próxima ao Google Calendar: ${nextTitle}`}
           data-testid="exportar-google-grade"
         >
           <CalendarPlus className="size-3.5 shrink-0" aria-hidden />
@@ -173,7 +181,7 @@ export function AgendaExportLinks({
         <a
           href={icsHref}
           className={linkClass}
-          aria-label={`Baixar o arquivo .ics da minha agenda em ${eventTitle}`}
+          aria-label={`Baixar a minha agenda (.ics) de ${eventTitle}`}
           data-testid="exportar-ics-grade"
         >
           <Download className="size-3.5 shrink-0" aria-hidden />

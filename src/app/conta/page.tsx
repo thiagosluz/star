@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
+  Building2,
   Fingerprint,
   KeyRound,
   ShieldCheck,
@@ -9,7 +10,11 @@ import {
   UserRound,
 } from 'lucide-react';
 
-import { getCurrentSession } from '@/lib/auth/session';
+import { getCurrentSession, loadMemberships } from '@/lib/auth/session';
+import { summarizeMembershipAccess } from '@/domain/rbac/access-summary';
+import { ENTRY_DISCOVERY_PATH } from '@/domain/platform/entry-destination-rules';
+import { tenantDashboardPath } from '@/domain/platform/vitrine-account-rules';
+import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAccountOverview, readAccountSessions } from '@/lib/auth/account-service';
 import { listMyIdentityAudit } from '@/lib/platform/identity-audit-service';
 import {
@@ -43,7 +48,16 @@ import {
 } from '@/components/account/account-forms';
 import { VerificationNotice } from '@/components/communication/verification-notice';
 import { ThemeChoice } from '@/components/theme/theme-choice';
-import { Button, buttonClasses, Card, CardContent, CardHeader, CardTitle, PageHeader } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  buttonClasses,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  PageHeader,
+} from '@/components/ui';
 
 export const metadata = { title: 'Minha conta' };
 export const dynamic = 'force-dynamic';
@@ -84,7 +98,7 @@ export default async function AccountPage({
     redirect('/login?redirectTo=%2Fconta');
   }
 
-  const [account, sessions, params, security] = await Promise.all([
+  const [account, sessions, params, security, memberships] = await Promise.all([
     getAccountOverview(session.user.id),
     readAccountSessions({ userId: session.user.id, currentToken: session.token }),
     searchParams,
@@ -97,6 +111,27 @@ export default async function AccountPage({
      *  permite responder "eu não fiz isso" na hora, em vez de abrir um chamado.
      */
     listMyIdentityAudit({ userId: session.user.id, limit: 12 }),
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A CONTA PAGA UMA CONSULTA PELOS ACESSOS — E NÃO O CONTEXTO INTEIRO (FASE 84)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  Até esta fase, papéis e permissões efetivas moravam no PAINEL da instituição.
+     *  Eles são da PESSOA e da casa dela ao mesmo tempo: a pergunta "com o que eu
+     *  entro aqui?" só tem resposta olhando TODOS os vínculos, e é a identidade —
+     *  global — que os acumula. O painel deixa de mostrar isso (fatia 2) e a casa
+     *  passa a ser esta seção.
+     *
+     *  O que se paga é UMA consulta (`loadMemberships`, administrativa e estritamente
+     *  limitada ao `userId` da sessão): a lista de vínculos, com nome, slug, logo,
+     *  situação, tipo e papéis. O que NÃO se paga é `getRequestContext()` — ele
+     *  carregaria também o principal da instituição ativa sob RLS, e a conta é
+     *  global: não há "instituição ativa" aqui. O comentário de `getCurrentSession`
+     *  (FASE 47) já registrava essa escolha; ela continua valendo para a seção nova.
+     *
+     *  A tradução papel → rótulo e papel → permissões é PURA (`access-summary`), sem
+     *  consulta nenhuma: o catálogo já está em memória.
+     */
+    loadMemberships(session.user.id),
   ]);
 
   if (!account) {
@@ -173,6 +208,136 @@ export default async function AccountPage({
           </p>
 
           <ThemeChoice variant="account" />
+        </CardContent>
+      </Card>
+
+      {/* ── Seus acessos (FASE 84) ─────────────────────────────────────────── */}
+      {/**
+        * ───────────────────────────────────────────────────────────────────────────
+        *  AQUI FICA O QUE O PAINEL MOSTRAVA — E O LUGAR É ESTE, NÃO O FIM DA PÁGINA
+        * ───────────────────────────────────────────────────────────────────────────
+        *  "Papéis acumulados neste contexto" e "Permissões efetivas" saíram do painel
+        *  da instituição: eram a prova do motor de RBAC, não o que a pessoa precisa
+        *  ver ao acordar. A prova não desapareceu — mudou de casa, para a identidade,
+        *  que é onde os papéis realmente se acumulam (entre instituições).
+        *
+        *  A posição é ENTRE "Aparência" e "Foto e dados", e não depois de "Segurança e
+        *  acessos", porque esta é a única seção que responde "onde eu entro, e com o
+        *  quê?" — a pergunta de quem chega aqui a partir do botão de contexto do
+        *  painel (fatia 3). Enterrada abaixo de foto, senha, segundo fator e
+        *  dispositivos, ela só seria encontrada por quem já sabe que existe.
+        *
+        *  A ordem dos cartões não muda o `f60`/`axe` (medido: `/conta` NÃO está no
+        *  portão de acessibilidade nem na varredura de landmark; a página não tem
+        *  layout próprio). O que preserva a estrutura é o `CardTitle`, que continua
+        *  sendo um `<h2>` abaixo do `<h1>` do `PageHeader`.
+        *
+        *  Nada de UUID e nada de chave crua: instituição pelo NOME, situação em
+        *  português, papéis pelo `roleLabel` e um NÚMERO de permissões — o suficiente
+        *  para responder "o que eu posso aqui?" sem virar a lista ilegível que o
+        *  painel desenhava.
+        */}
+      <Card id="seus-acessos" data-testid="account-accesses">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="size-4 text-primary" aria-hidden />
+            Seus acessos
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            As instituições em que esta conta entra, o papel que você tem em cada uma e
+            quantas permissões efetivas isso soma. O painel de cada instituição mostra o
+            que está acontecendo nela; os papéis e as permissões ficam aqui — e valem
+            por instituição, nunca somados entre elas.
+          </p>
+
+          {memberships.length === 0 ? (
+            <div className="space-y-2" data-testid="account-accesses-empty">
+              <p className="text-sm text-muted-foreground">
+                Sua conta ainda não está vinculada a nenhuma instituição. A inscrição em
+                um evento público cria o primeiro vínculo.
+              </p>
+              <Link
+                href={ENTRY_DISCOVERY_PATH}
+                className="text-sm underline underline-offset-4 hover:text-foreground"
+              >
+                Explorar eventos
+              </Link>
+            </div>
+          ) : (
+            /**
+             * `<ul>`/`<li>`, e não grade de `<div>` clicável: a lista é uma lista —
+             * leitor de tela anuncia "lista, N itens" e cada linha tem um link com
+             * nome próprio. O nome acessível do link COMEÇA pelo texto visível
+             * ("Entrar", "Ver a instituição") e acrescenta a instituição, porque numa
+             * lista de cinco linhas "Entrar" repetido não diz para onde leva.
+             */
+            <ul className="divide-y divide-border" data-testid="account-accesses-list">
+              {memberships.map((membership) => {
+                const access = summarizeMembershipAccess(membership.roles);
+                const active = membership.status === 'ACTIVE';
+                const href = active
+                  ? tenantDashboardPath(membership.tenantSlug)
+                  : tenantPath(membership.tenantSlug);
+                const actionLabel = active ? 'Entrar' : 'Ver a instituição';
+
+                return (
+                  <li
+                    key={membership.tenantId}
+                    className="flex flex-wrap items-start justify-between gap-3 py-3"
+                    data-testid={`account-access-${membership.tenantSlug}`}
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-medium">{membership.tenantName}</p>
+
+                      {active ? (
+                        <p className="text-sm text-muted-foreground">
+                          {access.roles.length === 0
+                            ? 'Sem papel atribuído'
+                            : access.roles.map((role) => role.label).join(' · ')}
+                          {' · '}
+                          {access.permissionCount}{' '}
+                          {access.permissionCount === 1
+                            ? 'permissão efetiva'
+                            : 'permissões efetivas'}
+                        </p>
+                      ) : (
+                        /**
+                         * O convite NÃO cria papel: `MEMBER` + papel nascem no aceite
+                         * (FASE 15). Mostrar "Sem papel · 0 permissões" seria verdade
+                         * e ruído — a frase certa é a consequência, não o zero. E o
+                         * aceite exige o código que só existe no e-mail; a tela não
+                         * inventa um botão que não teria efeito.
+                         */
+                        <p className="text-sm text-muted-foreground">
+                          O papel e as permissões passam a valer quando você aceitar o
+                          convite — o link do aceite está no e-mail que você recebeu.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge tone={active ? 'success' : 'warning'} withDot>
+                        {active ? 'Ativo' : 'Convite pendente'}
+                      </Badge>
+                      <Link
+                        href={href}
+                        className={buttonClasses({ variant: 'outline', size: 'sm' })}
+                        aria-label={
+                          active
+                            ? `Entrar em ${membership.tenantName}`
+                            : `Ver a instituição ${membership.tenantName}`
+                        }
+                      >
+                        {actionLabel}
+                      </Link>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </CardContent>
       </Card>
 

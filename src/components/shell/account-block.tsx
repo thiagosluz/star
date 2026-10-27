@@ -42,8 +42,28 @@ export async function AccountBlock({
   className,
 }: {
   user: { name: string; email: string };
-  /** Ausente no painel de plataforma (não há contexto de instituição). */
+  /**
+   * Os vínculos do usuário, quando a casca os conhece.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AUSENTE ≠ VAZIO (FASE 82 · fatia 3)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até esta fatia o painel de PLATAFORMA não passava nada, e o valor ausente
+   *  apagava o menu inteiro: o operador ficava sem caminho para `/conta` e sem
+   *  caminho de volta para a instituição — a mesma tela de onde ele veio. O
+   *  contrato agora distingue as duas coisas: **ausente** é "esta casca não tem
+   *  contexto de instituição, não desenhe o menu"; **array (mesmo vazio)** é "a
+   *  casca sabe quais são os vínculos" — e o menu existe para oferecer os
+   *  destinos globais (conta e seletor) mesmo quando não há nenhum.
+   */
   memberships?: readonly MembershipSummary[];
+  /**
+   * Instituição ativa.
+   *
+   * A casca da instituição sempre passa o slug em que a pessoa está. A da
+   * plataforma não passa: lá não existe "instituição atual" — o operador está na
+   * governança, e o menu lista os vínculos como destinos (ver `TenantMenu`).
+   */
   currentSlug?: string;
   className?: string;
 }) {
@@ -75,7 +95,7 @@ export async function AccountBlock({
      * barra — foi assim que o botão de sair apareceu cortado na borda (FASE 61).
      */
     <div className={cn('flex min-w-0 items-center gap-2', compact && 'flex-col', className)}>
-      {memberships && currentSlug ? (
+      {memberships ? (
         <TenantMenu
           memberships={memberships}
           currentSlug={currentSlug}

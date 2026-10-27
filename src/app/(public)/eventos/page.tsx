@@ -248,8 +248,25 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
 
                 {/* Categoria */}
                 <div>
+                  {/**
+                   * ───────────────────────────────────────────────────────────────────
+                   *  OS TRÊS `<select>` GANHARAM NOME ACESSÍVEL (FASE 82 · fatia 3)
+                   * ───────────────────────────────────────────────────────────────────
+                   *  Quando `/eventos` passou a ser a tela de entrada de quem não tem
+                   *  vínculo, ela entrou no portão WCAG — e o `axe` reprovou os três
+                   *  filtros com `select-name` (crítico): um leitor de tela anunciava
+                   *  "caixa de combinação" sem dizer de quê, e a única pista era a
+                   *  primeira opção já escolhida.
+                   *
+                   *  O `aria-label` nomeia o controle sem mudar um pixel do desenho —
+                   *  não há rótulo visual para reaproveitar em categoria/modalidade, e
+                   *  "Período:" é texto solto ao lado do campo, não um `<label>`
+                   *  associado. A isenção do portão continuou VAZIA: consertar o
+                   *  controle é o que mantém a catraca honesta.
+                   */}
                   <select
                     name="categoria"
+                    aria-label="Categoria do evento"
                     defaultValue={category ?? ''}
                     className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
                   >
@@ -266,6 +283,7 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
                 <div>
                   <select
                     name="modalidade"
+                    aria-label="Modalidade do evento"
                     defaultValue={modality}
                     className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
                   >
@@ -288,6 +306,7 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
                   </div>
                   <select
                     name="periodo"
+                    aria-label="Período dos eventos"
                     defaultValue={period}
                     className="rounded-lg border border-input bg-background px-2.5 py-1 text-xs text-foreground focus:border-primary focus:outline-hidden"
                   >

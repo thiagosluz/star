@@ -111,15 +111,17 @@ async function filtrar(page: import('@playwright/test').Page): Promise<void> {
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- *  ESCOLHER A INSTITUIÇÃO É PARTE DA JORNADA (FASE 52 · dívida I1)
+ *  ESCOLHER A INSTITUIÇÃO É PARTE DA JORNADA (FASE 52 · dívida I1 / FASE 83)
  * ─────────────────────────────────────────────────────────────────────────────
  *  O MESMO administrador tem DOIS vínculos (o acervo das contagens e o acervo
- *  grande), e com mais de um vínculo a plataforma **pede a escolha** em vez de
- *  adivinhar: navegar direto para `/t/<outra-instituição>/...` cai no seletor, e o
- *  teste falhava sem entender por quê — o `activeTenant` da sessão era o OUTRO.
+ *  grande), então navegar direto para `/t/<instituição>/...` pode cair no seletor:
+ *  o contexto implícito é UM só (FASE 83: `MEMBER` → vínculo mais antigo →
+ *  `tenantId`) e a URL precisa bater com ele. Reproduzir o caminho de quem usa é
+ *  o que torna o cenário determinístico.
  *
- *  Reproduzir o caminho de quem usa (o card → "Entrar") é o que torna o cenário
- *  determinístico. E funciona SEM JavaScript: o botão é a submissão do formulário.
+ *  A linha da instituição que JÁ é o contexto atual é um `<span>` "Contexto atual",
+ *  sem botão "Entrar" — nesse caso o caminho é a URL canônica (o contexto já é o
+ *  dela). O botão só existe para a OUTRA, e é ele que grava o cookie.
  */
 async function entrarNaInstituicao(
   page: import('@playwright/test').Page,
@@ -131,7 +133,18 @@ async function entrarNaInstituicao(
     .locator('[data-testid="tenant-options"] li')
     .filter({ has: page.locator(`input[value="${alvoSlug}"]`) });
 
-  await linha.getByRole('button', { name: 'Entrar' }).click();
+  await expect(linha).toBeVisible();
+
+  const entrar = linha.getByRole('button', { name: 'Entrar' });
+
+  if ((await entrar.count()) > 0) {
+    await entrar.click();
+  } else {
+    // Já é o contexto implícito: a linha não tem botão, e a URL canônica entra.
+    await expect(linha.getByText('Contexto atual')).toBeVisible();
+    await page.goto(`/t/${alvoSlug}/dashboard`);
+  }
+
   await page.waitForURL((url) => !url.pathname.includes('selecionar-instituicao'), { timeout: 30_000 });
 }
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -409,6 +422,21 @@ test.describe('filtros do acervo de mídia', () => {
 
     try {
       await signInAs(page, adminEmail);
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  ENTRAR NA INSTITUIÇÃO DO ACERVO GRANDE É EXPLÍCITO (FASE 83)
+       * ─────────────────────────────────────────────────────────────────────────
+       *  O mesmo administrador tem DOIS vínculos ativos. Até a F82 o contexto
+       *  implícito era o primeiro na ordem do NOME ("Acervo Grande" < "Instituição
+       *  Filtros"), então o `goto` direto para esta instituição funcionava por
+       *  acidente. A F83 ordenou o desempate por `MEMBER` → vínculo mais antigo →
+       *  `tenantId`: o contexto passou a ser a instituição dos filtros (vinculada
+       *  primeiro) e o `goto` direto cai no seletor — de propósito, porque o slug
+       *  da URL difere do contexto. Repetir o caminho da pessoa (o botão "Entrar"
+       *  do seletor) é o que torna o cenário determinístico.
+       */
+      await entrarNaInstituicao(page, `${BULK_TENANT_LABEL}-${RUN_ID}`);
       await page.goto(bulkMediaUrl());
 
       await expect(assetRows(page)).toHaveCount(200);
