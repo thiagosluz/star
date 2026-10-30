@@ -192,12 +192,22 @@ export async function issueEventCertificatesAction(
     if (issued.ok && issued.generated) generated += 1;
   }
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/certificados'));
+  /**
+   * A tela que DISPAROU o lote é a do evento (FASE 85), e o inventário é onde os
+   * documentos emitidos aparecem. Revalidar `/certificados` — a tela pessoal — era
+   * o endereço antigo do painel e não mostra resultado de lote nenhum.
+   */
+  revalidatePath(
+    tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/certificados`),
+  );
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/certificados'));
 
   return {
     ok: true,
     message: `${result.requested} certificado(s) solicitado(s) — ${generated} gerado(s) agora, o restante na fila.${
-      result.skipped > 0 ? ` ${result.skipped} participante(s) não elegível(is).` : ''
+      result.discarded.length > 0
+        ? ` ${result.discarded.length} tentativa(s) descartada(s) por falta de fato — a lista com o motivo está na simulação acima.`
+        : ''
     }`,
     data: { requested: result.requested, skipped: result.skipped, generated },
   };

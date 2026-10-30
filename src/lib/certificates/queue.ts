@@ -143,6 +143,14 @@ export async function enqueueCertificate(
  * BullMQ continuam crescendo em `waiting` mesmo com o worker morto, então um
  * alerta baseado só no tamanho da fila demora a perceber a queda. O número de
  * workers registrados no Redis cai para zero imediatamente.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE ESTES NÚMEROS NÃO SÃO (FASE 85)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Não existe teto de fila neste sistema: a fila é criada sem `limiter`, sem
+ *  `maxLen` e sem `maxmemory`. "Capacidade" ou "ocupação %" seriam um número
+ *  inventado, e a tela de emissão não os mostra. `completed`/`failed` são a
+ *  JANELA RETIDA (`removeOnComplete`/`removeOnFail`), não o total histórico.
  */
 export async function certificateQueueStats(): Promise<{
   waiting: number;
@@ -164,6 +172,58 @@ export async function certificateQueueStats(): Promise<{
       workers,
     };
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Amostra de duração dos PDFs concluídos — a ÚNICA fonte real de taxa.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE `processedOn`/`finishedOn` E NADA MAIS
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O banco não mede a geração (não há coluna de duração em `Certificate`), então
+ *  qualquer estimativa teria de vir dos jobs que a fila ainda retém. `finishedOn
+ *  - processedOn` é o tempo que o worker levou para pegar o job e terminar o PDF,
+ *  incluindo storage — exatamente o trabalho que a tela tenta prever.
+ *
+ *  A amostra pode ser pequena ou velha: o `removeOnComplete: { count: 200 }` guarda
+ *  só os 200 últimos. Quem consome recebe também o TAMANHO, e a regra de amostra
+ *  mínima (`MIN_GENERATION_SAMPLE`) é aplicada no domínio — aqui não se decide se
+ *  o número é publicável, só se mede.
+ */
+export interface CertificateDurationSample {
+  averageMs: number;
+  sampleSize: number;
+}
+
+/** Teto da amostra — o mesmo número de jobs concluídos que a fila retém. */
+export const CERTIFICATE_DURATION_SAMPLE_LIMIT = 200;
+
+export async function certificateDurationSample(): Promise<CertificateDurationSample | null> {
+  try {
+    const jobs = await getQueue().getCompleted(0, CERTIFICATE_DURATION_SAMPLE_LIMIT - 1);
+    const durations: number[] = [];
+
+    for (const job of jobs) {
+      if (typeof job.processedOn !== 'number' || typeof job.finishedOn !== 'number') continue;
+
+      const duration = job.finishedOn - job.processedOn;
+      // Relógio que voltou (ou job sem passagem real pelo worker) não é amostra.
+      if (duration > 0) durations.push(duration);
+    }
+
+    if (durations.length === 0) return null;
+
+    const total = durations.reduce((sum, duration) => sum + duration, 0);
+
+    return {
+      averageMs: Math.round(total / durations.length),
+      sampleSize: durations.length,
+    };
+  } catch {
+    // Redis fora do ar não é erro da tela: ela mostra "ainda sem medição" e o
+    // disparo continua funcionando (a fila degrada para geração inline).
     return null;
   }
 }

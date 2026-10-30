@@ -2629,6 +2629,51 @@ test.describe('telas autenticadas', () => {
     );
   });
 
+  // ───────────────────────────────────────────────────────────────────────────────
+  //  A EMISSÃO EM LOTE DO EVENTO (FASE 85 · fatia 1)
+  // ───────────────────────────────────────────────────────────────────────────────
+  test('a tela de certificados do evento não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A TELA NOVA ENTRA NO PORTÃO (a exigência da F58)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A fatia entregou uma superfície de GESTÃO que recebe permissão
+     *  (`certificate:issue`) e nasceu fora do `axe` — é exatamente a forma do
+     *  defeito da F66: **a catraca não cobria o alvo**. A tela tem o painel de
+     *  lote inteiro: título de seção, `fieldset` com `legend`, quatro caixas
+     *  rotuladas, um botão de envio e o link do inventário. Sem a espera pelo
+     *  painel, a varredura mediria uma página que ainda não o desenhou.
+     *
+     *  A FASE 85 (fatia 2) acrescentou a SIMULAÇÃO: quatro `StatCard`, a frase da
+     *  estimativa, o estado da fila e a lista de descartados dentro de um
+     *  `<details>` NATIVO. A estrutura mudou o suficiente para o caso ser
+     *  reescrito — e a lista é ABERTA antes da varredura: conteúdo escondido num
+     *  `<details>` fechado não é medido, e um `<li>` sem contraste passaria.
+     */
+    await page.goto(`/t/${tenantSlug}/administracao/eventos/${eventId}/certificados`);
+
+    await expect(page.getByTestId('issue-panel')).toBeVisible();
+    await expect(page.getByTestId('issue-panel-event')).toBeVisible();
+    await expect(page.getByTestId('issue-scope')).toBeVisible();
+    await expect(page.getByTestId('issue-eligible')).toBeVisible();
+    await expect(page.getByTestId('issue-discarded-count')).toBeVisible();
+    await expect(page.getByTestId('issue-certificates')).toBeVisible();
+    await expect(page.getByTestId('issue-estimate')).toBeVisible();
+    await expect(page.getByTestId('issue-queue')).toBeVisible();
+    await expect(page.getByTestId('issue-batch')).toBeVisible();
+    await expect(page.getByTestId('certificate-inventory-link')).toBeVisible();
+
+    await page.getByTestId('issue-discarded-summary').click();
+    await expect(page.getByTestId('issue-discarded')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `certificados do evento (/t/${tenantSlug}/administracao/eventos/<id>/certificados)`,
+    );
+  });
+
   test('a tela do evento de exemplo não tem violação crítica', async ({ page }) => {
     await signInAs(page, adminEmail);
 

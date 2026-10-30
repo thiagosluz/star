@@ -254,9 +254,22 @@ export const EVENT_AREAS: readonly EventArea[] = [
   {
     id: 'certificados',
     label: 'Certificados',
-    purpose: 'Emissão, modelos e o lote de documentos do evento.',
+    purpose: 'A emissão em lote dos documentos do evento, para quem tem fato registrado.',
     group: 'RESULTADO',
-    href: (context) => tenantPath(context.tenantSlug, '/administracao/certificados'),
+    /**
+     * ─── O CARTÃO LEVA À EMISSÃO DO EVENTO (FASE 85) ─────────────────────────
+     *
+     *  O `href` apontava para `/administracao/certificados`, que é o INVENTÁRIO da
+     *  instituição — a tela lista documentos de todos os eventos e não emite nada.
+     *  O cartão fica no grupo RESULTADO, com o propósito "a emissão do evento", e
+     *  entregava outra coisa. A rota nova é a do evento, com o mesmo escopo que a
+     *  Server Action sempre teve.
+     *
+     *  A PERMISSÃO NÃO MUDA: `certificate:issue` é a guarda das duas telas, e é ela
+     *  que a catraca da F72 compara com o primeiro `requirePagePermission` da nova
+     *  página. O inventário continua existindo (e é alcançado pelo link de lá).
+     */
+    href: (context) => route(context, '/certificados'),
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   },
   {

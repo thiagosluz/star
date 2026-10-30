@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35 e 36 a 42 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42 e 43 a 49 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -11,21 +11,24 @@
 > restavam** — **31 a 35** — o devolveu a **64.489 bytes**, sem uma linha reescrita. Na **FASE 84** o
 > mesmo gesto se repetiu: a linha nova levou o arquivo a **66.050 bytes** (acima até do corte de
 > 65.244 do harness) e o movimento das **sete mais antigas que restavam** — **36 a 42** — o
-> devolveu a **64.654 bytes**, com as linhas movidas **como estavam**.
+> devolveu a **64.654 bytes**, com as linhas movidas **como estavam**. Na **FASE 85** a linha
+> nova levou o arquivo a **65.986 bytes**; o movimento das **sete mais antigas que restavam** —
+> **43 a 49** — o devolveu a **64.519 bytes** (medido depois dos demais ajustes de estado),
+> também sem uma linha reescrita.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **43** à **84**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **50** à **85**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
 > **A ordem é a cronológica da tabela original**, não a numérica: a numeração identifica o
 > TEMA, e é o humano quem o escolhe pelo nome — por isso a F16, a F17, a F23, a F24 e a F25
 > vieram antes da F15, e a F21 foi entregue depois de todas. As fases movidas na FASE 82, na
-> FASE 83 e na FASE 84 entram no fim, na ordem em que estavam.
+> FASE 83, na FASE 84 e na FASE 85 entram no fim, na ordem em que estavam.
 
 | Fase | Tema | Situação |
 |---|---|---|
@@ -67,3 +70,10 @@
 | 40 | **Editor visual do certificado** — arte de fundo, texto por variáveis, posicionamento por milímetros (arrastando ou digitando, sem JavaScript), cinco modelos e prévia pelo mesmo renderizador do PDF; o desenho congela no certificado e sem modelo vale o desenho antigo. Declarou E54/E55 | ✅ |
 | 41 | **Vitrine do patrocínio** — a cota define cor e tamanho da logo na página pública (Pequena · Média · Grande · Destaque), com prévia do cartão e amostras de cor; a coluna de cor existia desde a FASE 17 e não tinha leitor | ✅ |
 | 42 | **Experiência do patrocinador** — área de **só leitura** por **vínculo** (não pelo papel), **QR do estande** imprimível e XP/carta **uma vez por pessoa por QR**. … | ✅ |
+| 43 | **Catálogo de gamificação** (auditoria dos gatilhos → **editar** e **excluir** carta e missão, com exclusão **LÓGICA**: a carta sai do catálogo mas **fica no álbum de quem a ganhou**, e é recusada quando é prêmio de missão/QR; a missão preserva progresso e XP resgatado); e os fatos que não … | ✅ |
+| 44 | **Perfil público do participante** — `/u/<handle>` com **quinze campos** em três níveis (internet · quem participa da instituição · só eu), pacote **campo a campo** por allowlist testada, **404 para perfil todo privado**, e a página **só existe onde a pessoa participa** (o `user` é global: a … | ✅ |
+| 45 | **Equipe do evento na página pública** — bloco que o organizador adiciona ou não, com o corpo lido das equipes REAIS do evento na renderização; a etiqueta é o nome da equipe (quem está em duas aparece uma vez com as duas), líder … | ✅ |
+| 46 | **Imagens em WebP e a foto do palestrante sem conta** — toda imagem é **reconvertida no servidor** na confirmação (o original é apagado, perda calibrada na foto e nenhuma no logotipo, metadados descartados e orientação EXIF … | ✅ |
+| 47 | **Área de conta e segurança da identidade** — `/conta` é **GLOBAL** (a identidade vale em qualquer instituição e existe sem vínculo): dados com confirmação no endereço novo e a senha atual como prova, foto em WebP, troca de senha … | ✅ |
+| 48 | **Carta colecionável premium e compartilhamento** — palco **3D** com brilho holográfico e verso, geometria no DOMÍNIO; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e o foil acende o brilho sozinho; o link é **POR … | ✅ |
+| 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de 24 h: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no … | ✅ |

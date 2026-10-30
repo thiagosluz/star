@@ -226,11 +226,11 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * Uma catraca que não acha arquivo nenhum fica verde para sempre. A âncora é
      * o número medido no fim da fatia 4: 96 `page.tsx`, 81 migrados (73 da fatia
      * 2/3 + 8 públicas, uma delas por topo compartilhado) e 15 exceções com
-     * motivo. Migrar uma tela exige baixar a allowlist; acrescentar exceção nova
-     * reprova aqui.
+     * motivo. A FASE 85 acrescentou a tela de certificados do evento — migrada
+     * desde o nascimento, porque a tela é nova e a régua já vale para ela.
      */
-    expect(PAGINAS.length).toBe(96);
-    expect(MIGRADAS.length).toBe(81);
+    expect(PAGINAS.length).toBe(97);
+    expect(MIGRADAS.length).toBe(82);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

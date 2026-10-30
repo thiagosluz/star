@@ -47,6 +47,7 @@ import {
   type WorkloadBreakdownEntry,
   type WorkloadResult,
 } from '@/domain/certificates/certificate-rules';
+import type { PreviewPerson } from '@/domain/certificates/certificate-preview-rules';
 import {
   contentValuesFrom,
   formatIssuedAtLabel,
@@ -103,12 +104,96 @@ export function validationUrlFor(code: string): string {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Levantamento de fatos
 // ───────────────────────────────────────────────────────────────────────────────
+/** Linha de presença como o banco devolve — a mesma forma nos dois caminhos. */
+interface AttendanceRow {
+  activityId: string | null;
+  minutesAttended: number | null;
+  checkedOutAt: Date | null;
+  activity: { title: string; type: string; workloadMinutes: number } | null;
+}
+
+/** Vínculo de palestrante com o que `computeSpeakerWorkload` consome. */
+interface SpeakerLinkRow {
+  activityId: string;
+  workloadMinutes: number | null;
+  activity: {
+    title: string;
+    workloadMinutes: number;
+    status: string;
+    startsAt: Date;
+    endsAt: Date;
+  } | null;
+}
+
+/**
+ * Converte uma LINHA de presença no fato que a regra consome.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  É POR LINHA, NÃO POR PESSOA × ATIVIDADE — E ISSO É O QUE A EMISSÃO FAZ HOJE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `computeWorkload` trata cada linha de `attendances` como uma entrada, então duas
+ *  visitas de 30 min na mesma atividade de 60 min NÃO somam 60: cada uma fica
+ *  abaixo dos 45 min exigidos e nenhuma conta. A agregação por pessoa × atividade
+ *  existe no credenciamento (`credential-service.ts`), em outro caminho — quem
+ *  somasse aqui faria a simulação prometer um certificado que a emissão recusa.
+ *
+ *  Sem check-out, o tempo medido é 0 — não "indefinido". Assumir presença completa
+ *  sem saída registrada seria emitir certificado por comparecimento presumido.
+ */
+function attendanceRecord(row: AttendanceRow): AttendanceRecord {
+  return {
+    activityId: row.activityId,
+    activityTitle: row.activity?.title ?? null,
+    activityType: row.activity?.type ?? null,
+    workloadMinutes: row.activity?.workloadMinutes ?? 0,
+    minutesAttended: row.checkedOutAt ? (row.minutesAttended ?? 0) : 0,
+  };
+}
+
+/**
+ * Monta os fatos que não dependem do tipo do certificado.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  UMA FUNÇÃO PARA OS DOIS CAMINHOS (individual e projeção em lote)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A simulação e a emissão precisam chegar ao MESMO objeto antes de chamar
+ *  `evaluateEligibility`; se cada uma montasse o seu, a diferença apareceria como
+ *  "a tela disse 3 e emitiu 2" — sem erro, sem log, e só no dia do evento. O que
+ *  muda entre os caminhos é a CONSULTA (uma pessoa × o evento inteiro), não a
+ *  forma do fato.
+ */
+function baseFactsFrom(input: {
+  attendances: readonly AttendanceRecord[];
+  eventCheckedIn: boolean;
+  speakerLinks: readonly SpeakerLinkRow[];
+  completedReviews: number;
+  acceptedSubmissions: number;
+  miniCourseCount: number;
+  eventFinished: boolean;
+  now: Date;
+}): Omit<EligibilityFacts, 'kind'> {
+  return {
+    attendances: input.attendances,
+    eventCheckedIn: input.eventCheckedIn,
+    miniCourseCount: input.miniCourseCount,
+    isSpeaker: input.speakerLinks.length > 0,
+    speakerWorkload:
+      input.speakerLinks.length > 0 ? speakerWorkloadFrom(input.speakerLinks, input.now) : null,
+    completedReviews: input.completedReviews,
+    acceptedSubmissions: input.acceptedSubmissions,
+    eventFinished: input.eventFinished,
+  };
+}
+
 /**
  * Coleta os fatos de elegibilidade de UMA pessoa em UM evento.
  *
  * Uma consulta por bloco de fatos (presenças, palestrante, pareceres, trabalhos)
  * em vez de uma por tipo de certificado: a emissão em lote chama isto para dezenas
  * de pessoas, e N+1 aqui viraria centenas de consultas.
+ *
+ * Na FASE 85 este caminho continua sendo o da EMISSÃO (sete consultas por pessoa).
+ * A tela NÃO o usa: `loadEventFacts` abaixo faz a projeção em lote do evento.
  */
 async function loadFacts(
   tx: TxClient,
@@ -192,29 +277,18 @@ async function loadFacts(
     }),
   ]);
 
-  const records: AttendanceRecord[] = attendances.map((attendance) => ({
-    activityId: attendance.activityId,
-    activityTitle: attendance.activity?.title ?? null,
-    activityType: attendance.activity?.type ?? null,
-    workloadMinutes: attendance.activity?.workloadMinutes ?? 0,
-    /**
-     * Sem check-out, o tempo medido é 0 — não "indefinido". Assumir presença
-     * completa sem saída registrada seria emitir certificado por comparecimento
-     * presumido, exatamente o que a regra dos 75 % existe para impedir.
-     */
-    minutesAttended: attendance.checkedOutAt ? (attendance.minutesAttended ?? 0) : 0,
-  }));
-
   return {
     kind: 'ATTENDANCE',
-    attendances: records,
-    eventCheckedIn: Boolean(registration?.checkedInAt),
-    miniCourseCount: miniCourses,
-    isSpeaker: speaker.length > 0,
-    speakerWorkload: speaker.length > 0 ? speakerWorkloadFrom(speaker, now) : null,
-    completedReviews: reviews,
-    acceptedSubmissions: accepted,
-    eventFinished: event ? event.endsAt.getTime() <= now.getTime() : false,
+    ...baseFactsFrom({
+      attendances: attendances.map(attendanceRecord),
+      eventCheckedIn: Boolean(registration?.checkedInAt),
+      speakerLinks: speaker,
+      completedReviews: reviews,
+      acceptedSubmissions: accepted,
+      miniCourseCount: miniCourses,
+      eventFinished: event ? event.endsAt.getTime() <= now.getTime() : false,
+      now,
+    }),
   };
 }
 
@@ -273,6 +347,312 @@ function speakerWorkloadFrom(
     countedActivities: computed.countedActivities,
     declaredMinutes: entries.reduce((sum, entry) => sum + entry.workloadMinutes, 0),
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  FASE 85 — a projeção em lote da tela (o DRY-RUN do MESMO serviço)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE UMA PROJEÇÃO, E NÃO `loadFacts` POR PESSOA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `loadFacts` custa SETE consultas por pessoa. Numa tela isso é inviável: um
+ *  evento de 300 pessoas faria 2.100 idas ao banco para desenhar uma prévia que
+ *  ninguém pediu para gravar. Aqui o evento inteiro é lido em SEIS chamadas Prisma
+ *  (a régua é presa por teste de fonte) e os MESMOS fatos são montados por pessoa.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A POPULAÇÃO É A DA EMISSÃO, NÃO A DA INSCRIÇÃO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Os candidatos são a UNIÃO que `requestEventCertificates` já percorre:
+ *  presença ∪ palestrante ∪ parecer submetido ∪ autor de trabalho aceito. Não são
+ *  as inscrições: `_count.registrations` conta LINHAS (inclusive a inscrição de uma
+ *  atividade) e faria "pessoas no escopo" maior do que a população que a emissão
+ *  examina — um número que a tela não pode defender.
+ *
+ *  As consultas de fatos SÃO a fonte dos candidatos: quem aparece numa presença,
+ *  num vínculo de palestrante, num parecer ou numa autoria aceita entra no escopo;
+ *  não existe uma consulta separada de "quem são os candidatos".
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  A RÉGUA DAS CONSULTAS (a catraca lê estes marcadores)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Seis chamadas Prisma — não seis comandos SQL. Cada `select` aninhado vira um
+ *  comando extra no driver (medido com log de query no evento vazio: 6 chamadas →
+ *  13 comandos, porque atividade/usuário/avaliador vêm em consultas separadas). A
+ *  régua é de FONTE: é o número de `tx.<modelo>.<operação>(` que esta função
+ *  escreve, preso por `tests/unit/f85-simulacao-da-emissao.test.ts`. O que importa
+ *  é que o custo não cresça com N — 13 comandos para 3 ou para 300 pessoas.
+ */
+interface EventFactsProjection {
+  eventFound: boolean;
+  eventFinished: boolean;
+  miniCourseCount: number;
+  candidateIds: string[];
+  names: Map<string, string>;
+  attendancesByUser: Map<string, AttendanceRecord[]>;
+  checkedInUsers: Set<string>;
+  speakersByUser: Map<string, SpeakerLinkRow[]>;
+  reviewsByUser: Map<string, number>;
+  acceptedByUser: Map<string, number>;
+}
+
+/** <!-- f85-projecao-inicio --> */
+async function loadEventFacts(
+  tx: TxClient,
+  input: { tenantId: string; eventId: string; now: Date },
+): Promise<EventFactsProjection> {
+  const { tenantId, eventId, now } = input;
+
+  const [attendances, registrations, speakers, reviews, authors, eventFacts] = await Promise.all([
+    tx.attendance.findMany({
+      where: { tenantId, eventId },
+      select: {
+        userId: true,
+        activityId: true,
+        minutesAttended: true,
+        checkedOutAt: true,
+        activity: { select: { title: true, type: true, workloadMinutes: true } },
+        user: { select: { name: true } },
+      },
+    }),
+    /**
+     * Só a linha do EVENTO (`activityId: null`) responde "chegou ao evento" — a
+     * mesma distinção da FASE 70. A inscrição de uma atividade grava `checkedInAt`
+     * nela e NÃO é credenciamento no evento.
+     */
+    tx.registration.findMany({
+      where: { tenantId, eventId, activityId: null, deletedAt: null },
+      select: { userId: true, checkedInAt: true },
+    }),
+    tx.activitySpeaker.findMany({
+      where: { tenantId, activity: { eventId }, userId: { not: null } },
+      select: {
+        userId: true,
+        activityId: true,
+        workloadMinutes: true,
+        activity: {
+          select: { title: true, workloadMinutes: true, status: true, startsAt: true, endsAt: true },
+        },
+        user: { select: { name: true } },
+      },
+    }),
+    /**
+     * `findMany` em vez de `groupBy`: além da contagem, a linha traz o NOME do
+     * revisor — sem uma sétima consulta só para nomes. A contagem é feita em
+     * memória, sobre exatamente as mesmas linhas que o `count` do caminho
+     * individual enxergaria.
+     */
+    tx.review.findMany({
+      where: { tenantId, submission: { eventId }, submittedAt: { not: null } },
+      select: { reviewerId: true, reviewer: { select: { name: true } } },
+    }),
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O `deletedAt` É SELECIONADO, MAS NÃO ENTRA NO `where` DOS CANDIDATOS
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A consulta de CANDIDATOS da emissão aceita autor de trabalho aceito mesmo
+     *  que a submissão esteja excluída (ela não filtra `deletedAt`); depois o
+     *  `loadFacts` conta só as não excluídas. Reproduzir isso aqui é obrigatório:
+     *  filtrar a submissão excluída já na consulta tiraria a pessoa do ESCOPO, e a
+     *  tela mostraria uma população menor do que a que a emissão percorre.
+     */
+    tx.submissionAuthor.findMany({
+      where: { tenantId, userId: { not: null }, submission: { eventId, status: 'ACCEPTED' } },
+      select: {
+        submissionId: true,
+        userId: true,
+        user: { select: { name: true } },
+        submission: { select: { deletedAt: true } },
+      },
+    }),
+    /**
+     * Os fatos do EVENTO (fim e número de minicursos) numa leitura só. A lista de
+     * minicursos vem filtrada e o tamanho dela é a contagem — o mesmo filtro do
+     * `activity.count` individual.
+     */
+    tx.event.findFirst({
+      where: { id: eventId, tenantId },
+      select: {
+        endsAt: true,
+        activities: {
+          where: { type: 'MINI_COURSE', deletedAt: null },
+          select: { id: true },
+        },
+      },
+    }),
+  ]);
+  /** <!-- f85-projecao-fim --> */
+
+  const candidateIds = new Set<string>();
+  const names = new Map<string, string>();
+  const attendancesByUser = new Map<string, AttendanceRecord[]>();
+  const checkedInUsers = new Set<string>();
+  const speakersByUser = new Map<string, SpeakerLinkRow[]>();
+  const reviewsByUser = new Map<string, number>();
+  const acceptedByUser = new Map<string, number>();
+
+  for (const row of attendances) {
+    candidateIds.add(row.userId);
+    names.set(row.userId, row.user.name);
+
+    const records = attendancesByUser.get(row.userId) ?? [];
+    // Cada LINHA vira uma entrada — ver `attendanceRecord`.
+    records.push(attendanceRecord(row));
+    attendancesByUser.set(row.userId, records);
+  }
+
+  for (const row of registrations) {
+    if (row.checkedInAt) checkedInUsers.add(row.userId);
+  }
+
+  for (const row of speakers) {
+    // A consulta já filtra `userId: { not: null }`; o guarda existe para o tipo.
+    if (!row.userId) continue;
+
+    candidateIds.add(row.userId);
+    // O vínculo pode existir com `userId` sem relação carregada (legado). O nome é
+    // rótulo de tela; faltar nome NÃO pode tirar a pessoa do escopo.
+    names.set(row.userId, row.user?.name ?? 'Participante');
+
+    const links = speakersByUser.get(row.userId) ?? [];
+    links.push({
+      activityId: row.activityId,
+      workloadMinutes: row.workloadMinutes,
+      activity: row.activity,
+    });
+    speakersByUser.set(row.userId, links);
+  }
+
+  for (const row of reviews) {
+    candidateIds.add(row.reviewerId);
+    names.set(row.reviewerId, row.reviewer.name);
+    reviewsByUser.set(row.reviewerId, (reviewsByUser.get(row.reviewerId) ?? 0) + 1);
+  }
+
+  /**
+   * Trabalhos aceitos são contados por SUBMISSÃO, não por linha de autoria: o
+   * `submission.count` do caminho individual conta o trabalho uma vez para a
+   * pessoa, mesmo que ela apareça em duas linhas de coautoria.
+   */
+  const acceptedSubmissionsByUser = new Map<string, Set<string>>();
+
+  for (const row of authors) {
+    if (!row.userId) continue;
+
+    candidateIds.add(row.userId);
+    names.set(row.userId, row.user?.name ?? 'Participante');
+
+    if (row.submission.deletedAt) continue;
+
+    const submissions = acceptedSubmissionsByUser.get(row.userId) ?? new Set<string>();
+    submissions.add(row.submissionId);
+    acceptedSubmissionsByUser.set(row.userId, submissions);
+  }
+
+  for (const [userId, submissions] of acceptedSubmissionsByUser) {
+    acceptedByUser.set(userId, submissions.size);
+  }
+
+  return {
+    eventFound: Boolean(eventFacts),
+    eventFinished: eventFacts ? eventFacts.endsAt.getTime() <= now.getTime() : false,
+    miniCourseCount: eventFacts?.activities.length ?? 0,
+    candidateIds: [...candidateIds],
+    names,
+    attendancesByUser,
+    checkedInUsers,
+    speakersByUser,
+    reviewsByUser,
+    acceptedByUser,
+  };
+}
+
+export interface EventCertificatePreview {
+  /** Pessoas com direito a avaliação — a população que a emissão percorre. */
+  scope: number;
+  people: PreviewPerson[];
+}
+
+/**
+ * DRY-RUN da emissão em lote: percorre os candidatos e devolve os vereditos.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  NÃO GRAVA NADA — E NÃO DECIDE NADA DIFERENTE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Não há `requestCertificate`, nem fila, nem PDF: só leitura. A decisão é da
+ *  MESMA função de domínio que a emissão chama (`evaluateEligibility`), alimentada
+ *  pela MESMA montagem de fatos (`baseFactsFrom`). A igualdade com a emissão não é
+ *  argumento — é catraca: `tests/integration/f85-preview-e-emissao.test.ts` compara
+ *  os elegíveis do preview com os certificados que a emissão cria no mesmo evento.
+ *
+ *  `reason` é a novidade da fatia: a emissão jogava `verdict.reason` fora
+ *  (`skipped += 1`). A tela precisa do texto do domínio para dizer POR QUE uma
+ *  pessoa ficou de fora — "não elegível" sem motivo manda a equipe abrir chamado.
+ */
+export async function previewEventCertificates(input: {
+  tenantId: string;
+  eventId: string;
+  kinds: readonly CertificateKind[];
+  now?: Date;
+}): Promise<CertificateResult<{ preview: EventCertificatePreview }>> {
+  try {
+    const now = input.now ?? new Date();
+
+    return await withTenant(input.tenantId, async (tx) => {
+      const facts = await loadEventFacts(tx, {
+        tenantId: input.tenantId,
+        eventId: input.eventId,
+        now,
+      });
+
+      if (!facts.eventFound) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Evento não encontrado.',
+        };
+      }
+
+      const people: PreviewPerson[] = facts.candidateIds.map((userId) => {
+        const base = baseFactsFrom({
+          attendances: facts.attendancesByUser.get(userId) ?? [],
+          eventCheckedIn: facts.checkedInUsers.has(userId),
+          speakerLinks: facts.speakersByUser.get(userId) ?? [],
+          completedReviews: facts.reviewsByUser.get(userId) ?? 0,
+          acceptedSubmissions: facts.acceptedByUser.get(userId) ?? 0,
+          miniCourseCount: facts.miniCourseCount,
+          eventFinished: facts.eventFinished,
+          now,
+        });
+
+        return {
+          userId,
+          name: facts.names.get(userId) ?? 'Participante',
+          verdicts: input.kinds.map((kind) => {
+            const verdict = evaluateEligibility({ ...base, kind });
+
+            return { kind, eligible: verdict.eligible, reason: verdict.reason };
+          }),
+        };
+      });
+
+      // Ordem de leitura estável: nome; o `userId` desempata homônimos para a tela
+      // não mudar de ordem entre dois renders do mesmo evento.
+      people.sort(
+        (a, b) => a.name.localeCompare(b.name, 'pt-BR') || a.userId.localeCompare(b.userId),
+      );
+
+      return { ok: true as const, preview: { scope: people.length, people } };
+    });
+  } catch (error) {
+    console.error(`[certificates] falha ao simular a emissão em lote: ${errorMessage(error)}`);
+    return {
+      ok: false as const,
+      code: 'INTERNAL' as const,
+      message: 'Não foi possível simular a emissão agora.',
+    };
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -907,6 +1287,15 @@ export interface BatchIssueOutput {
   requested: number;
   skipped: number;
   certificates: { userId: string; certificateId: string; kind: CertificateKind }[];
+  /**
+   * As tentativas recusadas, com o motivo que o domínio produziu (FASE 85).
+   *
+   * Até aqui o motivo era DESCARTADO (`skipped += 1`), e nem a resposta da action
+   * nem a simulação podiam dizer por que alguém ficou de fora. A contagem
+   * `skipped` continua existindo (é o contrato antigo), mas agora é
+   * `discarded.length` — as duas não podem divergir.
+   */
+  discarded: { userId: string; kind: CertificateKind; reason: string }[];
 }
 
 /**
@@ -960,7 +1349,7 @@ export async function requestEventCertificates(input: {
     });
 
     const certificates: BatchIssueOutput['certificates'] = [];
-    let skipped = 0;
+    const discarded: BatchIssueOutput['discarded'] = [];
 
     for (const userId of candidates) {
       for (const kind of input.kinds) {
@@ -976,7 +1365,10 @@ export async function requestEventCertificates(input: {
         if (result.ok) {
           certificates.push({ userId, certificateId: result.certificateId, kind });
         } else {
-          skipped += 1;
+          // O motivo deixa de ser jogado fora: é ele que a simulação lista e que a
+          // resposta da action conta. `NOT_ELIGIBLE` traz o texto do domínio; os
+          // demais códigos (assinatura, erro interno) também têm mensagem própria.
+          discarded.push({ userId, kind, reason: result.message });
         }
       }
     }
@@ -984,8 +1376,9 @@ export async function requestEventCertificates(input: {
     return {
       ok: true as const,
       requested: certificates.length,
-      skipped,
+      skipped: discarded.length,
       certificates,
+      discarded,
     };
   } catch (error) {
     console.error(`[certificates] falha na emissão em lote: ${errorMessage(error)}`);

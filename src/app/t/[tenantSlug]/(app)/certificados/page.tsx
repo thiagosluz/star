@@ -10,14 +10,10 @@ import { CERTIFICATE_KIND_LABELS, CERTIFICATE_KINDS } from '@/domain/certificate
 import { listCertificates } from '@/lib/certificates/certificate-service';
 import { withTenant } from '@/lib/db/tenant-client';
 import { RequestCertificateForm } from '@/components/certificates/request-form';
-import { IssueBatchPanel, RevokeCertificateForm } from '@/components/certificates/issue-panel';
+import { RevokeCertificateForm } from '@/components/certificates/issue-panel';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
-import {
-  issueEventCertificatesAction,
-  requestMyCertificateAction,
-  revokeCertificateAction,
-} from '@/app/actions/certificate-actions';
+import { requestMyCertificateAction, revokeCertificateAction } from '@/app/actions/certificate-actions';
 
 export const metadata = { title: 'Meus certificados' };
 export const dynamic = 'force-dynamic';
@@ -32,11 +28,20 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * Certificados do participante (+ painel de emissão para a equipe).
+ * Certificados do participante (+ a revogação de quem administra).
  *
  * A tela mostra o código de validação e o link público de cada documento: é o que
  * permite a quem recebeu o certificado conferir que ele é verdadeiro antes de
  * apresentá-lo — e é a única forma de descobrir uma revogação.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A EMISSÃO EM LOTE NÃO MORA MAIS AQUI (FASE 85)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O painel de lote emite para o EVENTO inteiro, mas esta tela responde outra
+ *  pergunta ("os MEUS documentos") e era o endereço do cartão de RESULTADO da raiz
+ *  do evento. Ele passou para `/administracao/eventos/<id>/certificados`, junto do
+ *  escopo que a Server Action sempre teve. Ficaram aqui: o pedido individual, a
+ *  lista dos próprios certificados e a revogação para quem pode.
  */
 export default async function CertificatesPage({
   params,
@@ -51,7 +56,6 @@ export default async function CertificatesPage({
   });
 
   const context = await getRequestContext();
-  const canIssue = can(context?.principal, PERMISSIONS.CERTIFICATE_ISSUE, { scope: 'TENANT' });
   const canRevoke = can(context?.principal, PERMISSIONS.CERTIFICATE_REVOKE, { scope: 'TENANT' });
 
   const [mineResult, events] = await Promise.all([
@@ -195,15 +199,6 @@ export default async function CertificatesPage({
           </ul>
         )}
       </section>
-
-      {canIssue ? (
-        <IssueBatchPanel
-          tenantSlug={tenantSlug}
-          events={events}
-          kinds={kindOptions}
-          action={issueEventCertificatesAction}
-        />
-      ) : null}
 
       <nav className="text-sm">
         <Link
