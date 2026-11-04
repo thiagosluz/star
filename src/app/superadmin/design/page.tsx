@@ -191,7 +191,7 @@ export default async function DesignCatalogPage() {
       <PageHeader
         title="Guia de estilo"
         breadcrumbs={[PLATFORM_CRUMB, { label: 'Guia de estilo' }]}
-        description="A identidade do EventFlow renderizada pelo próprio código do produto. Um módulo novo copia daqui — e o teste de guarda impede cor ou tamanho fora de token."
+        description="A identidade da Koveno renderizada pelo próprio código do produto. Um módulo novo copia daqui — e o teste de guarda impede cor ou tamanho fora de token."
         badge={<Badge tone="primary">FASE 11A</Badge>}
       />
 

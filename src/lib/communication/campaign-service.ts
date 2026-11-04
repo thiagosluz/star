@@ -365,7 +365,7 @@ export async function dispatchCampaign(
         subject: campaign.subject,
         body: campaign.body,
         definition: parseStoredDefinition(campaign.definition),
-        tenantName: tenant?.name ?? 'EventFlow',
+        tenantName: tenant?.name ?? 'Koveno',
         tenantSlug: tenant?.slug ?? '',
         actorName: actor?.name ?? null,
       };

@@ -154,7 +154,7 @@ export async function notifyCardGranted(input: {
       to: data.email,
       toUserId: data.id,
       template: 'CARD_GRANTED',
-      brandName: membership?.tenant.name ?? 'EventFlow',
+      brandName: membership?.tenant.name ?? 'Koveno',
       createdById: input.actorId ?? null,
       dedupeKey: `card-granted:${input.tenantId}:${input.userId}:${input.eventId ?? 'global'}:${input.cardName}`,
       payload: {

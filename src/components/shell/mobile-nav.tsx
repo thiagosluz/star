@@ -4,6 +4,7 @@ import { Menu, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
+import { KovenoMark } from '@/components/ui/brand-mark';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -149,7 +150,12 @@ export function MobileNav({
                 )}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
-                  <p className="font-display text-title text-foreground">{brandLabel}</p>
+                  <p className="inline-flex items-center gap-2 font-display text-title text-foreground">
+                    <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
+                      <KovenoMark className="size-4" />
+                    </span>
+                    <span>{brandLabel}</span>
+                  </p>
                   <button
                     type="button"
                     onClick={() => setOpen(false)}

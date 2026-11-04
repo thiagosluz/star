@@ -5,7 +5,6 @@ import {
   Building2,
   Search,
   MapPin,
-  Sparkles,
   ArrowRight,
   SlidersHorizontal,
   X,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { KovenoMark } from '@/components/ui/brand-mark';
 import {
   EVENT_CATEGORIES,
   getEventCategoryLabel,
@@ -28,7 +28,7 @@ import { listPublicDirectory } from '@/lib/platform/directory-service';
 import { searchPublicEvents } from '@/lib/platform/global-repository';
 
 export const metadata: Metadata = {
-  title: 'Explorar Eventos e Instituições · EventFlow',
+  title: 'Explorar Eventos e Instituições · Koveno',
   description:
     'Descubra eventos acadêmicos, corporativos e comunitários com inscrições abertas, submissão de trabalhos e certificação digital.',
 };
@@ -140,9 +140,9 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight text-foreground transition hover:opacity-85">
             <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Sparkles className="size-5" />
+              <KovenoMark className="size-5" />
             </div>
-            <span className="text-xl font-bold">EventFlow</span>
+            <span className="text-xl font-bold">Koveno</span>
           </Link>
 
           <nav className="flex items-center gap-3">
@@ -671,7 +671,7 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
       {/* ─── Rodapé ───────────────────────────────────────────────────────────── */}
       <footer className="mt-20 border-t border-border bg-card/30 py-8">
         <div className="mx-auto max-w-7xl px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
-          <p>© {new Date().getFullYear()} EventFlow. Plataforma SaaS multi-instituição de gestão de eventos.</p>
+          <p>© {new Date().getFullYear()} Koveno. Plataforma SaaS multi-instituição de gestão de eventos.</p>
           <div className="flex items-center gap-4">
             <Link href="/para-instituicoes" className="hover:text-foreground">Para Organizadores</Link>
             <ThemeChoice variant="public" />

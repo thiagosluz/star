@@ -16,10 +16,11 @@ import {
 } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { KovenoMark } from '@/components/ui/brand-mark';
 import { InstitutionLeadForm } from '@/components/platform/lead-form';
 
 export const metadata: Metadata = {
-  title: 'Para Instituições · EventFlow SaaS',
+  title: 'Para Instituições · Koveno',
   description:
     'Infraestrutura completa de eventos acadêmicos, corporativos e comunitários: submissão de trabalhos com revisão por pares, gamificação, certificação e segurança multi-tenant.',
 };
@@ -132,10 +133,10 @@ export default function ParaInstituicoesPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-6">
             <Link href="/" className="flex items-center gap-2.5 font-bold tracking-tight text-lg text-foreground hover:opacity-90">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-black text-sm shadow-xs">
-                EF
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
+                <KovenoMark className="size-5" />
               </span>
-              <span>EventFlow</span>
+              <span>Koveno</span>
             </Link>
 
             <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
@@ -330,10 +331,10 @@ export default function ParaInstituicoesPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
             <div className="space-y-1">
               <div className="flex items-center justify-center sm:justify-start gap-2 font-bold text-sm text-foreground">
-                <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground font-black text-xs">
-                  EF
+                <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <KovenoMark className="size-4" />
                 </span>
-                <span>EventFlow SaaS</span>
+                <span>Koveno</span>
               </div>
               <p className="max-w-md text-xs text-muted-foreground">
                 Plataforma de governança, submissão e certificação digital para organizações de todo o Brasil.

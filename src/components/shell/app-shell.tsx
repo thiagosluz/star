@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { MobileNav } from '@/components/shell/mobile-nav';
 import { NavCollapseToggle } from '@/components/shell/nav-collapse-toggle';
+import { KovenoMark, PLATFORM_BRAND_NAME } from '@/components/ui/brand-mark';
 import { NavLink } from '@/components/ui/navigation';
 import { NAV_MODE_RAIL } from '@/lib/shell/nav-mode';
 import { readNavMode } from '@/lib/shell/nav-mode-server';
@@ -198,7 +199,7 @@ export async function AppShell({
   children: ReactNode;
   contentClassName?: string;
 }) {
-  const brandLabel = brand?.label ?? 'EventFlow';
+  const brandLabel = brand?.label ?? PLATFORM_BRAND_NAME;
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
@@ -251,14 +252,18 @@ export async function AppShell({
             recolhida ? 'flex-col px-2' : 'justify-between px-5',
           )}
         >
-          <p className={cn('font-display text-title text-foreground', recolhida && 'sr-only')}>
-            {brandLabel}
+          <p className={cn('inline-flex items-center gap-2 font-display text-title text-foreground', recolhida && 'sr-only')}>
+            <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
+              <KovenoMark className="size-4" />
+            </span>
+            <span>{brandLabel}</span>
           </p>
 
           {/**
             * Na barra recolhida o nome não cabe — mas a marca não pode desaparecer:
-            * é ela que responde "onde eu estou?". A sigla assume o lugar e o nome
-            * inteiro fica em `sr-only`, com o `title` o devolvendo ao ponteiro.
+            * é ela que responde "onde eu estou?". O símbolo oficial assume o lugar
+            * (ou a sigla, quando o layout declara `brand.short`) e o nome inteiro
+            * fica em `sr-only`, com o `title` o devolvendo ao ponteiro.
             *
             * É um `<span>`, e não um link: esta barra serve à instituição E à
             * plataforma (o painel de governança usa o mesmo shell), e um destino
@@ -267,9 +272,13 @@ export async function AppShell({
           {recolhida ? (
             <span
               title={brandLabel}
-              className="flex size-9 items-center justify-center rounded-md border border-border bg-surface-low font-display text-sm font-semibold text-foreground"
+              className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground font-display text-sm font-semibold shadow-xs"
             >
-              <span aria-hidden>{sigla(brand?.short ?? brandLabel)}</span>
+              {brand?.short ? (
+                <span aria-hidden>{sigla(brand.short)}</span>
+              ) : (
+                <KovenoMark className="size-5" />
+              )}
               <span className="sr-only">{brandLabel}</span>
             </span>
           ) : brand?.tagline ? (

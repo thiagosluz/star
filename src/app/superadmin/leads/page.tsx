@@ -55,7 +55,7 @@ export default async function PlatformLeadsPage({ searchParams }: LeadsPageProps
         eyebrow={PLATFORM_NAV_GROUP}
         title="Contatos e Leads Institucionais"
         icon={<Building2 className="size-6 text-muted-foreground" aria-hidden />}
-        description="Universidades, faculdades, sociedades científicas e empresas interessadas no EventFlow."
+        description="Universidades, faculdades, sociedades científicas e empresas interessadas na Koveno."
         breadcrumbs={[PLATFORM_CRUMB, { label: 'Leads de Expansão' }]}
         badge={<Badge tone="primary">SuperAdmin</Badge>}
         actions={

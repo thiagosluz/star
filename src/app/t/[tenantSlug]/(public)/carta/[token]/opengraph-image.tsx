@@ -178,7 +178,7 @@ export default async function CardShareImage({
         {/* ── Os fatos ──────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 640 }}>
           <div style={{ fontSize: 22, letterSpacing: 3, textTransform: 'uppercase', opacity: 0.8 }}>
-            {tenant?.name ?? 'EventFlow'}
+            {tenant?.name ?? 'Koveno'}
           </div>
 
           <div style={{ fontSize: 58, fontWeight: 700, lineHeight: 1.1 }}>

@@ -29,7 +29,7 @@ export const VERIFICATION_TOKEN_HOURS = 24;
 export const RESET_TOKEN_MINUTES = 60;
 
 /** Assinatura da plataforma: e-mail de identidade não pertence a instituição. */
-const PLATFORM_BRAND = 'EventFlow';
+const PLATFORM_BRAND = 'Koveno';
 
 export async function sendAccountEmail(input: {
   template: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'EMAIL_CHANGE';

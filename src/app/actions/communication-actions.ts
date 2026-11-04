@@ -506,7 +506,7 @@ async function sendCampaignTest(input: {
 
   const tenantName = await withTenant(input.tenantId, (tx) =>
     tx.tenant.findUnique({ where: { id: input.tenantId }, select: { name: true } }),
-  ).then((row) => row?.name ?? 'EventFlow');
+  ).then((row) => row?.name ?? 'Koveno');
 
   const result = await queueEmail({
     tenantId: input.tenantId,

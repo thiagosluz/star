@@ -61,12 +61,12 @@ const plusJakarta = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: 'EventFlow',
-    template: '%s · EventFlow',
+    default: 'Koveno',
+    template: '%s · Koveno',
   },
   description:
     'Plataforma de gestão de eventos acadêmicos, corporativos e comunitários: submissões, avaliação por pares, gamificação e certificados.',
-  applicationName: 'EventFlow',
+  applicationName: 'Koveno',
 };
 
 export default async function RootLayout({

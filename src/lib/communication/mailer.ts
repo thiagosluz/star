@@ -65,7 +65,7 @@ export function currentEmailDriver(): EmailDriver {
 
 /** Remetente único da plataforma. O nome da instituição vai no assunto e no corpo. */
 export function emailFromAddress(): string {
-  return process.env.EMAIL_FROM?.trim() || 'EventFlow <nao-responda@eventflow.test>';
+  return process.env.EMAIL_FROM?.trim() || 'Koveno <nao-responda@eventflow.test>';
 }
 
 function replyToAddress(): string | null {

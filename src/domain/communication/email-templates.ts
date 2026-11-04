@@ -515,7 +515,7 @@ ${input.paragraphs.map((paragraph) => `              <p style="margin:0 0 14px;f
           </tr>
         </table>
         <p style="margin:14px 0 0;font:400 11px/16px ${EMAIL_FONT_STACK};color:${P.muted};">
-          EventFlow · mensagem automática, não responda a este endereço.
+          Koveno · mensagem automática, não responda a este endereço.
         </p>
       </td>
     </tr>
@@ -679,7 +679,7 @@ export function renderEmail<K extends EmailTemplateKey>(
           paragraphs: [
             paragraph(greeting(data.recipientName)),
             paragraph(
-              `${inviter} para integrar a equipe de ${data.tenantName} no EventFlow, com o papel de ${data.roleLabel}. O acesso é liberado quando você aceitar o convite.`,
+              `${inviter} para integrar a equipe de ${data.tenantName} na Koveno, com o papel de ${data.roleLabel}. O acesso é liberado quando você aceitar o convite.`,
             ),
             ...(data.message ? [paragraph(`Recado de quem convidou: “${data.message}”`)] : []),
           ],

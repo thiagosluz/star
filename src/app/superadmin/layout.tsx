@@ -81,7 +81,7 @@ export default async function SuperAdminLayout({ children }: { children: React.R
   return (
     <AppShell
       variant="platform"
-      brand={{ label: 'EventFlow', tagline: 'Governança da plataforma' }}
+      brand={{ label: 'Koveno', tagline: 'Governança da plataforma' }}
       context={{ name: PLATFORM_NAV_GROUP, detail: operator.email, testId: 'platform-operator' }}
       navGroups={buildPlatformNav()}
       account={

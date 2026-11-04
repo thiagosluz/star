@@ -115,7 +115,7 @@ export default async function TenantLayout({
 
   return (
     <AppShell
-      brand={{ label: 'EventFlow', tagline: 'Gestão de eventos' }}
+      brand={{ label: 'Koveno', tagline: 'Gestão de eventos' }}
       context={{
         name: tenant.name,
         detail: `${membership.roles.length > 0 ? membership.roles.join(' · ') : 'Sem papel'} · ${tenant.plan}`,

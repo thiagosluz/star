@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { KovenoMark } from '@/components/ui/brand-mark';
 import { getRequestContext } from '@/lib/auth/session';
 import { buildTenantUrl } from '@/domain/tenancy/resolution';
 import { resolveVitrineAccountAction } from '@/domain/platform/vitrine-account-rules';
@@ -34,7 +35,7 @@ import {
 import { eventModalityLabel } from '@/domain/events/event-modality-rules';
 
 export const metadata: Metadata = {
-  title: 'EventFlow · A Vitrine Viva de Eventos Acadêmicos e Corporativos',
+  title: 'Koveno · A Vitrine Viva de Eventos Acadêmicos e Corporativos',
   description:
     'Descubra eventos, inscreva-se com segurança, receba crachás digitais, conquiste certificados autenticados por QR Code e participe de comunidades.',
 };
@@ -104,10 +105,10 @@ export default async function PlatformHomePage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-6">
             <Link href="/" className="flex items-center gap-2.5 font-bold tracking-tight text-lg text-foreground hover:opacity-90">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-black text-sm shadow-xs">
-                EF
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
+                <KovenoMark className="size-5" />
               </span>
-              <span>EventFlow</span>
+              <span>Koveno</span>
             </Link>
 
             <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
@@ -176,9 +177,20 @@ export default async function PlatformHomePage() {
       {/* ─── HERO SECTION COM BUSCA RÁPIDA ──────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-border py-16 sm:py-24 bg-radial from-primary/5 via-background to-background">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center space-y-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3.5 py-1 text-xs font-medium text-muted-foreground shadow-2xs">
-            <Sparkles className="size-3.5 text-primary" aria-hidden />
-            A vitrine viva de congressos, simpósios e encontros institucionais
+          {/*
+            O lockup é <div>, não <h1>: o título semântico da página continua sendo a
+            proposta de valor logo abaixo — a marca é identidade, não o assunto.
+          */}
+          <div
+            className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-5"
+            data-testid="home-hero-brand"
+          >
+            <span className="flex size-20 items-center justify-center rounded-3xl bg-primary text-primary-foreground shadow-lg ring-8 ring-primary/10 sm:size-24">
+              <KovenoMark className="size-12 sm:size-14" />
+            </span>
+            <span className="text-5xl font-extrabold tracking-tight text-foreground sm:text-6xl">
+              Koveno
+            </span>
           </div>
 
           <h1 className="text-balance text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl text-foreground">
@@ -572,10 +584,10 @@ export default async function PlatformHomePage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
             <div className="space-y-1">
               <div className="flex items-center justify-center sm:justify-start gap-2 font-bold text-sm text-foreground">
-                <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground font-black text-xs">
-                  EF
+                <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <KovenoMark className="size-4" />
                 </span>
-                <span>EventFlow SaaS</span>
+                <span>Koveno</span>
               </div>
               <p className="max-w-md text-xs text-muted-foreground">
                 Plataforma integrada de gestão, descoberta e certificação de eventos acadêmicos, comunitários e corporativos.

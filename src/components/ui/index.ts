@@ -14,6 +14,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export { Badge, RarityBadge, type BadgeTone, type CardRarityTone } from './badge';
+export { KovenoMark, PLATFORM_BRAND_NAME } from './brand-mark';
 export { Button, buttonClasses, buttonVariants, type ButtonVariants } from './button';
 export {
   Card,

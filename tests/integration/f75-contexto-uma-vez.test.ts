@@ -417,7 +417,7 @@ describe('o contexto da requisição é resolvido UMA vez por render', () => {
 
     const html = await renderizar(layout);
 
-    expect(html).toContain('EventFlow');
+    expect(html).toContain('Koveno');
     expect(contagem.memberships).toBe(1);
     expect(contagem.principals).toBe(1);
     expect(contagem.sessoes).toBe(1);

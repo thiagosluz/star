@@ -69,7 +69,7 @@ export default async function MemberInvitePage({
       <PageHeader
         title="Convite para a equipe"
         icon={<UserRoundPlus className="size-6 text-muted-foreground" aria-hidden />}
-        description="Este convite dá acesso à operação da instituição no EventFlow. O vínculo é criado no momento em que você aceita."
+        description="Este convite dá acesso à operação da instituição na Koveno. O vínculo é criado no momento em que você aceita."
       />
 
       {!invite ? (

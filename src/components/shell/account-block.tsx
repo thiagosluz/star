@@ -228,7 +228,7 @@ export function PublicFooter({ className }: { className?: string }) {
     <footer className={cn('border-t border-border bg-card', className)}>
       <div className="mx-auto flex w-full max-w-[var(--content-max)] flex-wrap items-center justify-between gap-3 px-4 py-6 text-xs text-muted-foreground lg:px-8">
         <p>
-          Organizado com <span className="font-medium text-foreground">EventFlow</span> —
+          Organizado com <span className="font-medium text-foreground">Koveno</span> —
           plataforma de eventos acadêmicos, corporativos e comunitários.
         </p>
         <Link href="/organizacoes" className="underline-offset-4 hover:text-foreground hover:underline">
