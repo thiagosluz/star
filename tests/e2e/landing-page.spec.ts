@@ -21,7 +21,9 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'landing-f17';
@@ -77,7 +79,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },
@@ -215,7 +217,7 @@ test.describe('página pública, patrocínio e autoria', () => {
      * A prova é o resumo do evento (que a composição padrão usa) estar visível —
      * e não os blocos, que nem existem ainda.
      */
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     const publicPage = await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     expect(publicPage?.status()).toBe(200);
     await expect(
@@ -279,7 +281,7 @@ test.describe('página pública, patrocínio e autoria', () => {
     await expect(page.getByTestId('landing-status')).toContainText(/publicada/i, { timeout: 20_000 });
 
     // ── A página pública (sem sessão) mostra o conteúdo publicado ─────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
 
     const publicPage = await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     expect(publicPage?.status()).toBe(200);
@@ -327,7 +329,7 @@ test.describe('página pública, patrocínio e autoria', () => {
     });
 
     // ── Página pública mostra o patrocinador ──────────────────────────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     await expect(page.getByText(sponsorName)).toBeVisible();
 
@@ -342,7 +344,7 @@ test.describe('página pública, patrocínio e autoria', () => {
       timeout: 20_000,
     });
 
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     await expect(page.getByText(sponsorName)).toHaveCount(0);
 
@@ -430,7 +432,7 @@ test.describe('página pública, patrocínio e autoria', () => {
     }
 
     // ── Página pública: cartões diferentes, por cota ──────────────────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
 
     const faixaGrande = page.locator('[data-testid="sponsor-tier"][data-tier-scale="FEATURE"]').first();

@@ -38,7 +38,9 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 
@@ -70,7 +72,7 @@ async function signUp(api: APIRequestContext, name: string): Promise<string> {
 
 /** Entra de verdade: o cookie de sessão é o que faz a raiz desenhar o outro botão. */
 async function signInAs(page: Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: ORIGIN } });
+  await signOut(page, ORIGIN);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: ORIGIN },

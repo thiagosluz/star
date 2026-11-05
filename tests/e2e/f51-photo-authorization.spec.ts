@@ -33,6 +33,7 @@ import {
   e2eDb,
   grantRole,
   linkUser,
+  signOut,
 } from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
@@ -60,7 +61,7 @@ test.afterAll(async () => {
 });
 
 async function signInAs(page: Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

@@ -18,6 +18,7 @@ import {
   grantRole,
   linkUser,
   uniqueEmail,
+  signOut,
 } from './helpers';
 
 /**
@@ -103,7 +104,7 @@ async function criarPessoa(request: APIRequestContext, nome: string): Promise<Pe
 }
 
 async function entrar(page: Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

@@ -73,7 +73,81 @@ const contagem = vi.hoisted(() => ({
   memberships: 0,
   principals: 0,
   sessoes: 0,
+  sponsorAccess: 0,
 }));
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O DISPATCHER DO `React.cache` FORA DO `react-server` (FASE 88 · I10)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  No Node padrão (sem `--conditions react-server`), `react/index.js` exporta um
+ *  `cache(fn)` pass-through (`fn => (...args) => fn(...args)`). O runtime RSC do
+ *  Next.js usa `react.react-server`, que guarda argumentos primitivos em `Map` e
+ *  objetos em `WeakMap` por requisição. Reproduzimos exatamente a árvore
+ *  `Map`/`WeakMap` do `react-server` aqui (zerada no `beforeEach`, que é uma
+ *  requisição) para provar que `TenantLayout` + `DashboardPage` (e
+ *  `SponsorAreaPage`) batem na mesma entrada primitiva `(tenantId, userId)` — e
+ *  que passar `{ tenantId, userId }` erraria o `WeakMap` e reprovaria este teste.
+ */
+interface CacheNode {
+  s: 0 | 1;
+  v: unknown;
+  p: Map<unknown, CacheNode> | null;
+  o: WeakMap<object, CacheNode> | null;
+}
+
+function criarCacheNode(): CacheNode {
+  return { s: 0, v: undefined, p: null, o: null };
+}
+
+const escopoRsc = vi.hoisted(() => ({
+  raizes: new Map<(...args: never[]) => unknown, CacheNode>(),
+}));
+
+vi.mock('react', async (importOriginal) => {
+  const real = await importOriginal<typeof import('react')>();
+
+  return {
+    ...real,
+    cache: <T extends (...args: never[]) => unknown>(fn: T): T => {
+      const wrapped = (...args: Parameters<T>): ReturnType<T> => {
+        let node = escopoRsc.raizes.get(fn);
+        if (!node) {
+          node = criarCacheNode();
+          escopoRsc.raizes.set(fn, node);
+        }
+
+        for (const arg of args) {
+          if (typeof arg === 'function' || (typeof arg === 'object' && arg !== null)) {
+            if (!node.o) node.o = new WeakMap();
+            let next = node.o.get(arg);
+            if (!next) {
+              next = criarCacheNode();
+              node.o.set(arg, next);
+            }
+            node = next;
+          } else {
+            if (!node.p) node.p = new Map();
+            let next = node.p.get(arg);
+            if (!next) {
+              next = criarCacheNode();
+              node.p.set(arg, next);
+            }
+            node = next;
+          }
+        }
+
+        if (node.s === 1) return node.v as ReturnType<T>;
+        const result = fn(...args);
+        node.s = 1;
+        node.v = result;
+        return result as ReturnType<T>;
+      };
+
+      return wrapped as T;
+    },
+  };
+});
 
 vi.mock('../../src/lib/auth/auth', () => ({
   auth: {
@@ -180,6 +254,10 @@ vi.mock('../../src/lib/db/tenant-client', async (importOriginal) => {
         contagem.principals += 1;
       }
 
+      if (pilha.includes('sponsor-portal-service.ts') && pilha.includes('listSponsorAccess')) {
+        contagem.sponsorAccess += 1;
+      }
+
       return real.withTenant(tenantId, fn, options);
     },
   };
@@ -204,6 +282,9 @@ const { default: ParticipantsPage } = await import(
  */
 const { default: DashboardPage } = await import(
   '../../src/app/t/[tenantSlug]/(app)/dashboard/page'
+);
+const { default: SponsorAreaPage } = await import(
+  '../../src/app/t/[tenantSlug]/(app)/patrocinador/page'
 );
 const { default: TenantLayout } = await import('../../src/app/t/[tenantSlug]/(app)/layout');
 
@@ -320,6 +401,8 @@ beforeEach(() => {
   contagem.memberships = 0;
   contagem.principals = 0;
   contagem.sessoes = 0;
+  contagem.sponsorAccess = 0;
+  escopoRsc.raizes.clear();
 });
 
 /** Renderiza como o Next faria e devolve o HTML — a página inteira, não um trecho. */
@@ -421,5 +504,48 @@ describe('o contexto da requisição é resolvido UMA vez por render', () => {
     expect(contagem.memberships).toBe(1);
     expect(contagem.principals).toBe(1);
     expect(contagem.sessoes).toBe(1);
+  });
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  DÍVIDA I10 QUITADA (FASE 88): `readSponsorAccess` UNE LAYOUT E PÁGINA
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Antes da FASE 88, o `TenantLayout` lia `listSponsorAccess` (para decidir o
+   *  item do menu) e o `DashboardPage` / `SponsorAreaPage` liam de novo no mesmo
+   *  render (2 transações em `sponsor_users`). Com `readSponsorAccess` memoizado
+   *  por requisição via `React.cache` com argumentos primitivos `(tenantId,
+   *  userId)`, o par layout + página executa a consulta UMA única vez.
+   */
+  it('o ciclo TenantLayout + DashboardPage consulta sponsor_users UMA vez (I10)', async () => {
+    const pagina = await DashboardPage({
+      params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+    });
+    const layout = await TenantLayout({
+      params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+      children: pagina,
+    });
+
+    const html = await renderizar(layout);
+
+    expect(html).toContain('Koveno');
+    expect(html).toContain(`Painel de Instituição do contexto único ${RUN}`);
+    expect(contagem.sponsorAccess).toBe(1);
+  });
+
+  it('o ciclo TenantLayout + SponsorAreaPage consulta sponsor_users UMA vez (I10)', async () => {
+    const pagina = await SponsorAreaPage({
+      params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+      searchParams: Promise.resolve({}),
+    });
+    const layout = await TenantLayout({
+      params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+      children: pagina,
+    });
+
+    const html = await renderizar(layout);
+
+    expect(html).toContain('Koveno');
+    expect(html).toContain('Área do patrocinador');
+    expect(contagem.sponsorAccess).toBe(1);
   });
 });

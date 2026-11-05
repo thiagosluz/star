@@ -5,7 +5,7 @@ import { lookupTenant } from '@/lib/tenancy/tenant-resolver';
 import { hasPendingSpeakerInvite } from '@/lib/speakers/speaker-portal-service';
 import {
   hasPendingSponsorInvite,
-  listSponsorAccess,
+  readSponsorAccess,
 } from '@/lib/sponsors/sponsor-portal-service';
 import { isValidSlug, tenantPath } from '@/domain/tenancy/resolution';
 import { AccountBlock } from '@/components/shell/account-block';
@@ -162,7 +162,7 @@ export default async function TenantLayout({
          *  atravessa daqui para o menu.
          */
         hasSponsorAccess:
-          (await listSponsorAccess(tenant.id, context.user.id)).length > 0,
+          (await readSponsorAccess(tenant.id, context.user.id)).length > 0,
       })}
       account={
         <AccountBlock

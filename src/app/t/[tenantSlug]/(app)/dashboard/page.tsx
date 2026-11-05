@@ -32,7 +32,7 @@ import {
 } from '@/lib/events/registration-read-service';
 import { listReviewerTasks } from '@/lib/review/review-service';
 import { listMySubmissions } from '@/lib/review/submission-service';
-import { listSponsorAccess } from '@/lib/sponsors/sponsor-portal-service';
+import { readSponsorAccess } from '@/lib/sponsors/sponsor-portal-service';
 import { DashboardContextLink } from '@/components/shell/dashboard-context';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { Card, CardContent, EmptyState, PageHeader, StatCard } from '@/components/ui';
@@ -189,14 +189,14 @@ export default async function DashboardPage({
    *    a lição da FASE 59: a permissão está no pacote mínimo de todo mundo, e usá-la
    *    faria o bloco aparecer para revisor e dono, que não patrocinam nada.
    *
-   *  O layout também lê `listSponsorAccess` (para o item do menu). São duas leituras
-   *  da mesma tabela em camadas diferentes: a casca não pode passar dados para a
-   *  página (elas não se falam), e transformar isso em cache de requisição seria um
-   *  contrato novo de casca. A duplicata está declarada no relatório da fase.
+   *  O layout também lê `readSponsorAccess` (para o item do menu). As duas camadas
+   *  compartilham a mesma leitura por requisição via `React.cache` com argumentos
+   *  primitivos `(tenantId, userId)` (FASE 88 · quita I10) — sem contrato novo de
+   *  casca e sem estado global entre processos.
    */
   const [registrations, sponsorAccess] = await Promise.all([
     listMyRegistrations(tenantId, context.user.id),
-    listSponsorAccess(tenantId, context.user.id),
+    readSponsorAccess(tenantId, context.user.id),
   ]);
 
   const subject: DashboardSubject = {

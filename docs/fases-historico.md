@@ -28,7 +28,7 @@
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **61** à **87**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **61** à **88**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >

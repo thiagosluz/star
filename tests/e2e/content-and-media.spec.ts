@@ -22,7 +22,9 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'conteudo-f23';
@@ -80,7 +82,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },
@@ -223,7 +225,7 @@ test.describe('conteúdo e mídia', () => {
     await expect(page.getByText(TEXT_ORIGINAL)).toBeVisible();
 
     // ── A página pública (sem sessão) NÃO tem o conteúdo ─────────────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     const publicPage = await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     expect(publicPage?.status()).toBe(200);
     await expect(page.getByText(TEXT_ORIGINAL)).toHaveCount(0);
@@ -248,7 +250,7 @@ test.describe('conteúdo e mídia', () => {
     await expect(page.getByTestId('landing-status')).toContainText(/agendada/i, { timeout: 20_000 });
 
     // Fora do ar para o público.
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     await expect(page.getByText(TEXT_ORIGINAL)).toHaveCount(0);
 
@@ -277,7 +279,7 @@ test.describe('conteúdo e mídia', () => {
     // Despublicar/publicar limpa a data: ela não pode republicar a página sozinha.
     expect(stored.publishAt).toBeNull();
 
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     await expect(page.getByText(TEXT_ORIGINAL)).toBeVisible();
   });
@@ -460,7 +462,7 @@ test.describe('conteúdo e mídia', () => {
     await block.locator('[data-testid^="block-form-"]').getByTestId('admin-submit').click();
     await expect(page.getByTestId('block-list')).toContainText(/1 imagem/i, { timeout: 20_000 });
 
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     const publicPage = await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     expect(publicPage?.status()).toBe(200);
 

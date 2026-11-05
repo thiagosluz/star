@@ -75,7 +75,7 @@
  *  Passar no arquivo inteiro e falhar sozinha é a assinatura do E71/I3.
  */
 import { randomUUID } from 'node:crypto';
-import { test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../src/generated/prisma/client.ts';
 
@@ -478,4 +478,30 @@ export async function cleanupRun(): Promise<void> {
  */
 export function tenantHeaders(slug: string): Record<string, string> {
   return { 'x-ef-tenant': slug };
+}
+
+const DEFAULT_E2E_ORIGIN = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
+
+/**
+ * Encerra a sessão no Better Auth e afirma que o endpoint aceitou a chamada (FASE 88 · quita I9).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O CORPO `{}` É OBRIGATÓRIO
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Em `better-auth`, `POST /api/auth/sign-out` declara `body: signOutBodySchema`.
+ *  Sem corpo JSON (`data: {}`), o roteador recusa a requisição antes do handler
+ *  com **415 Unsupported Media Type** ("Content-Type is required") e NÃO apaga o
+ *  cookie de sessão. Com `data: {}`, o handler responde **200** com ou sem sessão
+ *  prévia e sempre executa `deleteSessionCookie(ctx)`.
+ */
+export async function signOut(
+  page: Page,
+  origin: string = DEFAULT_E2E_ORIGIN,
+): Promise<void> {
+  const response = await page.request.post('/api/auth/sign-out', {
+    headers: { origin },
+    data: {},
+  });
+
+  expect(response.ok(), `sign-out respondeu ${response.status()}`).toBe(true);
 }

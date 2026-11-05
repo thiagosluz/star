@@ -57,6 +57,7 @@ import {
   grantPlatformRole,
   grantRole,
   linkUser,
+  signOut,
   uniqueEmail,
 } from './helpers';
 
@@ -82,12 +83,7 @@ test.afterAll(async () => {
  *  tela de login —, então o corpo JSON é enviado e a resposta é conferida.
  */
 async function sairDaConta(page: import('@playwright/test').Page): Promise<void> {
-  const response = await page.request.post('/api/auth/sign-out', {
-    headers: { origin: ORIGIN },
-    data: {},
-  });
-
-  expect(response.ok(), `sign-out respondeu ${response.status()}`).toBe(true);
+  await signOut(page, ORIGIN);
 }
 
 /**

@@ -42,6 +42,7 @@ import {
   grantRole,
   linkUser,
   trackTestUser,
+  signOut,
 } from './helpers';
 import { saveCall, setCallPublished } from '../../src/lib/proposals/call-service';
 import { applyCallResultAction } from '../../src/lib/proposals/call-result-service';
@@ -134,7 +135,7 @@ async function signUpVia(api: APIRequestContext, name: string): Promise<{ id: st
 }
 
 async function signInAs(page: Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

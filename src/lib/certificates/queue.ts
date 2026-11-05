@@ -171,7 +171,10 @@ export async function certificateQueueStats(): Promise<{
       failed: counts.failed ?? 0,
       workers,
     };
-  } catch {
+  } catch (error) {
+    logger.warn('não foi possível ler as contagens da fila de certificados', {
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
     return null;
   }
 }
@@ -221,9 +224,12 @@ export async function certificateDurationSample(): Promise<CertificateDurationSa
       averageMs: Math.round(total / durations.length),
       sampleSize: durations.length,
     };
-  } catch {
+  } catch (error) {
     // Redis fora do ar não é erro da tela: ela mostra "ainda sem medição" e o
     // disparo continua funcionando (a fila degrada para geração inline).
+    logger.warn('não foi possível ler a amostra de duração dos certificados', {
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
     return null;
   }
 }

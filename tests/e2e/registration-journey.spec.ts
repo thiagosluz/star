@@ -26,6 +26,7 @@ import {
   grantRole,
   linkUser,
   uniqueEmail,
+  signOut,
 } from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
@@ -383,7 +384,7 @@ test.describe('inscrição no evento e atividades abertas', () => {
     await expect(page.getByTestId('event-registration-status')).toBeVisible({ timeout: 30_000 });
 
     // ── Excluir: recusado, com o motivo e o caminho alternativo ───────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.request.post('/api/auth/sign-in/email', {
       headers: { origin: 'http://localhost:3000' },
       data: { email: admin.email, password: PASSWORD },

@@ -23,7 +23,9 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'midia-f24';
@@ -78,7 +80,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },
@@ -277,7 +279,7 @@ test.describe('mídia e agendamento', () => {
     await settings.getByTestId('admin-submit').click();
     await expect(page.getByTestId('landing-status')).toContainText(/publicada/i, { timeout: 20_000 });
 
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     const publicPage = await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     expect(publicPage?.status()).toBe(200);
     await expect(page.locator(`img[src="${uploadedUrl}"]`)).toBeVisible();
@@ -341,7 +343,7 @@ test.describe('mídia e agendamento', () => {
       });
     });
 
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     const publicPage = await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/eventos/${EVENT_SLUG}`);
     expect(publicPage?.status()).toBe(200);
 

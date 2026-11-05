@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import sharp from 'sharp';
 
-import { RUN_ID, createEvent, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, createEvent, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 import { withTenant } from '../../src/lib/db/tenant-client';
 import { BUCKETS, putObjectBuffer } from '../../src/lib/storage/s3-client';
 
@@ -53,7 +55,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

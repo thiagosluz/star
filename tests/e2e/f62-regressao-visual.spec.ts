@@ -12,6 +12,7 @@ import {
   grantRole,
   linkUser,
   uniqueEmail,
+  signOut,
 } from './helpers';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import { applyRegistrationFormOperationOnEvent } from '../../src/lib/admin/registration-form-service';
@@ -952,7 +953,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: Page, endereco: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: ORIGEM } });
+  await signOut(page, ORIGEM);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: ORIGEM },

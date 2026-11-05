@@ -43,6 +43,7 @@ import {
   grantRole,
   linkUser,
   uniqueEmail,
+  signOut,
 } from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
@@ -86,7 +87,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: Page, endereco: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: ORIGEM } });
+  await signOut(page, ORIGEM);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: ORIGEM },

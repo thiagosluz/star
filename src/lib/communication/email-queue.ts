@@ -368,7 +368,10 @@ export async function enqueueJobRun(input: {
       failed: counts.failed ?? 0,
       workers,
     };
-  } catch {
+  } catch (error) {
+    logger.warn('não foi possível ler as contagens da fila de e-mails', {
+      error: error instanceof Error ? error.message : 'erro desconhecido',
+    });
     return null;
   }
 }

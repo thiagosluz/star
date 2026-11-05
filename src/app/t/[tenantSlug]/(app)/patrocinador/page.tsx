@@ -9,7 +9,7 @@ import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   getSponsorPortal,
   hasPendingSponsorInvite,
-  listSponsorAccess,
+  readSponsorAccess,
 } from '@/lib/sponsors/sponsor-portal-service';
 import { sponsorQrSheet, type SponsorQrSheet } from '@/lib/sponsors/sponsor-qr-sheet';
 import { SponsorQrShare } from '@/components/sponsors/sponsor-qr-share';
@@ -68,7 +68,7 @@ export default async function SponsorAreaPage({
   });
 
   const [acessos, portal] = await Promise.all([
-    listSponsorAccess(tenantId, userId),
+    readSponsorAccess(tenantId, userId),
     getSponsorPortal({ tenantId, userId, sponsorId: patrocinador ?? null }),
   ]);
 

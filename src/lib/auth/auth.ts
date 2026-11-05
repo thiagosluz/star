@@ -31,6 +31,7 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { nextCookies } from 'better-auth/next-js';
 import { twoFactor } from 'better-auth/plugins';
 import { adminPrisma } from '@/lib/db/admin-client';
+import { errorMessage } from '@/lib/db/prisma-errors';
 import { createRedisRateLimitStorage } from '@/lib/auth/rate-limit-storage';
 import {
   RESET_TOKEN_MINUTES,
@@ -62,8 +63,9 @@ async function isEmailChange(userId: string, addressedEmail: string): Promise<bo
 
     if (!stored) return false;
     return stored.email.toLowerCase() !== addressedEmail.toLowerCase();
-  } catch {
+  } catch (error) {
     // Falha de leitura não pode impedir a confirmação: cai no texto de sempre.
+    console.error(`[auth] falha ao conferir troca de e-mail: ${errorMessage(error)}`);
     return false;
   }
 }

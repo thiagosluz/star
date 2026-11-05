@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import { expect, test } from '@playwright/test';
 
-import { RUN_ID, cleanupRun, createEvent, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, cleanupRun, createEvent, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 import {
   PUBLIC_PROFILE_FIELD_LABELS,
   PUBLIC_PROFILE_FIELDS,
@@ -40,7 +42,7 @@ async function createUser(
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

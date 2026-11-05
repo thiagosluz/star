@@ -33,6 +33,7 @@ import {
   e2eDb,
   grantRole,
   linkUser,
+  signOut,
 } from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
@@ -70,7 +71,7 @@ test.afterAll(async () => {
 });
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },
@@ -233,7 +234,7 @@ test.describe('foto do palestrante enviada pela organização', () => {
     });
 
     // ── O visitante anônimo vê a foto na página pública ──────────────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
 
     const publicPage = await page.goto(publicEventUrl());
     expect(publicPage?.status()).toBe(200);
@@ -281,7 +282,7 @@ test.describe('foto do palestrante enviada pela organização', () => {
     expect(renamed.avatarSource).toBe('ORGANIZATION');
 
     // ── A vitrine continua mostrando a mesma foto ────────────────────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(publicEventUrl());
     await expect(page.locator(`img[src="${before.avatarUrl}"]`)).toHaveCount(1);
 
@@ -306,7 +307,7 @@ test.describe('foto do palestrante enviada pela organização', () => {
     expect(removed.avatarUrl).toBeNull();
     expect(removed.avatarSource).toBeNull();
 
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
     await page.goto(publicEventUrl());
 
     // A vitrine continua com a palestrante — sem foto.

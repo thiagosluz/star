@@ -43,6 +43,7 @@
 import { cookies } from 'next/headers';
 
 import { can, type PlatformPrincipal } from '@/domain/rbac/authorization';
+import { errorMessage } from '@/lib/db/prisma-errors';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { resolveEntryDestination } from '@/domain/platform/entry-destination-rules';
 import {
@@ -125,13 +126,15 @@ export async function resolveEntryDestinationForUser(
     const principal = await deps.loadPlatformPrincipal(userId);
 
     isPlatformOperator = can(principal, PERMISSIONS.PLATFORM_MANAGE, { scope: 'PLATFORM' });
-  } catch {
+  } catch (error) {
     /**
      * Falha de leitura NÃO é veredito (a mesma régua da inspeção de arquivos):
      * "não consegui saber" vira "não é operador" e o login segue. O contrário —
      * deixar a exceção subir — faria a pessoa não entrar por causa de uma
-     * consulta que só melhora o destino.
+     * consulta que só melhora o destino. O log existe para não mascarar a falha
+     * em silêncio (FASE 88 · B10).
      */
+    console.error(`[entrada] falha ao consultar o principal de plataforma: ${errorMessage(error)}`);
     isPlatformOperator = false;
   }
 

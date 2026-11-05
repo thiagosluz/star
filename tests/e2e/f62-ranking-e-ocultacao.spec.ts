@@ -36,6 +36,7 @@ import {
   grantPlatformRole,
   grantRole,
   linkUser,
+  signOut,
 } from './helpers';
 import { decideReport } from '../../src/lib/platform/profile-moderation';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
@@ -87,7 +88,7 @@ async function signUpVia(
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

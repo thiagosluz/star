@@ -18,6 +18,7 @@ import {
   grantRole,
   linkUser,
   uniqueEmail,
+  signOut,
 } from './helpers';
 import { googleCalendarUrl } from '../../src/lib/calendar/ics';
 
@@ -274,7 +275,7 @@ async function semJavaScript(
   const contexto = await browser.newContext({ javaScriptEnabled: false });
   const page = await contexto.newPage();
 
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

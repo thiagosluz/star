@@ -22,7 +22,9 @@
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-import { RUN_ID, cleanupRun, e2eDb, grantPlatformRole, grantRole, linkUser, uniqueEmail } from './helpers';
+import { RUN_ID, cleanupRun, e2eDb, grantPlatformRole, grantRole, linkUser, uniqueEmail,
+  signOut,
+} from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 
@@ -65,7 +67,7 @@ async function signUp(api: APIRequestContext, name: string, email: string): Prom
 
 async function signInAs(page: Page, email: string): Promise<void> {
   // Múltiplos cadastros no mesmo contexto reutilizariam a sessão anterior.
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

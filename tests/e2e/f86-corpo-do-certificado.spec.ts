@@ -36,7 +36,9 @@ import { randomUUID } from 'node:crypto';
 
 import { expect, test } from '@playwright/test';
 
-import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser } from './helpers';
+import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser,
+  signOut,
+} from './helpers';
 import { saveCertificateTemplate } from '../../src/lib/certificates/certificate-template-service';
 import {
   findPreset,
@@ -164,7 +166,7 @@ async function createPresetTemplate(name: string, kind: CertificateKind): Promis
 }
 
 async function signInAs(page: import('@playwright/test').Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },

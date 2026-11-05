@@ -146,7 +146,7 @@ const FASES_HISTORICAS = [
  * movimento das 50 a 59 (em dois passos) baixou o começo para a 60; a F87 estendeu
  * até a 87 e o movimento da 60 baixou o começo para a 61.
  */
-const FASES_CORRENTES = Array.from({ length: 27 }, (_, indice) => String(61 + indice));
+const FASES_CORRENTES = Array.from({ length: 28 }, (_, indice) => String(61 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',

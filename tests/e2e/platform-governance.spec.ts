@@ -23,7 +23,9 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-import { RUN_ID, cleanupRun, e2eDb, grantPlatformRole } from './helpers';
+import { RUN_ID, cleanupRun, e2eDb, grantPlatformRole,
+  signOut,
+} from './helpers';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 
@@ -93,7 +95,7 @@ async function signUp(api: APIRequestContext, name: string, email: string): Prom
 
 async function signInAs(page: Page, email: string): Promise<void> {
   // Múltiplos cadastros no mesmo contexto reutilizariam a sessão anterior.
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },
@@ -185,7 +187,7 @@ test.describe('governança da plataforma', () => {
   });
 
   test('4. o visitante anônimo encontra a instituição no diretório e a abre', async ({ page }) => {
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
 
     const directory = await page.goto('/organizacoes');
     expect(directory?.status()).toBe(200);
@@ -248,7 +250,7 @@ test.describe('governança da plataforma', () => {
     await expect(page.getByTestId('tenant-blocked')).toContainText('Inadimplência');
 
     // ── A vitrine pública também, e SEM esperar cache ────────────────────────
-    await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+    await signOut(page);
 
     const blockedPublic = await page.goto(`/t/${NEW_TENANT_SLUG}/eventos`);
     expect(blockedPublic?.status()).toBe(403);

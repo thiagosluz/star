@@ -32,6 +32,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomBytes, randomUUID } from 'node:crypto';
+import { cache } from 'react';
 
 import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation } from '@/lib/db/prisma-errors';
@@ -133,6 +134,31 @@ export async function listSponsorAccess(tenantId: string, userId: string): Promi
       }));
   });
 }
+
+/**
+ * Leitor memoizado por requisição RSC (FASE 88 · quita I10).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE DOIS ARGUMENTOS PRIMITIVOS, E NÃO `{ tenantId, userId }`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  No runtime `react-server` do Next.js, `cache(fn)` guarda argumentos primitivos
+ *  num `Map` (`dispatcher.p`) e objetos num `WeakMap` (`dispatcher.o`, comparado
+ *  por identidade `===`). Se a assinatura recebesse `{ tenantId, userId }`, o
+ *  objeto literal do layout e o da página seriam duas referências distintas e o
+ *  `WeakMap` erraria TODA vez — um cache decorativo. Com `(tenantId, userId)`
+ *  como `string`, ambos batem na mesma entrada do `Map` dentro do mesmo render.
+ *
+ *  Fora de uma renderização RSC (worker, rotas de API ou testes sem dispatcher
+ *  de voo), `cache()` do React é pass-through puro e não retém estado entre
+ *  processos nem entre requisições. `listSponsorAccess` segue intocada para quem
+ *  precisa reler após escrita.
+ */
+export const readSponsorAccess: (
+  tenantId: string,
+  userId: string,
+) => Promise<SponsorAccess[]> = cache((tenantId: string, userId: string) =>
+  listSponsorAccess(tenantId, userId),
+);
 
 /** A pessoa tem convite pendente para o e-mail da conta? (segunda porta da área) */
 export async function hasPendingSponsorInvite(

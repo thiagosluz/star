@@ -17,6 +17,7 @@ import {
   grantRole,
   linkUser,
   uniqueEmail,
+  signOut,
 } from './helpers';
 import { favoriteActivity } from '../../src/lib/events/agenda-service';
 import { ROOM_TRAVEL_MARGIN_MINUTES } from '../../src/domain/agenda/overlap-rules';
@@ -297,7 +298,7 @@ async function criarPessoa(request: APIRequestContext, nome: string): Promise<Pe
 
 /** Entra com a pessoa — pelo MESMO endpoint do formulário de login. */
 async function entrar(page: Page, email: string): Promise<void> {
-  await page.request.post('/api/auth/sign-out', { headers: { origin: 'http://localhost:3000' } });
+  await signOut(page);
 
   const response = await page.request.post('/api/auth/sign-in/email', {
     headers: { origin: 'http://localhost:3000' },
