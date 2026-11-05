@@ -86,7 +86,7 @@ const RAIZ = process.cwd();
 const DIR_APP = 'src/app';
 
 // ───────────────────────────────────────────────────────────────────────────────
-//  A LISTA POSITIVA DAS PÁGINAS — 24 páginas, 25 params
+//  A LISTA POSITIVA DAS PÁGINAS — 25 páginas, 26 params
 // ───────────────────────────────────────────────────────────────────────────────
 /**
  * O retrato da fatia 1. Cada entrada é `arquivo → segmentos uuid que ele valida`.
@@ -115,6 +115,16 @@ const PAGINAS: readonly PaginaEsperada[] = [
   {
     arquivo:
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/certificados/page.tsx',
+    params: ['eventId'],
+  },
+  {
+    /**
+     * A tela do modelo DO EVENTO (FASE 86 · fatia 4). O segmento é o MESMO
+     * `[eventId]` da tela de emissão, e a página valida o id antes da guarda e da
+     * consulta — sem esta linha, a rota nova entraria na árvore sem catálogo.
+     */
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/certificados/modelos/page.tsx',
     params: ['eventId'],
   },
   {
@@ -574,7 +584,7 @@ const ROTAS_COM_ID = ROTAS_ENCONTRADAS.filter(
 
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('FASE 76 · o catálogo das páginas com id na URL', () => {
-  it('a árvore tem EXATAMENTE as 24 páginas da lista positiva + as 4 exceções declaradas', () => {
+  it('a árvore tem EXATAMENTE as 25 páginas da lista positiva + as 4 exceções declaradas', () => {
     const encontradas = new Set(PAGINAS_COM_ID.map((pagina) => pagina.arquivo));
 
     const novas = [...encontradas].filter(
@@ -601,22 +611,22 @@ describe('FASE 76 · o catálogo das páginas com id na URL', () => {
     ).toEqual([]);
   });
 
-  it('são 24 páginas e 25 params — o número medido, não o esperado', () => {
+  it('são 25 páginas e 26 params — o número medido, não o esperado', () => {
     /**
-     * 24 páginas, 25 chamadas: `demandas/[demandId]` tem `eventId` e `demandId`.
+     * 25 páginas, 26 chamadas: `demandas/[demandId]` tem `eventId` e `demandId`.
      * O segundo número é o que pega o caso "a página existe, mas só um dos dois
      * segmentos foi validado" — a igualdade por página já pega, e a contagem
      * torna a regressão visível de relance.
      */
-    expect(PAGINAS).toHaveLength(24);
-    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(25);
+    expect(PAGINAS).toHaveLength(25);
+    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(26);
     expect(PAGINAS_FORA_DA_REGRA).toHaveLength(4);
 
     const paramsEncontrados = PAGINAS_COM_ID.reduce(
       (total, pagina) => total + pagina.params.length,
       0,
     );
-    expect(paramsEncontrados).toBe(29); // 25 positivos + 4 das exceções
+    expect(paramsEncontrados).toBe(30); // 26 positivos + 4 das exceções
   });
 
   it('cada página chama `requireUuidParam` com o MESMO param do segmento', () => {

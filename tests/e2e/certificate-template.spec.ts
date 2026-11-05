@@ -40,7 +40,18 @@ let eventId: string;
 let organizerEmail: string;
 
 const slug = `${TENANT_LABEL}-${RUN_ID}`;
-const templatesUrl = () => `/t/${slug}/administracao/certificados/modelos`;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O EDITOR É DO EVENTO (FASE 86 · fatia 4)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Esta spec nasceu na FASE 40 apontando para a tela da instituição, porque não
+ *  existia outra. Depois da F86, o desenho de UM evento mora na rota do evento — e
+ *  é ela que o organizador usa para criar o modelo que vence o padrão da
+ *  instituição. A constante continua sendo o endereço do EDITOR, agora escopado.
+ */
+const templatesUrl = () => `/t/${slug}/administracao/eventos/${eventId}/certificados/modelos`;
+const issuanceUrl = () => `/t/${slug}/administracao/eventos/${eventId}/certificados`;
 
 /** Um JPEG baseline de 3508 × 2480 (A4 paisagem a 300 dpi), montado byte a byte. */
 function buildJpeg(input: { width: number; height: number; components?: number }): Buffer {
@@ -275,8 +286,17 @@ test.describe('editor visual do certificado', () => {
      *  também não. Funcionalidade que só existe na barra de endereços não existe para
      *  quem opera — e o cenário agora começa no painel e CLICA até o editor.
      */
-    await page.goto(`/t/${slug}/administracao`);
-    await page.getByTestId('admin-areas').getByText('Modelos de certificado').click();
+    await page.goto(`/t/${slug}/administracao/eventos/${eventId}`);
+    await page.getByTestId('event-area-certificados').click();
+    await expect(page).toHaveURL(new RegExp(`${issuanceUrl().replace(/\//g, '\\/')}$`));
+
+    /**
+     * O CAMINHO ATÉ O EDITOR PASSA PELA EMISSÃO (FASE 86): a tela do evento tem a
+     * seção "Modelo deste evento", e o link dela só é renderizado para quem tem
+     * `event:manage` — a administradora tem. É a prova de que a ponte existe e que
+     * a tela nova não é um endereço que só vive na barra do navegador.
+     */
+    await page.getByTestId('event-models-link').click();
     await expect(page).toHaveURL(new RegExp(`${templatesUrl().replace(/\//g, '\\/')}$`));
 
     await expect(page.getByTestId('preset-list')).toBeVisible();
@@ -289,7 +309,14 @@ test.describe('editor visual do certificado', () => {
 
     // O modelo pronto chega preenchido: cada linha do formulário é um elemento dele.
     await page.getByTestId('template-name').fill(`Modelo Clássico ${RUN_ID}`);
-    await page.getByTestId('template-event').selectOption(eventId);
+
+    /**
+     * O ALVO É TEXTO, NÃO `<select>`: a rota já decidiu o evento, e um seletor com
+     * "Todos os eventos" aqui reintroduziria a mistura de alvos que a F86 separou.
+     */
+    await expect(page.getByTestId('template-event-fixed')).toContainText(
+      `Congresso do Modelo Visual ${RUN_ID}`,
+    );
 
     await page.getByTestId('template-submit').click();
 

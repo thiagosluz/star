@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-//  EventFlow Platform — Canonical Data Model
+//  Koveno Platform — Canonical Data Model
 //  FASE 1 — Infraestrutura & Modelagem
 //
 //  Estratégia multi-tenant: SHARED SCHEMA + tenant_id + PostgreSQL Row-Level

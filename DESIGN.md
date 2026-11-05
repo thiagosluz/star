@@ -1,8 +1,8 @@
 ---
 version: alpha
-name: EventFlow Identity
+name: Koveno Identity
 description: >-
-  Identidade visual da plataforma EventFlow (instituições de ensino e eventos
+  Identidade visual da plataforma Koveno (instituições de ensino e eventos
   acadêmicos). Duas escalas — clara e escura — com os MESMOS papéis. Os valores
   abaixo são os que o `src/app/globals.css` implementa; a igualdade é verificada
   por `tests/unit/design-system-guard.test.ts` (escala clara), por
@@ -248,7 +248,7 @@ components:
     rounded: "{rounded.md}"
 ---
 
-# Identidade visual do EventFlow
+# Identidade visual da Koveno
 
 > **Este arquivo é a fonte dos VALORES.** O que traduz valor em token é
 > `src/app/globals.css`; o que impede a regressão são os testes de `tests/unit/`.
@@ -264,7 +264,7 @@ components:
 
 ## Overview
 
-EventFlow é um SaaS multi-tenant para eventos acadêmicos, corporativos e
+A Koveno é um SaaS multi-tenant para eventos acadêmicos, corporativos e
 comunitários, usado por instituições brasileiras. A interface é **de trabalho**:
 tabelas densas, estados operacionais, documentos e auditoria. A identidade é
 sóbria — indigo de marca, cinzas frios, verde de confirmação — e o destaque é

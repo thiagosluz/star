@@ -130,7 +130,7 @@ export function renderCertificateLayoutPdf(document: CertificateLayoutDocument):
 
   const issued = pdfDate(document.issuedAt);
   objects.push(
-    `<< /Title (${escapePdfText(document.values.titulo)}) /Author (${escapePdfText(document.values.instituicao)}) /Subject (${escapePdfText(document.values.codigo_validacao)}) /Creator (EventFlow) /Producer (EventFlow) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
+    `<< /Title (${escapePdfText(document.values.titulo)}) /Author (${escapePdfText(document.values.instituicao)}) /Subject (${escapePdfText(document.values.codigo_validacao)}) /Creator (Koveno) /Producer (Koveno) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
   );
 
   return assemblePdf(objects);

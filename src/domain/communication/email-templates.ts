@@ -898,7 +898,7 @@ export function renderEmail<K extends EmailTemplateKey>(
       /**
        * O ASSUNTO da instituição viaja no assunto do e-mail — é o que a pessoa lê na
        * caixa dela. Antes do nome da instituição, para que a lista de mensagens não
-       * vire uma fileira de "EventFlow".
+       * vire uma fileira de "Koveno".
        *
        * O corpo é quebrado em parágrafos e escapado: recado é TEXTO, e um `<script>`
        * digitado no campo vira texto literal em vez de marcação no cliente de quem

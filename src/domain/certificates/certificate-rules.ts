@@ -24,6 +24,8 @@
  */
 import { createHash } from 'node:crypto';
 
+import { policyDefaults, policyPercent, readCertificatePolicy, type CertificatePolicy } from './certificate-policy-rules';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Tipos (espelham os enums do schema — o domínio não importa o ORM)
 // ───────────────────────────────────────────────────────────────────────────────
@@ -60,15 +62,18 @@ export const CERTIFICATE_KIND_LABELS: Readonly<Record<CertificateKind, string>> 
 };
 
 /**
- * Fração mínima da carga da atividade para a presença contar.
+ * Fração mínima da carga da atividade para a presença contar — o PADRÃO da
+ * política (FASE 86 · fatia 5).
  *
- * Mesma constante usada na gamificação (FASE 5) e no credenciamento. Manter uma
- * definição só evita o absurdo de "ganhou XP mas não tem direito ao certificado"
- * — ou o inverso, que é pior: documentar presença que não houve.
+ * Deixou de ser a única régua: `computeWorkload` recebe a `CertificatePolicy` do
+ * evento e este valor é o default de quem não configurou nada. A constante fica
+ * exportada porque a gamificação (FASE 5) e o credenciamento usam a mesma régua —
+ * ter uma definição só evita o absurdo de "ganhou XP mas não tem direito ao
+ * certificado" (ou o inverso, que é pior: documentar presença que não houve).
  */
 export const MIN_ATTENDANCE_RATIO = 0.75;
 
-/** Piso em minutos quando a atividade não declara carga horária. */
+/** Piso em minutos quando a atividade não declara carga horária — o PADRÃO. */
 export const MIN_ATTENDANCE_MINUTES = 30;
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -105,6 +110,88 @@ export interface WorkloadResult {
   declaredMinutes: number;
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+//  O congelamento da política no detalhamento (FASE 86 · fatia 5)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * O que fica gravado em `Certificate.workloadBreakdown`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A POLÍTICA MORA AQUI, E O QUE ISSO **NÃO** PROVA
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O detalhamento responde "por que este documento tem 40 h": quais atividades
+ *  entraram, com quantos minutos, e qual régua decidiu. Sem a política, um
+ *  documento emitido sob 90 % seria lido depois de o evento voltar para 75 % e
+ *  pareceria recusar alguém que cumpriu a regra vigente — a resposta certa é a
+ *  regra do DIA da emissão, e é ela que fica congelada.
+ *
+ *  Para os tipos baseados em presença (`ATTENDANCE`, `MINI_COURSE`) é a política
+ *  que decide quais entradas contam. Para os demais (palestrante, parecer, autoria)
+ *  a carga não vem de presença: a política gravada é o CONTEXTO do evento naquele
+ *  dia, não a razão do número — e o campo não deve ser lido como se fosse.
+ *
+ *  **O `workloadBreakdown` NÃO entra no conteúdo canônico** (`buildCanonicalPayload`
+ *  / `V2` não o leem), então congelar a política AQUI não muda o hash nem a
+ *  assinatura de documento nenhum. Consequência declarada: a política guardada
+ *  não tem prova criptográfica — quem alterar o JSON do banco muda a explicação
+ *  sem invalidar a assinatura. É uma decisão de escopo (não se cria a v3 do
+ *  documento só para assinar o detalhamento), e o número que o documento AFIRMA
+ *  (`workloadMinutes`) continua assinado.
+ */
+export interface WorkloadBreakdownSnapshot {
+  /** A política em vigor no instante da emissão. */
+  policy: CertificatePolicy;
+  /** As entradas do cálculo — o mesmo `WorkloadResult.entries` de sempre. */
+  entries: WorkloadBreakdownEntry[];
+}
+
+/** Monta o objeto congelado — o único formato que a emissão grava daqui em diante. */
+export function buildWorkloadBreakdown(
+  policy: CertificatePolicy,
+  entries: readonly WorkloadBreakdownEntry[],
+): WorkloadBreakdownSnapshot {
+  return { policy: { ...policy }, entries: [...entries] };
+}
+
+/**
+ * Lê o detalhamento gravado, tolerando o formato ANTIGO (array puro).
+ *
+ * Certificados emitidos antes desta fatia têm `workloadBreakdown` como lista de
+ * entradas, e a leitura pública precisa continuar funcionando para eles. O leitor
+ * devolve `policy: null` nesse caso — "o documento é anterior ao congelamento da
+ * política", que é diferente de "a política era a padrão" e não pode ser inventado.
+ */
+export function readWorkloadBreakdown(raw: unknown): {
+  policy: CertificatePolicy | null;
+  entries: WorkloadBreakdownEntry[];
+} {
+  if (Array.isArray(raw)) {
+    return { policy: null, entries: raw.filter(isBreakdownEntry) };
+  }
+
+  if (typeof raw !== 'object' || raw === null) return { policy: null, entries: [] };
+
+  const record = raw as Record<string, unknown>;
+
+  const entries = Array.isArray(record.entries) ? record.entries.filter(isBreakdownEntry) : [];
+
+  /**
+   * A política gravada passa pelo MESMO leitor tolerante: JSON adulterado no banco
+   * (o detalhamento não é assinado) não pode virar um percentual negativo na tela.
+   * Configuração inválida devolve os defaults — e o detalhamento segue legível.
+   */
+  const policy =
+    record.policy === undefined || record.policy === null
+      ? null
+      : readCertificatePolicy({ certificatePolicy: record.policy }).policy;
+
+  return { policy, entries };
+}
+
+function isBreakdownEntry(value: unknown): value is WorkloadBreakdownEntry {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Calcula a carga horária REAL.
  *
@@ -114,23 +201,36 @@ export interface WorkloadResult {
  *   • minutos acima da carga declarada são truncados (teto);
  *   • atividade sem carga declarada usa os minutos medidos (não há teto a aplicar).
  *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A POLÍTICA É PARÂMETRO OPCIONAL, E O DEFAULT É O COMPORTAMENTO DE SEMPRE
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `policy` entra como SEGUNDO argumento opcional para que nenhum chamador atual
+ *  quebre: omiti-la equivale a `policyDefaults()` (75 % e 30 min), que é
+ *  exatamente a régua que a função aplicava antes da FASE 86. O serviço lê a
+ *  política de `Event.settings` (já lido no caminho) e a repassa; o domínio não
+ *  conhece banco nem evento.
+ *
  * `activityFilter` permite gerar certificado de UM tipo (minicurso) sem misturar
  * palestras na conta.
  */
-export function computeWorkload(input: {
-  attendances: readonly AttendanceRecord[];
-  activityFilter?: (record: AttendanceRecord) => boolean;
-}): WorkloadResult {
+export function computeWorkload(
+  input: {
+    attendances: readonly AttendanceRecord[];
+    activityFilter?: (record: AttendanceRecord) => boolean;
+  },
+  policy: CertificatePolicy = policyDefaults(),
+): WorkloadResult {
   const entries: WorkloadBreakdownEntry[] = [];
   let totalMinutes = 0;
   let countedActivities = 0;
   let declaredMinutes = 0;
+  const percent = policyPercent(policy.minRatio);
 
   for (const record of input.attendances) {
     const title = record.activityTitle?.trim() || 'Atividade';
     const measured = Math.max(0, Math.round(record.minutesAttended));
     const workload = Math.max(0, Math.round(record.workloadMinutes));
-    const threshold = Math.max(MIN_ATTENDANCE_MINUTES, Math.round(workload * MIN_ATTENDANCE_RATIO));
+    const threshold = Math.max(policy.minMinutes, Math.round(workload * policy.minRatio));
 
     if (input.activityFilter && !input.activityFilter(record)) {
       entries.push({
@@ -155,7 +255,7 @@ export function computeWorkload(input: {
         workloadMinutes: workload,
         countedMinutes: 0,
         counted: false,
-        reason: `Presença de ${measured} min abaixo do mínimo de ${threshold} min (75 % da carga).`,
+        reason: `Presença de ${measured} min abaixo do mínimo de ${threshold} min (${percent} % da carga).`,
       });
       continue;
     }
@@ -246,16 +346,28 @@ export interface EligibilityVerdict {
  * A recusa é textual de propósito: "não elegível" sem motivo obriga o
  * participante a abrir um chamado para descobrir que faltaram 12 minutos de
  * presença.
+ *
+ * `policy` é opcional pelo mesmo motivo de `computeWorkload`: o default reproduz
+ * a régua de sempre, e o caminho de emissão passa a do evento. Como a mensagem de
+ * recusa cita o percentual, o texto acompanha a política — um evento que exige
+ * 90 % não pode recusar dizendo "mínimo de 75 %".
  */
-export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict {
-  const all = computeWorkload({ attendances: facts.attendances });
+export function evaluateEligibility(
+  facts: EligibilityFacts,
+  policy: CertificatePolicy = policyDefaults(),
+): EligibilityVerdict {
+  const all = computeWorkload({ attendances: facts.attendances }, policy);
+  const percent = policyPercent(policy.minRatio);
 
   switch (facts.kind) {
     case 'MINI_COURSE': {
-      const miniCourses = computeWorkload({
-        attendances: facts.attendances,
-        activityFilter: (record) => record.activityType === 'MINI_COURSE',
-      });
+      const miniCourses = computeWorkload(
+        {
+          attendances: facts.attendances,
+          activityFilter: (record) => record.activityType === 'MINI_COURSE',
+        },
+        policy,
+      );
 
       if (facts.miniCourseCount === 0) {
         return {
@@ -268,8 +380,7 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
       if (miniCourses.countedActivities === 0) {
         return {
           eligible: false,
-          reason:
-            'Nenhum minicurso com carga horária cumprida (mínimo de 75 % da carga da atividade).',
+          reason: `Nenhum minicurso com carga horária cumprida (mínimo de ${percent} % da carga da atividade).`,
           workload: miniCourses,
         };
       }
@@ -281,7 +392,7 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
       if (all.countedActivities === 0) {
         return {
           eligible: false,
-          reason: 'Nenhuma atividade com presença suficiente (mínimo de 75 % da carga).',
+          reason: `Nenhuma atividade com presença suficiente (mínimo de ${percent} % da carga).`,
           workload: all,
         };
       }
@@ -394,11 +505,14 @@ export function evaluateEligibility(facts: EligibilityFacts): EligibilityVerdict
 }
 
 /** Quais tipos fazem sentido automático para estes fatos (emissão em lote). */
-export function eligibleKindsFor(facts: Omit<EligibilityFacts, 'kind'>): CertificateKind[] {
+export function eligibleKindsFor(
+  facts: Omit<EligibilityFacts, 'kind'>,
+  policy: CertificatePolicy = policyDefaults(),
+): CertificateKind[] {
   return CERTIFICATE_KINDS.filter((kind) => {
     if (kind === 'MERIT') return false;
     if (kind === 'ORGANIZER') return false; // exige papel, não fato
-    return evaluateEligibility({ ...facts, kind }).eligible;
+    return evaluateEligibility({ ...facts, kind }, policy).eligible;
   });}
 
 // ───────────────────────────────────────────────────────────────────────────────

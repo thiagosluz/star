@@ -51,6 +51,13 @@ import { createHash } from 'node:crypto';
  */
 import { formatCpf, isValidCpf } from '@/domain/events/registration-form-rules';
 
+/**
+ * A medição de texto mora em `@/domain/documents` desde a FASE 86: o "cabe?" do corpo
+ * do certificado precisa da MESMA régua que o desenho usa, e o domínio não pode
+ * importar a camada de desenho. A dependência é do domínio para o domínio.
+ */
+import { fitTextInBox, type TextBoxFit } from '@/domain/documents/text-measure-rules';
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Formato da página
 // ───────────────────────────────────────────────────────────────────────────────
@@ -153,13 +160,14 @@ export function parsePageFormat(value: unknown): CertificatePageFormat | null {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Elementos
 // ───────────────────────────────────────────────────────────────────────────────
-export const CERTIFICATE_ELEMENT_KINDS = ['TEXT', 'VARIABLE', 'QR'] as const;
+export const CERTIFICATE_ELEMENT_KINDS = ['TEXT', 'VARIABLE', 'QR', 'BODY'] as const;
 export type CertificateElementKind = (typeof CERTIFICATE_ELEMENT_KINDS)[number];
 
 export const CERTIFICATE_ELEMENT_KIND_LABELS: Readonly<Record<CertificateElementKind, string>> = {
   TEXT: 'Texto fixo',
   VARIABLE: 'Variável',
   QR: 'QR Code de validação',
+  BODY: 'Corpo do certificado (gabarito)',
 };
 
 /**
@@ -238,7 +246,7 @@ export interface CertificateLayoutElement {
   color: string;
   /** Multiplicador da entrelinha. */
   lineHeight: number;
-  /** Conteúdo do elemento `TEXT`. */
+  /** Conteúdo do elemento `TEXT`; no elemento `BODY`, o GABARITO com `{{chave}}`. */
   text: string | null;
   /** Chave da variável no elemento `VARIABLE`. */
   variable: CertificateVariableKey | null;
@@ -399,7 +407,7 @@ export const CERTIFICATE_VARIABLES = [
     label: 'Endereço de validação',
     source: 'endereço público que valida o código',
     canBeEmpty: false,
-    sample: 'https://eventflow.test/validar/CERT-7KQ4M2XP',
+    sample: 'https://koveno.test/validar/CERT-7KQ4M2XP',
   },
   {
     key: 'hash',
@@ -441,24 +449,6 @@ export function isCertificateVariableKey(value: string): value is CertificateVar
 }
 
 /**
- * Valores de exemplo, tirados do PRÓPRIO catálogo.
- *
- * É o que a prévia do editor mostra: um certificado com o nome e a carga horária de
- * mentira, mas com a geometria de verdade. Escrever os exemplos na tela criaria uma
- * segunda lista de variáveis — e a que ficasse para trás apareceria na prévia sem
- * existir no documento.
- */
-export function sampleVariableValues(): CertificateVariableValues {
-  const values: Record<string, string> = {};
-
-  for (const variable of CERTIFICATE_VARIABLES) {
-    values[variable.key] = variable.sample;
-  }
-
-  return values as CertificateVariableValues;
-}
-
-/**
  * As variáveis que são CONTEÚDO do documento — as que entram no hash.
  *
  * Elas precisam ser CONGELADAS na emissão, e não lidas de novo na renderização: o
@@ -494,6 +484,436 @@ export const CONTENT_VARIABLE_KEYS: readonly CertificateVariableKey[] = [
  * pública reprovar, porque o hash e a assinatura são conferidos contra o conteúdo.
  */
 export const AUDIT_VARIABLE_KEYS: readonly CertificateVariableKey[] = ['hash', 'assinatura', 'chave'] as const;
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  O CORPO DO CERTIFICADO É DO ORGANIZADOR (FASE 86)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE O CORPO VIROU ELEMENTO — E POR QUE NÃO VIROU VARIÁVEL
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Até a FASE 85 o texto formal do certificado era uma frase gerada em código
+ *  (`buildCertificateText`) impressa pela variável `corpo`: o organizador não tinha
+ *  como dizer o que o próprio documento afirma.
+ *
+ *  A saída óbvia — acrescentar uma variável nova ao catálogo — está ERRADA, e a razão
+ *  é o hash: `serializeContentValues` percorre o catálogo ATUAL e grava `''` para
+ *  chave ausente. Uma variável a mais muda o conteúdo canônico de TODO certificado
+ *  versão 2 já emitido, e a reverificação passaria a reprovar (TAMPERED) documentos
+ *  legítimos. O mesmo vale para campo novo em `serializeLayout` — por isso o corpo
+ *  usa `kind` e `text`, que o layout JÁ serializava.
+ *
+ *  Então o corpo virou um ELEMENTO: `kind: 'BODY'` com o texto-gabarito no campo
+ *  `text`. Um modelo gravado antes da FASE 86 nunca tem `BODY`, logo serializa
+ *  exatamente como antes. E o gabarito fica no `layoutSnapshot`, provando de onde o
+ *  texto impresso saiu.
+ *
+ *  A resolução acontece UMA vez, na emissão: o texto interpolado vai para `bodyText`
+ *  (assinado) e para `corpo` (no `variableSnapshot`, também assinado). O renderizador
+ *  imprime `values.corpo` e NUNCA reinterpreta o gabarito — se reinterpretasse, o
+ *  documento impresso poderia divergir do que foi assinado.
+ */
+
+/**
+ * Lista canônica do gabarito: as chaves de CONTEÚDO menos `corpo`.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O QUE NÃO PODE ENTRAR AQUI (e por quê)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  • `corpo` fica FORA porque é recursão: o gabarito É o corpo. Aceitar `{{corpo}}`
+ *    dentro dele permitiria um texto que se contém — e a resolução viraria um laço
+ *    disfarçado de variável.
+ *  • `hash`, `assinatura` e `chave` ficam de fora porque são AUDITORIA: nascem do
+ *    próprio documento, e o hash não pode depender do texto que ele assina (o hash
+ *    entraria na conta dele mesmo). Eles continuam imprimíveis como VARIÁVEIS, no
+ *    bloco probatório — só não podem ser interpolados dentro do corpo.
+ *  • Qualquer chave nova que alguém queira acrescentar ao catálogo: NÃO. O catálogo é
+ *    contrato de hash (ver o bloco acima), e o corpo usa o que já existe.
+ */
+export interface CertificateBodyVariable {
+  key: CertificateVariableKey;
+  /** O rótulo humano — a legenda que o editor mostra ao lado de `{{chave}}`. */
+  label: string;
+  /** Pode faltar no certificado (CPF, atividade, período, título da apresentação). */
+  canBeEmpty: boolean;
+}
+
+/**
+ * O catálogo do gabarito, derivado do catálogo de variáveis (fonte única).
+ *
+ * Duas listas escritas à mão divergiriam no primeiro ajuste — e o organizador veria no
+ * editor uma variável que a emissão recusa.
+ */
+export const BODY_TEMPLATE_VARIABLES: readonly CertificateBodyVariable[] = CONTENT_VARIABLE_KEYS.filter(
+  (key) => key !== 'corpo',
+).map((key) => {
+  const variable = CERTIFICATE_VARIABLES.find((item) => item.key === key);
+
+  /**
+   * O desvio é IMPOSSÍVEL (as duas listas saem do mesmo catálogo) e existe só para o
+   * tipo: a CHAVE é o contrato; o rótulo é decoração. Mostrar a chave é melhor do que
+   * inventar uma legenda que não existe no catálogo.
+   */
+  return variable
+    ? { key: variable.key, label: variable.label, canBeEmpty: variable.canBeEmpty }
+    : { key, label: key, canBeEmpty: false };
+});
+
+export const BODY_TEMPLATE_VARIABLE_KEYS: readonly string[] = BODY_TEMPLATE_VARIABLES.map((item) => item.key);
+
+export function isCertificateBodyVariableKey(value: string): value is CertificateVariableKey {
+  return BODY_TEMPLATE_VARIABLE_KEYS.includes(value);
+}
+
+/**
+ * Limite do GABARITO (não do texto resolvido), em caracteres.
+ *
+ * O número foi medido contra a página A4 paisagem e o corpo padrão dos modelos prontos
+ * (229 × 40 mm, 13 pt, entrelinha 1,6, que comporta 5 linhas de ~104 caracteres):
+ *
+ *   • corpo padrão .................. ~520 caracteres
+ *   • caixa generosa 249 × 140 mm ... ~4.470 caracteres (30 linhas de ~149, a 10 pt)
+ *   • página inteira a 9 pt ......... ~10.670 caracteres
+ *
+ * 2.000 é ~4× o corpo padrão e menos da metade da caixa generosa: cabe na página com
+ * folga para título, nome e bloco probatório, e para de valer a pena como "texto
+ * formal" bem antes de virar um documento colado dentro do certificado. É um limite de
+ * ENTRADA (o gabarito é uma string fixa no layout, dentro do conteúdo assinado) — o
+ * tamanho do texto RESOLVIDO depende das variáveis e quem o guarda é o "cabe?".
+ *
+ * Não se reusa `MAX_ELEMENT_TEXT` (600) porque ele foi calibrado para texto FIXO
+ * curto (rótulos, linha de portaria) e recusaria um corpo formal de dois parágrafos.
+ */
+export const MAX_BODY_TEMPLATE_LENGTH = 2_000;
+
+export type BodyTemplateErrorCode =
+  | 'EMPTY_BODY_TEMPLATE'
+  | 'BODY_TEMPLATE_TOO_LONG'
+  | 'UNKNOWN_BODY_TOKEN'
+  | 'UNCLOSED_BODY_TOKEN';
+
+export interface BodyTemplateIssue {
+  code: BodyTemplateErrorCode;
+  message: string;
+}
+
+export type BodyTemplateValidation =
+  | { ok: true; variables: readonly CertificateVariableKey[] }
+  | { ok: false; issues: readonly BodyTemplateIssue[] };
+
+/** Um token é `{{chave}}`, com espaços internos tolerados (`{{ nome }}`). */
+function bodyTokenPattern(): RegExp {
+  return new RegExp('\\{\\{([^{}]*)\\}\\}', 'g');
+}
+
+function bodyTokenKey(raw: string): string {
+  return raw.trim();
+}
+
+/**
+ * Valida o gabarito do corpo.
+ *
+ * Pura e sem banco: é ela que a gravação do modelo chama (via `validateLayout`) e que a
+ * tela pode chamar enquanto o organizador digita.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  TOKEN DESCONHECIDO É RECUSA — NUNCA "APAGA EM SILÊNCIO"
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A tentação é remover o token inválido e gravar o resto. Isso produziria um
+ *  documento formal com um buraco onde deveria estar o nome do evento — e ninguém
+ *  perceberia até o papel impresso. Então a recusa diz QUAL token não existe e lista os
+ *  válidos, para o organizador corrigir com a informação na mão.
+ */
+export function validateBodyTemplate(template: string): BodyTemplateValidation {
+  if (!template.trim()) {
+    return {
+      ok: false,
+      issues: [
+        {
+          code: 'EMPTY_BODY_TEMPLATE',
+          message:
+            'O corpo do certificado está vazio. Escreva o texto que será impresso, usando as variáveis entre chaves (ex.: {{nome}}, {{evento}}).',
+        },
+      ],
+    };
+  }
+
+  const issues: BodyTemplateIssue[] = [];
+
+  if (template.length > MAX_BODY_TEMPLATE_LENGTH) {
+    issues.push({
+      code: 'BODY_TEMPLATE_TOO_LONG',
+      message: `O corpo tem ${template.length} caracteres; o limite é ${MAX_BODY_TEMPLATE_LENGTH}.`,
+    });
+  }
+
+  const variables: CertificateVariableKey[] = [];
+  const unknown: string[] = [];
+
+  for (const match of template.matchAll(bodyTokenPattern())) {
+    const key = bodyTokenKey(match[1] ?? '');
+
+    if (!isCertificateBodyVariableKey(key)) {
+      if (!unknown.includes(key)) unknown.push(key);
+      continue;
+    }
+
+    if (!variables.includes(key)) variables.push(key);
+  }
+
+  const validList = BODY_TEMPLATE_VARIABLE_KEYS.map((key) => `{{${key}}}`).join(', ');
+
+  for (const key of unknown) {
+    issues.push({
+      code: 'UNKNOWN_BODY_TOKEN',
+      message: `O corpo usa {{${key}}}, que não existe. As variáveis válidas são: ${validList}.`,
+    });
+  }
+
+  /**
+   * Depois de remover os tokens válidos, sobra de chave significa abertura sem fechar
+   * (`{{nome`) ou fechamento sem abertura (`nome}}`). Recusar é a única resposta
+   * honesta: o texto impresso sairia com as chaves à mostra.
+   */
+  const leftover = template.replace(bodyTokenPattern(), '');
+
+  if (leftover.includes('{{') || leftover.includes('}}')) {
+    issues.push({
+      code: 'UNCLOSED_BODY_TOKEN',
+      message:
+        'Há um {{ ou }} sobrando no corpo do certificado. Escreva cada variável com o par completo de chaves (ex.: {{nome}}) ou remova as chaves do texto.',
+    });
+  }
+
+  return issues.length === 0 ? { ok: true, variables } : { ok: false, issues };
+}
+
+/**
+ * Interpola o gabarito — TODAS as ocorrências, e só o que é token.
+ *
+ * O que não for token do catálogo fica LITERAL (inclusive `{{desconhecida}}` e chaves
+ * simples): a função não "limpa" texto. Quem garante que um gabarito gravado não tem
+ * token inválido é `validateBodyTemplate`, na porta de entrada; na emissão a resolução
+ * é fiel ao que está no snapshot.
+ *
+ * As quebras de linha do gabarito são preservadas: o texto é impresso em linhas, e um
+ * parágrafo por linha é o que o organizador escreveu.
+ */
+export function resolveBodyTemplate(
+  template: string,
+  values: Readonly<Record<string, string | undefined>>,
+): string {
+  return template.replace(bodyTokenPattern(), (whole, rawInner: string) => {
+    const key = bodyTokenKey(rawInner);
+
+    return isCertificateBodyVariableKey(key) ? (values[key] ?? '') : whole;
+  });
+}
+
+/** O elemento de corpo do modelo, se houver (no máximo um — `validateLayout` garante). */
+export function certificateBodyElement(layout: CertificateLayout): CertificateLayoutElement | null {
+  return layout.elements.find((element) => element.kind === 'BODY') ?? null;
+}
+
+/** O gabarito do modelo, ou `null` quando o modelo não tem corpo próprio. */
+export function certificateBodyTemplate(layout: CertificateLayout): string | null {
+  const text = certificateBodyElement(layout)?.text ?? '';
+
+  return text.trim() ? text : null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  O corpo CABE na caixa? (medido, não truncado)
+// ───────────────────────────────────────────────────────────────────────────────
+export type CertificateBodyBox = Pick<CertificateLayoutElement, 'widthMm' | 'heightMm' | 'sizePt' | 'lineHeight'>;
+
+/**
+ * Aviso ESTRUTURADO de que o corpo não cabe.
+ *
+ * O desenho corta o que sobra e marca a última linha com "…" (é o comportamento certo
+ * para o PDF: melhor avisar do que perder texto em silêncio). Este aviso é o outro
+ * lado: quem está MONTANDO o modelo fica sabendo ANTES de emitir, com os números na
+ * mão — quantas linhas o texto ocupa e quantas a caixa comporta.
+ */
+export interface CertificateBodyWarning {
+  code: 'BODY_DOES_NOT_FIT';
+  message: string;
+  lineCount: number;
+  maxLines: number;
+  overflowLines: number;
+}
+
+export interface CertificateBodyFit extends TextBoxFit {
+  /** `null` quando cabe; o aviso estruturado quando não. */
+  warning: CertificateBodyWarning | null;
+}
+
+/**
+ * Mede o texto do corpo contra a caixa do elemento `BODY`.
+ *
+ * A conta é a MESMA do desenho (`fitTextInBox` → `wrapToWidth`), e é por isso que a
+ * medição mora no domínio: duas réguas divergiriam e a tela diria "cabe" num documento
+ * que sai com reticências.
+ */
+export function measureCertificateBody(input: { text: string; box: CertificateBodyBox }): CertificateBodyFit {
+  const fit = fitTextInBox({
+    text: input.text,
+    widthMm: input.box.widthMm,
+    heightMm: input.box.heightMm,
+    sizePt: input.box.sizePt,
+    lineHeight: input.box.lineHeight,
+  });
+
+  if (fit.fits) return { ...fit, warning: null };
+
+  return {
+    ...fit,
+    warning: {
+      code: 'BODY_DOES_NOT_FIT',
+      message: `O corpo ocupa ${fit.lineCount} linhas e a caixa do elemento comporta ${fit.maxLines}. Aumente a altura da caixa, reduza o corpo da fonte ou encurte o texto — o documento impresso corta o que não couber e marca o corte com "…".`,
+      lineCount: fit.lineCount,
+      maxLines: fit.maxLines,
+      overflowLines: fit.overflowLines,
+    },
+  };
+}
+
+/**
+ * A altura de caixa que comporta `lineCount` linhas, presa à página.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A AÇÃO "AUMENTAR A CAIXA" É DOMÍNIO, NÃO UMA CONTA NA TELA (FASE 86 · fatia 3)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O aviso de "não cabe" entrega os números; o botão precisa transformá-los numa
+ *  altura em milímetros. Se essa conta ficasse no componente, ela divergiria da régua
+ *  de `fitTextInBox` no primeiro ajuste — e o botão poderia "consertar" a caixa para
+ *  uma altura que ainda não cabe. Aqui a conversão é a inversa da mesma régua
+ *  (`sizePt × lineHeight` por linha), com o teto da página que o `validateLayout`
+ *  também aplica.
+ *
+ *  `clamped` diz que a página não comporta a caixa inteira: a tela usa isso para
+ *  oferecer o caminho manual (reduzir a fonte ou encurtar o texto) em vez de prometer
+ *  um ajuste que o papel não permite.
+ */
+export interface BodyBoxHeightFit {
+  /** Altura a aplicar na caixa (arredondada para cima em 0,1 mm). */
+  heightMm: number;
+  /** Altura máxima que a página permite a partir do topo atual. */
+  maxHeightMm: number;
+  /** `true` quando a página não comporta a altura necessária. */
+  clamped: boolean;
+}
+
+export function bodyBoxHeightForLines(input: {
+  lineCount: number;
+  sizePt: number;
+  lineHeight: number;
+  page: CertificatePageFormat;
+  /** Posição vertical do elemento: o que sobra da página é `altura da página - topo`. */
+  topMm: number;
+}): BodyBoxHeightFit {
+  const { heightMm: pageHeightMm } = pageFormat(input.page);
+  const lineHeightPt = input.sizePt * input.lineHeight;
+  const requiredMm = (Math.max(1, input.lineCount) * lineHeightPt * MM_PER_INCH) / POINTS_PER_INCH;
+
+  /**
+   * Para cima em 0,1 mm: arredondar para baixo devolveria uma caixa que ainda não
+   * comporta a última linha (a mesma armadilha de `Math.floor` em `fitTextInBox`).
+   */
+  const roundedRequiredMm = Math.ceil(requiredMm * 10) / 10;
+  const availableMm = Math.max(0, pageHeightMm - Math.max(0, input.topMm));
+  const maxHeightMm = Math.floor(availableMm * 10) / 10;
+  const heightMm = Math.min(roundedRequiredMm, maxHeightMm);
+
+  return {
+    heightMm: Math.max(heightMm, MIN_ELEMENT_SIDE_MM),
+    maxHeightMm,
+    clamped: roundedRequiredMm > maxHeightMm + 0.01,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Amostragem da prévia (dupla)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * As duas amostras da prévia do editor.
+ *
+ * `FULL` é a que existe desde a FASE 40: todas as variáveis preenchidas. `WORST_CASE`
+ * esvazia as variáveis de CONTEÚDO que podem faltar — é o pior caso real do documento
+ * (atividade de evento inteiro, evento sem datas, pessoa sem CPF, autor sem trabalho) e
+ * é onde o organizador vê se o texto dele fica com buraco.
+ *
+ * As variáveis de AUDITORIA (`assinatura`, `chave`) também podem faltar, mas NÃO são
+ * esvaziadas: elas não fazem parte da frase — são linhas de prova, e a prévia mostra o
+ * documento com o bloco probatório completo.
+ */
+export type CertificatePreviewVariant = 'FULL' | 'WORST_CASE';
+
+const WORST_CASE_EMPTY_KEYS: readonly CertificateVariableKey[] = CONTENT_VARIABLE_KEYS.filter((key) => {
+  const variable = CERTIFICATE_VARIABLES.find((item) => item.key === key);
+
+  return variable?.canBeEmpty === true;
+});
+
+/**
+ * Valores de exemplo, tirados do PRÓPRIO catálogo.
+ *
+ * É o que a prévia do editor mostra: um certificado com o nome e a carga horária de
+ * mentira, mas com a geometria de verdade. Escrever os exemplos na tela criaria uma
+ * segunda lista de variáveis — e a que ficasse para trás apareceria na prévia sem
+ * existir no documento.
+ */
+export function sampleVariableValues(variant: CertificatePreviewVariant = 'FULL'): CertificateVariableValues {
+  const values: Record<string, string> = {};
+
+  for (const variable of CERTIFICATE_VARIABLES) {
+    values[variable.key] =
+      variant === 'WORST_CASE' && WORST_CASE_EMPTY_KEYS.includes(variable.key) ? '' : variable.sample;
+  }
+
+  return values as CertificateVariableValues;
+}
+
+export interface CertificatePreviewSample {
+  variant: CertificatePreviewVariant;
+  values: CertificateVariableValues;
+  /** Medição do corpo resolvido — `null` quando o modelo não tem elemento `BODY`. */
+  bodyFit: CertificateBodyFit | null;
+}
+
+/**
+ * Os valores da prévia, com o corpo JÁ resolvido a partir do gabarito.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  POR QUE A PRÉVIA RESOLVE O GABARITO (E NÃO USA O EXEMPLO DE `corpo`)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O renderizador imprime `values.corpo` e não reinterpreta o gabarito. Se a prévia
+ *  entregasse o exemplo do catálogo, o organizador veria a frase de mentira no lugar do
+ *  texto que ele escreveu — e aprovando a prévia aprovaria outra coisa. Então a amostra
+ *  passa pelo MESMO caminho da emissão: `resolveBodyTemplate` + `measureCertificateBody`.
+ *
+ * O editor (FASE 86 · fatia 3) chama esta função duas vezes — `FULL` e `WORST_CASE`.
+ */
+export function certificatePreviewSample(
+  layout: CertificateLayout,
+  variant: CertificatePreviewVariant = 'FULL',
+): CertificatePreviewSample {
+  const values: Record<string, string> = { ...sampleVariableValues(variant) };
+  const element = certificateBodyElement(layout);
+  const template = certificateBodyTemplate(layout);
+
+  if (!element || !template) {
+    return { variant, values: values as CertificateVariableValues, bodyFit: null };
+  }
+
+  values.corpo = resolveBodyTemplate(template, values);
+
+  return {
+    variant,
+    values: values as CertificateVariableValues,
+    bodyFit: measureCertificateBody({ text: values.corpo, box: element }),
+  };
+}
 
 export type CertificateContentValues = Readonly<Record<string, string>>;
 
@@ -606,6 +1026,22 @@ export type LayoutErrorCode =
   | 'UNKNOWN_VARIABLE'
   | 'MISSING_TEXT'
   | 'TEXT_TOO_LONG'
+  /**
+   * Os quatro motivos do gabarito do corpo vêm de `BodyTemplateErrorCode` (FASE 86) e
+   * são repetidos aqui de propósito: quem lê `LayoutIssue.code` não precisa traduzir
+   * um código de outro módulo, e o `Record` abaixo obriga os dois lados a continuarem
+   * em sincronia (código novo no domínio do corpo sem tradução = erro de tipo).
+   */
+  | 'DUPLICATE_BODY'
+  /**
+   * O modelo tem corpo próprio E imprime a variável `corpo`. O texto sairia duas
+   * vezes no documento (ver a mensagem em `validateLayout`).
+   */
+  | 'BODY_AND_BODY_VARIABLE'
+  | 'EMPTY_BODY_TEMPLATE'
+  | 'BODY_TEMPLATE_TOO_LONG'
+  | 'UNKNOWN_BODY_TOKEN'
+  | 'UNCLOSED_BODY_TOKEN'
   | 'MISSING_VALIDATION_BLOCK'
   | 'INVALID_BACKGROUND'
   | 'NOT_JPEG'
@@ -614,6 +1050,18 @@ export type LayoutErrorCode =
   | 'BACKGROUND_TOO_LARGE'
   | 'BACKGROUND_TOO_SMALL'
   | 'BACKGROUND_TRUNCATED';
+
+/**
+ * Tradução dos códigos do gabarito para os códigos do layout — hoje é a identidade, e o
+ * `Record` existe para que um motivo novo em `BodyTemplateErrorCode` REPROVE o build em
+ * vez de virar uma mensagem sem código.
+ */
+const BODY_ISSUE_CODES: Readonly<Record<BodyTemplateErrorCode, LayoutErrorCode>> = {
+  EMPTY_BODY_TEMPLATE: 'EMPTY_BODY_TEMPLATE',
+  BODY_TEMPLATE_TOO_LONG: 'BODY_TEMPLATE_TOO_LONG',
+  UNKNOWN_BODY_TOKEN: 'UNKNOWN_BODY_TOKEN',
+  UNCLOSED_BODY_TOKEN: 'UNCLOSED_BODY_TOKEN',
+};
 
 export interface LayoutIssue {
   code: LayoutErrorCode;
@@ -704,6 +1152,7 @@ export function validateLayout(layout: CertificateLayout): LayoutValidation {
   const seenIds = new Set<string>();
   const seenVariables = new Set<string>();
   let hasQr = false;
+  let bodyCount = 0;
 
   for (const [index, element] of layout.elements.entries()) {
     const position = index + 1;
@@ -786,6 +1235,38 @@ export function validateLayout(layout: CertificateLayout): LayoutValidation {
       continue;
     }
 
+    if (element.kind === 'BODY') {
+      bodyCount += 1;
+
+      /**
+       * UM corpo por modelo: o texto formal é a afirmação do documento, e dois deles
+       * diriam duas coisas. O segundo é recusado com a posição, porque a mensagem
+       * precisa apontar qual linha apagar.
+       */
+      if (bodyCount > 1) {
+        issues.push({
+          code: 'DUPLICATE_BODY',
+          message: `O elemento ${position} é um segundo corpo do certificado. O modelo pode ter um só texto formal.`,
+        });
+      }
+
+      const verdict = validateBodyTemplate(element.text ?? '');
+
+      if (!verdict.ok) {
+        for (const issue of verdict.issues) {
+          issues.push({ code: BODY_ISSUE_CODES[issue.code], message: `Elemento ${position}: ${issue.message}` });
+        }
+      }
+
+      /**
+       * O `BODY` NÃO substitui o bloco probatório: as checagens de QR e das variáveis
+       * `codigo_validacao`/`url_validacao` continuam valendo depois deste laço. Um
+       * `{{codigo_validacao}}` escrito DENTRO do corpo também não conta como bloco —
+       * ele é texto do organizador, não um elemento que a validação pública exige.
+       */
+      continue;
+    }
+
     if (!element.text || !element.text.trim()) {
       issues.push({ code: 'MISSING_TEXT', message: `O texto fixo do elemento ${position} está vazio.` });
     } else if (element.text.length > MAX_ELEMENT_TEXT) {
@@ -794,6 +1275,27 @@ export function validateLayout(layout: CertificateLayout): LayoutValidation {
         message: `O texto do elemento ${position} passa de ${MAX_ELEMENT_TEXT} caracteres.`,
       });
     }
+  }
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  CORPO PRÓPRIO + VARIÁVEL `corpo` = O MESMO TEXTO DUAS VEZES (FASE 86 · fatia 3)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  Até a fatia 2 este par era aceito, e o certificado sairia com a frase formal
+   *  impressa duas vezes: uma pelo elemento `BODY` (o gabarito resolvido) e outra pela
+   *  variável `corpo` (o mesmo texto). A saída escolhida foi RECUSAR, e não converter
+   *  em silêncio: os dois elementos ocupam posições absolutas diferentes, então
+   *  escolher um deles apagaria a decisão de posição do organizador sem ele saber.
+   *
+   *  A mensagem diz o QUE remover, e a tela mostra o conflito antes do envio (o
+   *  servidor continua sendo a guarda).
+   */
+  if (bodyCount > 0 && seenVariables.has('corpo')) {
+    issues.push({
+      code: 'BODY_AND_BODY_VARIABLE',
+      message:
+        'O modelo tem um corpo próprio e também um elemento com a variável "Texto formal do certificado" ({{corpo}}). O texto sairia duas vezes no certificado: remova o elemento de variável {{corpo}} ou troque-o para outro tipo.',
+    });
   }
 
   if (!hasQr) {
@@ -959,13 +1461,30 @@ export function buildLayoutFromRows(rows: LayoutRows): CertificateLayout {
 
   rows.kinds.forEach((rawKind, index) => {
     const kind = pick(rawKind, CERTIFICATE_ELEMENT_KINDS, 'TEXT');
-    const text = (rows.texts[index] ?? '').trim();
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  QUEBRA DE LINHA ENTRA CANÔNICA (`\n`), NÃO COMO O NAVEGADOR MANDA
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O formulário de um `textarea` é codificado com CRLF (`\r\n`) por especificação
+     *  do HTML, independentemente do sistema. Guardar o CRLF faria o layout — e o hash
+     *  do documento — depender do NAVEGADOR que salvou o modelo, e o `\r` sobraria no
+     *  fim de cada linha impressa. A conversão é na PORTA do formulário, não em
+     *  `normalizeLayout`: assim nenhum layout já gravado muda de serialização.
+     */
+    const text = (rows.texts[index] ?? '').replace(/\r\n?/g, '\n').trim();
     const variable = (rows.variables[index] ?? '').trim();
     const id = (rows.ids[index] ?? '').trim();
 
-    // QR existe por presença; TEXTO e VARIÁVEL precisam de conteúdo.
+    // QR existe por presença; TEXTO, VARIÁVEL e CORPO precisam de conteúdo.
     if (kind === 'TEXT' && !text) return;
     if (kind === 'VARIABLE' && !variable) return;
+    /**
+     * Linha de corpo vazia é DESCARTADA, como a de texto: é a linha em branco que o
+     * organizador deixou no formulário sem JavaScript. O "corpo vazio é recusado" vale
+     * para o layout GRAVADO (`validateLayout`), que é onde um corpo sem texto seria de
+     * fato um documento sem afirmação.
+     */
+    if (kind === 'BODY' && !text) return;
 
     let finalId = id || `elemento-${index + 1}`;
     if (takenIds.has(finalId)) {
@@ -987,7 +1506,7 @@ export function buildLayoutFromRows(rows: LayoutRows): CertificateLayout {
       sizePt: numberOrFallback(rows.sizePt[index], 12),
       color: (rows.colors[index] ?? '').trim() || DEFAULT_COLOR,
       lineHeight: numberOrFallback(rows.lineHeights[index], 1.4),
-      text: kind === 'TEXT' ? text : null,
+      text: kind === 'TEXT' || kind === 'BODY' ? text : null,
       variable: kind === 'VARIABLE' && isCertificateVariableKey(variable) ? variable : null,
     });
   });
@@ -1022,6 +1541,17 @@ export function visibleElements(
       continue;
     }
 
+    if (element.kind === 'BODY') {
+      /**
+       * O corpo resolvido pode sair VAZIO (gabarito que só usa variáveis opcionais que
+       * não existem naquele certificado). Caixa vazia some, como a variável sem valor —
+       * não fica um retângulo com aparência de falha.
+       */
+      const body = values.corpo;
+      if (body && body.trim()) visible.push(element);
+      continue;
+    }
+
     const value = element.variable ? values[element.variable] : '';
     if (!value || !value.trim()) continue;
 
@@ -1031,15 +1561,33 @@ export function visibleElements(
   return visible;
 }
 
-/** Texto final de um elemento (já com a variável resolvida). `null` no QR. */
+/**
+ * Texto final de um elemento (já com a variável resolvida). `null` no QR.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O `BODY` IMPRIME `values.corpo` — NUNCA O PRÓPRIO GABARITO (FASE 86)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `element.text` de um `BODY` é o GABARITO, com `{{chave}}` dentro. Se ele caísse no
+ *  `return element.text` do fim desta função, o PDF sairia imprimindo
+ *  "Certificamos que {{nome}} participou…" e o documento assinado (que afirma o texto
+ *  RESOLVIDO) não seria o documento impresso. Quem resolve é a emissão, uma vez só; o
+ *  renderizador só obedece ao snapshot.
+ */
 export function elementText(
   element: CertificateLayoutElement,
   values: CertificateVariableValues,
 ): string | null {
   if (element.kind === 'QR') return null;
   if (element.kind === 'VARIABLE') return element.variable ? values[element.variable] : null;
+  if (element.kind === 'BODY') return values.corpo;
+  if (element.kind === 'TEXT') return element.text;
 
-  return element.text;
+  /**
+   * Um `kind` que o desenho não conhece (layout gravado por uma versão futura) não é
+   * texto: devolver `element.text` imprimiria lixo — ou o gabarito de um BODY mal
+   * lido. `null` mantém a página sem invenção.
+   */
+  return null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

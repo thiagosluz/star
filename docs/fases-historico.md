@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42 e 43 a 49 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59 e 60 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -14,21 +14,32 @@
 > devolveu a **64.654 bytes**, com as linhas movidas **como estavam**. Na **FASE 85** a linha
 > nova levou o arquivo a **65.986 bytes**; o movimento das **sete mais antigas que restavam** —
 > **43 a 49** — o devolveu a **64.519 bytes** (medido depois dos demais ajustes de estado),
-> também sem uma linha reescrita.
+> também sem uma linha reescrita. Na **FASE 86** a linha nova encostou no teto outra vez: as
+> **sete mais antigas que restavam** — **50 a 56** — desceram juntas, e o fechamento da fase
+> (o parágrafo de dívidas e o ponteiro) ainda pediu as **três seguintes**, **57 a 59**. As dez
+> foram movidas **como estavam**, e o `AGENTS.md` terminou em **64.443 bytes**. Na **FASE 87** a
+> linha nova e o parágrafo de dívidas encostaram no teto de novo: a **F60** desceu **como estava**
+> e a tabela corrente passou a começar na **61**; o `AGENTS.md` terminou em **63.048 bytes**
+> (a narrativa de dívidas foi reescrita mais curta; as **linhas de fase**, não — elas foram
+> movidas como estavam).
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **50** à **85**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **61** à **87**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
 > **A ordem é a cronológica da tabela original**, não a numérica: a numeração identifica o
 > TEMA, e é o humano quem o escolhe pelo nome — por isso a F16, a F17, a F23, a F24 e a F25
 > vieram antes da F15, e a F21 foi entregue depois de todas. As fases movidas na FASE 82, na
-> FASE 83, na FASE 84 e na FASE 85 entram no fim, na ordem em que estavam.
+> FASE 83, na FASE 84, na FASE 85, na FASE 86 e na FASE 87 entram no fim, na ordem em que estavam.
+>
+> **Nota de rebrand.** O produto passou a se chamar **Koveno** em novembro de 2026. Este
+> arquivo e os documentos de fase continuam dizendo **EventFlow** porque são registro do que
+> foi entregue, não descrição do estado atual. Ver `README.md` §11 e `AGENTS.md` §1.
 
 | Fase | Tema | Situação |
 |---|---|---|
@@ -77,3 +88,14 @@
 | 47 | **Área de conta e segurança da identidade** — `/conta` é **GLOBAL** (a identidade vale em qualquer instituição e existe sem vínculo): dados com confirmação no endereço novo e a senha atual como prova, foto em WebP, troca de senha … | ✅ |
 | 48 | **Carta colecionável premium e compartilhamento** — palco **3D** com brilho holográfico e verso, geometria no DOMÍNIO; a apresentação é DADO (`holo`, `sheen`, `tilt`, `backUrl`) e o foil acende o brilho sozinho; o link é **POR … | ✅ |
 | 49 | **Exportação com marca d'água e prazo · Trilha de identidade** (o CSV de dado pessoal virou **PEDIDO** com prazo de 24 h: `data_exports` guarda o ATO — autor, filtros, linhas, downloads e revogação — e o arquivo é **regerado no … | ✅ |
+| 50 | **Mutirão de dívidas II** — onze dívidas (**C7, E26, E49, E50, E51, E52, E53, E55, E59, E71 e H5**), com **cinco defeitos reais** no caminho. Detalhe em `docs/fase-50-mutirao-de-dividas-ii.md` | ✅ |
+| 51 | **Mutirão de dívidas III** — onze dívidas (**E7, E19, E32, E37, E42, E57, E58, E63, E66, E70 e E73**) e um **defeito real de INTEGRIDADE** (a assinatura entrou no veredito público e no download). Detalhe em `docs/fase-51-mutirao-de-dividas-iii.md` | ✅ |
+| 52 | **"Fechar o que abrimos"** — a **dívida que nós criamos**: o **token de aviso** em claro × escuro com contraste **medido** e catraca que lê o CSS (6,44:1 / 7,09:1 no claro; 9,17:1 no telão), com o **portão WCAG AA sem isenções**; **um único `<main>` por tela** … | ✅ |
+| 53 | **Painel de prontidão e áreas do evento** — a raiz do evento diz **o que falta para o evento ficar pronto** (pendências com efeito, gravidade, ordem e o caminho que resolve), e a faixa de links virou **grade de cartões nos quatro grupos**, … | ✅ |
+| 54 | **O selo de contagem nos cartões** — cada área da raiz diz quanto há lá dentro, contado por evento e só sobre o que vale, em uma leitura; a frase é regra de domínio (zero aparece, `null` é "não sei" e vira SEM SELO) | ✅ |
+| 55 | **As seções da raiz viram páginas com cartão** — as quatro sanfonas viraram **páginas** e a raiz ficou **prontidão + mapa**: 341 linhas (eram 955), **ZERO `<details>`** no E2E, `data-testid` preservados e 7 specs reapontados | ✅ |
+| 56 | **Mutirão de dívidas da Jornada do participante** — nove dívidas do tema E em 4 fatias (fila no EVENTO + promoção com prazo, paginação e retirada da submissão, miniatura e WebP). … | ✅ |
+| 57 | **Gantt e calendário das demandas** — duas vistas novas no quadro da F38 (`?vista=kanban\|gantt\|calendario`): eixo de dias no fuso do evento, barra com `startAt` ou criação (**estimada**) e calendário no dia do PRAZO. Uma leitura, três vistas, links | ✅ |
+| 58 | **As telas novas no portão de acessibilidade** — `/demandas` (três vistas) e `/superadmin/denuncias` no `axe` WCAG AA; o **contraste do calendário (2,9:1)** foi corrigido, sem isenção nova. ADR-317/318 | ✅ |
+| 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie no servidor** | ✅ |
+| 60 | **O que se oculta fica oculto · landmark em toda tela · suíte E2E estável** — **E79**: a ocultação passou a valer em toda superfície que cita a pessoa, inclusive o **sorteio público**; **I2** … | ✅ |

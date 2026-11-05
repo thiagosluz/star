@@ -148,11 +148,22 @@ function summarize(row: {
   };
 }
 
-/** Modelos da instituição, do mais específico ao mais genérico. */
-export async function listCertificateTemplates(tenantId: string): Promise<CertificateTemplateSummary[]> {
+/**
+ * Modelos da instituição, do mais específico ao mais genérico.
+ *
+ * `filter.eventId` separa o que é DO EVENTO do que é PADRÃO da instituição: a tela
+ * do evento precisa das duas listas na mesma leitura, e sem o filtro ela mostraria
+ * (e deixaria editar) modelo de outro evento. O filtro é opcional para os
+ * chamadores que querem o inventário inteiro — e `null` é um valor, não "sem
+ * filtro": ele pede exatamente os modelos sem evento.
+ */
+export async function listCertificateTemplates(
+  tenantId: string,
+  filter?: { eventId: string | null },
+): Promise<CertificateTemplateSummary[]> {
   return withTenant(tenantId, async (tx) => {
     const rows = await tx.certificateTemplate.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(filter ? { eventId: filter.eventId } : {}) },
       select: {
         id: true,
         name: true,
@@ -170,13 +181,22 @@ export async function listCertificateTemplates(tenantId: string): Promise<Certif
   });
 }
 
+/**
+ * Lê um modelo, opcionalmente PRESO a um alvo.
+ *
+ * O filtro de `eventId` não é decoração: a tela do evento recebe `?modelo=<id>` e
+ * sem ele abriria — e salvaria — modelo de outro evento; a tela da instituição
+ * faria o inverso (transformaria um modelo do evento em padrão). O alvo é a
+ * fronteira da EDIÇÃO, e ela é decidida pelo endereço, não pelo formulário.
+ */
 export async function getCertificateTemplate(
   tenantId: string,
   templateId: string,
+  filter?: { eventId: string | null },
 ): Promise<CertificateTemplateRecord | null> {
   return withTenant(tenantId, async (tx) => {
     const row = await tx.certificateTemplate.findFirst({
-      where: { id: templateId, tenantId },
+      where: { id: templateId, tenantId, ...(filter ? { eventId: filter.eventId } : {}) },
       select: {
         id: true,
         tenantId: true,
@@ -275,16 +295,59 @@ export async function saveCertificateTemplate(input: {
     return { ok: false, code: 'INVALID_INPUT', message: 'Tipo de certificado desconhecido.' };
   }
 
+  const eventId = input.eventId?.trim() || null;
+
   return withTenant(input.tenantId, async (tx) => {
+    /**
+     * ─── O `eventId` VEM DA ROTA, E A POSSE É CONFERIDA AQUI ──────────────────
+     *
+     *  O serviço gravava QUALQUER uuid que o formulário mandasse. A chave
+     *  estrangeira só garante que o evento existe — não que ele seja DESTA
+     *  instituição —, então um id de outra casa (ou de um evento excluído) virava
+     *  um modelo que a resolução nunca alcançaria: o organizador salvava e o
+     *  certificado continuava saindo no padrão, sem erro nenhum.
+     *
+     *  O `tenantId` no `where` é o pertencimento, e o `deletedAt` é a exclusão
+     *  lógica: evento apagado não pode ganhar modelo novo.
+     */
+    if (eventId) {
+      const event = await tx.event.findFirst({
+        where: { id: eventId, tenantId: input.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+
+      if (!event) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'O evento informado não pertence a esta instituição.',
+        };
+      }
+    }
+
     const existing = input.templateId
       ? await tx.certificateTemplate.findFirst({
           where: { id: input.templateId, tenantId: input.tenantId },
-          select: { id: true, layout: true },
+          select: { id: true, layout: true, eventId: true },
         })
       : null;
 
     if (input.templateId && !existing) {
       return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Modelo não encontrado.' };
+    }
+
+    /**
+     * O ALVO DE UM MODELO EXISTENTE É IMUTÁVEL. Mover um modelo entre eventos (ou
+     * entre evento e instituição) por um formulário forjado trocaria o desenho de
+     * documentos futuros em silêncio — e a tela do evento só sabe editar o que é
+     * dela. Quem quer outro alvo cria outro modelo.
+     */
+    if (existing && (existing.eventId ?? null) !== eventId) {
+      return {
+        ok: false as const,
+        code: 'INVALID_INPUT' as const,
+        message: 'Este modelo pertence a outro alvo e não pode ser movido.',
+      };
     }
 
     const currentLayout = existing ? readStoredLayout(existing.layout) : null;
@@ -348,7 +411,7 @@ export async function saveCertificateTemplate(input: {
         where: { id: existing.id },
         data: {
           name,
-          eventId: input.eventId?.trim() || null,
+          eventId,
           kind: kind.kind,
           layout: layout as unknown as object,
           backgroundBytes,
@@ -361,7 +424,7 @@ export async function saveCertificateTemplate(input: {
     const created = await tx.certificateTemplate.create({
       data: {
         tenantId: input.tenantId,
-        eventId: input.eventId?.trim() || null,
+        eventId,
         kind: kind.kind,
         name,
         layout: layout as unknown as object,
@@ -402,8 +465,19 @@ export async function setTemplateBackground(input: {
   tenantId: string;
   templateId: string;
   bytes: Uint8Array;
+  /**
+   * Alvo esperado do modelo (`null` = padrão da instituição). A tela do evento
+   * manda o id da rota; sem o filtro, um `templateId` trocado no formulário
+   * aplicaria arte em modelo de OUTRO evento — mesma família do buraco do
+   * `eventId` fechado acima.
+   */
+  eventId?: string | null;
 }): Promise<TemplateResult<{ checksum: string; notice: string | null }>> {
-  const record = await getCertificateTemplate(input.tenantId, input.templateId);
+  const record = await getCertificateTemplate(
+    input.tenantId,
+    input.templateId,
+    input.eventId === undefined ? undefined : { eventId: input.eventId },
+  );
 
   if (!record) {
     return { ok: false, code: 'NOT_FOUND', message: 'Modelo não encontrado.' };
@@ -482,11 +556,18 @@ export async function setTemplateBackground(input: {
   }
 }
 
-/** Remove a arte do modelo (o objeto sai do bucket; o layout volta ao fundo branco). */export async function clearTemplateBackground(input: {
+/** Remove a arte do modelo (o objeto sai do bucket; o layout volta ao fundo branco). */
+export async function clearTemplateBackground(input: {
   tenantId: string;
   templateId: string;
+  /** Alvo esperado — a mesma fronteira de `setTemplateBackground`. */
+  eventId?: string | null;
 }): Promise<TemplateResult> {
-  const record = await getCertificateTemplate(input.tenantId, input.templateId);
+  const record = await getCertificateTemplate(
+    input.tenantId,
+    input.templateId,
+    input.eventId === undefined ? undefined : { eventId: input.eventId },
+  );
 
   if (!record) {
     return { ok: false, code: 'NOT_FOUND', message: 'Modelo não encontrado.' };
@@ -526,10 +607,20 @@ export async function setTemplateBackground(input: {
 export async function deleteCertificateTemplate(input: {
   tenantId: string;
   templateId: string;
+  /**
+   * Alvo esperado do modelo (`null` = padrão da instituição). A exclusão da tela
+   * do evento não pode alcançar o padrão da instituição nem o modelo de outro
+   * evento por um formulário forjado — o `templateId` sozinho não diz de quem ele é.
+   */
+  eventId?: string | null;
 }): Promise<TemplateResult> {
   return withTenant(input.tenantId, async (tx) => {
     const deleted = await tx.certificateTemplate.deleteMany({
-      where: { id: input.templateId, tenantId: input.tenantId },
+      where: {
+        id: input.templateId,
+        tenantId: input.tenantId,
+        ...(input.eventId === undefined ? {} : { eventId: input.eventId }),
+      },
     });
 
     if (deleted.count === 0) {
@@ -594,6 +685,101 @@ export async function resolveTemplateWithTx(
   if (!layout) return null;
 
   return { templateId: picked.id, layout };
+}
+
+/** De onde veio o modelo que vale para um tipo. */
+export type TemplateTarget = 'EVENT' | 'INSTITUTION';
+
+/**
+ * O que a TELA precisa saber sobre o modelo de cada tipo — inclusive o que a
+ * emissão hoje esconde.
+ *
+ * `INVALID` é o caso que motivou este tipo: `resolveTemplateWithTx` devolve `null`
+ * tanto para "não há modelo" quanto para "o modelo escolhido tem layout ilegível",
+ * e a emissão cai no desenho padrão em silêncio. A tela da emissão mostra a
+ * diferença; a EMISSÃO continua com o comportamento de antes (não há política nova
+ * aqui).
+ */
+export interface EventTemplateKindInfo {
+  kind: CertificateKind;
+  state: 'TEMPLATE' | 'DEFAULT' | 'INVALID';
+  templateId: string | null;
+  templateName: string | null;
+  target: TemplateTarget | null;
+}
+
+/**
+ * Resolve, por tipo, o modelo que a precedência escolhe — e diz se ele é legível.
+ *
+ * A leitura é UMA para todos os tipos: a resolução da emissão também busca todas as
+ * combinações de uma vez. A diferença é que aqui o `layout` é lido para separar
+ * "não configurado" de "configurado e inválido", sem mudar a decisão de qual modelo
+ * vale (ela continua sendo `selectEffectiveTemplate`).
+ */
+export async function resolveEventTemplateKinds(input: {
+  tenantId: string;
+  eventId: string;
+  kinds: readonly CertificateKind[];
+}): Promise<EventTemplateKindInfo[]> {
+  return withTenant(input.tenantId, async (tx) => {
+    const rows = await tx.certificateTemplate.findMany({
+      where: {
+        tenantId: input.tenantId,
+        OR: [{ eventId: input.eventId }, { eventId: null }],
+        AND: [{ OR: [{ kind: { in: input.kinds as never } }, { kind: null }] }],
+      },
+      select: { id: true, name: true, eventId: true, kind: true, layout: true },
+    });
+
+    const candidates = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      eventId: row.eventId,
+      kind: row.kind as string | null,
+      layout: row.layout,
+    }));
+
+    return input.kinds.map((kind) => {
+      const picked = selectEffectiveTemplate(candidates, { eventId: input.eventId, kind });
+      const target: TemplateTarget | null = picked
+        ? picked.eventId === input.eventId
+          ? 'EVENT'
+          : 'INSTITUTION'
+        : null;
+
+      if (!picked) {
+        return {
+          kind,
+          state: 'DEFAULT' as const,
+          templateId: null,
+          templateName: null,
+          target: null,
+        };
+      }
+
+      /**
+       * Layout ilegível é RECUSADO aqui, como a emissão o recusa: a tela não pode
+       * prometer um desenho que o PDF não vai usar.
+       */
+      if (!readStoredLayout(picked.layout)) {
+        return {
+          kind,
+          state: 'INVALID' as const,
+          templateId: picked.id,
+          templateName: picked.name,
+          target,
+        };
+      }
+
+      return {
+        kind,
+        state: 'TEMPLATE' as const,
+        templateId: picked.id,
+        templateName: picked.name,
+        target,
+      };
+    });
+  });
 }
 
 /** Lê os bytes da arte do bucket. `null` quando o modelo não tem arte. */

@@ -346,7 +346,7 @@ export function renderBadgeSheetPdf(document: BadgeSheetDocument): Buffer {
   objects.push(
     `<< /Title (${escapePdfText(`Crachás · ${document.eventTitle}`)}) /Author (${escapePdfText(
       document.tenantName,
-    )}) /Subject (${escapePdfText(`${badges.length} crachá(s)`)}) /Creator (EventFlow) /Producer (EventFlow) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
+    )}) /Subject (${escapePdfText(`${badges.length} crachá(s)`)}) /Creator (Koveno) /Producer (Koveno) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
   );
 
   // O objeto de informação é o ÚLTIMO: a numeração calculada acima depende disso.
@@ -445,7 +445,7 @@ export function renderBadgeLabelSheetPdf(document: BadgeLabelSheetDocument): Buf
       document.tenantName,
     )}) /Subject (${escapePdfText(
       `${badges.length} crachá(s) · grade ${document.layout.columns}x${document.layout.rows} de ${document.layout.labelWidthMm}x${document.layout.labelHeightMm} mm`,
-    )}) /Creator (EventFlow) /Producer (EventFlow) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
+    )}) /Creator (Koveno) /Producer (Koveno) /CreationDate (D:${issued}) /ModDate (D:${issued}) >>`,
   );
 
   if (objects.length !== infoRef) {

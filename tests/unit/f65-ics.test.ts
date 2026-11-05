@@ -104,7 +104,7 @@ describe('.ics — quebra de linha (RFC 5545 §3.1)', () => {
     expect(logicas[0]).toBe('BEGIN:VCALENDAR');
     expect(logicas[logicas.length - 1]).toBe('END:VCALENDAR');
     expect(propriedade(ics, 'VERSION')).toBe('VERSION:2.0');
-    expect(propriedade(ics, 'PRODID')).toBe('PRODID:-//EventFlow//Agenda do participante//PT-BR');
+    expect(propriedade(ics, 'PRODID')).toBe('PRODID:-//Koveno//Agenda do participante//PT-BR');
     expect(propriedade(ics, 'CALSCALE')).toBe('CALSCALE:GREGORIAN');
     expect(propriedade(ics, 'METHOD')).toBe('METHOD:PUBLISH');
     expect(logicas).toContain('BEGIN:VEVENT');
@@ -327,7 +327,7 @@ describe('.ics — arquivo da grade inteira', () => {
     expect(linhasLogicas(ics)).toEqual([
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//EventFlow//Agenda do participante//PT-BR',
+      'PRODID:-//Koveno//Agenda do participante//PT-BR',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'X-WR-CALNAME:Minha agenda',

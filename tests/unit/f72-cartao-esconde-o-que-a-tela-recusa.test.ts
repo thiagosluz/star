@@ -241,6 +241,41 @@ describe('catraca — todo cartão declara a permissão que a tela dele exige', 
    * (área → página); este caso prende o EFEITO na lista visível, que é o que a
    * pessoa experimenta.
    */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A SUB-ROTA DE MODELOS É UM DETALHE, NÃO O CARTÃO (FASE 86 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  A tela de modelos DO EVENTO exige `event:manage` — mais forte que a permissão
+   *  do cartão `certificados` (`certificate:issue`). Isso NÃO é divergência: a
+   *  F55/ADR-301 diz que o cartão leva a UMA página (a emissão), e a F85 já criou a
+   *  primeira sub-rota. O cartão continua prometendo a emissão, que é o que a tela
+   *  dele entrega; o editor é alcançado de DENTRO da emissão, só por quem pode
+   *  abri-lo (`can()` esconde o link de quem não tem).
+   *
+   *  Este caso prende os dois lados: apontar o cartão para a sub-rota (e herdar a
+   *  guarda mais forte) reprovaria o par acima, e afrouxar a guarda da sub-rota
+   *  para `certificate:issue` reprovaria aqui. Quem quiser mudar o desenho tem de
+   *  mudar o contrato de propósito — não por acidente.
+   */
+  it('a sub-rota de modelos do evento é detalhe do cartão e tem a guarda mais forte', () => {
+    const cartao = EVENT_AREAS.find((area) => area.id === 'certificados');
+    expect(cartao, 'o cartão certificados sumiu do catálogo').toBeDefined();
+    expect(cartao!.permission).toBe(PERMISSIONS.CERTIFICATE_ISSUE);
+
+    const href = cartao!.href(CONTEXTO);
+    expect(new URL(href, 'http://eventflow.local').pathname.endsWith('/certificados')).toBe(true);
+
+    const modelos = paginas.find(
+      (pagina) => pagina.segmentos.slice(-2).join('/') === 'certificados/modelos',
+    );
+
+    expect(modelos, 'a página de modelos do evento sumiu da árvore').toBeDefined();
+    expect(
+      guardaDaPagina(modelos!.arquivo).permissao,
+      'a tela de modelos do evento deixou de exigir event:manage',
+    ).toBe('EVENT_MANAGE');
+  });
+
   it('quem só tem a permissão da raiz NÃO vê os cartões cuja tela recusa', () => {
     const visiveis = visibleEventAreas({
       allowed: (permission) => permission === PERMISSIONS.EVENT_UPDATE,

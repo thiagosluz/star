@@ -110,7 +110,7 @@ export default async function AdminCertificatesPage({
               className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
             >
               <Palette className="size-4" aria-hidden />
-              Modelos de certificado
+              Modelos padrão da instituição
             </Link>
 
             {selectedEventId ? (

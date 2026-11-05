@@ -7,7 +7,7 @@
  *  Três estratégias, avaliadas em ordem de prioridade:
  *
  *    1. DOMÍNIO CUSTOMIZADO   eventos.ufba.br      -> tenants.customDomain
- *    2. SUBDOMÍNIO             ufba.eventflow.app   -> tenants.slug
+ *    2. SUBDOMÍNIO             ufba.koveno.app   -> tenants.slug
  *    3. PATH                  /t/ufba/...          -> tenants.slug
  *
  *  ─────────────────────────────────────────────────────────────────────────────

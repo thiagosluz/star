@@ -2651,6 +2651,12 @@ test.describe('telas autenticadas', () => {
      *  `<details>` NATIVO. A estrutura mudou o suficiente para o caso ser
      *  reescrito — e a lista é ABERTA antes da varredura: conteúdo escondido num
      *  `<details>` fechado não é medido, e um `<li>` sem contraste passaria.
+     *
+     *  A FASE 86 (fatia 5) acrescentou a REGRA DE PRESENÇA: um `<dl>` com quatro
+     *  pares de termo/definição e, para quem tem `event:manage`, dois campos
+     *  numéricos com `label`, `hint` e o botão de salvar. É a forma de estrutura
+     *  que o `axe` mede (`label`, `aria-describedby`, botão com nome) — a seção
+     *  entra no caso para a catraca não ficar cega justamente na superfície nova.
      */
     await page.goto(`/t/${tenantSlug}/administracao/eventos/${eventId}/certificados`);
 
@@ -2664,6 +2670,16 @@ test.describe('telas autenticadas', () => {
     await expect(page.getByTestId('issue-queue')).toBeVisible();
     await expect(page.getByTestId('issue-batch')).toBeVisible();
     await expect(page.getByTestId('certificate-inventory-link')).toBeVisible();
+    await expect(page.getByTestId('event-template-summary')).toBeVisible();
+    await expect(page.getByTestId('event-template-list')).toBeVisible();
+
+    // A política de presença e o formulário de edição (FASE 86 · fatia 5).
+    await expect(page.getByTestId('certificate-policy')).toBeVisible();
+    await expect(page.getByTestId('certificate-policy-current')).toBeVisible();
+    await expect(page.getByTestId('certificate-policy-form')).toBeVisible();
+    await expect(page.getByTestId('certificate-policy-min-ratio')).toBeVisible();
+    await expect(page.getByTestId('certificate-policy-min-minutes')).toBeVisible();
+    await expect(page.getByTestId('certificate-policy-save')).toBeVisible();
 
     await page.getByTestId('issue-discarded-summary').click();
     await expect(page.getByTestId('issue-discarded')).toBeVisible();
@@ -2671,6 +2687,71 @@ test.describe('telas autenticadas', () => {
     await expectNoCriticalViolations(
       page,
       `certificados do evento (/t/${tenantSlug}/administracao/eventos/<id>/certificados)`,
+    );
+  });
+
+  test('a tela de modelos de certificado com o campo do corpo não tem violação crítica', async ({
+    page,
+  }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A PÁGINA DE MODELOS ENTRA NO PORTÃO (FASE 86 · fatia 3)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  O editor ganhou uma superfície densa: `textarea` do gabarito, a legenda com
+     *  DOZE botões de inserir, contador, erros do validador e duas prévias. Nenhum
+     *  dos casos deste arquivo abria `/administracao/certificados/modelos`, então a
+     *  catraca não cobria o alvo — a mesma forma do defeito da F66.
+     *
+     *  O caminho é barato e não precisa de fixture: o modelo pronto abre o editor, e
+     *  trocar o tipo do terceiro elemento para `BODY` revela o campo e a legenda (o
+     *  `<select>` é o mesmo da tela, não um estado inventado pelo teste). O `BODY`
+     *  vazio põe no DOM também a lista de erros do validador.
+     */
+    await page.goto(`/t/${tenantSlug}/administracao/certificados/modelos?novo=classico-institucional`);
+
+    await expect(page.getByTestId('template-editor')).toBeVisible();
+    await expect(page.getByTestId('template-preview')).toBeVisible();
+    await expect(page.getByTestId('template-preview-worst-svg')).toBeVisible();
+
+    await page.getByLabel('Tipo do elemento 3').selectOption('BODY');
+    await expect(page.getByTestId('body-field-2')).toBeVisible();
+    await expect(page.getByTestId('body-variable-legend-2')).toBeVisible();
+    await expect(page.getByTestId('body-errors-2')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `modelos de certificado (/t/${tenantSlug}/administracao/certificados/modelos)`,
+    );
+  });
+
+  test('a tela de modelos do EVENTO não tem violação crítica', async ({ page }) => {
+    await signInAs(page, adminEmail);
+
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A SUB-ROTA NOVA ENTRA NO PORTÃO (FASE 86 · fatia 4)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A tela do evento acrescenta ao editor duas superfícies que a da instituição
+     *  não tem: o alvo FIXO (texto no lugar do `<select>`) e a lista de modelos
+     *  HERDADOS. E o caminho é o mesmo do modelo pronto — sem fixture, porque o que
+     *  se mede é o render inteiro (galeria, presets, editor e a seção herdada).
+     *
+     *  Uma varredura só na tela da instituição deixaria esta de fora: é a forma do
+     *  defeito da F66/F58 — a catraca não cobria o alvo.
+     */
+    await page.goto(
+      `/t/${tenantSlug}/administracao/eventos/${eventId}/certificados/modelos?novo=classico-institucional`,
+    );
+
+    await expect(page.getByTestId('template-editor')).toBeVisible();
+    await expect(page.getByTestId('template-event-fixed')).toBeVisible();
+    await expect(page.getByTestId('template-preview')).toBeVisible();
+
+    await expectNoCriticalViolations(
+      page,
+      `modelos de certificado do evento (/t/${tenantSlug}/administracao/eventos/<id>/certificados/modelos)`,
     );
   });
 

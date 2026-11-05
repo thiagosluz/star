@@ -80,7 +80,7 @@ describe('códigos do segundo fator', () => {
 
   it('extrai a chave digitável do URI do aplicativo — e só de um URI de TOTP', () => {
     const uri =
-      'otpauth://totp/EventFlow:ana@example.test?secret=JBSWY3DPEHPK3PXP&issuer=EventFlow&period=30';
+      'otpauth://totp/Koveno:ana@example.test?secret=JBSWY3DPEHPK3PXP&issuer=Koveno&period=30';
 
     expect(totpSecretFromUri(uri)).toBe('JBSWY3DPEHPK3PXP');
     // URI de outro tipo, texto solto ou valor ausente não viram "chave".

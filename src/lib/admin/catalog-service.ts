@@ -37,6 +37,10 @@ import { resolveTheme } from '@/domain/events/landing-page';
 import { evaluateEventQuota } from '@/domain/platform/platform-rules';
 import { readEventRegistrationPolicy } from '@/domain/events/public-registration-rules';
 import {
+  readCertificatePolicy,
+  type CertificatePolicy,
+} from '@/domain/certificates/certificate-policy-rules';
+import {
   readRegistrationForm,
   type FormSpecProblem,
   type RegistrationFormField,
@@ -486,6 +490,18 @@ export interface AdminEventDetail extends AdminEventRow {
     source: RegistrationFormSource;
     problems: readonly FormSpecProblem[];
   };
+  /**
+   * A política de presença do evento (FASE 86 · fatia 5).
+   *
+   * Lida do `settings` que esta consulta já trazia (`readCertificatePolicy`), com
+   * os problemas da configuração torta junto. A tela de certificados mostra a
+   * política EM VIGOR e edita `settings.certificatePolicy`; o caminho de emissão lê
+   * a mesma chave por conta própria — as duas passam pelo mesmo leitor.
+   */
+  certificatePolicy: {
+    policy: CertificatePolicy;
+    problems: readonly string[];
+  };
   rooms: { id: string; name: string; capacity: number | null }[];
   activities: {
     id: string;
@@ -726,6 +742,8 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
     registrationRequiresMembership: readEventRegistrationPolicy(event.settings).requiresMembership,
     /** O mesmo leitor tolerante da política acima — a tela não vê o JSON cru. */
     registrationForm: readRegistrationForm(event.settings),
+    /** A regra de presença do evento — usada na tela de certificados (FASE 86). */
+    certificatePolicy: readCertificatePolicy(event.settings),
     activityCount: event._count.activities,
     trackCount: event._count.tracks,
     roomCount: event._count.rooms,

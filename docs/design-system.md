@@ -1,4 +1,4 @@
-# Sistema de design do EventFlow
+# Sistema de design da Koveno
 
 > **Leia antes de escrever qualquer tela nova.** Este documento é o contrato visual
 > do produto: a fonte dos valores é o [`DESIGN.md`](../DESIGN.md) (na raiz do

@@ -63,7 +63,7 @@ export default function ParaInstituicoesPage() {
       icon: Building2,
       title: 'Página Pública & Subdomínio Próprio',
       description:
-        'Sua vitrine institucional dedicada sob subdomínio próprio (ex: suauniversidade.eventflow.com.br), paleta de cores personalizada e editor de blocos.',
+        'Sua vitrine institucional dedicada sob subdomínio próprio (ex: suauniversidade.koveno.com.br), paleta de cores personalizada e editor de blocos.',
     },
   ];
 

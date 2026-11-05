@@ -1,4 +1,4 @@
-# Armadilhas conhecidas do EventFlow
+# Armadilhas conhecidas da Koveno
 
 > **Documento vivo.** Cada linha aqui custou depuração real — nenhuma é hipótese.
 > Este arquivo é a versão COMPLETA da seção 5 do `AGENTS.md`: o primeiro arquivo

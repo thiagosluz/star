@@ -21,13 +21,15 @@ import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CERTIFICATE_KINDS, type CertificateKind } from '@/domain/certificates/certificate-rules';
+import { CERTIFICATE_POLICY_AGGREGATION } from '@/domain/certificates/certificate-policy-rules';
+import { saveCertificatePolicy } from '@/lib/certificates/certificate-policy-service';
 import {
   backgroundFitNotice,
   buildLayoutFromRows,
+  certificatePreviewSample,
   defaultLayout,
   normalizeLayout,
   parsePageFormat,
-  sampleVariableValues,
   validateLayout,
   type CertificateBackground,
 } from '@/domain/certificates/certificate-layout-rules';
@@ -52,6 +54,8 @@ export interface CertificateActionState {
   ok: boolean;
   code?: string;
   message?: string;
+  /** Motivos por campo, quando a recusa vem de um validador do domínio. */
+  details?: readonly string[];
   data?: Record<string, unknown>;
 }
 
@@ -266,6 +270,105 @@ export async function revokeCertificateAction(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+//  Equipe: a política de presença do evento (FASE 86 · fatia 5)
+// ───────────────────────────────────────────────────────────────────────────────
+/**
+ * Os campos do formulário, em UNIDADES HUMANAS.
+ *
+ * `minRatioPercent` é percentual (50–100) e o domínio guarda FRAÇÃO (0,5–1,0): a
+ * conversão acontece AQUI, num lugar só, para a tela falar a língua da regra que
+ * ela anuncia ("75 % da carga") enquanto o dado gravado mantém a forma que a
+ * emissão consome. `z.coerce` é necessário porque `formData` entrega texto; um
+ * campo vazio vira 0 e o DOMÍNIO recusa (0 % é proibido de propósito), devolvendo
+ * o motivo em vez de um "campo obrigatório" genérico.
+ *
+ * `requireCheckOut` e `aggregateBy` NÃO vêm do formulário: esta versão não os
+ * deixa escolher, e o servidor os força (ver o cabeçalho de
+ * `certificate-policy-rules.ts`). Aceitá-los da requisição abriria a porta que o
+ * domínio fecha.
+ */
+const certificatePolicySchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  eventId: z.string().uuid(),
+  minRatioPercent: z.coerce.number().finite(),
+  minMinutes: z.coerce.number().finite(),
+});
+
+export async function saveCertificatePolicyAction(
+  _prev: CertificateActionState | null,
+  formData: FormData,
+): Promise<CertificateActionState> {
+  const parsed = certificatePolicySchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    eventId: formData.get('eventId'),
+    minRatioPercent: formData.get('minRatioPercent'),
+    minMinutes: formData.get('minMinutes'),
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe o percentual mínimo (50 a 100) e o piso em minutos (1 a 240).',
+    };
+  }
+
+  /**
+   * A guarda é `event:manage`, e nos DOIS escopos: coordenar o evento pela
+   * instituição e ser a equipe do evento são o caso normal — exigir o escopo largo
+   * recusaria quem organiza o dia. A permissão da PÁGINA é `certificate:issue`
+   * (quem lê a política); a de EDITAR é esta, mais estreita.
+   */
+  const auth = await guardAction<CertificateActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.EVENT_MANAGE,
+    eventId: parsed.data.eventId,
+    allowedScopes: ['TENANT', 'EVENT'],
+  });
+
+  if (!auth.ok) return auth.state;
+
+  const result = await saveCertificatePolicy({
+    tenantId: auth.tenantId,
+    eventId: parsed.data.eventId,
+    actorId: auth.userId,
+    policy: {
+      minRatio: parsed.data.minRatioPercent / 100,
+      minMinutes: parsed.data.minMinutes,
+      // Forçados pelo servidor — o formulário não os envia (ver o comentário acima).
+      requireCheckOut: true,
+      aggregateBy: CERTIFICATE_POLICY_AGGREGATION,
+    },
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: result.code,
+      message: result.message,
+      details: result.details,
+    };
+  }
+
+  revalidatePath(
+    tenantPath(
+      parsed.data.tenantSlug,
+      `/administracao/eventos/${parsed.data.eventId}/certificados`,
+    ),
+  );
+
+  return {
+    ok: true,
+    message:
+      'Política de presença salva. A simulação e a próxima emissão já usam esta regra.',
+    data: {
+      minRatio: result.policy.minRatio,
+      minMinutes: result.policy.minMinutes,
+    },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 //  Download autenticado (o público é a rota por código)
 // ───────────────────────────────────────────────────────────────────────────────
 export async function requestCertificateDownloadAction(
@@ -367,6 +470,33 @@ const templateBaseSchema = z.object({
   presetId: z.string().trim().max(60).optional(),
 });
 
+/**
+ * O caminho da tela de modelos do alvo.
+ *
+ * O modelo do EVENTO mora na rota do evento (FASE 86) e o padrão da instituição na
+ * rota histórica. Depois de salvar, a pessoa tem de cair NA TELA ONDE ESTAVA — o
+ * redirecionamento para a rota da instituição arrancaria o organizador do evento no
+ * primeiro salvamento.
+ */
+function templatesPath(tenantSlug: string, eventId: string | null): string {
+  return eventId
+    ? tenantPath(tenantSlug, `/administracao/eventos/${eventId}/certificados/modelos`)
+    : tenantPath(tenantSlug, '/administracao/certificados/modelos');
+}
+
+/**
+ * O alvo que o formulário declara, com a distinção que o `FormData` não faz:
+ * campo AUSENTE é "não sei" (`undefined`), campo vazio é "padrão da instituição"
+ * (`null`) e o valor é o evento. A distinção importa porque o serviço usa
+ * `undefined` para não filtrar e `null` para exigir o padrão.
+ */
+function scopedEventId(formData: FormData): string | null | undefined {
+  if (!formData.has('eventId')) return undefined;
+
+  const raw = String(formData.get('eventId') ?? '').trim();
+  return raw || null;
+}
+
 export async function saveCertificateTemplateAction(
   _prev: CertificateTemplateActionState | null,
   formData: FormData,
@@ -388,13 +518,14 @@ export async function saveCertificateTemplateAction(
   if (!auth.ok) return auth.state;
 
   const hasRows = formData.getAll('elementKind').length > 0;
+  const eventId = parsed.data.eventId ?? null;
 
   const result = await saveCertificateTemplate({
     tenantId: auth.tenantId,
     actorId: auth.userId,
     templateId: parsed.data.templateId ?? null,
     name: parsed.data.name,
-    eventId: parsed.data.eventId ?? null,
+    eventId,
     kind: parsed.data.kind ?? null,
     presetId: parsed.data.presetId ?? null,
     rows: hasRows ? layoutRowsFromForm(formData) : null,
@@ -404,7 +535,7 @@ export async function saveCertificateTemplateAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/certificados/modelos'));
+  revalidatePath(templatesPath(parsed.data.tenantSlug, eventId));
 
   /**
    * ─── O MODELO NOVO CAI NO PRÓPRIO ENDEREÇO (e não numa mensagem na tela) ────────
@@ -422,12 +553,7 @@ export async function saveCertificateTemplateAction(
    *  navegação.
    */
   if (!parsed.data.templateId) {
-    redirect(
-      tenantPath(
-        parsed.data.tenantSlug,
-        `/administracao/certificados/modelos?modelo=${result.templateId}&salvo=1`,
-      ),
-    );
+    redirect(`${templatesPath(parsed.data.tenantSlug, eventId)}?modelo=${result.templateId}&salvo=1`);
   }
 
   return {
@@ -482,17 +608,31 @@ export async function previewCertificateTemplateAction(
 
   const backgroundBytes = await readTemplateBackground(layout);
 
-  const svg = renderCertificateLayoutSvg({
-    values: sampleVariableValues(),
-    layout,
-    backgroundBytes,
-    issuedAt: new Date('2026-01-01T12:00:00.000Z'),
-  });
+  const full = certificatePreviewSample(layout, 'FULL');
+  const worst = certificatePreviewSample(layout, 'WORST_CASE');
+
+  const renderVariants = (values: typeof full.values): string =>
+    renderCertificateLayoutSvg({
+      /**
+       * A amostra resolve o CORPO do gabarito (FASE 86): o renderizador imprime
+       * `values.corpo` e não reinterpreta o elemento `BODY`, então entregar o exemplo do
+       * catálogo faria a prévia mostrar a frase de mentira no lugar do texto que o
+       * organizador escreveu.
+       */
+      values,
+      layout,
+      backgroundBytes,
+      issuedAt: new Date('2026-01-01T12:00:00.000Z'),
+    });
 
   return {
     ok: true,
     message: 'Prévia atualizada.',
-    data: { previewSvg: svg, notice: layout.background ? backgroundFitNotice(layout.background, layout.page) : null },
+    data: {
+      previewSvg: renderVariants(full.values),
+      previewWorstSvg: renderVariants(worst.values),
+      notice: layout.background ? backgroundFitNotice(layout.background, layout.page) : null,
+    },
   };
 }
 
@@ -557,18 +697,20 @@ export async function uploadTemplateBackgroundAction(
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const eventId = scopedEventId(formData);
 
   const result = await setTemplateBackground({
     tenantId: auth.tenantId,
     templateId: parsed.data.templateId,
     bytes,
+    eventId,
   });
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/certificados/modelos'));
+  revalidatePath(templatesPath(parsed.data.tenantSlug, eventId ?? null));
 
   return {
     ok: true,
@@ -592,13 +734,19 @@ export async function clearTemplateBackgroundAction(
   const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
-  const result = await clearTemplateBackground({ tenantId: auth.tenantId, templateId: parsed.data.templateId });
+  const eventId = scopedEventId(formData);
+
+  const result = await clearTemplateBackground({
+    tenantId: auth.tenantId,
+    templateId: parsed.data.templateId,
+    eventId,
+  });
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/certificados/modelos'));
+  revalidatePath(templatesPath(parsed.data.tenantSlug, eventId ?? null));
 
   return { ok: true, message: 'Arte removida. O modelo volta ao fundo branco.' };
 }
@@ -618,13 +766,19 @@ export async function deleteCertificateTemplateAction(
   const auth = await guardAction<CertificateActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.EVENT_MANAGE });
   if (!auth.ok) return auth.state;
 
-  const result = await deleteCertificateTemplate({ tenantId: auth.tenantId, templateId: parsed.data.templateId });
+  const eventId = scopedEventId(formData);
+
+  const result = await deleteCertificateTemplate({
+    tenantId: auth.tenantId,
+    templateId: parsed.data.templateId,
+    eventId,
+  });
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/certificados/modelos'));
+  revalidatePath(templatesPath(parsed.data.tenantSlug, eventId ?? null));
 
   return {
     ok: true,

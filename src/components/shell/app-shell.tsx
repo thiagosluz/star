@@ -172,8 +172,9 @@ function ShellContextBlock({
  *
  * Aceita uma sigla declarada pelo layout (`brand.short`) porque marca é decisão
  * de quem a tem; sem ela, as iniciais das palavras são a aproximação honesta —
- * "EventFlow" vira "E" e "Governança da Plataforma" vira "GP", em vez de um
- * quadrado vazio.
+ * "Universidade Federal da Bahia" vira "UF" e "Governança da Plataforma" vira
+ * "GP", em vez de um quadrado vazio. A plataforma não depende disso: ela usa o
+ * símbolo (`KovenoMark`), e a sigla só existe para o nome que o layout declarar.
  */
 function sigla(texto: string): string {
   const palavras = texto.split(/\s+/).filter(Boolean);

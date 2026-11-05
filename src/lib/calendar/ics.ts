@@ -60,7 +60,13 @@ const FOLD_LIMIT = 75;
 const FOLD_CONTINUATION = '\r\n ';
 const CONTINUATION_LIMIT = FOLD_LIMIT - 1;
 
-const DEFAULT_PRODID = '-//EventFlow//Agenda do participante//PT-BR';
+/**
+ * O `PRODID` identifica QUEM GEROU o arquivo (RFC 5545) e não entra na
+ * identidade do evento — o `UID` é que ancora a atualização no cliente. Por isso
+ * ele acompanha a marca sem invalidar calendário já importado.
+ */
+const DEFAULT_PRODID = '-//Koveno//Agenda do participante//PT-BR';
+/** `UID` é ESTÁVEL: trocar o domínio faria o cliente criar eventos NOVOS. */
 const DEFAULT_UID_DOMAIN = 'eventflow';
 
 /** O que o gerador precisa saber sobre uma atividade — nada mais. */

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  EventFlow — Stack local de desenvolvimento
+#  Koveno — Stack local de desenvolvimento
 #
 #  Serviços:
 #    postgres       PostgreSQL 18 + provisionamento de roles e RLS
@@ -371,7 +371,7 @@ services:
       # verdade, defina EMAIL_DRIVER=resend e RESEND_API_KEY no ambiente.
       EMAIL_DRIVER: ${EMAIL_DRIVER:-log}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-EventFlow <nao-responda@eventflow.test>}
+      EMAIL_FROM: ${EMAIL_FROM:-Koveno <nao-responda@eventflow.test>}
       EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
       REVIEW_REMINDER_HOURS: ${REVIEW_REMINDER_HOURS:-48}
 
@@ -462,7 +462,7 @@ services:
       # repetível de prazo de parecer — precisa das mesmas variáveis do web.
       EMAIL_DRIVER: ${EMAIL_DRIVER:-log}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-EventFlow <nao-responda@eventflow.test>}
+      EMAIL_FROM: ${EMAIL_FROM:-Koveno <nao-responda@eventflow.test>}
       EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
       REVIEW_REMINDER_HOURS: ${REVIEW_REMINDER_HOURS:-48}
       # Inspeção antivírus (FASE 36): quem varre é o WORKER (rotina `file-scan`), e

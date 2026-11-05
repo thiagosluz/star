@@ -1,4 +1,4 @@
-# Análise Competitiva de Mercado & Roadmap Estratégico do EventFlow
+# Análise Competitiva de Mercado & Roadmap Estratégico da Koveno
 
 > **⚠️ DOCUMENTO HISTÓRICO — leia com a data em mente.** Este levantamento é de **setembro de 2026**,
 > com **39 fases** concluídas (2014 testes, 218 ADRs) e **antes da FASE 40**. Desde então o **editor
@@ -16,7 +16,7 @@
 
 ## 1. Sumário Executivo
 
-O **EventFlow** atingiu um nível de maturidade técnica e arquitetural raro em plataformas SaaS brasileiras:
+A **Koveno** atingiu um nível de maturidade técnica e arquitetural raro em plataformas SaaS brasileiras:
 - Isolamento multi-tenant real com **PostgreSQL 18 Row-Level Security (RLS) FORCED** em todas as 51 tabelas de tenant;
 - **Domínio puro** desacoplado de ORM e framework, garantindo regras blindadas e testadas;
 - **Credenciamento offline-first** com IndexedDB, emissão de crachás em folha adesiva A4 milimétrica e impressora térmica (ZPL II);
@@ -27,29 +27,29 @@ O **EventFlow** atingiu um nível de maturidade técnica e arquitetural raro em 
 
 ### Diagnóstico de Mercado
 Quando comparado aos dois maiores gigantes do mercado nacional:
-1. **Even3 (Líder Acadêmico):** O EventFlow já possui motor de submissão, credenciamento, design e segurança amplamente superiores à Even3. O que falta para superá-la comercialmente é **fechar o ciclo acadêmico final (publicação dos Anais com depósito de DOI Crossref)** e **monetização (cobrança de inscrições e taxas)**.
-2. **Sympla (Líder Corporativo / Entretenimento):** O EventFlow possui muito mais rigor em credenciamento, certificação e engajamento, mas a Sympla domina pela **facilidade de checkout (Pix, cartão, parcelamento, split automático)** e pelo **marketplace de descoberta de eventos**.
+1. **Even3 (Líder Acadêmico):** A Koveno já possui motor de submissão, credenciamento, design e segurança amplamente superiores à Even3. O que falta para superá-la comercialmente é **fechar o ciclo acadêmico final (publicação dos Anais com depósito de DOI Crossref)** e **monetização (cobrança de inscrições e taxas)**.
+2. **Sympla (Líder Corporativo / Entretenimento):** A Koveno possui muito mais rigor em credenciamento, certificação e engajamento, mas a Sympla domina pela **facilidade de checkout (Pix, cartão, parcelamento, split automático)** e pelo **marketplace de descoberta de eventos**.
 
 ---
 
 ## 2. Matriz Comparativa Detalhada
 
-| Recurso / Dimensão | **Even3** | **Sympla** | **EventFlow (Estado Atual)** | **Impacto Estratégico** |
+| Recurso / Dimensão | **Even3** | **Sympla** | **Koveno (Estado Atual)** | **Impacto Estratégico** |
 |---|---|---|---|---|
-| **Arquitetura & Segurança** | Monolito tradicional, multi-tenancy lógico no código | Microsserviços B2C | Next.js 16 + RLS PostgreSQL 18 + PgBouncer transacional + ClamAV | 🟢 **Vantagem EventFlow:** Compliance LGPD absoluto, sem risco de vazamento entre instituições. |
+| **Arquitetura & Segurança** | Monolito tradicional, multi-tenancy lógico no código | Microsserviços B2C | Next.js 16 + RLS PostgreSQL 18 + PgBouncer transacional + ClamAV | 🟢 **Vantagem Koveno:** Compliance LGPD absoluto, sem risco de vazamento entre instituições. |
 | **Monetização & Checkout** | Inscrições pagas por categoria, taxa por trabalho submetido | Ingressos em lote, parcelamento 12x, Pix instantâneo, split automático | **Inscrições 100% gratuitas** (sem motor de gateway ou checkout financeiro) | 🔴 **Gap Crítico:** É o motor de receita de qualquer plataforma comercial de eventos. |
-| **Submissão & Revisão por Pares** | Completo, porém com interface antiga e engessada | Inexistente | Estado da arte: rubricas livres (até 12 critérios), avaliação cega, CFP universal | 🟢 **Vantagem EventFlow:** Experiência moderna e flexível para comissões científicas. |
+| **Submissão & Revisão por Pares** | Completo, porém com interface antiga e engessada | Inexistente | Estado da arte: rubricas livres (até 12 critérios), avaliação cega, CFP universal | 🟢 **Vantagem Koveno:** Experiência moderna e flexível para comissões científicas. |
 | **Publicação de Anais & DOI** | Depósito direto de DOI (Crossref), anais com ISBN/ISSN, Google Acadêmico | Inexistente | Ainda não possui página pública de Anais nem depósito de DOI | 🔴 **Gap Acadêmico:** Pesquisadores exigem DOI para comprovação no Currículo Lattes. |
-| **Credenciamento & Balcão** | App móvel básico; depende de internet estável | App Sympla Organizador veloz, foco em validar ingresso | Offline-first via IndexedDB, ZPL II nativo, etiquetas milimétricas, proteção contra bipes duplos | 🟢 **Vantagem EventFlow:** Imune a quedas de internet em centros de convenções. |
+| **Credenciamento & Balcão** | App móvel básico; depende de internet estável | App Sympla Organizador veloz, foco em validar ingresso | Offline-first via IndexedDB, ZPL II nativo, etiquetas milimétricas, proteção contra bipes duplos | 🟢 **Vantagem Koveno:** Imune a quedas de internet em centros de convenções. |
 | **Gamificação & Retenção** | Inexistente | Inexistente | Cartas colecionáveis, XP auditável, missões, temporadas | 🟢 **Super Trunfo:** Retenção incomparável do público jovem e corporativo. |
 | **Sorteios de Palco** | Manual / ferramentas externas opacas | Inexistente | Commit-reveal criptográfico, telão com roleta ao vivo, auditoria pública no browser | 🟢 **Super Trunfo:** Transparência total para eventos patrocinados. |
-| **Portal do Palestrante** | Gestão básica de programação | Painel simples de produtor | Portal com posse de conta, controle de visibilidade de arquivos e certificado próprio | 🟢 **Vantagem EventFlow:** Reduz drasticamente o trabalho da secretaria do evento. |
+| **Portal do Palestrante** | Gestão básica de programação | Painel simples de produtor | Portal com posse de conta, controle de visibilidade de arquivos e certificado próprio | 🟢 **Vantagem Koveno:** Reduz drasticamente o trabalho da secretaria do evento. |
 | **Experiência de Patrocínio** | Logotipo em páginas e certificados | Banner estático no hotsite | Cotas com limite atômico, biblioteca de mídia e janela de exibição | 🟡 **Oportunidade:** Falta o coletor de leads (Lead Retrieval) via QR Code para expositores. |
 | **Certificação** | Forte em modelos; gera múltiplos papéis | Básico por e-mail | Assinatura HMAC-SHA256, hash de integridade, lote ZIP em streaming, validação pública | 🟡 **Paridade:** Falta editor visual drag-and-drop de molduras. |
 
 ---
 
-## 3. Os 4 Grandes Gaps Comerciais do EventFlow
+## 3. Os 4 Grandes Gaps Comerciais da Koveno
 
 ### Gap 1: Motor Financeiro & Ticketing (Prioridade Máxima)
 - **Problema:** Nenhuma conferência de médio/grande porte opera apenas com ingressos gratuitos. As plataformas tradicionais cobram entre 8% e 10% por inscrição transacionada.
@@ -57,7 +57,7 @@ Quando comparado aos dois maiores gigantes do mercado nacional:
   1. Cadastro de ingressos e lotes com datas de vigência e quotas;
   2. Categorias de público (ex: Estudante de Graduação, Pós-graduando, Professor, Sócio);
   3. Checkout integrado com Pix dinâmico (confirmação em segundos via webhook) e Cartão de Crédito;
-  4. Split de pagamento nativo (o dinheiro cai direto na conta bancária do organizador, com retenção automática da taxa de serviço do EventFlow).
+  4. Split de pagamento nativo (o dinheiro cai direto na conta bancária do organizador, com retenção automática da taxa de serviço da Koveno).
 
 ### Gap 2: Publicação Científica Completa & DOI Crossref
 - **Problema:** Em eventos acadêmicos, a Even3 é contratada principalmente para gerar os **Anais do Evento com DOI**, que os pesquisadores precisam para pontuar na CAPES/CNPq.

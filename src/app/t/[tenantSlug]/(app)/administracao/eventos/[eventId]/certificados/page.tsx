@@ -4,6 +4,7 @@ import { Award, ExternalLink } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
+import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CERTIFICATE_KIND_LABELS, CERTIFICATE_KINDS } from '@/domain/certificates/certificate-rules';
@@ -14,11 +15,17 @@ import {
 } from '@/domain/certificates/certificate-preview-rules';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { previewEventCertificates } from '@/lib/certificates/certificate-service';
+import { resolveEventTemplateKinds } from '@/lib/certificates/certificate-template-service';
 import { certificateDurationSample, certificateQueueStats } from '@/lib/certificates/queue';
 import { IssueBatchPanel } from '@/components/certificates/issue-panel';
+import { CertificatePolicyPanel } from '@/components/certificates/certificate-policy-panel';
+import { EventTemplateSummary } from '@/components/certificates/event-template-summary';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
-import { issueEventCertificatesAction } from '@/app/actions/certificate-actions';
+import {
+  issueEventCertificatesAction,
+  saveCertificatePolicyAction,
+} from '@/app/actions/certificate-actions';
 
 export const metadata = { title: 'Certificados do evento' };
 export const dynamic = 'force-dynamic';
@@ -61,7 +68,7 @@ export default async function EventCertificatesPage({
   const eventId = requireUuidParam(resolvedParams, 'eventId');
   const { tenantSlug } = resolvedParams;
 
-  const { tenantId } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   });
@@ -96,10 +103,24 @@ export default async function EventCertificatesPage({
    *  duração (quanto custa cada PDF). Redis fora do ar devolve `null` nos dois
    *  últimos — e a tela diz isso, em vez de inventar número.
    */
-  const [previewResult, queue, durationSample] = await Promise.all([
+  const [previewResult, queue, durationSample, templateResolutions] = await Promise.all([
     previewEventCertificates({ tenantId, eventId, kinds: DEFAULT_BATCH_KINDS }),
     certificateQueueStats(),
     certificateDurationSample(),
+    /**
+     * ─── QUAL DESENHO VALE PARA CADA TIPO (FASE 86 · fatia 4) ─────────────────
+     *
+     *  A emissão resolve o modelo por dentro e, quando o layout é ilegível, cai no
+     *  padrão sem contar a ninguém. Esta leitura usa a MESMA precedência do domínio
+     *  e separa os três estados (modelo do evento, modelo padrão, desenho padrão) —
+     *  é o que a seção "Modelo deste evento" mostra. É leitura, não decisão: o
+     *  caminho de emissão continua intacto.
+     */
+    resolveEventTemplateKinds({
+      tenantId,
+      eventId,
+      kinds: kindOptions.map((option) => option.value),
+    }),
   ]);
 
   const simulation = previewResult.ok
@@ -130,6 +151,33 @@ export default async function EventCertificatesPage({
     tenantSlug,
     `/administracao/certificados?evento=${eventId}`,
   );
+
+  /**
+   * ─── EMITIR NÃO É DESENHAR (FASE 86) ────────────────────────────────────────
+   *
+   *  A guarda desta página é `certificate:issue`; o editor de modelos exige
+   *  `event:manage`. O CHAIR tem a primeira e não a segunda — por isso o link para
+   *  os modelos é decidido por `can()`, e não pela permissão da tela. Mostrá-lo a
+   *  quem não pode abrir seria o defeito da F72 dentro da própria seção.
+   */
+  const canManageModels = can(principal, PERMISSIONS.EVENT_MANAGE, { scope: 'TENANT' });
+  const modelsHref = tenantPath(
+    tenantSlug,
+    `/administracao/eventos/${eventId}/certificados/modelos`,
+  );
+
+  /**
+   * ─── QUEM EDITA A POLÍTICA (FASE 86 · fatia 5) ─────────────────────────────
+   *
+   *  A tela é aberta por `certificate:issue` (quem lê a política). EDITAR exige a
+   *  permissão mais estreita, `event:manage`, e nos DOIS escopos: coordenar o
+   *  evento pela instituição e ser a equipe do evento são o caso normal. Um CHAIR
+   *  tem `certificate:issue` e não tem `event:manage` — ele lê a regra e vê por que
+   *  não pode mexer, em vez de um formulário que o servidor recusaria.
+   */
+  const canManagePolicy =
+    can(principal, PERMISSIONS.EVENT_MANAGE, { scope: 'EVENT', eventId }) ||
+    can(principal, PERMISSIONS.EVENT_MANAGE, { scope: 'TENANT' });
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -166,6 +214,32 @@ export default async function EventCertificatesPage({
         então a Server Action continua lendo o mesmo `name="eventId"` — nenhuma
         mudança no caminho de emissão.
       */}
+      {/*
+        A ponte com o desenho fica ANTES do disparo: quem vai emitir precisa saber
+        qual documento sai — e se o modelo configurado está legível. O link de
+        edição só existe para quem `can()` abriria a tela de modelos.
+      */}
+      <EventTemplateSummary
+        resolutions={templateResolutions}
+        modelsHref={modelsHref}
+        canManage={canManageModels}
+      />
+
+      {/*
+        A REGRA ANTES DOS NÚMEROS (FASE 86 · fatia 5): os quatro contadores abaixo
+        são o resultado desta régua. Quem lê a simulação precisa poder ver — e, com
+        `event:manage`, mudar — o critério que a produziu. A política vem de
+        `getAdminEvent` (o mesmo `settings` já lido), sem consulta nova.
+      */}
+      <CertificatePolicyPanel
+        tenantSlug={tenantSlug}
+        eventId={eventId}
+        policy={event.certificatePolicy.policy}
+        problems={event.certificatePolicy.problems}
+        canManage={canManagePolicy}
+        action={saveCertificatePolicyAction}
+      />
+
       <IssueBatchPanel
         tenantSlug={tenantSlug}
         event={{ id: event.id, title: event.title }}

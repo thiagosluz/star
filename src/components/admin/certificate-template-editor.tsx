@@ -1,24 +1,37 @@
 'use client';
 
-import { useActionState, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useActionState, useRef, useState, useSyncExternalStore } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, CheckCircle2, Loader2, Move, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 
 import type { CertificateTemplateActionState } from '@/app/actions/certificate-actions';
 import {
+  BODY_TEMPLATE_VARIABLES,
   CERTIFICATE_ALIGNMENTS,
   CERTIFICATE_ALIGNMENT_LABELS,
+  CERTIFICATE_ELEMENT_KINDS,
+  CERTIFICATE_ELEMENT_KIND_LABELS,
   CERTIFICATE_FONTS,
   CERTIFICATE_FONT_LABELS,
+  CERTIFICATE_PAGE_FORMATS,
   CERTIFICATE_VARIABLES,
   DEFAULT_ELEMENT_COLOR,
   ELEMENT_NUDGE_FAST_MM,
   ELEMENT_NUDGE_MM,
+  MAX_BODY_TEMPLATE_LENGTH,
   MAX_LAYOUT_ELEMENTS,
+  bodyBoxHeightForLines,
+  measureCertificateBody,
   nudgeElementPosition,
+  resolveBodyTemplate,
+  sampleVariableValues,
+  validateBodyTemplate,
+  type CertificateBodyFit,
+  type CertificateElementKind,
   type CertificatePageFormat,
+  type CertificatePreviewVariant,
 } from '@/domain/certificates/certificate-layout-rules';
-import { Input, Select } from '@/components/ui';
+import { Input, Select, Textarea } from '@/components/ui';
 
 /**
  * Id do aviso que ensina os atalhos do palco — referenciado por cada caixa com
@@ -57,7 +70,13 @@ const STAGE_HINT_ID = 'template-stage-keyboard-hint';
 
 export interface EditorElement {
   id: string;
-  kind: 'TEXT' | 'VARIABLE' | 'QR';
+  /**
+   * Um `BODY` pode chegar do servidor (modelo com corpo próprio, FASE 86): a tela
+   * ainda não tem os campos próprios dele — isso é a fatia 3 —, mas o modelo precisa
+   * ROUND-TRIPAR sem virar texto fixo ao salvar, senão abrir e salvar o modelo
+   * imprimiria `{{nome}}` no certificado.
+   */
+  kind: CertificateElementKind;
   text: string;
   variable: string;
   xMm: number;
@@ -81,8 +100,14 @@ export interface EditorModel {
   backgroundNotice: string | null;
   /** Tamanho da arte gravada, em bytes (0 quando não há). */
   backgroundBytes: number;
-  /** Prévia renderizada no servidor ao abrir a página. */
+  /** Prévia renderizada no servidor ao abrir a página (todos os dados). */
   previewSvg: string | null;
+  /**
+   * A segunda prévia: o pior caso real (opcionais vazios). Ela existe porque um
+   * gabarito que só usa `{{atividade}}` — opcional — pode resolver para vazio, e o
+   * organizador precisa VER isso antes de emitir, não descobrir no papel.
+   */
+  previewWorstSvg: string | null;
   elements: EditorElement[];
 }
 
@@ -339,12 +364,15 @@ function Stage({ page, elements, selected, backgroundHref, onSelect, onMove, onR
               top: `${(element.yMm / heightMm) * 100}%`,
               width: `${(element.widthMm / widthMm) * 100}%`,
               height: `${(element.heightMm / heightMm) * 100}%`,
-              color: element.color,
             }}
           >
             {/* O número é o mesmo da tabela: sem ele, a caixa selecionada no palco não
-                se liga à linha que o organizador está editando. */}
-            <span className="pointer-events-none block truncate px-1">
+                se liga à linha que o organizador está editando. O RÓTULO usa o token de
+                texto da interface, e não `element.color`: o palco é esquemático (quem
+                mostra a cor do documento é a prévia), e uma tinta clara escolhida para
+                o papel deixaria o rótulo ilegível sobre a superfície do painel — o
+                portão de acessibilidade reprovou exatamente isso ao incluir esta tela. */}
+            <span className="pointer-events-none block truncate px-1 text-foreground">
               {index + 1}. {label}
             </span>
 
@@ -398,13 +426,338 @@ function round(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/**
+ * Números da tela em pt-BR. `Intl` é determinístico no servidor e no cliente, então o
+ * contador não muda de "1.240" para "1,240" na hidratação.
+ */
+const COUNT_FORMAT = new Intl.NumberFormat('pt-BR');
+const MM_FORMAT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  O gabarito do corpo (FASE 86 · fatia 3)
+// ───────────────────────────────────────────────────────────────────────────────
+interface BodyFieldProps {
+  index: number;
+  element: EditorElement;
+  page: CertificatePageFormat;
+  interactive: boolean;
+  /** Há um elemento `VARIABLE` com `variable === 'corpo'` no mesmo modelo. */
+  hasCorpoVariable: boolean;
+  onChange: (text: string) => void;
+  onHeight: (heightMm: number) => void;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O CAMPO É UM `textarea`, E O TOKEN ENTRA NO CURSOR
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  O conteúdo de um `BODY` não é rótulo: é texto formal, com parágrafos. Um
+ *  `<input>` de uma linha apagaria as quebras de linha que o organizador escreveu —
+ *  e `wrapToWidth` as usa para separar parágrafos no desenho.
+ *
+ *  A legenda insere `{{chave}}` na posição do cursor. Isso exige JavaScript; sem ele,
+ *  a legenda CONTINUA visível (com o rótulo humano de cada chave) e o organizador
+ *  digita o token à mão no mesmo `textarea` — o caminho do `<noscript>` da F39, sem
+ *  um segundo formulário que gravaria outro corpo.
+ *
+ *  Os erros e o "não cabe" são CALCULADOS na tela por funções puras do domínio; o
+ *  servidor continua sendo a guarda (`validateLayout`), e o formulário não fica
+ *  bloqueado no cliente — esconder o botão salvar esconderia a mensagem do servidor.
+ */
+function BodyTemplateField({
+  index,
+  element,
+  page,
+  interactive,
+  hasCorpoVariable,
+  onChange,
+  onHeight,
+}: BodyFieldProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const validation = validateBodyTemplate(element.text);
+
+  /**
+   * A medição usa os DADOS DE EXEMPLO do catálogo, como a prévia: o gabarito tem
+   * tokens, e medir `{{nome}}` como se fosse texto literal daria uma largura que não
+   * corresponde ao documento. `FULL` é o caso mais longo (todos os opcionais
+   * preenchidos); é ele que decide se a caixa cabe.
+   */
+  const fullText = resolveBodyTemplate(element.text, sampleVariableValues('FULL'));
+  const worstText = resolveBodyTemplate(element.text, sampleVariableValues('WORST_CASE'));
+  const fit = measureCertificateBody({ text: fullText, box: element });
+  const suggestion = fit.warning
+    ? bodyBoxHeightForLines({
+        lineCount: fit.lineCount,
+        sizePt: element.sizePt,
+        lineHeight: element.lineHeight,
+        page,
+        topMm: element.yMm,
+      })
+    : null;
+
+  const hasToken = /\{\{[^{}]*\}\}/.test(element.text);
+  const emptyInWorstCase = hasToken && worstText.trim() === '';
+
+  const counterId = `body-counter-${index}`;
+  const errorsId = `body-errors-${index}`;
+  const fitId = `body-fit-${index}`;
+  const emptyId = `body-empty-${index}`;
+  const conflictId = `body-conflict-${index}`;
+
+  const describedBy = [
+    counterId,
+    validation.ok ? null : errorsId,
+    fit.warning ? fitId : null,
+    emptyInWorstCase ? emptyId : null,
+    hasCorpoVariable ? conflictId : null,
+  ]
+    .filter((id): id is string => id !== null)
+    .join(' ');
+
+  const insertToken = (key: string) => {
+    const textarea = textareaRef.current;
+    const token = `{{${key}}}`;
+
+    if (!textarea) {
+      onChange(`${element.text}${token}`);
+      return;
+    }
+
+    const start = textarea.selectionStart ?? element.text.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = `${element.text.slice(0, start)}${token}${element.text.slice(end)}`;
+
+    onChange(next);
+
+    /**
+     * O valor é controlado pelo estado do editor; devolver o foco e o cursor depois do
+     * render é o que faz o próximo token entrar DEPOIS do que acabou de ser inserido,
+     * e não no fim do texto.
+     */
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const cursor = start + token.length;
+      textarea.setSelectionRange(cursor, cursor);
+    });
+  };
+
+  return (
+    <div className="space-y-2" data-testid={`body-field-${index}`}>
+      <label className="block space-y-1 text-xs font-medium">
+        <span>Gabarito do corpo do elemento {index + 1}</span>
+        <Textarea
+          ref={textareaRef}
+          id={`body-template-${index}`}
+          name="elementText"
+          value={element.text}
+          rows={6}
+          className="min-h-32"
+          aria-label={`Gabarito do corpo do elemento ${index + 1}`}
+          aria-invalid={!validation.ok}
+          aria-describedby={describedBy}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+
+      <p
+        id={counterId}
+        data-testid={`body-counter-${index}`}
+        className={`text-xs ${element.text.length > MAX_BODY_TEMPLATE_LENGTH ? 'font-medium text-destructive' : 'text-muted-foreground'}`}
+      >
+        {COUNT_FORMAT.format(element.text.length)} de {COUNT_FORMAT.format(MAX_BODY_TEMPLATE_LENGTH)} caracteres
+        {element.text.length > MAX_BODY_TEMPLATE_LENGTH ? ' — passa do limite' : ''}
+      </p>
+
+      {!validation.ok ? (
+        <ul id={errorsId} data-testid={`body-errors-${index}`} className="space-y-1 text-xs text-destructive">
+          {validation.issues.map((issue) => (
+            <li key={`${issue.code}-${issue.message}`}>{issue.message}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {hasCorpoVariable ? (
+        <p
+          id={conflictId}
+          data-testid={`body-corpo-conflict-${index}`}
+          className="rounded-sm border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
+        >
+          Este modelo também tem um elemento com a variável <strong>Texto formal do certificado</strong> (
+          {'{{corpo}}'}). O texto sairia <strong>duas vezes</strong> no certificado, então o servidor recusa
+          salvar: troque ou remova aquele elemento.
+        </p>
+      ) : null}
+
+      {fit.warning ? (
+        <div
+          id={fitId}
+          data-testid={`body-fit-${index}`}
+          className="space-y-1 rounded-sm border border-warning bg-warning-soft p-2 text-xs text-warning-strong"
+        >
+          <p className="font-medium">O corpo não cabe na caixa.</p>
+          <p>
+            O texto ocupa <strong>{fit.lineCount}</strong> linha(s); a caixa comporta{' '}
+            <strong>{fit.maxLines}</strong>; sobram <strong>{fit.overflowLines}</strong>. O PDF corta o que
+            não couber e marca o corte com “…” — por isso o aviso vem antes de emitir.
+          </p>
+          {interactive && suggestion ? (
+            <button
+              type="button"
+              data-testid={`body-fit-grow-${index}`}
+              onClick={() => onHeight(suggestion.heightMm)}
+              className="rounded-md border border-border bg-card px-2 py-1 font-medium hover:bg-accent"
+            >
+              Aumentar a caixa para {MM_FORMAT.format(suggestion.heightMm)} mm
+            </button>
+          ) : (
+            <p>Ajuste a altura na coluna Alt. da linha (o máximo desta página é {MM_FORMAT.format(suggestion?.maxHeightMm ?? 0)} mm).</p>
+          )}
+          {suggestion?.clamped ? (
+            <p>
+              A página não comporta toda a altura necessária (o máximo a partir desta posição é{' '}
+              {MM_FORMAT.format(suggestion.maxHeightMm)} mm). Reduza o corpo da fonte ou encurte o texto.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {emptyInWorstCase ? (
+        <p
+          id={emptyId}
+          data-testid={`body-empty-worst-${index}`}
+          className="rounded-sm border border-warning bg-warning-soft p-2 text-xs text-warning-strong"
+        >
+          Com os dados opcionais vazios, o corpo fica vazio — nenhuma caixa será impressa nesse caso. O
+          modelo continua salvável: é uma escolha do organizador.
+        </p>
+      ) : null}
+
+      <div data-testid={`body-legend-${index}`} className="space-y-1 rounded-sm border border-border p-2">
+        <p className="text-xs font-semibold">Variáveis do corpo</p>
+        <p className="text-xs text-muted-foreground">
+          {interactive
+            ? 'Clique em uma variável para inseri-la na posição do cursor.'
+            : 'Sem JavaScript, digite o token no gabarito (ex.: {{nome}}). As quebras de linha são preservadas.'}
+        </p>
+        <ul data-testid={`body-variable-legend-${index}`} className="grid gap-1 sm:grid-cols-2">
+          {BODY_TEMPLATE_VARIABLES.map((variable) => (
+            <li key={variable.key}>
+              {interactive ? (
+                <button
+                  type="button"
+                  data-testid={`body-insert-${variable.key}`}
+                  onClick={() => insertToken(variable.key)}
+                  className="w-full rounded-sm px-1.5 py-1 text-left text-xs hover:bg-accent"
+                >
+                  <code>{`{{${variable.key}}}`}</code> · {variable.label}
+                  {variable.canBeEmpty ? <span className="text-muted-foreground"> (opcional)</span> : null}
+                </button>
+              ) : (
+                <span className="block px-1.5 py-1 text-xs">
+                  <code>{`{{${variable.key}}}`}</code> · {variable.label}
+                  {variable.canBeEmpty ? <span className="text-muted-foreground"> (opcional)</span> : null}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Uma das duas prévias. A marca do "não cabe" fica SOBRE a caixa do corpo, na posição
+ * real do layout — não é um aviso solto na página: o organizador vê ONDE o texto seria
+ * cortado.
+ */
+function PreviewPanel({
+  variant,
+  label,
+  svg,
+  body,
+  fit,
+  page,
+}: {
+  variant: CertificatePreviewVariant;
+  label: string;
+  svg: string | null;
+  body: EditorElement | null;
+  fit: CertificateBodyFit | null;
+  page: CertificatePageFormat;
+}) {
+  const pageSize = CERTIFICATE_PAGE_FORMATS[page];
+  const warning = fit?.warning ?? null;
+  const slug = variant === 'FULL' ? 'full' : 'worst';
+
+  return (
+    <figure className="space-y-1" data-testid={`template-preview-${slug}`}>
+      <figcaption className="text-xs font-medium">{label}</figcaption>
+
+      {svg ? (
+        <div className="relative overflow-hidden rounded-md border border-border bg-white">
+          {/**
+           * O branco é a FOLHA, não uma cor de interface — a mesma exceção declarada do
+           * palco: o SVG da prévia é transparente e o texto é tinta escura.
+           */}
+          <div
+            data-testid={variant === 'FULL' ? 'template-preview' : 'template-preview-worst-svg'}
+            className="[&>svg]:h-auto [&>svg]:w-full"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+
+          {warning && body ? (
+            <div
+              data-testid={`template-preview-body-warning-${slug}`}
+              className="pointer-events-none absolute border-2 border-destructive bg-destructive/10"
+              style={{
+                left: `${(body.xMm / pageSize.widthMm) * 100}%`,
+                top: `${(body.yMm / pageSize.heightMm) * 100}%`,
+                width: `${(body.widthMm / pageSize.widthMm) * 100}%`,
+                height: `${(body.heightMm / pageSize.heightMm) * 100}%`,
+              }}
+            >
+              <span className="absolute -top-5 left-0 rounded-sm bg-destructive px-1 text-xs whitespace-nowrap text-destructive-foreground">
+                Não cabe: {warning.overflowLines} linha(s)
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="rounded-md border border-border p-3 text-xs text-muted-foreground">
+          Salve o modelo e clique em <strong>Atualizar prévia</strong> para ver o documento com dados de
+          exemplo.
+        </p>
+      )}
+
+      {fit ? (
+        <p className="text-xs text-muted-foreground">
+          {fit.lineCount} linha(s) no corpo · cabem {fit.maxLines}
+        </p>
+      ) : null}
+    </figure>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Editor
 // ───────────────────────────────────────────────────────────────────────────────
 export interface TemplateEditorProps {
   tenantSlug: string;
   model: EditorModel;
-  events: { value: string; label: string }[];
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O ALVO É DA ROTA, NÃO DE UM `<select>` (FASE 86 · fatia 4)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  O editor tinha "Vale para o evento" com "Todos os eventos da instituição" —
+   *  e era por ali que a tela da instituição criava modelo de evento, misturando os
+   *  dois alvos na mesma galeria. Agora a tela DA INSTITUIÇÃO só cria padrão
+   *  (`eventId = null`) e a tela DO EVENTO só cria para aquele evento: o alvo é o
+   *  endereço, e um `<select>` de um item convidaria a trocar o que a rota decidiu.
+   *  O campo vira TEXTO e um `input` oculto, para o formulário sem JavaScript
+   *  continuar mandando o `eventId` certo.
+   */
+  eventTitle: string | null;
   kinds: { value: string; label: string }[];
   saveAction: (prev: CertificateTemplateActionState | null, formData: FormData) => Promise<CertificateTemplateActionState>;
   previewAction: (
@@ -424,7 +777,7 @@ export interface TemplateEditorProps {
 export function CertificateTemplateEditor({
   tenantSlug,
   model,
-  events,
+  eventTitle,
   kinds,
   saveAction,
   previewAction,
@@ -453,6 +806,8 @@ export function CertificateTemplateEditor({
   );
 
   const serverPreview = typeof previewState?.data?.previewSvg === 'string' ? previewState.data.previewSvg : null;
+  const serverPreviewWorst =
+    typeof previewState?.data?.previewWorstSvg === 'string' ? previewState.data.previewWorstSvg : null;
 
   /**
    * A prévia mostrada é a do servidor quando ela existe, e a da página enquanto
@@ -461,7 +816,29 @@ export function CertificateTemplateEditor({
    * e uma prévia RECUSADA (layout inválido) não apaga a última boa: o organizador
    * continua vendo o desenho anterior e a mensagem de erro ao lado.
    */
-  const preview = serverPreview ?? model.previewSvg;
+  const previewFull = serverPreview ?? model.previewSvg;
+  const previewWorst = serverPreviewWorst ?? model.previewWorstSvg;
+
+  const bodyElement = elements.find((element) => element.kind === 'BODY') ?? null;
+  const bodyFitFor = (variant: CertificatePreviewVariant): CertificateBodyFit | null => {
+    if (!bodyElement) return null;
+
+    return measureCertificateBody({
+      text: resolveBodyTemplate(bodyElement.text, sampleVariableValues(variant)),
+      box: bodyElement,
+    });
+  };
+  const fullBodyFit = bodyFitFor('FULL');
+  const worstBodyFit = bodyFitFor('WORST_CASE');
+
+  /**
+   * O conflito `BODY` + `{{corpo}}` é recusado no domínio. Aqui ele aparece ANTES do
+   * envio, porque salvar para descobrir é caro quando o organizador já escreveu o
+   * texto inteiro.
+   */
+  const hasCorpoVariable = elements.some(
+    (element) => element.kind === 'VARIABLE' && element.variable === 'corpo',
+  );
 
   const rowCount = interactive ? Math.min(Math.max(elements.length + 1, 8), MAX_LAYOUT_ELEMENTS) : MAX_LAYOUT_ELEMENTS;
   const rows = Array.from({ length: rowCount }, (_, index) => elements[index] ?? emptyElement(index));
@@ -557,19 +934,25 @@ export function CertificateTemplateEditor({
         <div className="space-y-2 rounded-md border border-border bg-card p-3">
           <h2 className="text-sm font-semibold">Prévia do documento</h2>
 
-          {preview ? (
-            /**
-             * A MESMA RAZÃO DO PALCO: o SVG da prévia é TRANSPARENTE (o
-             * `drawLayoutSvg` não pinta fundo — quem pinta é o papel) e o texto dele é
-             * tinta escura. Sobre o cartão do tema, no escuro, a prévia sumiria. Aqui
-             * o branco é a folha, não uma cor de interface.
-             */
-            <div
-              className="overflow-hidden rounded-md border border-border bg-white [&>svg]:h-auto [&>svg]:w-full"
-              data-testid="template-preview"
-              // O SVG vem do MESMO renderizador do PDF emitido, com dados de exemplo.
-              dangerouslySetInnerHTML={{ __html: preview }}
-            />
+          {previewFull || previewWorst ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PreviewPanel
+                variant="FULL"
+                label="Com todos os dados"
+                svg={previewFull}
+                body={bodyElement}
+                fit={fullBodyFit}
+                page={model.page}
+              />
+              <PreviewPanel
+                variant="WORST_CASE"
+                label="Com dados opcionais vazios"
+                svg={previewWorst}
+                body={bodyElement}
+                fit={worstBodyFit}
+                page={model.page}
+              />
+            </div>
           ) : (
             <p className="rounded-md border border-border p-3 text-xs text-muted-foreground" data-testid="template-preview-empty">
               Salve o modelo e clique em <strong>Atualizar prévia</strong> para ver o documento com dados de exemplo.
@@ -590,17 +973,18 @@ export function CertificateTemplateEditor({
               <Input name="name" defaultValue={model.name} required maxLength={120} data-testid="template-name" />
             </label>
 
-            <label className="space-y-1.5 text-sm font-medium">
-              <span>Vale para o evento</span>
-              <Select name="eventId" defaultValue={model.eventId} data-testid="template-event">
-                <option value="">Todos os eventos da instituição</option>
-                {events.map((event) => (
-                  <option key={event.value} value={event.value}>
-                    {event.label}
-                  </option>
-                ))}
-              </Select>
-            </label>
+            <div className="space-y-1.5 text-sm font-medium">
+              <span>Vale para</span>
+              <p
+                className="rounded-md border border-border bg-card px-3 py-2 text-sm font-normal"
+                data-testid="template-event-fixed"
+              >
+                {model.eventId
+                  ? `Este evento — ${eventTitle ?? 'evento da rota'}`
+                  : 'Todos os eventos da instituição (modelo padrão)'}
+              </p>
+              {model.eventId ? <input type="hidden" name="eventId" value={model.eventId} /> : null}
+            </div>
 
             <label className="space-y-1.5 text-sm font-medium">
               <span>Tipo de certificado</span>
@@ -653,12 +1037,12 @@ export function CertificateTemplateEditor({
                     const filled = index < elements.length;
 
                     return (
-                      <tr
-                        key={index}
-                        data-testid={`element-row-${index}`}
-                        data-filled={filled ? 'true' : 'false'}
-                        className={selected === index ? 'bg-primary/5' : undefined}
-                      >
+                      <Fragment key={index}>
+                        <tr
+                          data-testid={`element-row-${index}`}
+                          data-filled={filled ? 'true' : 'false'}
+                          className={selected === index ? 'bg-primary/5' : undefined}
+                        >
                         <td className="p-1">
                           <button
                             type="button"
@@ -677,33 +1061,74 @@ export function CertificateTemplateEditor({
                             onChange={(event) => update(index, { kind: event.target.value as EditorElement['kind'] })}
                             aria-label={`Tipo do elemento ${index + 1}`}
                           >
-                            <option value="TEXT">Texto fixo</option>
-                            <option value="VARIABLE">Variável</option>
-                            <option value="QR">QR Code</option>
+                            {/**
+                             * As opções saem do CATÁLOGO do domínio (fonte única). O
+                             * `BODY` entrou na lista na FASE 86 junto com o domínio:
+                             * sem a opção, um modelo com corpo próprio abriria no
+                             * editor com o seletor "vazio" e salvaria como texto fixo,
+                             * imprimindo `{{nome}}` no certificado. A edição de verdade
+                             * do gabarito (área de texto, legenda das variáveis e aviso
+                             * de "não cabe") é a fatia 3.
+                             */}
+                            {CERTIFICATE_ELEMENT_KINDS.map((kind) => (
+                              <option key={kind} value={kind}>
+                                {CERTIFICATE_ELEMENT_KIND_LABELS[kind]}
+                              </option>
+                            ))}
                           </Select>
                         </td>
                         <td className="p-1">
                           {element.kind === 'VARIABLE' ? (
-                            <Select
-                              name="elementVariable"
-                              value={element.variable}
-                              onChange={(event) => update(index, { variable: event.target.value })}
-                              aria-label={`Variável do elemento ${index + 1}`}
-                            >
-                              <option value="">—</option>
-                              {CERTIFICATE_VARIABLES.map((variable) => (
-                                <option key={variable.key} value={variable.key} title={variable.source}>
-                                  {variable.label}
-                                </option>
-                              ))}
-                            </Select>
+                            <>
+                              <Select
+                                name="elementVariable"
+                                value={element.variable}
+                                onChange={(event) => update(index, { variable: event.target.value })}
+                                aria-label={`Variável do elemento ${index + 1}`}
+                              >
+                                <option value="">—</option>
+                                {CERTIFICATE_VARIABLES.map((variable) => (
+                                  <option key={variable.key} value={variable.key} title={variable.source}>
+                                    {variable.label}
+                                  </option>
+                                ))}
+                              </Select>
+                              {/**
+                               * O `elementText` oculto mantém as colunas ALINHADAS por
+                               * índice: `buildLayoutFromRows` lê listas paralelas, e uma
+                               * linha que não envia o campo deslocaria o texto de todas
+                               * as seguintes. O formulário sem JavaScript depende disso.
+                               */}
+                              <input type="hidden" name="elementText" value="" />
+                            </>
+                          ) : element.kind === 'BODY' ? (
+                            <>
+                              <input type="hidden" name="elementVariable" value="" />
+                              <p className="text-xs text-muted-foreground">
+                                Gabarito — o campo fica logo abaixo da linha, com a legenda das variáveis.
+                              </p>
+                            </>
+                          ) : element.kind === 'QR' ? (
+                            <>
+                              <input type="hidden" name="elementVariable" value="" />
+                              <Input value="" disabled aria-label={`Texto do elemento ${index + 1}`} />
+                              <input type="hidden" name="elementText" value="" />
+                            </>
                           ) : (
                             <>
                               <input type="hidden" name="elementVariable" value="" />
-                              <Input
+                              {/**
+                               * `textarea` também no TEXTO FIXO: sem JavaScript o
+                               * organizador troca o tipo da linha e continua com o mesmo
+                               * campo, e as quebras de linha do corpo não se perdem no
+                               * caminho (é o `<noscript>` da F39 sem um segundo
+                               * formulário).
+                               */}
+                              <Textarea
                                 name="elementText"
-                                value={element.kind === 'QR' ? '' : element.text}
-                                disabled={element.kind === 'QR'}
+                                value={element.text}
+                                rows={1}
+                                className="h-11 min-h-0 py-2"
                                 onChange={(event) => update(index, { text: event.target.value })}
                                 aria-label={`Texto do elemento ${index + 1}`}
                               />
@@ -798,12 +1223,35 @@ export function CertificateTemplateEditor({
                             aria-label={`Cor do elemento ${index + 1}`}
                           />
                         </td>
-                      </tr>
+                        </tr>
+
+                        {element.kind === 'BODY' ? (
+                          <tr data-testid={`element-body-row-${index}`}>
+                            <td colSpan={11} className="bg-primary/5 p-2">
+                              <BodyTemplateField
+                                index={index}
+                                element={element}
+                                page={model.page}
+                                interactive={interactive}
+                                hasCorpoVariable={hasCorpoVariable}
+                                onChange={(text) => update(index, { text })}
+                                onHeight={(heightMm) => update(index, { heightMm })}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+
+            <p className="text-xs text-muted-foreground" data-testid="body-hint">
+              O <strong>corpo do certificado</strong> é o elemento do tipo “Corpo do certificado (gabarito)”. O
+              gabarito aceita quebras de linha e variáveis como <code>{'{{nome}}'}</code>; o texto é impresso no
+              lugar da caixa do elemento.
+            </p>
 
             {/* Identificadores: sem eles o servidor deriva, mas preservá-los mantém a
                 chave estável quando duas linhas trocam de lugar. */}
@@ -836,8 +1284,10 @@ export function CertificateTemplateEditor({
               </div>
             ) : (
               <p className="text-xs text-muted-foreground" data-testid="no-js-hint">
-                Sem JavaScript, o formulário mostra as {MAX_LAYOUT_ELEMENTS} linhas do teto: preencha as que quiser usar
-                (linha sem conteúdo é descartada) e salve.
+                Sem JavaScript, o formulário mostra as {MAX_LAYOUT_ELEMENTS} linhas do teto: preencha as que quiser
+                usar (linha sem conteúdo é descartada) e salve. Para o corpo, escolha “Corpo do certificado
+                (gabarito)” na coluna Tipo de uma linha livre e escreva o gabarito na coluna Conteúdo — as quebras
+                de linha são preservadas. As variáveis podem ser digitadas à mão (ex.: <code>{'{{nome}}'}</code>).
               </p>
             )}
           </fieldset>
@@ -865,6 +1315,13 @@ export function CertificateTemplateEditor({
                 <form action={uploadFormAction} encType="multipart/form-data" className="space-y-2">
                   <input type="hidden" name="tenantSlug" value={tenantSlug} />
                   <input type="hidden" name="templateId" value={model.templateId} />
+                  {/**
+                   * O alvo vai junto em TODO formulário que escreve no modelo. Sem
+                   * isto, a arte (e o "remover arte", e a exclusão) alcançaria o
+                   * modelo de outro evento trocando só o `templateId` do corpo.
+                   * Campo vazio = padrão da instituição — é um valor, não ausência.
+                   */}
+                  <input type="hidden" name="eventId" value={model.eventId} />
                   <input
                     type="file"
                     name="background"
@@ -891,6 +1348,7 @@ export function CertificateTemplateEditor({
                   <form action={clearFormAction} className="flex items-center justify-between gap-2 text-xs">
                     <input type="hidden" name="tenantSlug" value={tenantSlug} />
                     <input type="hidden" name="templateId" value={model.templateId} />
+                    <input type="hidden" name="eventId" value={model.eventId} />
                     <span className="text-muted-foreground">
                       Arte atual: {Math.round(model.backgroundBytes / 1024)} KB
                     </span>

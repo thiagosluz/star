@@ -20,6 +20,14 @@
  */
 import QRCode from 'qrcode';
 
+/**
+ * A régua de largura de texto mudou de casa na FASE 86: ela vive no domínio
+ * (`text-measure-rules.ts`), porque o CORPO do certificado passou a precisar medir
+ * "caberia?" sem depender da camada de desenho. O nome continua exportado AQUI para
+ * os desenhadores que já o importam deste módulo há várias fases.
+ */
+export { approximateWidth } from '@/domain/documents/text-measure-rules';
+
 /** Dimensões do QR (do próprio gerador) — usadas para reservar espaço no layout. */
 export function buildQrMatrix(text: string): { size: number; data: Uint8Array } {
   const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
@@ -40,27 +48,6 @@ export function escapeXml(value: string): string {
 /** Escapa texto para o operador `Tj` do PDF. */
 export function escapePdfText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-}
-
-/**
- * Largura aproximada em Helvetica.
- *
- * As larguras reais das 14 fontes padrão estão em tabelas da especificação; usamos
- * uma média ponderada por caractere (maiúsculas e dígitos são mais largos). É
- * aproximação suficiente para CENTRALIZAR texto — e aproximação documentada é
- * melhor que uma tabela de 224 números que ninguém vai conferir.
- */
-export function approximateWidth(text: string, fontSize: number): number {
-  let units = 0;
-
-  for (const char of text) {
-    if (/[A-Z0-9]/.test(char)) units += 0.62;
-    else if (/[a-z]/.test(char)) units += 0.52;
-    else if (char === ' ') units += 0.28;
-    else units += 0.4;
-  }
-
-  return units * fontSize;
 }
 
 /**

@@ -89,7 +89,7 @@ function buildTrustedOrigins(): string[] {
 }
 
 export const auth = betterAuth({
-  appName: 'EventFlow',
+  appName: 'Koveno',
   baseURL: appUrl,
   secret: process.env.BETTER_AUTH_SECRET,
 
@@ -334,11 +334,14 @@ export const auth = betterAuth({
    *  o aplicativo foi configurado é a forma clássica de a pessoa se trancar fora no
    *  minuto seguinte — o enrollment só termina com um código válido.
    *
-   *  `issuer` é o nome que aparece no aplicativo autenticador (`EventFlow: e-mail`).
+   *  `issuer` é o nome que aparece no aplicativo autenticador (`Koveno: e-mail`).
+   *  Ele só entra no URI de enrollment (o rótulo de exibição): a verificação compara
+   *  o código contra o SEGREDO gravado, então trocar o issuer não invalida os TOTP
+   *  já cadastrados — muda apenas o nome mostrado no aplicativo.
    */
   plugins: [
     twoFactor({
-      issuer: 'EventFlow',
+      issuer: 'Koveno',
       totpOptions: { digits: 6, period: 30 },
       backupCodeOptions: { amount: 10, length: 10, storeBackupCodes: 'encrypted' },
     }),

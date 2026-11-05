@@ -44,21 +44,24 @@ import {
   type CertificatePageFormat,
   type CertificateVariableValues,
 } from '@/domain/certificates/certificate-layout-rules';
-import { approximateWidth, buildQrMatrix, escapePdfText, escapeXml } from '@/lib/documents/pdf-text';
+import { PT_PER_MM, approximateWidth, mmToPt, ptToMm, wrapToWidth } from '@/domain/documents/text-measure-rules';
+import { buildQrMatrix, escapePdfText, escapeXml } from '@/lib/documents/pdf-text';
+
+/**
+ * ───────────────────────────────────────────────────────────────────────────────
+ *  A MEDIÇÃO MUDOU DE CASA (FASE 86) — E O DESENHO NÃO MUDOU DE CONTRATO
+ * ───────────────────────────────────────────────────────────────────────────────
+ *  `mmToPt`, `ptToMm`, `PT_PER_MM`, `approximateWidth` e `wrapToWidth` vivem agora em
+ *  `@/domain/documents/text-measure-rules`, porque o corpo do certificado precisa
+ *  responder "cabe?" no DOMÍNIO, sem depender desta camada. Os nomes continuam
+ *  exportados AQUI: são a API deste módulo desde a FASE 40 e há teste que os importa
+ *  daqui — e uma segunda régua de medida faria a prévia divergir do PDF.
+ */
+export { PT_PER_MM, mmToPt, ptToMm, wrapToWidth } from '@/domain/documents/text-measure-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Unidades
 // ───────────────────────────────────────────────────────────────────────────────
-export const PT_PER_MM = 72 / 25.4;
-
-export function mmToPt(mm: number): number {
-  return mm * PT_PER_MM;
-}
-
-export function ptToMm(pt: number): number {
-  return pt / PT_PER_MM;
-}
-
 /**
  * Fração do corpo usada como altura da primeira linha de base.
  *
@@ -101,50 +104,13 @@ const SVG_FONT_WEIGHTS: Readonly<Record<CertificateFontKey, string>> = {
 //  Quebra de linha e alinhamento
 // ───────────────────────────────────────────────────────────────────────────────
 /**
- * Quebra o texto na largura do elemento, em PT (a régua da fonte).
+ * A quebra por largura (`wrapToWidth`) vem do domínio — é a MESMA que o "cabe?" do
+ * corpo do certificado usa (FASE 86). Uma segunda implementação aqui faria a prévia
+ * prometer uma coisa e o PDF imprimir outra.
  *
- * A largura é medida com a MESMA aproximação usada para centralizar texto no PDF
- * desde a FASE 6 — uma segunda tabela de larguras criaria duas réguas para o mesmo
- * tipo, e a quebra da tela divergiria da quebra do arquivo.
- */
-export function wrapToWidth(text: string, widthPt: number, sizePt: number): string[] {
-  const lines: string[] = [];
-
-  for (const paragraph of text.split('\n')) {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-
-    if (words.length === 0) {
-      lines.push('');
-      continue;
-    }
-
-    let current = '';
-
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
-
-      // Palavra sozinha maior que a caixa fica como está: cortá-la no meio
-      // inventaria um erro de digitação que não existe no dado.
-      if (!current || approximateWidth(candidate, sizePt) <= widthPt) {
-        current = candidate;
-        continue;
-      }
-
-      lines.push(current);
-      current = word;
-    }
-
-    if (current) lines.push(current);
-  }
-
-  return lines.length > 0 ? lines : [''];
-}
-
-/**
- * Linhas que cabem na ALTURA do elemento.
- *
- * O que não couber sai, e a última linha fica com reticências: um documento que
- * perde texto em silêncio é pior do que um documento que avisa que não coube.
+ * Linhas que cabem na ALTURA do elemento: o que não couber sai, e a última linha fica
+ * com reticências — um documento que perde texto em silêncio é pior do que um
+ * documento que avisa que não coube.
  */
 export function layoutTextLines(input: {
   text: string;

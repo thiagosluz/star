@@ -1,4 +1,4 @@
-# Roadmap de produto — onde o EventFlow está, com quem se parece e o que fazer depois
+# Roadmap de produto — onde a Koveno está, com quem se parece e o que fazer depois
 
 > **Documento de decisão de produto.** Não é documento de fase: ele existe para o humano
 > escolher o próximo tema com o mapa na mão. Escrito depois da **FASE 40** (editor visual do
@@ -15,7 +15,7 @@
 
 ## 1. Sumário executivo
 
-### O que o EventFlow é hoje, em uma frase
+### O que a Koveno é hoje, em uma frase
 
 **Um sistema operacional de evento acadêmico** — não um site de inscrições. Ele cobre o ciclo
 inteiro de uma conferência (chamada → submissão → parecer cego → decisão → programação →
@@ -45,9 +45,9 @@ por causa de rubrica livre; ela troca por **inscrição paga que funciona**, **a
 
 ## 2. Como o mercado ganha dinheiro (e o que isso significa para nós)
 
-| Player | Modelo | Implicação para o EventFlow |
+| Player | Modelo | Implicação para a Koveno |
 |---|---|---|
-| **Sympla** | Taxa por ingresso vendido + taxa de serviço, **absorvida pelo organizador ou repassada ao participante**; parcelamento pode ser absorvido; o dinheiro é do organizador (split) — [taxas](https://ajuda.produtor.sympla.com.br/hc/pt-br/articles/15444341510413-Taxas-da-Sympla-para-Organizadores-Valores-e-Como-Funcionam), [quem paga](https://ajuda.produtor.sympla.com.br/hc/pt-br/articles/15445173235085-Quem-paga-a-taxa-de-servi%C3%A7o-o-organizador-ou-o-participante), [parcelamento](https://blog.sympla.com.br/blog-do-produtor/como-funciona-a-absorcao-de-parcelamento-sem-juros-na-sympla/), [como cobrar](https://blog.sympla.com.br/blog-do-produtor/como-cobrar-por-eventos/) | É o modelo que o **plano** do EventFlow já desenha (`planQuotas`, `maxStorageBytes`) mas não sabe cobrar. Sem gateway, não existe taxa de plataforma — e sem ela, o SaaS não tem receita. |
+| **Sympla** | Taxa por ingresso vendido + taxa de serviço, **absorvida pelo organizador ou repassada ao participante**; parcelamento pode ser absorvido; o dinheiro é do organizador (split) — [taxas](https://ajuda.produtor.sympla.com.br/hc/pt-br/articles/15444341510413-Taxas-da-Sympla-para-Organizadores-Valores-e-Como-Funcionam), [quem paga](https://ajuda.produtor.sympla.com.br/hc/pt-br/articles/15445173235085-Quem-paga-a-taxa-de-servi%C3%A7o-o-organizador-ou-o-participante), [parcelamento](https://blog.sympla.com.br/blog-do-produtor/como-funciona-a-absorcao-de-parcelamento-sem-juros-na-sympla/), [como cobrar](https://blog.sympla.com.br/blog-do-produtor/como-cobrar-por-eventos/) | É o modelo que o **plano** da Koveno já desenha (`planQuotas`, `maxStorageBytes`) mas não sabe cobrar. Sem gateway, não existe taxa de plataforma — e sem ela, o SaaS não tem receita. |
 | **Eventbrite** | **Grátis para evento gratuito**; cobra por ingresso pago — [free ticketing](https://www.eventbrite.com/event-ticketing/free-system/), [planos](https://www.eventbrite.es/help/pt-pt/articles/193833/[slug]/) | Confirma a leitura: o dinheiro está no ingresso pago. Evento gratuito é aquisição, e nós já o servimos muito bem. |
 | **Even3 / Doity** | Cobra pela **inscrição** e pelo **trabalho submetido**, e entrega **anais com DOI** como parte do pacote — [DOI nos anais (Even3)](https://ajuda.even3.com.br/hc/pt-br/articles/4403470452109-Oferecer-DOI-aos-participantes-com-trabalhos-publicados-nos-anais-do-evento), [comunicar autores](https://ajuda.even3.com.br/hc/pt-br/articles/45537160439067-Comunicar-autores-sobre-a-publica%C3%A7%C3%A3o-dos-Anais), [trabalhos científicos (Doity)](https://doity.com.br/trabalhos-cientificos) | O DOI **não é enfeite**: é o motivo pelo qual a comissão científica assina a contratação. É receita de serviço, e é o complemento natural do nosso motor de avaliação. |
 | **Cvent / Whova** | Assinatura enterprise + app do participante + *lead retrieval* pago à parte pelo expositor — [Whova overview](https://whova.com/pages/whova-overview/), [engajamento do participante (Cvent)](https://release.cvent.com/eventmanagement/announcements/attendee-engagement-releases-for-may-6-2026), [manual do expositor com lead retrieval](https://green-marine.org/media/hswpejih/gt26-whova-exhibitor-manual.pdf) | Duas lições: (a) **app do participante** é o que o público sente como "plataforma de verdade"; (b) **lead retrieval** é receita vendida ao patrocinador, não ao organizador. |
@@ -64,7 +64,7 @@ por causa de rubrica livre; ela troca por **inscrição paga que funciona**, **a
 
 Legenda: 🟢 vantagem nossa · 🟡 paridade ou quase · 🔴 lacuna que decide contrato · ⚪ fora do nosso jogo.
 
-| Dimensão | Even3 / Doity | Sympla | Cvent / Whova | EventFlow (F40) |
+| Dimensão | Even3 / Doity | Sympla | Cvent / Whova | Koveno (F40) |
 |---|---|---|---|---|
 | **Isolamento multi-tenant** | multi-tenancy no código | microsserviços B2C | enterprise | 🟢 **RLS + FORCE** em 52 tabelas, provado por teste de isolamento |
 | **Domínio puro + auditoria** | monolito tradicional | foco B2C | enterprise | 🟢 regras puras testáveis sem infra; `audit_logs` particionada; `job_runs` com histórico |
@@ -111,7 +111,7 @@ Legenda: 🟢 vantagem nossa · 🟡 paridade ou quase · 🔴 lacuna que decide
 ### P1 — Motor financeiro: inscrição paga e conciliação 🔴 *(a maior lacuna, e a que destrava receita)*
 
 **Por que decide contrato.** Nenhuma conferência de médio porte opera só com inscrição gratuita.
-Sem gateway, o EventFlow é um excelente produto que a instituição **não pode comprar como
+Sem gateway, a Koveno é um excelente produto que a instituição **não pode comprar como
 plataforma principal**.
 
 **O que entra.** Ingresso (**lote** com vigência e quota, **categoria de público** — estudante,

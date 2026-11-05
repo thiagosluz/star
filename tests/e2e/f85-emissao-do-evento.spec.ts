@@ -43,6 +43,7 @@ import {
   grantRole,
   linkUser,
 } from './helpers';
+import { saveCertificateTemplate } from '../../src/lib/certificates/certificate-template-service';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 
@@ -152,7 +153,14 @@ async function lerCertificados(tenantId: string, eventId: string) {
     return tx.certificate.findMany({
       where: { tenantId, eventId },
       orderBy: { createdAt: 'asc' },
-      select: { validationCode: true, kind: true, userId: true, status: true },
+      select: {
+        validationCode: true,
+        kind: true,
+        userId: true,
+        status: true,
+        /** A prova da precedência: de qual modelo o desenho foi congelado. */
+        templateId: true,
+      },
     });
   });
 }
@@ -390,5 +398,152 @@ test.describe('a emissão em lote do evento', () => {
 
     expect(resposta?.status()).toBe(404);
     await expect(page.getByTestId('area-not-found-app')).toBeVisible();
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *  A PRECEDÊNCIA, PROVADA NA TELA E NO DOCUMENTO (FASE 86 · fatia 4)
+   *
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  O QUE ESTE CASO PRENDE
+   *  ─────────────────────────────────────────────────────────────────────────────
+   *  A regra EVENTO+TIPO → EVENTO → INSTITUIÇÃO+TIPO → INSTITUIÇÃO → padrão existia
+   *  desde a FASE 40, mas NENHUMA tela mostrava qual desenho valia: o organizador
+   *  descobria olhando o PDF. O caso cria um modelo PADRÃO da instituição para
+   *  `ATTENDANCE`, cria um modelo DO EVENTO para o mesmo tipo pela tela, e prova:
+   *
+   *    1. a seção "Modelo deste evento" já mostrava o institucional antes;
+   *    2. depois do modelo do evento, ela mostra o DO EVENTO (a precedência na tela);
+   *    3. a emissão em lote congela o `templateId` do modelo do evento — e NÃO o da
+   *       instituição (a precedência no documento).
+   *
+   *  Sem o item 3, a tela poderia estar certa e a emissão usar outro desenho; sem o
+   *  item 1, o caso passaria mesmo se a seção nunca lesse nada.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  test('4. o modelo do EVENTO vence o padrão da instituição, na tela e no documento', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+
+    const tenant = await createTenant({
+      label: 'f85-modelo-do-evento',
+      name: `Instituição do Modelo do Evento ${RUN_ID}`,
+    });
+
+    const event = await createEvent({
+      tenantId: tenant.id,
+      slug: `evento-modelo-${RUN_ID}`,
+      title: `Congresso do Modelo do Evento ${RUN_ID}`,
+    });
+
+    const activity = await createActivity({
+      tenantId: tenant.id,
+      eventId: event.id,
+      slug: `minicurso-modelo-${RUN_ID}`,
+      title: `Minicurso do Modelo do Evento ${RUN_ID}`,
+      workloadMinutes: 60,
+      type: 'MINI_COURSE',
+    });
+
+    const participant = await criarPessoa(page, {
+      tenantId: tenant.id,
+      name: `Participante do Modelo ${RUN_ID}`,
+      role: 'PARTICIPANT',
+    });
+
+    await gravarPresenca({
+      tenantId: tenant.id,
+      eventId: event.id,
+      activityId: activity.id,
+      userId: participant.id,
+    });
+
+    const admin = await criarPessoa(page, {
+      tenantId: tenant.id,
+      name: `Organizadora do Modelo ${RUN_ID}`,
+      role: 'ADMIN',
+    });
+
+    /**
+     * O PADRÃO DA INSTITUIÇÃO nasce pelo SERVIÇO real (o mesmo da tela): o que este
+     * caso quer provar é a precedência, e criar o padrão por um caminho mais curto
+     * deixaria o cenário diferente do que o organizador produz.
+     */
+    const institutional = await saveCertificateTemplate({
+      tenantId: tenant.id,
+      actorId: admin.id,
+      name: `Padrão da instituição ${RUN_ID}`,
+      eventId: null,
+      kind: 'ATTENDANCE',
+      presetId: 'faixa-lateral',
+    });
+
+    expect(institutional.ok).toBe(true);
+
+    await signInAs(page, admin.email);
+
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/certificados`);
+
+    // ANTES do modelo do evento: a seção já sabe que o padrão da instituição vale.
+    await expect(page.getByTestId('event-template-ATTENDANCE')).toHaveAttribute(
+      'data-state',
+      'TEMPLATE',
+    );
+    await expect(page.getByTestId('event-template-name-ATTENDANCE')).toContainText(
+      `Padrão da instituição ${RUN_ID}`,
+    );
+    await expect(page.getByTestId('event-template-name-ATTENDANCE')).toContainText(
+      'modelo padrão da instituição',
+    );
+
+    // O link da ponte só existe para quem tem `event:manage` — a ADMIN tem.
+    await page.getByTestId('event-models-link').click();
+    await expect(page).toHaveURL(
+      new RegExp(`/t/${tenant.slug}/administracao/eventos/${event.id}/certificados/modelos$`),
+    );
+
+    await page.getByTestId('preset-use-classico-institucional').click();
+    await expect(page.getByTestId('template-editor')).toBeVisible();
+    await page.getByTestId('template-name').fill(`Modelo do evento ${RUN_ID}`);
+
+    // O alvo é a ROTA: o campo mostra o evento e não há `<select>` para trocar.
+    await expect(page.getByTestId('template-event-fixed')).toContainText(event.title);
+
+    await page.getByTestId('template-kind').selectOption('ATTENDANCE');
+    await page.getByTestId('template-submit').click();
+    await expect(page.getByTestId('template-saved')).toBeVisible({ timeout: 30_000 });
+
+    const eventTemplate = await e2eDb.certificateTemplate.findFirst({
+      where: { tenantId: tenant.id, eventId: event.id, kind: 'ATTENDANCE' },
+      select: { id: true, name: true },
+    });
+
+    expect(eventTemplate).not.toBeNull();
+
+    // DEPOIS: a seção diz que o modelo do EVENTO venceu.
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/certificados`);
+    await expect(page.getByTestId('event-template-name-ATTENDANCE')).toContainText(
+      `Modelo do evento ${RUN_ID}`,
+    );
+    await expect(page.getByTestId('event-template-name-ATTENDANCE')).toContainText(
+      'modelo do evento',
+    );
+
+    await page.getByTestId('issue-batch').click();
+    await expect(page.getByTestId('issue-feedback')).toContainText(
+      /certificado\(s\) solicitado\(s\)/,
+      { timeout: 60_000 },
+    );
+
+    const certificates = await lerCertificados(tenant.id, event.id);
+    const attendance = certificates.find((row) => row.kind === 'ATTENDANCE');
+
+    expect(attendance, 'o lote deveria emitir o certificado de presença').toBeDefined();
+    expect(attendance!.templateId).toBe(eventTemplate!.id);
+
+    if (institutional.ok) {
+      expect(attendance!.templateId).not.toBe(institutional.templateId);
+    }
   });
 });

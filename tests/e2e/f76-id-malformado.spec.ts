@@ -139,6 +139,20 @@ const CASOS: readonly Caso[] = [
     area: 'app',
   },
   {
+    /**
+     * A tela de MODELOS DO EVENTO (FASE 86 · fatia 4): a rota é filha da emissão e
+     * tem o MESMO `[eventId]`. `requireUuidParam` roda antes da guarda e da
+     * consulta, então o id malformado é 404 — não o `P2023` → 500 da armadilha 25.
+     */
+    nome: 'modelos de certificado do evento',
+    tipo: 'pagina',
+    caminho: (slug) =>
+      `/t/${slug}/administracao/eventos/${ID_MALFORMADO}/certificados/modelos`,
+    sessao: 'admin',
+    status: 404,
+    area: 'app',
+  },
+  {
     nome: 'confirmações de vaga',
     tipo: 'pagina',
     caminho: (slug) => `/t/${slug}/administracao/eventos/${ID_MALFORMADO}/confirmacoes`,
@@ -515,17 +529,17 @@ test.afterAll(async () => {
 });
 
 test.describe('FASE 76 · a tabela de comportamento do id malformado', () => {
-  test('a tabela tem 36 casos — 25 de página e 11 de API', () => {
+  test('a tabela tem 37 casos — 26 de página e 11 de API', () => {
     /**
      * A contagem é o contrato do spec: 24 páginas (+1 param de `demandas`) e 9
      * rotas (+1 param da agenda, +1 `activityId` da prévia). A FASE 85 acrescentou
-     * a página de certificados do evento; os dois últimos casos de API vieram dos
-     * buracos que a catraca de fonte achou e a fatia 3 fechou. Se alguém
-     * acrescentar um caso, este número obriga a atualizar o comentário e a saber o
-     * que se está medindo.
+     * a página de certificados do evento e a FASE 86, a dos modelos DO EVENTO; os
+     * dois últimos casos de API vieram dos buracos que a catraca de fonte achou e a
+     * fatia 3 fechou. Se alguém acrescentar um caso, este número obriga a atualizar
+     * o comentário e a saber o que se está medindo.
      */
-    expect(CASOS).toHaveLength(36);
-    expect(CASOS.filter((caso) => caso.tipo === 'pagina')).toHaveLength(25);
+    expect(CASOS).toHaveLength(37);
+    expect(CASOS.filter((caso) => caso.tipo === 'pagina')).toHaveLength(26);
     expect(CASOS.filter((caso) => caso.tipo === 'api')).toHaveLength(11);
   });
 

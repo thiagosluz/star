@@ -97,7 +97,7 @@ const now = new Date();
 const days = (n: number) => new Date(now.getTime() + n * 86_400_000);
 
 async function main() {
-  console.log(`\n${line}\n  SEED — EventFlow (FASE 4)\n${line}\n`);
+  console.log(`\n${line}\n  SEED — Koveno (FASE 4)\n${line}\n`);
 
   // ── Limpeza idempotente ────────────────────────────────────────────────────
   // Remove apenas os dados deste seed, identificados pelos e-mails/slugs abaixo.

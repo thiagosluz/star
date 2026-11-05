@@ -52,7 +52,7 @@ const line = '─'.repeat(78);
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 4);
 
-console.log(`\n${line}\n  EVENTFLOW WORKER\n${line}`);
+console.log(`\n${line}\n  KOVENO WORKER\n${line}`);
 console.log(`  redis:       ${redisUrl}`);
 console.log(`  concurrency: ${concurrency}`);
 console.log(`  pid:         ${process.pid}\n`);

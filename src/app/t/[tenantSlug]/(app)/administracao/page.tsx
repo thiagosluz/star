@@ -118,9 +118,9 @@ export default async function AdminHomePage({
       // funcionalidade entregue e não ALCANÇÁVEL é funcionalidade que não existe para
       // quem opera. A permissão é a mesma da tela de modelos (`event:manage`).
       href: '/administracao/certificados/modelos',
-      label: 'Modelos de certificado',
+      label: 'Modelos padrão da instituição',
       description:
-        'Arte de fundo, variáveis e posicionamento do documento — o desenho congela em cada certificado emitido.',
+        'Arte de fundo, variáveis e posicionamento do documento padrão — o desenho do EVENTO fica dentro do evento.',
       icon: Palette,
       permission: PERMISSIONS.EVENT_MANAGE,
       metric: `${overview.certificateTemplates} modelo(s)`,

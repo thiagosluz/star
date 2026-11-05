@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  EventFlow — imagem de produção
+#  Koveno — imagem de produção
 #
 #  Build multi-stage, com o modo `standalone` do Next.js:
 #

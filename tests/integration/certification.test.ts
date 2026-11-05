@@ -305,7 +305,23 @@ describe('solicitação de certificado', () => {
     // 300 minutos medidos em um minicurso de 240 → 240 (teto da carga declarada).
     expect(row.workloadMinutes).toBe(240);
     expect(row.recipientName).toBe('Participante Certificado');
-    expect(Array.isArray(row.workloadBreakdown)).toBe(true);
+    /**
+     * O detalhamento congelou a POLÍTICA aplicada (FASE 86 · fatia 5): o formato
+     * deixou de ser a lista pura e passou a `{ policy, entries }`. A política padrão
+     * é o comportamento de sempre — 75 % de carga, piso de 30 min, check-out
+     * obrigatório e soma por atividade.
+     */
+    const breakdown = row.workloadBreakdown as unknown as {
+      policy: { minRatio: number; minMinutes: number; requireCheckOut: boolean; aggregateBy: string };
+      entries: unknown[];
+    };
+    expect(Array.isArray(breakdown.entries)).toBe(true);
+    expect(breakdown.policy).toEqual({
+      minRatio: 0.75,
+      minMinutes: 30,
+      requireCheckOut: true,
+      aggregateBy: 'ACTIVITY',
+    });
   });
 
   it('é IDEMPOTENTE: pedir de novo devolve o mesmo documento e o mesmo código', async () => {

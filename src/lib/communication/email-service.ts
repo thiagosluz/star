@@ -73,7 +73,7 @@ export interface QueueEmailInput<K extends EmailTemplateKey> {
   toUserId?: string | null;
   template: K;
   payload: EmailPayloads[K];
-  /** Assinatura no topo do e-mail: a instituição, ou "EventFlow". */
+  /** Assinatura no topo do e-mail: a instituição, ou "Koveno". */
   brandName: string;
   dedupeKey?: string | null;
   createdById?: string | null;

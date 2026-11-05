@@ -33,6 +33,7 @@ import {
   buildCanonicalPayload,
   buildCanonicalPayloadV2,
   buildCertificateText,
+  buildWorkloadBreakdown,
   computeWorkload,
   evaluateEligibility,
   evaluateValidation,
@@ -40,6 +41,7 @@ import {
   hashCanonicalPayload,
   isValidValidationCodeFormat,
   normalizeValidationCode,
+  readWorkloadBreakdown,
   type AttendanceRecord,
   type CertificateKind,
   type EligibilityFacts,
@@ -47,10 +49,20 @@ import {
   type WorkloadBreakdownEntry,
   type WorkloadResult,
 } from '@/domain/certificates/certificate-rules';
+import {
+  readCertificatePolicy,
+  type CertificatePolicy,
+} from '@/domain/certificates/certificate-policy-rules';
+import {
+  aggregateAttendanceByActivity,
+  type AttendanceAggregateRow,
+} from '@/domain/certificates/attendance-aggregate';
 import type { PreviewPerson } from '@/domain/certificates/certificate-preview-rules';
 import {
+  certificateBodyTemplate,
   contentValuesFrom,
   formatIssuedAtLabel,
+  resolveBodyTemplate,
   resolveCertificateVariables,
   serializeContentValues,
   serializeLayout,
@@ -104,13 +116,22 @@ export function validationUrlFor(code: string): string {
 // ───────────────────────────────────────────────────────────────────────────────
 //  Levantamento de fatos
 // ───────────────────────────────────────────────────────────────────────────────
-/** Linha de presença como o banco devolve — a mesma forma nos dois caminhos. */
-interface AttendanceRow {
-  activityId: string | null;
-  minutesAttended: number | null;
-  checkedOutAt: Date | null;
-  activity: { title: string; type: string; workloadMinutes: number } | null;
-}
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A PRESENÇA É AGREGADA POR PESSOA × ATIVIDADE ANTES DE VIRAR FATO (FASE 86)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  `attendances` tem uma linha por VISITA (ADR-149), e `computeWorkload` avalia uma
+ *  entrada por linha. Entregar as linhas cruas fazia duas visitas de 30 min na
+ *  mesma atividade de 60 valerem 30 e 30 — cada uma abaixo dos 45 exigidos —, e a
+ *  pessoa que esteve a atividade inteira era descartada duas vezes (dívida E92).
+ *
+ *  Os DOIS caminhos passam por `aggregateAttendanceByActivity`
+ *  (`src/domain/certificates/attendance-aggregate.ts`), que soma e aplica o teto da
+ *  janela da atividade (ADR-150). Ver `loadFacts` (individual) e `loadEventFacts`
+ *  (projeção): a simulação e a emissão continuam montando o MESMO fato — se só um
+ *  lado agregasse, a tela prometeria um certificado que a emissão recusaria. E é
+ *  agregação EM MEMÓRIA: nenhuma consulta nova, o custo da projeção não cresce com N.
+ */
 
 /** Vínculo de palestrante com o que `computeSpeakerWorkload` consome. */
 interface SpeakerLinkRow {
@@ -123,31 +144,6 @@ interface SpeakerLinkRow {
     startsAt: Date;
     endsAt: Date;
   } | null;
-}
-
-/**
- * Converte uma LINHA de presença no fato que a regra consome.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  É POR LINHA, NÃO POR PESSOA × ATIVIDADE — E ISSO É O QUE A EMISSÃO FAZ HOJE
- * ─────────────────────────────────────────────────────────────────────────────
- *  `computeWorkload` trata cada linha de `attendances` como uma entrada, então duas
- *  visitas de 30 min na mesma atividade de 60 min NÃO somam 60: cada uma fica
- *  abaixo dos 45 min exigidos e nenhuma conta. A agregação por pessoa × atividade
- *  existe no credenciamento (`credential-service.ts`), em outro caminho — quem
- *  somasse aqui faria a simulação prometer um certificado que a emissão recusa.
- *
- *  Sem check-out, o tempo medido é 0 — não "indefinido". Assumir presença completa
- *  sem saída registrada seria emitir certificado por comparecimento presumido.
- */
-function attendanceRecord(row: AttendanceRow): AttendanceRecord {
-  return {
-    activityId: row.activityId,
-    activityTitle: row.activity?.title ?? null,
-    activityType: row.activity?.type ?? null,
-    workloadMinutes: row.activity?.workloadMinutes ?? 0,
-    minutesAttended: row.checkedOutAt ? (row.minutesAttended ?? 0) : 0,
-  };
 }
 
 /**
@@ -186,11 +182,17 @@ function baseFactsFrom(input: {
 }
 
 /**
- * Coleta os fatos de elegibilidade de UMA pessoa em UM evento.
+ * Coleta os fatos de elegibilidade de UMA pessoa em UM evento — e a política do
+ * evento (FASE 86 · fatia 5).
  *
  * Uma consulta por bloco de fatos (presenças, palestrante, pareceres, trabalhos)
  * em vez de uma por tipo de certificado: a emissão em lote chama isto para dezenas
  * de pessoas, e N+1 aqui viraria centenas de consultas.
+ *
+ * A política vem do `settings` do EVENTO, que já é lido nesta função (a linha
+ * existia para `endsAt`): o campo entra no MESMO `select` e NÃO vira uma consulta
+ * nova. É o que mantém a promessa de custo da fase — a régua da projeção em lote
+ * (`tests/unit/f85-simulacao-da-emissao.test.ts`) continua fechando em 6 chamadas.
  *
  * Na FASE 85 este caminho continua sendo o da EMISSÃO (sete consultas por pessoa).
  * A tela NÃO o usa: `loadEventFacts` abaixo faz a projeção em lote do evento.
@@ -198,17 +200,25 @@ function baseFactsFrom(input: {
 async function loadFacts(
   tx: TxClient,
   input: { tenantId: string; eventId: string; userId: string; now?: Date },
-): Promise<EligibilityFacts> {
+): Promise<{ facts: EligibilityFacts; policy: CertificatePolicy }> {
   const now = input.now ?? new Date();
 
   const [attendances, registration, speaker, reviews, accepted, miniCourses, event] = await Promise.all([
+    /**
+     * `startsAt`/`endsAt` vêm na MESMA leitura porque a agregação limita a soma à
+     * janela real da atividade (ADR-150): são campos a mais no `select` que já
+     * existia, não uma consulta nova.
+     */
     tx.attendance.findMany({
       where: { tenantId: input.tenantId, userId: input.userId, eventId: input.eventId },
       select: {
+        userId: true,
         activityId: true,
         minutesAttended: true,
         checkedOutAt: true,
-        activity: { select: { title: true, type: true, workloadMinutes: true } },
+        activity: {
+          select: { title: true, type: true, workloadMinutes: true, startsAt: true, endsAt: true },
+        },
       },
     }),
     /**
@@ -273,22 +283,33 @@ async function loadFacts(
     }),
     tx.event.findFirst({
       where: { id: input.eventId, tenantId: input.tenantId },
-      select: { endsAt: true },
+      /**
+       * `settings` no MESMO `select` de `endsAt`: a política do evento
+       * (`settings.certificatePolicy`) chega sem consulta nova. A leitura é
+       * tolerante (`readCertificatePolicy`), então JSON torto cai no padrão em
+       * vez de derrubar a emissão.
+       */
+      select: { endsAt: true, settings: true },
     }),
   ]);
 
   return {
-    kind: 'ATTENDANCE',
-    ...baseFactsFrom({
-      attendances: attendances.map(attendanceRecord),
-      eventCheckedIn: Boolean(registration?.checkedInAt),
-      speakerLinks: speaker,
-      completedReviews: reviews,
-      acceptedSubmissions: accepted,
-      miniCourseCount: miniCourses,
-      eventFinished: event ? event.endsAt.getTime() <= now.getTime() : false,
-      now,
-    }),
+    facts: {
+      kind: 'ATTENDANCE',
+      ...baseFactsFrom({
+        // Uma linha por pessoa × atividade — a soma das visitas com o teto da
+        // atividade. `computeWorkload` segue recebendo uma entrada por par.
+        attendances: aggregateAttendanceByActivity(attendances),
+        eventCheckedIn: Boolean(registration?.checkedInAt),
+        speakerLinks: speaker,
+        completedReviews: reviews,
+        acceptedSubmissions: accepted,
+        miniCourseCount: miniCourses,
+        eventFinished: event ? event.endsAt.getTime() <= now.getTime() : false,
+        now,
+      }),
+    },
+    policy: readCertificatePolicy(event?.settings).policy,
   };
 }
 
@@ -388,6 +409,12 @@ interface EventFactsProjection {
   eventFound: boolean;
   eventFinished: boolean;
   miniCourseCount: number;
+  /**
+   * A política de presença do evento (FASE 86 · fatia 5), lida do `settings` que
+   * a MESMA consulta do evento já trazia. Não é consulta nova: entra no `select`
+   * de `eventFacts` e a régua das SEIS chamadas Prisma da projeção não muda.
+   */
+  policy: CertificatePolicy;
   candidateIds: string[];
   names: Map<string, string>;
   attendancesByUser: Map<string, AttendanceRecord[]>;
@@ -405,6 +432,11 @@ async function loadEventFacts(
   const { tenantId, eventId, now } = input;
 
   const [attendances, registrations, speakers, reviews, authors, eventFacts] = await Promise.all([
+    /**
+     * `startsAt`/`endsAt` na MESMA leitura da presença: a agregação por pessoa ×
+     * atividade limita a soma à janela real (ADR-150). São campos a mais no
+     * `select` — a régua das SEIS chamadas Prisma não muda.
+     */
     tx.attendance.findMany({
       where: { tenantId, eventId },
       select: {
@@ -412,7 +444,9 @@ async function loadEventFacts(
         activityId: true,
         minutesAttended: true,
         checkedOutAt: true,
-        activity: { select: { title: true, type: true, workloadMinutes: true } },
+        activity: {
+          select: { title: true, type: true, workloadMinutes: true, startsAt: true, endsAt: true },
+        },
         user: { select: { name: true } },
       },
     }),
@@ -467,14 +501,16 @@ async function loadEventFacts(
       },
     }),
     /**
-     * Os fatos do EVENTO (fim e número de minicursos) numa leitura só. A lista de
-     * minicursos vem filtrada e o tamanho dela é a contagem — o mesmo filtro do
-     * `activity.count` individual.
+     * Os fatos do EVENTO (fim, número de minicursos e a POLÍTICA DE PRESENÇA) numa
+     * leitura só. A lista de minicursos vem filtrada e o tamanho dela é a contagem
+     * — o mesmo filtro do `activity.count` individual. `settings` entra no MESMO
+     * `select`: a política da fatia 5 não cria consulta.
      */
     tx.event.findFirst({
       where: { id: eventId, tenantId },
       select: {
         endsAt: true,
+        settings: true,
         activities: {
           where: { type: 'MINI_COURSE', deletedAt: null },
           select: { id: true },
@@ -492,14 +528,25 @@ async function loadEventFacts(
   const reviewsByUser = new Map<string, number>();
   const acceptedByUser = new Map<string, number>();
 
+  /**
+   * As linhas são agrupadas POR PESSOA primeiro porque a agregação é por
+   * `(userId, activityId)` — e esta projeção lê o evento inteiro. Agrupar aqui é
+   * memória, não banco: as consultas acima são as mesmas SEIS (a catraca
+   * `tests/unit/f85-simulacao-da-emissao.test.ts` prende a régua).
+   */
+  const attendanceRowsByUser = new Map<string, AttendanceAggregateRow[]>();
+
   for (const row of attendances) {
     candidateIds.add(row.userId);
     names.set(row.userId, row.user.name);
 
-    const records = attendancesByUser.get(row.userId) ?? [];
-    // Cada LINHA vira uma entrada — ver `attendanceRecord`.
-    records.push(attendanceRecord(row));
-    attendancesByUser.set(row.userId, records);
+    const rows = attendanceRowsByUser.get(row.userId) ?? [];
+    rows.push(row);
+    attendanceRowsByUser.set(row.userId, rows);
+  }
+
+  for (const [userId, rows] of attendanceRowsByUser) {
+    attendancesByUser.set(userId, aggregateAttendanceByActivity(rows));
   }
 
   for (const row of registrations) {
@@ -558,6 +605,7 @@ async function loadEventFacts(
     eventFound: Boolean(eventFacts),
     eventFinished: eventFacts ? eventFacts.endsAt.getTime() <= now.getTime() : false,
     miniCourseCount: eventFacts?.activities.length ?? 0,
+    policy: readCertificatePolicy(eventFacts?.settings).policy,
     candidateIds: [...candidateIds],
     names,
     attendancesByUser,
@@ -630,7 +678,13 @@ export async function previewEventCertificates(input: {
           userId,
           name: facts.names.get(userId) ?? 'Participante',
           verdicts: input.kinds.map((kind) => {
-            const verdict = evaluateEligibility({ ...base, kind });
+            /**
+             * A MESMA política do evento que a emissão vai aplicar. Se a simulação
+             * usasse o default e a emissão a política gravada, a tela diria "2" e
+             * o botão emitiria 1 — o modo de falha que a catraca da F85 existe
+             * para impedir.
+             */
+            const verdict = evaluateEligibility({ ...base, kind }, facts.policy);
 
             return { kind, eligible: verdict.eligible, reason: verdict.reason };
           }),
@@ -722,12 +776,21 @@ export async function requestCertificate(
         };
       }
 
-      const facts = await loadFacts(tx, { ...input, now });
+      /**
+       * A política vem do evento e é aplicada AQUI, no caminho individual. O lote
+       * (`requestEventCertificates`) passa por este mesmo `requestCertificate`, e a
+       * simulação (`previewEventCertificates`) pela mesma `evaluateEligibility` com a
+       * mesma política — três caminhos, uma regra.
+       */
+      const { facts, policy } = await loadFacts(tx, { ...input, now });
 
-      const verdict = evaluateEligibility({
-        ...facts,
-        kind: input.kind,
-      });
+      const verdict = evaluateEligibility(
+        {
+          ...facts,
+          kind: input.kind,
+        },
+        policy,
+      );
 
       if (!verdict.eligible) {
         return {
@@ -795,32 +858,59 @@ export async function requestCertificate(
         kind: input.kind,
       });
 
-      const contentValues = template
-        ? contentValuesFrom(
-            resolveCertificateVariables({
-              recipientName: context.userName,
-              title: text.title,
-              bodyText: text.bodyText,
-              eventTitle: context.eventTitle,
-              activityTitle: context.activityTitle ?? '',
-              workloadLabel: text.workloadLabel,
-              period: text.period ?? '',
-              issuedAtLabel: formatIssuedAtLabel(issuedAt, context.timeZone),
-              tenantName: context.tenantName,
-              validationCode,
-              validationUrl: validationUrlFor(validationCode),
-              contentHash: '',
-              signature: '',
-              keyId: '',
-              /**
-               * CPF e título da apresentação (FASE 56 · dívida E54) entram CONGELADOS
-               * como os demais: o campo do formulário pode ser corrigido depois e o
-               * trabalho pode ser renomeado — o documento emitido fica como estava.
-               */
-              cpf: context.cpf,
-              presentationTitle: context.presentationTitle,
-            }),
-          )
+      const baseValues = template
+        ? resolveCertificateVariables({
+            recipientName: context.userName,
+            title: text.title,
+            bodyText: text.bodyText,
+            eventTitle: context.eventTitle,
+            activityTitle: context.activityTitle ?? '',
+            workloadLabel: text.workloadLabel,
+            period: text.period ?? '',
+            issuedAtLabel: formatIssuedAtLabel(issuedAt, context.timeZone),
+            tenantName: context.tenantName,
+            validationCode,
+            validationUrl: validationUrlFor(validationCode),
+            contentHash: '',
+            signature: '',
+            keyId: '',
+            /**
+             * CPF e título da apresentação (FASE 56 · dívida E54) entram CONGELADOS
+             * como os demais: o campo do formulário pode ser corrigido depois e o
+             * trabalho pode ser renomeado — o documento emitido fica como estava.
+             */
+            cpf: context.cpf,
+            presentationTitle: context.presentationTitle,
+          })
+        : null;
+
+      /**
+       * ─────────────────────────────────────────────────────────────────────────
+       *  O CORPO DO CERTIFICADO É RESOLVIDO UMA VEZ, AQUI (FASE 86)
+       * ─────────────────────────────────────────────────────────────────────────
+       *  Com um elemento `BODY` no modelo, o texto formal deixa de ser a frase gerada
+       *  em código e passa a ser o GABARITO do organizador interpolado com as variáveis
+       *  congeladas. A interpolação acontece agora, e não no renderizador, por dois
+       *  motivos:
+       *
+       *    • o texto resolvido precisa entrar na ASSINATURA — `bodyText` e `corpo`
+       *      entram no conteúdo canônico, e o documento tem de afirmar o que vai ser
+       *      impresso;
+       *    • o renderizador não pode reinterpretar o gabarito: se ele interpolasse de
+       *      novo, a leitura do banco (evento renomeado, CPF corrigido) faria um
+       *      documento com o MESMO hash sair impresso diferente.
+       *
+       * Os valores do gabarito já existem neste ponto (inclusive `codigo_validacao` e
+       * `url_validacao`, alocados acima), e é por isso que a resolução acontece DEPOIS
+       * da alocação do código. Sem `BODY`, nada muda: `bodyText` continua a frase
+       * gerada e o hash dos documentos já emitidos permanece o mesmo.
+       */
+      const bodyTemplate = template ? certificateBodyTemplate(template.layout) : null;
+      const resolvedBody = bodyTemplate && baseValues ? resolveBodyTemplate(bodyTemplate, baseValues) : null;
+      const bodyText = resolvedBody ?? text.bodyText;
+
+      const contentValues = baseValues
+        ? contentValuesFrom(resolvedBody === null ? baseValues : { ...baseValues, corpo: resolvedBody })
         : null;
 
       const canonical = template
@@ -834,7 +924,7 @@ export async function requestCertificate(
             kind: input.kind,
             recipientName: context.userName,
             title: text.title,
-            bodyText: text.bodyText,
+            bodyText,
             workloadMinutes: text.workloadMinutes,
             issuedAt: issuedAt.toISOString(),
             layout: serializeLayout(template.layout),
@@ -850,7 +940,7 @@ export async function requestCertificate(
             kind: input.kind,
             recipientName: context.userName,
             title: text.title,
-            bodyText: text.bodyText,
+            bodyText,
             workloadMinutes: text.workloadMinutes,
             issuedAt: issuedAt.toISOString(),
           });
@@ -871,9 +961,28 @@ export async function requestCertificate(
           validationCode,
           title: text.title,
           recipientName: context.userName,
-          bodyText: text.bodyText,
+          /**
+           * `bodyText` é o texto RESOLVIDO (FASE 86): com elemento `BODY`, ele é o
+           * gabarito interpolado — o mesmo valor que vai em `corpo` no
+           * `variableSnapshot`. Guardar o gabarito cru aqui faria o documento afirmar
+           * uma coisa e imprimir outra.
+           */
+          bodyText,
           workloadMinutes: text.workloadMinutes,
-          workloadBreakdown: workload.entries as unknown as object,
+          /**
+           * ─────────────────────────────────────────────────────────────────────
+           *  O DETALHAMENTO CONGELA A REGRA, MAS NÃO É ASSINADO (FASE 86 · fatia 5)
+           * ─────────────────────────────────────────────────────────────────────
+           *  `workloadBreakdown` guarda as entradas do cálculo E a política que
+           *  decidiu quais entram — é o que responde "por que 40 h" meses depois,
+           *  quando o organizador já mudou a régua do evento. Ele NÃO entra em
+           *  `buildCanonicalPayload`/`V2`, então este objeto não altera o hash nem a
+           *  assinatura de documento nenhum (e por isso não se criou a v3).
+           *  Consequência declarada: a política congelada não tem prova
+           *  criptográfica; o que o documento AFIRMA (`workloadMinutes`) continua
+           *  assinado.
+           */
+          workloadBreakdown: buildWorkloadBreakdown(policy, workload.entries) as unknown as object,
           contentHash,
           signature,
           signatureKeyId: keyId,
@@ -884,6 +993,15 @@ export async function requestCertificate(
            * pode mexer em documento já emitido. `layoutSnapshot` nulo é o que
            * identifica a versão 1 do documento (desenho fixo da FASE 6), e é por isso
            * que a versão do conteúdo canônico não precisa de coluna própria.
+           *
+           * ─────────────────────────────────────────────────────────────────────
+           *  O SNAPSHOT GUARDA O GABARITO **E** O TEXTO RESOLVIDO (FASE 86)
+           * ─────────────────────────────────────────────────────────────────────
+           *  O layout congelado traz o elemento `BODY` com o gabarito (é o que o hash
+           *  cobre e o que prova de onde o texto saiu), e `variableSnapshot.corpo`
+           *  traz o texto já interpolado (é o que foi impresso). Os dois juntos
+           *  respondem "o que estava escrito" e "de onde veio" sem consultar o modelo
+           *  — que pode ter sido editado ou excluído depois.
            */
           templateId: template?.templateId ?? null,
           layoutSnapshot: template ? (template.layout as unknown as object) : undefined,
@@ -2036,7 +2154,13 @@ export async function getPublicCertificate(rawCode: string): Promise<
         bodyText: row.bodyText,
         workloadMinutes: row.workloadMinutes,
         workloadLabel: formatWorkloadLabel(row.workloadMinutes),
-        workloadBreakdown: (row.workloadBreakdown as unknown as WorkloadBreakdownEntry[]) ?? [],
+        /**
+         * O leitor tolera os dois formatos: documento emitido antes da FASE 86 tem
+         * o detalhamento como LISTA; a partir dela, `{ policy, entries }`. A tela
+         * pública continua vendo entradas — a política é contexto do documento, não
+         * um campo da validação.
+         */
+        workloadBreakdown: readWorkloadBreakdown(row.workloadBreakdown).entries,
         issuedAt: row.issuedAt,
         revokedAt: row.revokedAt,
         revokedReason: row.revokedReason,

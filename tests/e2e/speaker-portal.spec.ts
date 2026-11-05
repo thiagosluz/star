@@ -626,7 +626,16 @@ test.describe('portal do palestrante', () => {
     expect(certificate.validationCode).toMatch(/^CERT-/);
     expect(certificate.signature.length).toBeGreaterThan(20);
 
-    const breakdown = certificate.workloadBreakdown as unknown as { title: string; counted: boolean }[];
+    /**
+     * O detalhamento é tolerado nos DOIS formatos: o documento antigo guarda a
+     * lista pura; a partir da FASE 86 ele é `{ policy, entries }` (a política do
+     * dia congelada junto). O que o teste prende é a entrada da oficina, não a
+     * forma do JSON.
+     */
+    const rawBreakdown = certificate.workloadBreakdown as unknown as
+      | { title: string; counted: boolean }[]
+      | { entries?: { title: string; counted: boolean }[] };
+    const breakdown = Array.isArray(rawBreakdown) ? rawBreakdown : (rawBreakdown.entries ?? []);
     expect(breakdown.some((entry) => entry.title === ACTIVITY_TITLE && entry.counted)).toBe(true);
 
     // A tela passa a mostrar o documento na lista da pessoa.

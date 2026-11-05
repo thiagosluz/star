@@ -18,8 +18,8 @@
  *  ─────────────────────────────────────────────────────────────────────────────
  *    presença · palestrante · parecer · autoria aceita  →  candidatos
  *    inscrição no EVENTO sem presença em atividade      →  NÃO é candidato
- *    duas linhas de 30 min na mesma atividade de 60     →  não somam 60 (a regra
- *                                                          é por LINHA, como hoje)
+ *    duas linhas de 30 min na mesma atividade de 60     →  somam 60 e são
+ *                                                          ELEGÍVEIS (E92, FASE 86)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from 'node:crypto';
@@ -151,9 +151,9 @@ beforeAll(async () => {
   // 10 de 60 min → abaixo dos 45 exigidos (75 % da carga).
   await createAttendanceRow(userIds.bruno!, { minutes: 10 });
 
-  // DUAS linhas de 30 min na MESMA atividade de 60: se fossem somadas dariam 60 e
-  // o certificado sairia. A regra de hoje é por LINHA — as duas ficam abaixo de 45
-  // e nenhuma conta. A projeção tem de reproduzir isso, não "consertar" a soma.
+  // DUAS visitas de 30 min na MESMA atividade de 60. Até a FASE 85 cada linha era
+  // avaliada sozinha e as duas ficavam abaixo dos 45 exigidos; desde a FASE 86 a
+  // presença é somada por pessoa × atividade (dívida E92), então Gabi tem 60 de 60.
   await createAttendanceRow(userIds.gabi!, { minutes: 30 });
   await createAttendanceRow(userIds.gabi!, { minutes: 30 });
 
@@ -268,10 +268,20 @@ describe('preview e emissão concordam no MESMO evento', () => {
       people: preview.preview.people,
     });
 
-    expect(summary.eligiblePeople).toBe(1);
-    expect(summary.certificatesToIssue).toBe(2);
-    expect(summary.eligibleRatio).toBeCloseTo(1 / 6, 10);
-    expect(summary.discarded).toHaveLength(10);
+    /**
+     * ── O NÚMERO DA FASE 86: A DÍVIDA E92 FOI PAGA ────────────────────────────
+     *  A FASE 85 fixava **1 elegível / 2 certificados / 10 descartes** porque a
+     *  Gabi era julgada LINHA a linha e descartada duas vezes. A partir da FASE 86
+     *  a presença é somada por pessoa × atividade, então as duas visitas de 30 min
+     *  na atividade de 60 valem 60 (100 % da carga): a Gabi é ELEGÍVEL e o escopo
+     *  passa a **2 elegíveis / 4 certificados / 8 descartes**. O número subiu
+     *  porque o documento que faltava passou a existir — não porque a regra
+     *  afrouxou: os 75 % e os 30 min continuam os mesmos.
+     */
+    expect(summary.eligiblePeople).toBe(2);
+    expect(summary.certificatesToIssue).toBe(4);
+    expect(summary.eligibleRatio).toBeCloseTo(2 / 6, 10);
+    expect(summary.discarded).toHaveLength(8);
 
     // O motivo do Bruno é o TEXTO do domínio (o veredito agregado do tipo, o mesmo
     // que `requestCertificate` devolveria como mensagem de recusa).
@@ -281,15 +291,28 @@ describe('preview e emissão concordam no MESMO evento', () => {
     expect(bruno?.reason).toBe('Nenhuma atividade com presença suficiente (mínimo de 75 % da carga).');
 
     /**
-     * ── A PROVA DE QUE A PROJEÇÃO REPRODUZ A REGRA DE HOJE ────────────────────
-     *  Gabi tem DUAS linhas de 30 min na mesma atividade de 60. Somadas dariam 60
-     *  (100 %) e ela receberia dois certificados. A regra soma por LINHA, então
-     *  cada 30 fica abaixo dos 45 exigidos e nenhuma conta. Se a projeção
-     *  "consertasse" a soma, estes dois descartes desapareceriam e a catraca da
-     *  igualdade reprovaria — é exatamente o defeito que este caso prende.
+     * ── A PROVA DA MUDANÇA (consciente) ──────────────────────────────────────
+     *  Gabi tem DUAS linhas de 30 min na mesma atividade de 60. Até a FASE 85 ela
+     *  aparecia com DOIS descartes; agora a soma é 60, ela passa o limiar de 45 e
+     *  recebe os DOIS tipos (a atividade é um minicurso).
      */
-    expect(summary.discarded.filter((item) => item.userId === userIds.gabi)).toHaveLength(2);
-    expect(summary.eligiblePeople).toBe(1);
+    const gabi = preview.preview.people.find((person) => person.userId === userIds.gabi);
+    expect(summary.discarded.filter((item) => item.userId === userIds.gabi)).toHaveLength(0);
+    expect(gabi?.verdicts.map((verdict) => `${verdict.kind}:${verdict.eligible}`).sort()).toEqual([
+      'ATTENDANCE:true',
+      'MINI_COURSE:true',
+    ]);
+
+    /**
+     * ── A NÃO REGRESSÃO: UMA LINHA POR ATIVIDADE NÃO MUDOU ───────────────────
+     *  Ana tem UMA linha de 60 min: o conjunto dela é exatamente o de antes da
+     *  agregação (presença e minicurso), e ninguém mais entrou no lugar dela.
+     */
+    const ana = preview.preview.people.find((person) => person.userId === userIds.ana);
+    expect(ana?.verdicts.map((verdict) => `${verdict.kind}:${verdict.eligible}`).sort()).toEqual([
+      'ATTENDANCE:true',
+      'MINI_COURSE:true',
+    ]);
 
     // Nada foi gravado pela simulação.
     const antes = await withTenant(tenantId, (tx) =>
@@ -335,12 +358,24 @@ describe('preview e emissão concordam no MESMO evento', () => {
 
     const criadosSet = criados.map((row) => `${row.userId}:${row.kind}`).sort();
 
-    expect(criados).toHaveLength(2);
-    expect(criados.every((row) => row.userId === userIds.ana)).toBe(true);
-    expect(criados.map((row) => row.kind).sort()).toEqual(['ATTENDANCE', 'MINI_COURSE']);
+    // Quatro: os dois da Ana (uma linha de 60) e os dois da Gabi (duas de 30 que
+    // somam 60) — a E92 paga, sem documento a mais para ninguém.
+    expect(criados).toHaveLength(4);
+    expect(criados.filter((row) => row.userId === userIds.ana)).toHaveLength(2);
+    expect(criados.filter((row) => row.userId === userIds.gabi)).toHaveLength(2);
+    expect(criados.map((row) => row.kind).sort()).toEqual([
+      'ATTENDANCE',
+      'ATTENDANCE',
+      'MINI_COURSE',
+      'MINI_COURSE',
+    ]);
     expect(criadosSet).toEqual(aprovadosNoPreview);
 
-    // E o resumo da emissão diz o mesmo número: 2 pedidos, 10 descartes.
+    // E a Gabi recebe o certificado de PRESENÇA (a atividade é do tipo minicurso,
+    // então a conclusão do minicurso vem junto).
+    expect(criados).toContainEqual({ userId: userIds.gabi, kind: 'ATTENDANCE' });
+
+    // E o resumo da emissão diz o mesmo número: 4 pedidos, 8 descartes.
     expect(emitidos.requested).toBe(summary.certificatesToIssue);
     expect(emitidos.skipped).toBe(summary.discarded.length);
     expect(emitidos.requested + emitidos.skipped).toBe(preview.preview.people.length * KINDS.length);
@@ -358,9 +393,10 @@ describe('preview e emissão concordam no MESMO evento', () => {
     });
 
     /**
-     * A segunda chamada da emissão reencontra os dois certificados da Ana e os
-     * devolve como `existing` — os DESCARTES, porém, são recalculados do zero e
-     * precisam bater texto a texto com a simulação deste render.
+     * A segunda chamada da emissão reencontra os QUATRO certificados (dois da Ana,
+     * dois da Gabi) e os devolve como `existing` — os DESCARTES, porém, são
+     * recalculados do zero e precisam bater texto a texto com a simulação deste
+     * render.
      */
     const emitidos = await requestEventCertificates({ tenantId, eventId, kinds: KINDS });
 
