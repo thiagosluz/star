@@ -54,7 +54,9 @@ export function CallResultPublicView({
       data-public-state={view.estado}
     >
       <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-        <span className="ef-badge">{CALL_RESULT_STATE_LABELS[view.estado]}</span>
+        <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          {CALL_RESULT_STATE_LABELS[view.estado]}
+        </span>
         <span className="text-xs font-normal text-muted-foreground">
           {PUBLIC_CALL_RESULT_PUBLISHED_PREFIX} {publicadoEmLabel}
         </span>

@@ -170,7 +170,7 @@ export default async function SpeakerPortalPage({
                 Meu perfil público
               </h2>
               <span
-                className="ef-badge"
+                className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
                 data-testid={`profile-visibility-${profile.speakerProfileId}`}
                 data-confirmed={String(profile.isConfirmed)}
               >
@@ -326,7 +326,10 @@ export default async function SpeakerPortalPage({
 
                 {status.certificate ? (
                   <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <span className="ef-badge" data-testid={`certificate-status-${status.eventId}`}>
+                    <span
+                      className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                      data-testid={`certificate-status-${status.eventId}`}
+                    >
                       {status.certificate.status === 'ISSUED' ? 'Emitido' : 'Na fila'}
                     </span>
                     <Link

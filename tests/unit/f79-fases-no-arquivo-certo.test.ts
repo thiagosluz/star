@@ -128,12 +128,17 @@ const FASES_HISTORICAS = [
   // narrativa de dívidas encostaram no teto outra vez; a tabela passou a
   // começar na 61 e o `AGENTS.md` terminou em 63.048 bytes.
   '60',
+  // Movidas na FASE 89: as duas mais antigas que restavam (65.027 bytes com a
+  // linha 89); as 61 e 62 desceram juntas, como estavam, e a tabela passou a
+  // começar na 63.
+  '61',
+  '62',
 ];
 
 /**
- * A tabela corrente começa na F61 — a 26, a 27 e a 28 nunca existiram; a 29 e a
+ * A tabela corrente começa na F63 — a 26, a 27 e a 28 nunca existiram; a 29 e a
  * 30 desceram na F82, a 31 a 35 na F83, a 36 a 42 na F84, a 43 a 49 na F85, a
- * 50 a 59 na F86 e a 60 na F87.
+ * 50 a 59 na F86, a 60 na F87 e a 61 a 62 na F89.
  *
  * A lista é DECLARADA, não derivada do `AGENTS.md`: é o gesto de declarar a fase
  * nova que mantém a catraca honesta (o comentário do cabeçalho explica). A F80
@@ -144,15 +149,16 @@ const FASES_HISTORICAS = [
  * o movimento das 36 a 42 baixou o começo para a 43; a F85 estendeu até a 85 e o
  * movimento das 43 a 49 baixou o começo para a 50; a F86 estendeu até a 86 e o
  * movimento das 50 a 59 (em dois passos) baixou o começo para a 60; a F87 estendeu
- * até a 87 e o movimento da 60 baixou o começo para a 61.
+ * até a 87 e o movimento da 60 baixou o começo para a 61; a F88 estendeu até a 88;
+ * a F89 estendeu até a 89 e o movimento das 61 e 62 baixou o começo para a 63.
  */
-const FASES_CORRENTES = Array.from({ length: 28 }, (_, indice) => String(61 + indice));
+const FASES_CORRENTES = Array.from({ length: 27 }, (_, indice) => String(63 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',
   '13', '14', '15', '16', '17', '23', '24', '25', '21', '22', '29', '30', '31', '32', '33', '34',
   '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '50',
-  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60'];
+  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62'];
 
 function ler(caminho: string): string {
   return readFileSync(join(RAIZ, caminho), 'utf8');
@@ -198,7 +204,7 @@ describe('FASE 79 · as fases movidas moram em docs/fases-historico.md', () => {
     expect(desconhecidas, 'linha de fase que a catraca não conhece (declare-a em FASES_CORRENTES)').toEqual([]);
   });
 
-  it('o arquivo histórico guarda as 55 fases movidas, na ordem cronológica, e só elas', () => {
+  it('o arquivo histórico guarda as 57 fases movidas, na ordem cronológica, e só elas', () => {
     const emOrdemNumerica = [...historico.fases].sort(
       (a, b) => numeroDaFase(a) - numeroDaFase(b) || a.localeCompare(b),
     );

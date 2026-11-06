@@ -3,8 +3,6 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { BellRing, CalendarCheck, MailX, ShieldCheck } from 'lucide-react';
 
-import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
-
 import { getTenantContext } from '@/lib/events/event-repository';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { readUnsubscribePage } from '@/lib/communication/unsubscribe-service';
@@ -173,7 +171,10 @@ export default async function UnsubscribePage({ params }: PageProps) {
        * `unsubscribedAt` só aparece quando existe: imprimir "saiu em —" para quem
        * nunca saiu seria uma data inventada.
        */}
-      <div className="ef-card space-y-4 p-5" data-testid="unsubscribe-state">
+      <div
+        className="space-y-4 rounded-xl border border-border bg-card p-5"
+        data-testid="unsubscribe-state"
+      >
         <p
           className="flex items-center gap-2 text-sm font-medium"
           data-testid="unsubscribe-state-value"
@@ -209,7 +210,10 @@ export default async function UnsubscribePage({ params }: PageProps) {
        * veio tomar), e o que CONTINUA logo abaixo (é o que ela precisa saber para
        * tomá-la sem medo).
        */}
-      <div className="ef-card space-y-3 p-5" data-testid="unsubscribe-what-stops">
+      <div
+        className="space-y-3 rounded-xl border border-border bg-card p-5"
+        data-testid="unsubscribe-what-stops"
+      >
         <h2 className="text-sm font-semibold">O que deixa de chegar</h2>
         <p className="text-muted-foreground text-sm">
           Os <strong className="font-medium">recados em massa</strong> de{' '}
@@ -218,7 +222,10 @@ export default async function UnsubscribePage({ params }: PageProps) {
         </p>
       </div>
 
-      <div className="ef-card space-y-3 p-5" data-testid="unsubscribe-what-keeps">
+      <div
+        className="space-y-3 rounded-xl border border-border bg-card p-5"
+        data-testid="unsubscribe-what-keeps"
+      >
         <h2 className="text-sm font-semibold">O que continua chegando</h2>
         <p className="text-muted-foreground text-sm">
           Os avisos que são <strong className="font-medium">obrigação da instituição
@@ -241,7 +248,10 @@ export default async function UnsubscribePage({ params }: PageProps) {
       </div>
 
       {state.isOut ? (
-        <div className="ef-card space-y-3 p-5" data-testid="unsubscribe-actions">
+        <div
+          className="space-y-3 rounded-xl border border-border bg-card p-5"
+          data-testid="unsubscribe-actions"
+        >
           <h2 className="text-sm font-semibold">Voltar a receber</h2>
           <p className="text-muted-foreground text-sm">
             Quer voltar a receber os recados em massa? É um clique, e você pode sair de
@@ -250,7 +260,10 @@ export default async function UnsubscribePage({ params }: PageProps) {
           <ResubscribeForm tenantSlug={tenantSlug} token={token} />
         </div>
       ) : (
-        <div className="ef-card space-y-3 p-5" data-testid="unsubscribe-actions">
+        <div
+          className="space-y-3 rounded-xl border border-border bg-card p-5"
+          data-testid="unsubscribe-actions"
+        >
           <h2 className="text-sm font-semibold">Confirmar</h2>
           <p className="text-muted-foreground text-sm">
             Ao confirmar, {state.tenantName} para de mandar os recados em massa para o

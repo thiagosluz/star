@@ -6,7 +6,8 @@ import { getRequestContext } from '@/lib/auth/session';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getMyAgenda } from '@/lib/events/agenda-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { PageHeader } from '@/components/ui';
+import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
+import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { AgendaMarks } from '@/components/events/agenda-marks';
 import { AgendaClashNotice } from '@/components/events/agenda-clash-notice';
@@ -126,10 +127,12 @@ export default async function MyAgendaPage({
     }),
   );
 
-  const selectedEventId =
-    evento && events.some((event) => event.id === evento) ? evento : (events[0]?.id ?? null);
-
-  const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null;
+  const eventSelection = resolveEventQuerySelection({
+    value: evento,
+    events,
+    fallback: 'first',
+  });
+  const { selectedEventId, selectedEvent } = eventSelection;
 
   const myAgenda = selectedEventId
     ? await getMyAgenda({ tenantId, userId, eventId: selectedEventId })
@@ -228,6 +231,12 @@ export default async function MyAgendaPage({
           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
           Não foi possível atualizar a sua agenda: {erroDaAcao}
         </p>
+      ) : null}
+
+      {eventSelection.discardedNotice ? (
+        <Alert tone="warning" data-testid="agenda-event-notice">
+          {eventSelection.discardedNotice}
+        </Alert>
       ) : null}
 
       {events.length === 0 ? (

@@ -29,6 +29,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { auth } from '@/lib/auth/auth';
 import { pickActiveMembership } from '@/lib/auth/active-membership';
@@ -389,8 +390,29 @@ export async function getCurrentSession(): Promise<{
  * `activeTenant` vem `null` — o chamador decide se redireciona ou mostra um
  * seletor. Nunca lançamos aqui: ausência de contexto é um estado normal para
  * páginas públicas.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  DEDUPLICAÇÃO POR REQUISIÇÃO RSC COM `React.cache` (FASE 89 · ADR-394)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  A FASE 75 eliminou a segunda chamada dentro do mesmo arquivo (de 2 + 2 para
+ *  1 + 1 em cada componente), mas deixou registrado como ponto de atenção que
+ *  `TenantLayout` e a página filha (`DashboardPage`, `SponsorAreaPage`, ou
+ *  qualquer uma das 43+ páginas que chamam `requirePagePermission`) ainda
+ *  resolviam `getRequestContext()` cada uma uma vez no mesmo render RSC (2 + 2
+ *  no total da requisição HTTP — ou 3 + 3 em telas que também liam o contexto
+ *  diretamente após a guarda).
+ *
+ *  Envelopar a leitura em `React.cache` (`readRequestContext`) faz com que, sob a
+ *  condição `react-server` (Next.js App Router), a primeira chamada popule o
+ *  `CacheNode` raiz (0 argumentos, `node.s = 1, node.v = promise`) no
+ *  `AsyncLocalStorage` daquela requisição HTTP, e todas as chamadas subsequentes
+ *  na mesma árvore RSC compartilhem a mesma Promise (1 sessão + 1 leitura de
+ *  vínculos + 1 leitura de principal por render). Fora de `react-server`
+ *  (Vitest, CLI, worker), `React.cache` no React 19 opera como pass-through sem
+ *  estado global, preservando o isolamento de testes que alteram cookies/vínculos
+ *  entre chamadas.
  */
-export async function getRequestContext(): Promise<RequestContext | null> {
+const readRequestContext = cache(async (): Promise<RequestContext | null> => {
   const session = await auth.api.getSession({ headers: await authHeaders() });
   if (!session?.user) return null;
 
@@ -431,6 +453,10 @@ export async function getRequestContext(): Promise<RequestContext | null> {
     principal,
     sessionId: session.session.id,
   };
+});
+
+export async function getRequestContext(): Promise<RequestContext | null> {
+  return readRequestContext();
 }
 
 /** Cabeçalhos da requisição atual, para o Better Auth. */

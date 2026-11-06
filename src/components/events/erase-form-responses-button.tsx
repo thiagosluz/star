@@ -13,7 +13,11 @@ function SubmitButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button type="submit" className="ef-button-outline text-xs" disabled={pending}>
+    <button
+      type="submit"
+      className="inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed"
+      disabled={pending}
+    >
       <Eraser className="size-3.5" aria-hidden />
       {pending ? 'Apagando…' : 'Apagar as minhas respostas'}
     </button>

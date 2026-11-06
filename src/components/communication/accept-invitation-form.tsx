@@ -26,7 +26,12 @@ function AcceptSubmit() {
   const { pending } = useFormStatus();
 
   return (
-    <button type="submit" className="ef-button" disabled={pending} data-testid="accept-invitation-submit">
+    <button
+      type="submit"
+      className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover disabled:opacity-60"
+      disabled={pending}
+      data-testid="accept-invitation-submit"
+    >
       {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <UserRoundPlus className="size-4" aria-hidden />}
       Aceitar convite
     </button>
@@ -62,7 +67,7 @@ export function AcceptInvitationForm({
           <span>
             {state.message}
             {state.details?.length ? (
-              <span className="block opacity-75">{state.details.join(' ')}</span>
+              <span className="block text-muted-foreground">{state.details.join(' ')}</span>
             ) : null}
           </span>
         </p>

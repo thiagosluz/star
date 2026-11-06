@@ -95,3 +95,116 @@ export function resolveUuidQueryFilter(input: {
 
   return { kind: 'discarded', notice: discardedFilterNotice(input.label) };
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SELEÇÃO DE `?evento=` CONTRA A LISTA DISPONÍVEL (FASE 89 · dívida E89 · ADR-395)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  Cinco telas carregam primeiro a lista de eventos disponíveis (`events`) e só
+ *  depois escolhem qual exibir a partir de `?evento=`:
+ *    • `/credenciamento`, `/credenciamento/crachas`, `/meu-cracha` e `/minha-agenda`
+ *      caem no primeiro evento da lista (`fallback: 'first'`);
+ *    • `/participantes` cai em "Todos os eventos" (`fallback: 'all'`).
+ *
+ *  Antes da FASE 89, o ternário `evento && events.some(...) ? evento : fallback`
+ *  tratava qualquer `?evento=` que não casasse com `events` — fosse texto
+ *  malformado (`?evento=nao-e-uuid`), parâmetro repetido ou um uuid inexistente /
+ *  fora do escopo da pessoa — exatamente como AUSÊNCIA de parâmetro, caindo em
+ *  outro evento (ou na instituição inteira) em silêncio. No balcão, isso permitia
+ *  operar em outro evento sem aviso.
+ *
+ *  A regra segue o princípio da FASE 76: query não é endereço (não responde 404),
+ *  mas **o que a tela descarta, ela anuncia**.
+ */
+export interface EventQuerySelectionResult<T extends { id: string; title?: string }> {
+  selectedEventId: string | null;
+  selectedEvent: T | null;
+  discardedNotice: string | null;
+}
+
+/**
+ * Frase canônica quando `?evento=` foi informado na URL, mas não pôde ser
+ * aplicado contra a lista de eventos da tela.
+ */
+export function discardedEventSelectionNotice(input: {
+  fallback: 'first' | 'all';
+  fallbackEventTitle?: string | null;
+  reason: 'invalid_format' | 'not_found';
+}): string {
+  if (input.fallback === 'all') {
+    if (input.reason === 'invalid_format') {
+      return discardedFilterNotice('evento');
+    }
+
+    return 'O filtro por evento foi descartado: o evento informado no endereço não foi encontrado nesta instituição. A lista continua sem esse filtro.';
+  }
+
+  const destino = input.fallbackEventTitle
+    ? `Exibindo "${input.fallbackEventTitle}".`
+    : 'Exibindo o primeiro evento disponível.';
+
+  if (input.reason === 'invalid_format') {
+    return `O evento indicado no endereço foi descartado: o identificador não é válido. ${destino}`;
+  }
+
+  return `O evento indicado no endereço não foi encontrado ou não está disponível para o seu acesso. ${destino}`;
+}
+
+/**
+ * Resolve `?evento=` contra a lista `events` já carregada pela tela.
+ *
+ *   • Sem parâmetro (ou vazio/espaços): aplica o `fallback` sem aviso (`discardedNotice: null`).
+ *   • Com parâmetro válido que consta em `events`: seleciona o evento sem aviso.
+ *   • Com parâmetro malformado, repetido ou ausente de `events`: aplica o `fallback`
+ *     e devolve `discardedNotice` com o motivo e o destino aplicado.
+ */
+export function resolveEventQuerySelection<T extends { id: string; title?: string }>(input: {
+  value: string | readonly string[] | null | undefined;
+  events: readonly T[];
+  fallback: 'first' | 'all';
+}): EventQuerySelectionResult<T> {
+  const defaultEvent = input.fallback === 'first' ? (input.events[0] ?? null) : null;
+  const defaultEventId = defaultEvent?.id ?? null;
+
+  const filterDecision = resolveUuidQueryFilter({ value: input.value, label: 'evento' });
+
+  if (filterDecision === null) {
+    return {
+      selectedEventId: defaultEventId,
+      selectedEvent: defaultEvent,
+      discardedNotice: null,
+    };
+  }
+
+  if (filterDecision.kind === 'discarded') {
+    return {
+      selectedEventId: defaultEventId,
+      selectedEvent: defaultEvent,
+      discardedNotice: discardedEventSelectionNotice({
+        fallback: input.fallback,
+        fallbackEventTitle: defaultEvent?.title ?? null,
+        reason: 'invalid_format',
+      }),
+    };
+  }
+
+  const matched = input.events.find((event) => event.id === filterDecision.value) ?? null;
+  if (matched) {
+    return {
+      selectedEventId: matched.id,
+      selectedEvent: matched,
+      discardedNotice: null,
+    };
+  }
+
+  return {
+    selectedEventId: defaultEventId,
+    selectedEvent: defaultEvent,
+    discardedNotice: discardedEventSelectionNotice({
+      fallback: input.fallback,
+      fallbackEventTitle: defaultEvent?.title ?? null,
+      reason: 'not_found',
+    }),
+  };
+}

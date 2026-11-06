@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59 e 60 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60 e 61 a 62 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -21,14 +21,16 @@
 > linha nova e o parágrafo de dívidas encostaram no teto de novo: a **F60** desceu **como estava**
 > e a tabela corrente passou a começar na **61**; o `AGENTS.md` terminou em **63.048 bytes**
 > (a narrativa de dívidas foi reescrita mais curta; as **linhas de fase**, não — elas foram
-> movidas como estavam).
+> movidas como estavam). Na **FASE 89** a linha nova levou o `AGENTS.md` a **65.027 bytes** (acima do
+> teto de 64.800): as **duas mais antigas que restavam** — **61** e **62** — desceram **como estavam**
+> e a tabela corrente passou a começar na **63**; o `AGENTS.md` terminou em **64.493 bytes**.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **61** à **88**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **63** à **89**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
@@ -99,3 +101,5 @@
 | 58 | **As telas novas no portão de acessibilidade** — `/demandas` (três vistas) e `/superadmin/denuncias` no `axe` WCAG AA; o **contraste do calendário (2,9:1)** foi corrigido, sem isenção nova. ADR-317/318 | ✅ |
 | 59 | **O item do patrocinador e a barra que recolhe** — o item do menu passou a depender do **VÍNCULO** (`sponsor_users` ativo), não de `sponsor:read` (pacote mínimo, que fazia a área aparecer para revisor e dono); e a barra lateral ganhou dois estados (`full` × `rail`), com o estado em **cookie no servidor** | ✅ |
 | 60 | **O que se oculta fica oculto · landmark em toda tela · suíte E2E estável** — **E79**: a ocultação passou a valer em toda superfície que cita a pessoa, inclusive o **sorteio público**; **I2** … | ✅ |
+| 61 | **Modo noturno (dívida H3)** — a escala escura troca **só a camada de tokens**, com **três estados** (Claro · Escuro · Sistema) valendo **sem cookie e sem JavaScript**; controle no menu de conta e em `/conta`, com contraste **medido**. … | ✅ |
+| 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido**); **I3**: espera que repete o gesto, `workers: 1` e `npm run e2e:clean`; **E80/E81** | ✅ |

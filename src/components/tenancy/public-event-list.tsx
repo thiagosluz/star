@@ -95,11 +95,9 @@ export function PublicEventCard({
           <div
             className="h-40 w-full"
             style={{
-              backgroundImage: `linear-gradient(135deg, ${
-                event.primaryColor ?? 'var(--primary)'
-              }, color-mix(in oklab, ${
-                event.primaryColor ?? 'var(--primary)'
-              } 45%, white))`,
+              backgroundImage: `linear-gradient(135deg, ${event.primaryColor ?? 'var(--primary)'
+                }, color-mix(in oklab, ${event.primaryColor ?? 'var(--primary)'
+                } 45%, white))`,
             }}
             aria-hidden
           />
@@ -107,13 +105,13 @@ export function PublicEventCard({
 
         <div className="flex flex-1 flex-col gap-3 p-5">
           <div className="flex items-center gap-2">
-            <span className="ef-badge rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
-              {STATUS_LABEL[event.status] ?? event.status}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {/** A etiqueta de modalidade vem da fonte única do domínio (FASE 69). */}
-              {eventModalityLabel(event.modality)}
-            </span>
+              <span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                {STATUS_LABEL[event.status] ?? event.status}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {/** A etiqueta de modalidade vem da fonte única do domínio (FASE 69). */}
+                {eventModalityLabel(event.modality)}
+              </span>
           </div>
 
           <h2 className="text-lg font-semibold tracking-tight group-hover:text-primary">

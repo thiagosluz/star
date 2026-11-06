@@ -3,8 +3,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Mic, ShieldCheck } from 'lucide-react';
 
-import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
-
 import { getTenantContext } from '@/lib/events/event-repository';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 import { loadSpeakerPendingInvites } from '@/lib/speakers/speaker-portal-service';
@@ -91,22 +89,22 @@ export default async function SpeakerInvitePage({
       />
 
       {!user ? (
-        <div className="ef-card space-y-3 p-5">
+        <div className="space-y-3 rounded-xl border border-border bg-card p-5">
           <p className="font-medium">Entre na sua conta para aceitar</p>
-          <p className="text-sm opacity-75">
+          <p className="text-sm text-muted-foreground">
             Use a conta do e-mail que recebeu o convite. Se ainda não tem conta, crie uma agora — o
             convite continua valendo depois.
           </p>
           <div className="flex flex-wrap gap-3">
             <Link
               href={`/login?redirectTo=${encodeURIComponent(`${here}${token ? `?codigo=${token}` : ''}`)}`}
-              className="ef-button"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover"
             >
               Entrar e continuar
             </Link>
             <Link
               href={`/signup?redirectTo=${encodeURIComponent(`${here}${token ? `?codigo=${token}` : ''}`)}`}
-              className="ef-button-outline"
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
             >
               Criar conta
             </Link>
@@ -115,7 +113,7 @@ export default async function SpeakerInvitePage({
       ) : (
         <>
           {token ? (
-            <p className="flex items-center gap-2 text-xs opacity-70" data-testid="invite-code-present">
+            <p className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="invite-code-present">
               <ShieldCheck className="size-3.5" aria-hidden />
               Código recebido. Confirme abaixo para assumir o perfil.
             </p>

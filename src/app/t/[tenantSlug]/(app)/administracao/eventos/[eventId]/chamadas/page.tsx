@@ -295,29 +295,29 @@ export default async function EventCallsPage({
               const resultPanel = resultPanels.get(call.id);
 
               return (
-              <li
-                key={call.id}
-                className="space-y-4 rounded-lg border border-border bg-card p-5"
-                data-testid={`call-row-${call.id}`}
-                data-call-state={call.state}
-                data-call-published={String(call.isPublished)}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <p className="flex flex-wrap items-center gap-2 font-medium">
-                      {call.title}
-                      <span className="ef-badge">{CALL_STATE_LABELS[call.state]}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {PROPOSAL_KIND_SHORT_LABELS[call.kind]}
-                      </span>
-                    </p>
-                    <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <CalendarClock className="size-3" aria-hidden />
-                        {call.windowLabel}
-                      </span>
-                      {call.countdown ? <span>{call.countdown}</span> : null}
-                      {/**
+                <li
+                  key={call.id}
+                  className="space-y-4 rounded-lg border border-border bg-card p-5"
+                  data-testid={`call-row-${call.id}`}
+                  data-call-state={call.state}
+                  data-call-published={String(call.isPublished)}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <p className="flex flex-wrap items-center gap-2 font-medium">
+                        {call.title}
+                        <span className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{CALL_STATE_LABELS[call.state]}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {PROPOSAL_KIND_SHORT_LABELS[call.kind]}
+                        </span>
+                      </p>
+                      <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5">
+                          <CalendarClock className="size-3" aria-hidden />
+                          {call.windowLabel}
+                        </span>
+                        {call.countdown ? <span>{call.countdown}</span> : null}
+                        {/**
                         * ── O SELO FALA DE PROPOSTA RECEBIDA, E SÓ DISSO (F74) ────
                         *  O número e a frase saem da MESMA régua da lista logo
                         *  abaixo (`proposal-receipt-rules`), então o selo não pode
@@ -327,16 +327,16 @@ export default async function EventCallsPage({
                         *  organizador mantém a visão de quem começou e parou sem
                         *  chamar de "recebido" o que ninguém enviou.
                         */}
-                      <span data-testid={`call-proposals-selo-${call.id}`}>
-                        {receivedProposalsLabel(call.proposals)} · {call.decided} decidida(s)
-                      </span>
-                      {call.proposalsInProgress !== null && call.proposalsInProgress > 0 ? (
-                        <span data-testid={`call-proposals-in-progress-${call.id}`}>
-                          {inProgressDraftsLabel(call.proposalsInProgress)}
+                        <span data-testid={`call-proposals-selo-${call.id}`}>
+                          {receivedProposalsLabel(call.proposals)} · {call.decided} decidida(s)
                         </span>
-                      ) : null}
-                      {call.trackName ? <span>Trilha: {call.trackName}</span> : null}
-                      {/**
+                        {call.proposalsInProgress !== null && call.proposalsInProgress > 0 ? (
+                          <span data-testid={`call-proposals-in-progress-${call.id}`}>
+                            {inProgressDraftsLabel(call.proposalsInProgress)}
+                          </span>
+                        ) : null}
+                        {call.trackName ? <span>Trilha: {call.trackName}</span> : null}
+                        {/**
                         * A frase diz o que VALE, e quando a chamada herda ela diz de
                         * quem: "Herdar da trilha (cega)" é informação diferente de
                         * "Revisão cega" — a segunda é uma decisão da chamada, a
@@ -345,80 +345,80 @@ export default async function EventCallsPage({
                         * quem herdar e quem decide é o tipo: dizer "herdar da trilha"
                         * ali seria prometer uma trilha que não existe.
                         */}
-                      <span data-testid={`call-blind-${call.id}`}>
-                        {call.requiresBlindReview === null
-                          ? call.trackId === null
-                            ? `Sem trilha — padrão do tipo (${call.effectiveRequiresBlindReview ? 'cega' : 'aberta'})`
-                            : `Herdar da trilha (${call.effectiveRequiresBlindReview ? 'cega' : 'aberta'})`
-                          : call.effectiveRequiresBlindReview
-                            ? 'Revisão cega'
-                            : 'Revisão aberta'}
-                      </span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Endereço público:{' '}
-                      <Link
-                        href={tenantPath(tenantSlug, `/eventos/${event.slug}/chamada/${call.slug}`)}
-                        className="underline underline-offset-4"
-                        data-testid={`call-public-link-${call.id}`}
+                        <span data-testid={`call-blind-${call.id}`}>
+                          {call.requiresBlindReview === null
+                            ? call.trackId === null
+                              ? `Sem trilha — padrão do tipo (${call.effectiveRequiresBlindReview ? 'cega' : 'aberta'})`
+                              : `Herdar da trilha (${call.effectiveRequiresBlindReview ? 'cega' : 'aberta'})`
+                            : call.effectiveRequiresBlindReview
+                              ? 'Revisão cega'
+                              : 'Revisão aberta'}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Endereço público:{' '}
+                        <Link
+                          href={tenantPath(tenantSlug, `/eventos/${event.slug}/chamada/${call.slug}`)}
+                          className="underline underline-offset-4"
+                          data-testid={`call-public-link-${call.id}`}
+                        >
+                          /eventos/{event.slug}/chamada/{call.slug}
+                        </Link>
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-start gap-2">
+                      <InlineActionForm
+                        action={setCallPublishedAction}
+                        submitLabel={call.isPublished ? 'Despublicar' : 'Publicar'}
+                        testId={`publish-call-${call.id}`}
+                        quietSuccess
                       >
-                        /eventos/{event.slug}/chamada/{call.slug}
-                      </Link>
-                    </p>
-                  </div>
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="eventSlug" value={event.slug} />
+                        <input type="hidden" name="callId" value={call.id} />
+                        <input
+                          type="hidden"
+                          name="isPublished"
+                          value={call.isPublished ? 'off' : 'on'}
+                        />
+                      </InlineActionForm>
 
-                  <div className="flex flex-wrap items-start gap-2">
-                    <InlineActionForm
-                      action={setCallPublishedAction}
-                      submitLabel={call.isPublished ? 'Despublicar' : 'Publicar'}
-                      testId={`publish-call-${call.id}`}
-                      quietSuccess
-                    >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="eventSlug" value={event.slug} />
-                      <input type="hidden" name="callId" value={call.id} />
-                      <input
-                        type="hidden"
-                        name="isPublished"
-                        value={call.isPublished ? 'off' : 'on'}
-                      />
-                    </InlineActionForm>
-
-                    <InlineActionForm
-                      action={deleteCallAction}
-                      submitLabel="Excluir"
-                      variant="destructive"
-                      testId={`delete-call-${call.id}`}
-                      confirm={{
-                        title: `Excluir a chamada “${call.title}”?`,
-                        description:
-                          call.proposals > 0
-                            ? 'Esta chamada já recebeu propostas: a exclusão será recusada e a resposta dirá para despublicar em vez de excluir.'
-                            : /**
+                      <InlineActionForm
+                        action={deleteCallAction}
+                        submitLabel="Excluir"
+                        variant="destructive"
+                        testId={`delete-call-${call.id}`}
+                        confirm={{
+                          title: `Excluir a chamada “${call.title}”?`,
+                          description:
+                            call.proposals > 0
+                              ? 'Esta chamada já recebeu propostas: a exclusão será recusada e a resposta dirá para despublicar em vez de excluir.'
+                              : /**
                                * A tela só conhece as propostas RECEBIDAS; um rascunho
                                * de tentativa que falhou não aparece aqui e mesmo assim
                                * impede a exclusão (ele é o caminho de volta do autor).
                                * Por isso o texto não promete que a exclusão passa.
                                */
                               'A chamada sai do painel e da página pública. Se houver rascunho de proposta ainda não enviado, a exclusão é recusada e a resposta diz o caminho.',
-                        confirmLabel: 'Excluir chamada',
-                      }}
-                    >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="eventSlug" value={event.slug} />
-                      <input type="hidden" name="callId" value={call.id} />
-                    </InlineActionForm>
+                          confirmLabel: 'Excluir chamada',
+                        }}
+                      >
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="eventSlug" value={event.slug} />
+                        <input type="hidden" name="callId" value={call.id} />
+                      </InlineActionForm>
+                    </div>
                   </div>
-                </div>
 
-                {call.summary ? (
-                  <p className="text-sm text-muted-foreground">{call.summary}</p>
-                ) : null}
+                  {call.summary ? (
+                    <p className="text-sm text-muted-foreground">{call.summary}</p>
+                  ) : null}
 
-                {/* ── Resultado publicado (FASE 73 · fatia 3) ────────────────── */}
-                {/**
+                  {/* ── Resultado publicado (FASE 73 · fatia 3) ────────────────── */}
+                  {/**
                  *  O cartão fica ANTES da edição da chamada e das propostas: publicar o
                  *  resultado é o ato que o organizador vem fazer nesta tela, e ele não
                  *  deve depender de abrir uma sanfona para achar o formulário.
@@ -427,151 +427,151 @@ export default async function EventCallsPage({
                  *  derivou `acoesDisponiveis` da tabela do domínio e montou a prévia com
                  *  a MESMA projeção da página pública. A tela não recalcula nada.
                  */}
-                {resultPanel?.ok ? (
-                  <CallResultCard
-                    tenantSlug={tenantSlug}
-                    callId={call.id}
-                    callTitle={call.title}
-                    resultado={resultPanel.panel.resultado}
-                    acoesDisponiveis={resultPanel.panel.acoesDisponiveis}
-                    seletor={resultPanel.panel.seletor}
-                    publico={resultPanel.panel.publico}
-                    problems={resultPanel.panel.problems}
-                    publicadoEmLabel={
-                      resultPanel.panel.resultado.publicadoEm
-                        ? formatZonedDateTime(
+                  {resultPanel?.ok ? (
+                    <CallResultCard
+                      tenantSlug={tenantSlug}
+                      callId={call.id}
+                      callTitle={call.title}
+                      resultado={resultPanel.panel.resultado}
+                      acoesDisponiveis={resultPanel.panel.acoesDisponiveis}
+                      seletor={resultPanel.panel.seletor}
+                      publico={resultPanel.panel.publico}
+                      problems={resultPanel.panel.problems}
+                      publicadoEmLabel={
+                        resultPanel.panel.resultado.publicadoEm
+                          ? formatZonedDateTime(
                             new Date(resultPanel.panel.resultado.publicadoEm),
                             event.timezone,
                           )
-                        : null
-                    }
-                  />
-                ) : (
-                  <p
-                    role="status"
-                    className="rounded-md border border-warning bg-warning-soft p-3 text-xs text-warning-strong"
-                    data-testid={`call-result-unavailable-${call.id}`}
-                  >
-                    Não foi possível carregar o resultado desta chamada agora. A chamada e as
-                    propostas continuam funcionando; recarregue a página para ver o formulário do
-                    resultado.
-                  </p>
-                )}
-
-                {/* ── Edição ───────────────────────────────────────────────── */}
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-xs font-medium">Editar chamada</summary>
-                  <div className="pt-3">
-                    <AdminForm
-                      action={saveCallAction}
-                      submitLabel="Salvar chamada"
-                      testId={`call-form-${call.id}`}
-                      compact
+                          : null
+                      }
+                    />
+                  ) : (
+                    <p
+                      role="status"
+                      className="rounded-md border border-warning bg-warning-soft p-3 text-xs text-warning-strong"
+                      data-testid={`call-result-unavailable-${call.id}`}
                     >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="eventSlug" value={event.slug} />
-                      <input type="hidden" name="eventTimezone" value={event.timezone} />
-                      <input type="hidden" name="callId" value={call.id} />
+                      Não foi possível carregar o resultado desta chamada agora. A chamada e as
+                      propostas continuam funcionando; recarregue a página para ver o formulário do
+                      resultado.
+                    </p>
+                  )}
 
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <SelectField
-                          label="Tipo de proposta"
-                          name="kind"
-                          options={kindOptions}
-                          defaultValue={call.kind}
-                          hint={
-                            call.proposals > 0
-                              ? 'Esta chamada já tem propostas: o tipo não pode mais mudar.'
-                              : undefined
-                          }
-                        />
-                        <Field
-                          label="Identificador na URL"
-                          name="slug"
-                          required
-                          defaultValue={call.slug}
-                          hint="Mudar o endereço quebra links já divulgados."
-                        />
-                        <Field label="Título da chamada" name="title" required defaultValue={call.title} />
-                        <Field label="Resumo" name="summary" defaultValue={call.summary} />
-                        <Field
-                          label="Orientações ao proponente"
-                          name="instructions"
-                          defaultValue={call.instructions}
-                        />
-                        <Field
-                          label="Abre em"
-                          name="opensAt"
-                          type="datetime-local"
-                          defaultValue={toLocalInput(call.opensAt)}
-                          hint={`No fuso do evento (${event.timezone}).`}
-                        />
-                        <Field
-                          label="Encerra em"
-                          name="closesAt"
-                          type="datetime-local"
-                          defaultValue={toLocalInput(call.closesAt)}
-                          hint={`No fuso do evento (${event.timezone}).`}
-                        />
-                        <SelectField
-                          label="Revisão cega"
-                          name="requiresBlindReview"
-                          options={blindOptions}
-                          defaultValue={blindOptionValue(call.requiresBlindReview)}
-                          hint={blindHint}
-                        />
-                        <Field
-                          label="Propostas por autor"
-                          name="maxSubmissionsPerAuthor"
-                          type="number"
-                          min={0}
-                          defaultValue={call.maxSubmissionsPerAuthor}
-                          hint="0 = sem limite."
-                        />
-                        <SelectField
-                          label="Trilha"
-                          name="trackId"
-                          options={trackOptions}
-                          defaultValue={call.trackId ?? ''}
-                        />
-                        <RubricEditor
-                          criteria={call.reviewRubric}
-                          scope="CALL"
-                          scopeLabel={call.title}
-                          frozen={{ reviews: callReviewCounts[call.id] ?? 0 }}
-                          testId={`call-rubric-${call.id}`}
-                        />
-                      </div>
-                    </AdminForm>
-                  </div>
-                </details>
+                  {/* ── Edição ───────────────────────────────────────────────── */}
+                  <details className="rounded-md border border-border p-3">
+                    <summary className="cursor-pointer text-xs font-medium">Editar chamada</summary>
+                    <div className="pt-3">
+                      <AdminForm
+                        action={saveCallAction}
+                        submitLabel="Salvar chamada"
+                        testId={`call-form-${call.id}`}
+                        compact
+                      >
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="eventSlug" value={event.slug} />
+                        <input type="hidden" name="eventTimezone" value={event.timezone} />
+                        <input type="hidden" name="callId" value={call.id} />
 
-                {/* ── Propostas recebidas ──────────────────────────────────── */}
-                {call.proposals > 0 ? (
-                  <details className="rounded-md border border-border p-3" data-testid={`call-proposals-${call.id}`}>
-                    <summary className="cursor-pointer text-xs font-medium">
-                      Propostas recebidas ({call.proposals})
-                    </summary>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <SelectField
+                            label="Tipo de proposta"
+                            name="kind"
+                            options={kindOptions}
+                            defaultValue={call.kind}
+                            hint={
+                              call.proposals > 0
+                                ? 'Esta chamada já tem propostas: o tipo não pode mais mudar.'
+                                : undefined
+                            }
+                          />
+                          <Field
+                            label="Identificador na URL"
+                            name="slug"
+                            required
+                            defaultValue={call.slug}
+                            hint="Mudar o endereço quebra links já divulgados."
+                          />
+                          <Field label="Título da chamada" name="title" required defaultValue={call.title} />
+                          <Field label="Resumo" name="summary" defaultValue={call.summary} />
+                          <Field
+                            label="Orientações ao proponente"
+                            name="instructions"
+                            defaultValue={call.instructions}
+                          />
+                          <Field
+                            label="Abre em"
+                            name="opensAt"
+                            type="datetime-local"
+                            defaultValue={toLocalInput(call.opensAt)}
+                            hint={`No fuso do evento (${event.timezone}).`}
+                          />
+                          <Field
+                            label="Encerra em"
+                            name="closesAt"
+                            type="datetime-local"
+                            defaultValue={toLocalInput(call.closesAt)}
+                            hint={`No fuso do evento (${event.timezone}).`}
+                          />
+                          <SelectField
+                            label="Revisão cega"
+                            name="requiresBlindReview"
+                            options={blindOptions}
+                            defaultValue={blindOptionValue(call.requiresBlindReview)}
+                            hint={blindHint}
+                          />
+                          <Field
+                            label="Propostas por autor"
+                            name="maxSubmissionsPerAuthor"
+                            type="number"
+                            min={0}
+                            defaultValue={call.maxSubmissionsPerAuthor}
+                            hint="0 = sem limite."
+                          />
+                          <SelectField
+                            label="Trilha"
+                            name="trackId"
+                            options={trackOptions}
+                            defaultValue={call.trackId ?? ''}
+                          />
+                          <RubricEditor
+                            criteria={call.reviewRubric}
+                            scope="CALL"
+                            scopeLabel={call.title}
+                            frozen={{ reviews: callReviewCounts[call.id] ?? 0 }}
+                            testId={`call-rubric-${call.id}`}
+                          />
+                        </div>
+                      </AdminForm>
+                    </div>
+                  </details>
 
-                    <ul className="mt-3 space-y-2">
-                      {(proposalsByCall.get(call.id) ?? []).map((proposal) => (
-                        <li
-                          key={proposal.id}
-                          className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border px-3 py-2"
-                          data-testid={`call-proposal-${proposal.id}`}
-                        >
-                          <div className="min-w-0 space-y-0.5">
-                            <p className="text-sm">
-                              <span className="code-data text-xs text-muted-foreground">
-                                {proposal.protocol}
-                              </span>{' '}
-                              {proposal.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {proposal.authorName ?? 'Autoria não informada'}
-                              {proposal.authorEmail ? ` · ${proposal.authorEmail}` : ''} ·{' '}
-                              {/**
+                  {/* ── Propostas recebidas ──────────────────────────────────── */}
+                  {call.proposals > 0 ? (
+                    <details className="rounded-md border border-border p-3" data-testid={`call-proposals-${call.id}`}>
+                      <summary className="cursor-pointer text-xs font-medium">
+                        Propostas recebidas ({call.proposals})
+                      </summary>
+
+                      <ul className="mt-3 space-y-2">
+                        {(proposalsByCall.get(call.id) ?? []).map((proposal) => (
+                          <li
+                            key={proposal.id}
+                            className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border px-3 py-2"
+                            data-testid={`call-proposal-${proposal.id}`}
+                          >
+                            <div className="min-w-0 space-y-0.5">
+                              <p className="text-sm">
+                                <span className="code-data text-xs text-muted-foreground">
+                                  {proposal.protocol}
+                                </span>{' '}
+                                {proposal.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {proposal.authorName ?? 'Autoria não informada'}
+                                {proposal.authorEmail ? ` · ${proposal.authorEmail}` : ''} ·{' '}
+                                {/**
                                 * O STATUS NA LINHA, EM PORTUGUÊS (FASE 74 · fatia 6).
                                 *  A lista mostra o que foi ENVIADO — inclusive a
                                 *  retirada, a cancelada e a recusada —, e é este
@@ -582,40 +582,40 @@ export default async function EventCallsPage({
                                 *  serviço (domínio `SUBMISSION_STATUS_LABELS`), não
                                 *  do enum cru do banco.
                                 */}
-                              <span data-testid={`call-proposal-status-${proposal.id}`}>
-                                {proposal.statusLabel}
-                              </span>
-                              {proposal.finalScore !== null
-                                ? ` · nota ${proposal.finalScore.toFixed(1)}`
-                                : ''}
-                            </p>
-                            {proposal.data.length > 0 ? (
-                              <p className="text-xs text-muted-foreground">
-                                {proposal.data.map((field) => `${field.label}: ${field.value}`).join(' · ')}
+                                <span data-testid={`call-proposal-status-${proposal.id}`}>
+                                  {proposal.statusLabel}
+                                </span>
+                                {proposal.finalScore !== null
+                                  ? ` · nota ${proposal.finalScore.toFixed(1)}`
+                                  : ''}
                               </p>
-                            ) : null}
-                          </div>
+                              {proposal.data.length > 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {proposal.data.map((field) => `${field.label}: ${field.value}`).join(' · ')}
+                                </p>
+                              ) : null}
+                            </div>
 
-                          <Link
-                            href={tenantPath(tenantSlug, `/comite/${proposal.id}`)}
-                            className="ef-button shrink-0"
-                            data-testid={`call-proposal-review-${proposal.id}`}
-                          >
-                            <FileText className="size-3.5" aria-hidden />
-                            Analisar e aceitar
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
+                            <Link
+                              href={tenantPath(tenantSlug, `/comite/${proposal.id}`)}
+                              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary-hover"
+                              data-testid={`call-proposal-review-${proposal.id}`}
+                            >
+                              <FileText className="size-3.5" aria-hidden />
+                              Analisar e aceitar
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
 
-                    <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Mic className="size-3" aria-hidden />
-                      O aceite com criação de atividade e convite do palestrante fica no painel do
-                      comitê de cada proposta.
-                    </p>
-                  </details>
-                ) : null}
-              </li>
+                      <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Mic className="size-3" aria-hidden />
+                        O aceite com criação de atividade e convite do palestrante fica no painel do
+                        comitê de cada proposta.
+                      </p>
+                    </details>
+                  ) : null}
+                </li>
               );
             })}
           </ul>

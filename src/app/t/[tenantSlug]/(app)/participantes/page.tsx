@@ -7,7 +7,8 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listParticipants } from '@/lib/participants/participant-service';
-import { PageHeader } from '@/components/ui';
+import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
+import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
 import { ExportPanel } from '@/components/exports/export-panel';
@@ -88,7 +89,12 @@ export default async function ParticipantsPage({
     }),
   );
 
-  const selectedEventId = evento && events.some((event) => event.id === evento) ? evento : null;
+  const eventSelection = resolveEventQuerySelection({
+    value: evento,
+    events,
+    fallback: 'all',
+  });
+  const { selectedEventId } = eventSelection;
 
   const listing = await listParticipants({
     tenantId,
@@ -159,6 +165,12 @@ export default async function ParticipantsPage({
           { label: 'Participantes' },
         ]}
       />
+
+      {eventSelection.discardedNotice ? (
+        <Alert tone="warning" data-testid="participant-event-notice">
+          {eventSelection.discardedNotice}
+        </Alert>
+      ) : null}
 
       <form method="get" className="flex flex-wrap items-end gap-3" data-testid="participant-filters">
         <label className="space-y-1 text-xs font-medium">

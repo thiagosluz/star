@@ -3,8 +3,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MailCheck, ShieldAlert, ShieldCheck, UserRoundPlus } from 'lucide-react';
 
-import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
-
 import { getTenantContext } from '@/lib/events/event-repository';
 import { getAuthenticatedUser } from '@/lib/auth/session';
 import { findInvitationByToken } from '@/lib/communication/invitation-service';
@@ -73,74 +71,86 @@ export default async function MemberInvitePage({
       />
 
       {!invite ? (
-        <div className="ef-card space-y-3 p-5" data-testid="invitation-not-found">
+        <div
+          className="space-y-3 rounded-xl border border-border bg-card p-5"
+          data-testid="invitation-not-found"
+        >
           <p className="flex items-center gap-2 font-medium">
             <ShieldAlert className="size-4" aria-hidden />
             Convite não encontrado
           </p>
-          <p className="text-sm opacity-75">
+          <p className="text-sm text-muted-foreground">
             O link pode estar incompleto (às vezes o mensageiro corta o endereço) ou ter sido
             substituído por um convite mais recente — nesse caso, só o último vale. Peça um novo
             convite a quem convidou você.
           </p>
-          <Link href={tenantPath(tenantSlug, '/eventos')} className="ef-button-outline">
+          <Link
+            href={tenantPath(tenantSlug, '/eventos')}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
+          >
             Ver a programação
           </Link>
         </div>
       ) : (
         <>
-          <div className="ef-card space-y-4 p-5" data-testid="invitation-details">
+          <div
+            className="space-y-4 rounded-xl border border-border bg-card p-5"
+            data-testid="invitation-details"
+          >
             <dl className="grid gap-3 sm:grid-cols-2">
               <div>
-                <dt className="text-xs uppercase tracking-wide opacity-60">Instituição</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Instituição</dt>
                 <dd className="text-sm font-medium">{invite.tenantName}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide opacity-60">Papel</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Papel</dt>
                 <dd className="text-sm font-medium" data-testid="invitation-role">
                   {invite.roleLabel}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide opacity-60">Convite para</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Convite para</dt>
                 <dd className="text-sm font-medium" data-testid="invitation-email">
                   {invite.email}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide opacity-60">Situação</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">Situação</dt>
                 <dd className="text-sm font-medium" data-testid="invitation-state">
                   {invite.stateLabel}
                 </dd>
               </div>
             </dl>
 
-            <p className="text-sm opacity-75">
+            <p className="text-sm text-muted-foreground">
               Ao aceitar, você terá {invitationConsequence(invite.role)}.
             </p>
 
             {invite.message ? (
-              <p className="text-sm opacity-80" data-testid="invitation-message">
+              <p className="text-sm text-muted-foreground" data-testid="invitation-message">
                 “{invite.message}”
                 {invite.invitedByName ? (
-                  <span className="block text-xs opacity-70">— {invite.invitedByName}</span>
+                  <span className="block text-xs text-muted-foreground">— {invite.invitedByName}</span>
                 ) : null}
               </p>
             ) : null}
 
-            <p className="text-xs opacity-70">
+            <p className="text-xs text-muted-foreground">
               Válido até{' '}
               {invite.expiresAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.
             </p>
           </div>
 
           {invite.state !== 'PENDING' ? (
-            <div className="ef-card space-y-2 p-5" data-testid="invitation-unusable">
+            <div
+              className="space-y-2 rounded-xl border border-border bg-card p-5"
+              data-testid="invitation-unusable"
+            >
               <p className="flex items-center gap-2 font-medium">
                 <ShieldAlert className="size-4" aria-hidden />
                 {invite.stateLabel}
               </p>
-              <p className="text-sm opacity-75">
+              <p className="text-sm text-muted-foreground">
                 {invite.state === 'ACCEPTED'
                   ? 'Este convite já foi aceito: o acesso existe. Entre com a conta que aceitou.'
                   : invite.state === 'EXPIRED'
@@ -149,45 +159,57 @@ export default async function MemberInvitePage({
               </p>
             </div>
           ) : !user ? (
-            <div className="ef-card space-y-3 p-5" data-testid="invitation-auth-required">
+            <div
+              className="space-y-3 rounded-xl border border-border bg-card p-5"
+              data-testid="invitation-auth-required"
+            >
               <p className="font-medium">Entre na sua conta para aceitar</p>
-              <p className="text-sm opacity-75">
-                Use a conta do endereço <strong className="font-medium">{invite.email}</strong> — é
+              <p className="text-sm text-muted-foreground">
+                Use a conta do endereço <strong className="font-medium text-foreground">{invite.email}</strong> — é
                 ele que prova que o convite é seu. Se ainda não tem conta, crie uma agora com este
                 e-mail: o convite continua valendo.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Link href={`/login?redirectTo=${encodeURIComponent(here)}`} className="ef-button">
+                <Link
+                  href={`/login?redirectTo=${encodeURIComponent(here)}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover"
+                >
                   Entrar e aceitar
                 </Link>
                 <Link
                   href={`/signup?redirectTo=${encodeURIComponent(here)}`}
-                  className="ef-button-outline"
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
                 >
                   Criar conta
                 </Link>
               </div>
             </div>
           ) : emailMatches ? (
-            <div className="ef-card space-y-3 p-5">
-              <p className="flex items-center gap-2 text-sm opacity-80">
+            <div className="space-y-3 rounded-xl border border-border bg-card p-5">
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <ShieldCheck className="size-4" aria-hidden />
-                Convite conferido para <strong className="font-medium">{user.email}</strong>.
+                Convite conferido para <strong className="font-medium text-foreground">{user.email}</strong>.
               </p>
               <AcceptInvitationForm tenantSlug={tenantSlug} token={token} />
             </div>
           ) : (
-            <div className="ef-card space-y-2 p-5" data-testid="invitation-wrong-email">
+            <div
+              className="space-y-2 rounded-xl border border-border bg-card p-5"
+              data-testid="invitation-wrong-email"
+            >
               <p className="flex items-center gap-2 font-medium">
                 <MailCheck className="size-4" aria-hidden />
                 Este convite é de outro endereço
               </p>
-              <p className="text-sm opacity-75">
-                Você está logado como <strong className="font-medium">{user.email}</strong>, e o
-                convite foi enviado para <strong className="font-medium">{invite.email}</strong>.
+              <p className="text-sm text-muted-foreground">
+                Você está logado como <strong className="font-medium text-foreground">{user.email}</strong>, e o
+                convite foi enviado para <strong className="font-medium text-foreground">{invite.email}</strong>.
                 Saia e entre com aquela conta para aceitar.
               </p>
-              <Link href="/login" className="ef-button-outline">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
+              >
                 Trocar de conta
               </Link>
             </div>

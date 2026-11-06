@@ -9,7 +9,8 @@ import { CREDENTIAL_CATEGORY_LIST, resolveCredentialCategory } from '@/domain/ev
 import { BadgeRoster, type RosterCategoryOption, type RosterEntry } from '@/components/credentials/badge-roster';
 import { issueCredentialsAction, revokeCredentialAction } from '@/app/actions/credential-actions';
 import { setCredentialCategoryAction } from '@/app/actions/credential-category-actions';
-import { PageHeader } from '@/components/ui';
+import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
+import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Crachás' };
@@ -67,7 +68,12 @@ export default async function BadgesPage({
     }),
   );
 
-  const selectedEventId = evento && events.some((event) => event.id === evento) ? evento : events[0]?.id ?? null;
+  const eventSelection = resolveEventQuerySelection({
+    value: evento,
+    events,
+    fallback: 'first',
+  });
+  const { selectedEventId } = eventSelection;
 
   /**
    * O filtro de categoria é aplicado NA CONSULTA (o índice
@@ -78,12 +84,12 @@ export default async function BadgesPage({
    */
   const roster = selectedEventId
     ? await listCredentialRoster({
-        tenantId,
-        eventId: selectedEventId,
-        query: q ?? null,
-        onlyMissing: faltando === '1',
-        category: categoria ?? null,
-      })
+      tenantId,
+      eventId: selectedEventId,
+      query: q ?? null,
+      onlyMissing: faltando === '1',
+      category: categoria ?? null,
+    })
     : null;
 
   const categoryOptions: RosterCategoryOption[] = CREDENTIAL_CATEGORY_LIST.map((definition) => ({
@@ -96,39 +102,39 @@ export default async function BadgesPage({
   const entries: RosterEntry[] =
     roster?.ok === true
       ? roster.entries.map((entry) => {
-          /**
-           * O valor CRU diz se a categoria está no catálogo: um crachá gravado com
-           * texto de outra geração aparece como "categoria não definida" na lista, em
-           * vez de ser exibido como "Participante" — que seria afirmar uma escolha que
-           * ninguém fez.
-           */
-          const raw = entry.credential?.category ?? null;
-          const known = raw !== null && CREDENTIAL_CATEGORY_LIST.some((item) => item.key === raw.toUpperCase());
-          const definition = known ? resolveCredentialCategory(raw) : null;
+        /**
+         * O valor CRU diz se a categoria está no catálogo: um crachá gravado com
+         * texto de outra geração aparece como "categoria não definida" na lista, em
+         * vez de ser exibido como "Participante" — que seria afirmar uma escolha que
+         * ninguém fez.
+         */
+        const raw = entry.credential?.category ?? null;
+        const known = raw !== null && CREDENTIAL_CATEGORY_LIST.some((item) => item.key === raw.toUpperCase());
+        const definition = known ? resolveCredentialCategory(raw) : null;
 
-          return {
-            userId: entry.userId,
-            name: entry.name,
-            email: entry.email,
-            credentialId: entry.credential?.id ?? null,
-            code: entry.credential?.code ?? null,
-            state: entry.credential?.state ?? null,
-            legacy: entry.credential?.legacy ?? false,
-            printed: entry.credential?.printedAt !== null && entry.credential?.printedAt !== undefined,
-            arrivedLabel: entry.arrivedAt
-              ? entry.arrivedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-              : null,
-            activities: entry.registrations
-              .filter((row) => row.activityId !== null)
-              .map((row) => row.activityTitle ?? 'Atividade'),
-            registrationStatus: entry.registrations.find((row) => row.activityId === null)?.status ?? null,
-            attendedActivities: entry.attendedActivities,
-            minutesAttended: entry.minutesAttended,
-            category: raw,
-            categoryLabel: definition?.label ?? null,
-            categoryTone: definition?.tone ?? null,
-          };
-        })
+        return {
+          userId: entry.userId,
+          name: entry.name,
+          email: entry.email,
+          credentialId: entry.credential?.id ?? null,
+          code: entry.credential?.code ?? null,
+          state: entry.credential?.state ?? null,
+          legacy: entry.credential?.legacy ?? false,
+          printed: entry.credential?.printedAt !== null && entry.credential?.printedAt !== undefined,
+          arrivedLabel: entry.arrivedAt
+            ? entry.arrivedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            : null,
+          activities: entry.registrations
+            .filter((row) => row.activityId !== null)
+            .map((row) => row.activityTitle ?? 'Atividade'),
+          registrationStatus: entry.registrations.find((row) => row.activityId === null)?.status ?? null,
+          attendedActivities: entry.attendedActivities,
+          minutesAttended: entry.minutesAttended,
+          category: raw,
+          categoryLabel: definition?.label ?? null,
+          categoryTone: definition?.tone ?? null,
+        };
+      })
       : [];
 
   const missingCount = roster?.ok === true ? roster.withoutCredential : 0;
@@ -153,6 +159,12 @@ export default async function BadgesPage({
           { label: 'Crachás' },
         ]}
       />
+
+      {eventSelection.discardedNotice ? (
+        <Alert tone="warning" data-testid="badge-event-notice">
+          {eventSelection.discardedNotice}
+        </Alert>
+      ) : null}
 
       <form method="get" className="flex flex-wrap items-end gap-3" data-testid="badge-filters">
         <label className="space-y-1 text-xs font-medium">

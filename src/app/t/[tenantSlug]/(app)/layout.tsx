@@ -113,6 +113,32 @@ export default async function TenantLayout({
     redirect('/selecionar-instituicao');
   }
 
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  AS TRÊS LEITURAS DE PORTA DO MENU RODAM EM PARALELO (FASE 89 · ADR-394)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *  • Convite de PALESTRANTE (revisão da FASE 25): o papel `SPEAKER` nasce com o
+   *    aceite; sem esta consulta por (`tenantId`, `email`), quem foi convidado
+   *    veria o painel sem pista do convite.
+   *  • Convite de PATROCINADOR (FASE 42): mesma porta para `SPONSOR`.
+   *  • Vínculo em `sponsor_users` (FASE 59 / FASE 88 · I10): `sponsor:read` está no
+   *    pacote mínimo de quem participa; o item do menu depende do vínculo ativo
+   *    (`readSponsorAccess`, deduplicado no ciclo RSC).
+   *
+   *  Antes da FASE 89, os três `await` viviam dentro do literal de objeto passado a
+   *  `buildTenantNav`, que o V8 avalia em série propriedade por propriedade. Como as
+   *  três consultas são independentes entre si, `Promise.all` elimina a cascata no
+   *  shell de todas as rotas autenticadas da instituição.
+   */
+  const [pendingSpeakerInvite, pendingSponsorInvite, sponsorAccess] = await Promise.all([
+    hasPendingSpeakerInvite({
+      tenantId: tenant.id,
+      userEmail: context.user.email,
+    }),
+    hasPendingSponsorInvite(tenant.id, context.user.email),
+    readSponsorAccess(tenant.id, context.user.id),
+  ]);
+
   return (
     <AppShell
       brand={{ label: 'Koveno', tagline: 'Gestão de eventos' }}
@@ -126,43 +152,9 @@ export default async function TenantLayout({
       navGroups={buildTenantNav({
         tenantSlug,
         principal,
-        /**
-         * ─────────────────────────────────────────────────────────────────────────────
-         *  O CONVITE DE PALESTRANTE TAMBÉM ABRE UM ITEM DE MENU (revisão da FASE 25)
-         * ─────────────────────────────────────────────────────────────────────────────
-         *  O papel `SPEAKER` nasce com o ACEITE do convite. Sem esta consulta, quem foi
-         *  convidado veria o painel sem nenhuma pista de que existe um convite para
-         *  ele — o item do menu depende de permissão, e ele ainda não tem nenhuma.
-         *
-         *  É UMA consulta por render do shell, por igualdade no índice único
-         *  (`tenantId`, `email`), e só o booleano atravessa daqui para o menu.
-         */
-        hasPendingSpeakerInvite: await hasPendingSpeakerInvite({
-          tenantId: tenant.id,
-          userEmail: context.user.email,
-        }),
-        /**
-         * O convite de PATROCINADOR abre o mesmo tipo de porta (FASE 42): o papel
-         * `SPONSOR` nasce com o aceite, e sem esta consulta quem foi convidado veria o
-         * painel sem nenhum caminho até o convite.
-         */
-        hasPendingSponsorInvite: await hasPendingSponsorInvite(tenant.id, context.user.email),
-        /**
-         * ─────────────────────────────────────────────────────────────────────────────
-         *  E O VÍNCULO, QUE É OUTRA COISA QUE A PERMISSÃO (FASE 59)
-         * ─────────────────────────────────────────────────────────────────────────────
-         *  `sponsor:read` está no pacote mínimo de quem participa — é ela que deixa a
-         *  PÁGINA da área ser aberta para mostrar o convite. Usá-la para decidir o ITEM
-         *  do menu fazia "Área do patrocinador" aparecer para revisor, dono e qualquer
-         *  participante, e a página respondia "você não está vinculado a nenhum
-         *  patrocinador desta instituição" no clique seguinte.
-         *
-         *  O vínculo é `sponsor_users` ativo — a mesma fonte que a página usa para
-         *  decidir o que mostrar. Uma consulta por render do shell, e só o booleano
-         *  atravessa daqui para o menu.
-         */
-        hasSponsorAccess:
-          (await readSponsorAccess(tenant.id, context.user.id)).length > 0,
+        hasPendingSpeakerInvite: pendingSpeakerInvite,
+        hasPendingSponsorInvite: pendingSponsorInvite,
+        hasSponsorAccess: sponsorAccess.length > 0,
       })}
       account={
         <AccountBlock

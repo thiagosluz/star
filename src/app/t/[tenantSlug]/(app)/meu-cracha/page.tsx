@@ -7,7 +7,8 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getOwnCredential } from '@/lib/events/credential-service';
-import { PageHeader } from '@/components/ui';
+import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
+import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { OwnBadge } from '@/components/credentials/own-badge';
 import { generateOwnCredentialAction } from '@/app/actions/credential-actions';
@@ -77,7 +78,12 @@ export default async function OwnBadgePage({
     }),
   );
 
-  const selectedEventId = evento && events.some((event) => event.id === evento) ? evento : events[0]?.id ?? null;
+  const eventSelection = resolveEventQuerySelection({
+    value: evento,
+    events,
+    fallback: 'first',
+  });
+  const { selectedEventId } = eventSelection;
 
   const badge = selectedEventId
     ? await getOwnCredential({ tenantId, userId: personId, eventId: selectedEventId })
@@ -96,6 +102,12 @@ export default async function OwnBadgePage({
           { label: 'Meu crachá' },
         ]}
       />
+
+      {eventSelection.discardedNotice ? (
+        <Alert tone="warning" data-testid="own-badge-event-notice">
+          {eventSelection.discardedNotice}
+        </Alert>
+      ) : null}
 
       {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">

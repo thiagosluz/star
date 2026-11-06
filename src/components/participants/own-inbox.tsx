@@ -55,9 +55,8 @@ export function OwnInbox({
           key={entry.id}
           data-testid={`inbox-message-${entry.id}`}
           data-read={entry.readAtLabel !== null ? '1' : undefined}
-          className={`space-y-2 rounded-xl border p-4 ${
-            entry.readAtLabel === null ? 'border-primary/40 bg-card' : 'border-border bg-card/60'
-          }`}
+          className={`space-y-2 rounded-xl border p-4 ${entry.readAtLabel === null ? 'border-primary/40 bg-card' : 'border-border bg-card/60'
+            }`}
         >
           <header className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -221,7 +220,7 @@ function ReplyButton({ messageId }: { messageId: string }) {
       type="submit"
       disabled={pending}
       data-testid={`inbox-reply-submit-${messageId}`}
-      className="ef-button inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary-hover disabled:opacity-60"
     >
       <Send className="size-3.5" aria-hidden />
       {pending ? 'Enviando…' : 'Enviar resposta'}

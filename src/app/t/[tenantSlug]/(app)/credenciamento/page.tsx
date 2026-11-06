@@ -12,7 +12,8 @@ import { CheckinQueue } from '@/components/gamification/checkin-queue';
 import { MonitorConsole, type MonitorActivity } from '@/components/credentials/monitor-console';
 import { checkInAction, checkOutAction } from '@/app/actions/attendance-actions';
 import { closeSessionsAction, recordPresenceAction } from '@/app/actions/credential-actions';
-import { PageHeader } from '@/components/ui';
+import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
+import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Credenciamento' };
@@ -86,14 +87,18 @@ export default async function CheckinPage({
   const events = isTenantWide
     ? allEvents
     : allEvents.filter((event) =>
-        can(principal, PERMISSIONS.REGISTRATION_CHECKIN, {
-          scope: 'EVENT',
-          eventId: event.id,
-        }),
-      );
+      can(principal, PERMISSIONS.REGISTRATION_CHECKIN, {
+        scope: 'EVENT',
+        eventId: event.id,
+      }),
+    );
 
-  const selectedEventId = evento && events.some((event) => event.id === evento) ? evento : events[0]?.id ?? null;
-  const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null;
+  const eventSelection = resolveEventQuerySelection({
+    value: evento,
+    events,
+    fallback: 'first',
+  });
+  const { selectedEventId, selectedEvent } = eventSelection;
 
   const [queue, activities, clock] = await Promise.all([
     selectedEventId
@@ -101,20 +106,20 @@ export default async function CheckinPage({
       : Promise.resolve(null),
     selectedEventId
       ? withTenant(tenantId, (tx) =>
-          tx.activity.findMany({
-            where: { tenantId, eventId: selectedEventId, deletedAt: null, status: { not: 'CANCELED' } },
-            orderBy: { startsAt: 'asc' },
-            take: 200,
-            select: {
-              id: true,
-              title: true,
-              startsAt: true,
-              endsAt: true,
-              checkInEnabled: true,
-              room: { select: { name: true } },
-            },
-          }),
-        )
+        tx.activity.findMany({
+          where: { tenantId, eventId: selectedEventId, deletedAt: null, status: { not: 'CANCELED' } },
+          orderBy: { startsAt: 'asc' },
+          take: 200,
+          select: {
+            id: true,
+            title: true,
+            startsAt: true,
+            endsAt: true,
+            checkInEnabled: true,
+            room: { select: { name: true } },
+          },
+        }),
+      )
       : Promise.resolve([]),
     /**
      * O "agora" vem do BANCO, e não de `Date.now()`: o React Compiler recusa função
@@ -144,15 +149,15 @@ export default async function CheckinPage({
 
   const entries = queue?.ok
     ? queue.entries.map((entry) => ({
-        registrationId: entry.registrationId,
-        userName: entry.userName,
-        userEmail: entry.userEmail,
-        activityTitle: entry.activityTitle,
-        isInside: entry.isInside,
-        checkedInAtLabel: entry.checkedInAt
-          ? entry.checkedInAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-          : null,
-      }))
+      registrationId: entry.registrationId,
+      userName: entry.userName,
+      userEmail: entry.userEmail,
+      activityTitle: entry.activityTitle,
+      isInside: entry.isInside,
+      checkedInAtLabel: entry.checkedInAt
+        ? entry.checkedInAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : null,
+    }))
     : [];
 
   return (
@@ -169,6 +174,12 @@ export default async function CheckinPage({
           </>
         }
       />
+
+      {eventSelection.discardedNotice ? (
+        <Alert tone="warning" data-testid="checkin-event-notice">
+          {eventSelection.discardedNotice}
+        </Alert>
+      ) : null}
 
       {events.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
