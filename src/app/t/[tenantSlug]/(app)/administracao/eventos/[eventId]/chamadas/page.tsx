@@ -184,55 +184,6 @@ export default async function EventCallsPage({
     '“Herdar da trilha” deixa a chamada sem opinião: é o que faz uma trilha cega valer ' +
     'aqui — sem trilha, volta o padrão do tipo.';
 
-  const callFields = (
-    <>
-      <SelectField label="Tipo de proposta" name="kind" options={kindOptions} defaultValue="PAPER" />
-      <Field
-        label="Identificador na URL"
-        name="slug"
-        required
-        hint="Minúsculas, números e hífen. É o endereço público do formulário."
-      />
-      <Field label="Título da chamada" name="title" required />
-      <Field label="Resumo" name="summary" hint="Uma linha que a página pública mostra no cartão." />
-      <Field
-        label="Orientações ao proponente"
-        name="instructions"
-        hint="O que precisa ser dito a quem vai propor: formato, critérios, o que anexar."
-      />
-      <Field label="Abre em" name="opensAt" type="datetime-local" hint={`No fuso do evento (${event.timezone}).`} />
-      <Field label="Encerra em" name="closesAt" type="datetime-local" hint={`No fuso do evento (${event.timezone}).`} />
-      <SelectField
-        label="Revisão cega"
-        name="requiresBlindReview"
-        options={blindOptions}
-        defaultValue=""
-        hint={blindHint}
-      />
-      <Field
-        label="Propostas por autor"
-        name="maxSubmissionsPerAuthor"
-        type="number"
-        min={0}
-        defaultValue={0}
-        hint="0 = sem limite."
-      />
-      <SelectField
-        label="Trilha"
-        name="trackId"
-        options={trackOptions}
-        defaultValue=""
-        hint="A trilha traz a rubrica e a afinidade dos revisores. Chamada de palestrante não precisa."
-      />
-      {/**
-        * O editor de rubrica é o MESMO da trilha (FASE 39): número de critérios livre
-        * até o teto, chave derivada do rótulo, e a FORMA congelada quando já existe
-        * parecer — com a contagem no lugar dos campos.
-        */}
-      <RubricEditor criteria={[]} scope="CALL" scopeLabel="Nova chamada" testId="call-rubric" />
-    </>
-  );
-
   return (
     <main className="max-w-5xl space-y-8" data-testid="calls-panel">
       <PageHeader
@@ -248,31 +199,25 @@ export default async function EventCallsPage({
           { label: 'Chamadas de propostas' },
         ]}
         actions={
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`)}
-            className="underline underline-offset-4"
-            data-testid="calls-to-page-editor"
-          >
-            Editar a página pública →
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`)}
+              className="text-sm underline underline-offset-4 text-muted-foreground hover:text-foreground"
+              data-testid="calls-to-page-editor"
+            >
+              Editar a página pública →
+            </Link>
+            <Link
+              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/chamadas/nova`)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary-hover"
+              data-testid="btn-nova-chamada"
+            >
+              <Megaphone className="size-4" aria-hidden />
+              Nova chamada
+            </Link>
+          </div>
         }
       />
-
-      {/* ── Nova chamada ─────────────────────────────────────────────────── */}
-      <details className="rounded-xl border border-border bg-card p-5" data-testid="create-call-section">
-        <summary className="cursor-pointer text-base font-semibold">Criar chamada</summary>
-
-        <div className="pt-4">
-          <AdminForm action={saveCallAction} submitLabel="Criar chamada" testId="create-call">
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
-            <input type="hidden" name="eventId" value={eventId} />
-            <input type="hidden" name="eventSlug" value={event.slug} />
-            <input type="hidden" name="eventTimezone" value={event.timezone} />
-
-            <div className="grid gap-3 sm:grid-cols-2">{callFields}</div>
-          </AdminForm>
-        </div>
-      </details>
 
       {/* ── Chamadas do evento ───────────────────────────────────────────── */}
       <section className="space-y-4" aria-labelledby="lista-chamadas">
@@ -281,23 +226,37 @@ export default async function EventCallsPage({
         </h2>
 
         {calls.length === 0 ? (
-          <p
-            className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
+          <div
+            className="rounded-xl border border-border bg-card p-8 text-center shadow-sm space-y-3"
             data-testid="calls-empty"
           >
-            Nenhuma chamada criada. A janela antiga de submissão do evento continua valendo para o
-            formulário de artigo — criar uma chamada aqui é o caminho para convidar palestrantes,
-            receber minicursos e organizar mais de um prazo.
-          </p>
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Megaphone className="size-6" aria-hidden />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Nenhuma chamada criada</h3>
+            <p className="mx-auto max-w-lg text-sm text-muted-foreground">
+              Nenhuma chamada criada. A janela antiga de submissão do evento continua valendo para o
+              formulário de artigo — criar uma chamada aqui é o caminho para convidar palestrantes,
+              receber minicursos e organizar mais de um prazo.
+            </p>
+            <div className="pt-2">
+              <Link
+                href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/chamadas/nova`)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary-hover"
+              >
+                Criar primeira chamada
+              </Link>
+            </div>
+          </div>
         ) : (
-          <ul className="space-y-4">
+          <ul className="space-y-6" data-testid="calls-list">
             {calls.map((call) => {
               const resultPanel = resultPanels.get(call.id);
 
               return (
                 <li
                   key={call.id}
-                  className="space-y-4 rounded-lg border border-border bg-card p-5"
+                  className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-sm"
                   data-testid={`call-row-${call.id}`}
                   data-call-state={call.state}
                   data-call-published={String(call.isPublished)}

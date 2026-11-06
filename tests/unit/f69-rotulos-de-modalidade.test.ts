@@ -197,11 +197,12 @@ describe('a catraca da fonte única', () => {
     ).toEqual([]);
   });
 
-  it('as três telas de formulário leem a lista do domínio, e não uma cópia', () => {
+  it('as quatro telas de formulário leem a lista do domínio, e não uma cópia', () => {
     const telas = [
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/novo/page.tsx',
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/dados/page.tsx',
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/programacao/page.tsx',
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/programacao/nova/page.tsx',
     ];
 
     for (const tela of telas) {

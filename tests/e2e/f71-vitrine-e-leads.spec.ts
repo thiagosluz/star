@@ -46,7 +46,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
 });
 
 test.afterAll(async () => {
-  await cleanupRun(RUN_ID);
+  await cleanupRun();
   await e2eDb.institutionLead.deleteMany({
     where: { email: { contains: RUN_ID } },
   });

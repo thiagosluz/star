@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60 e 61 a 62 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67 e 68 a 69 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -23,21 +23,28 @@
 > (a narrativa de dívidas foi reescrita mais curta; as **linhas de fase**, não — elas foram
 > movidas como estavam). Na **FASE 89** a linha nova levou o `AGENTS.md` a **65.027 bytes** (acima do
 > teto de 64.800): as **duas mais antigas que restavam** — **61** e **62** — desceram **como estavam**
-> e a tabela corrente passou a começar na **63**; o `AGENTS.md` terminou em **64.493 bytes**.
+> e a tabela corrente passou a começar na **63**; o `AGENTS.md` terminou em **64.493 bytes**. Na **FASE 91**
+> a linha nova levou o `AGENTS.md` a encostar no teto novamente: as **três mais antigas que restavam** —
+> **63 a 65** — desceram **como estavam** e a tabela corrente passou a começar na **66**; o `AGENTS.md` terminou
+> em **64.620 bytes**. Na **FASE 92** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
+> **duas mais antigas que restavam** — **66 e 67** — desceram **como estavam** e a tabela corrente passou a começar na **68**; o `AGENTS.md` terminou
+> em **64.591 bytes**. Na **FASE 93** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
+> **duas mais antigas que restavam** — **68 e 69** — desceram **como estavam** e a tabela corrente passou a começar na **70**; o `AGENTS.md` terminou
+> em **64.630 bytes**.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **63** à **89**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **70** à **93**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
 > **A ordem é a cronológica da tabela original**, não a numérica: a numeração identifica o
 > TEMA, e é o humano quem o escolhe pelo nome — por isso a F16, a F17, a F23, a F24 e a F25
 > vieram antes da F15, e a F21 foi entregue depois de todas. As fases movidas na FASE 82, na
-> FASE 83, na FASE 84, na FASE 85, na FASE 86 e na FASE 87 entram no fim, na ordem em que estavam.
+> FASE 83, na FASE 84, na FASE 85, na FASE 86, na FASE 87, na FASE 89, na FASE 91, na FASE 92 e na FASE 93 entram no fim, na ordem em que estavam.
 >
 > **Nota de rebrand.** O produto passou a se chamar **Koveno** em novembro de 2026. Este
 > arquivo e os documentos de fase continuam dizendo **EventFlow** porque são registro do que
@@ -103,3 +110,10 @@
 | 60 | **O que se oculta fica oculto · landmark em toda tela · suíte E2E estável** — **E79**: a ocultação passou a valer em toda superfície que cita a pessoa, inclusive o **sorteio público**; **I2** … | ✅ |
 | 61 | **Modo noturno (dívida H3)** — a escala escura troca **só a camada de tokens**, com **três estados** (Claro · Escuro · Sistema) valendo **sem cookie e sem JavaScript**; controle no menu de conta e em `/conta`, com contraste **medido**. … | ✅ |
 | 62 | **A tela medida · a suíte honesta · dois fechamentos** — **H6**: regressão visual com `toHaveScreenshot` (12 snapshots, `maxDiffPixelRatio: 0`, `threshold` 0,04 **medido**); **I3**: espera que repete o gesto, `workers: 1` e `npm run e2e:clean`; **E80/E81** | ✅ |
+| 63 | **A aparência do visitante** — o visitante anônimo escolhe a aparência no rodapé das páginas públicas da plataforma: um componente só, sem JavaScript, no mesmo cookie `ef_tema`; a página do evento ficou de fora (o modo é do organizador) e um teste prende isso | ✅ |
+| 64 | **A página pública da instituição** — `/t/<slug>` virou a **vitrine da casa** (capa, identidade, três grupos por DATA e blocos do editor); sem página publicada serve a listagem. … | ✅ |
+| 65 | **O dia do evento na mão do participante** — favoritar é **INTENÇÃO** e inscrever-se é **LUGAR**; a **"minha agenda"** une as duas marcas com **aviso de choque** sem bloquear; a grade sai em **`.ics`**. … | ✅ |
+| 66 | **O rótulo que ficou fora do portão** — o `eyebrow` media **4,44:1** sobre a `--ef-background` e sobreviveu à F65 porque a aba **"Programação"** não estava no portão; passou a `.ef-muted` (**5,08:1** / **5,91:1**). … | ✅ |
+| 67 | **Mala direta por fatos reais** — catálogo de 15 condições com frase explicativa, composição que recusa em vez de falhar aberto e catraca catálogo↔construtor; aba "Segmentos" com contagem, prévia mascarada e outbox; descadastro com token próprio. Portão 20 → 23; visual 19 → 21. ADR-338 … 340 | ✅ |
+| 68 | **O evento que não era de três dias** — a chamada vira **interruptor do evento** (`usesCall`; ausente **não** desliga) e as **duas colunas da janela são REMOVIDAS**; a chamada da F33 é a única fonte da verdade e o **`CFP_CLOSED` passa a ser devolvido … | ✅ |
+| 69 | **Mutirão dos pequenos** — cinco dívidas quitadas: **E86** (margem de deslocamento pura de 15 min), **E82** (ranking mascarado pós-ordem), **E84** (papéis semânticos no tema do evento, 2 casos WCAG AA), **E83** (gesto repetido) e **E88** (motivo do descadastro sem atraso). ADR-344 … 346 | ✅ |

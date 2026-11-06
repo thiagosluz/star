@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CalendarRange } from 'lucide-react';
 
@@ -61,12 +62,6 @@ const ACTIVITY_STATUS = [
 const DICA_SALA_ONLINE_DA_ATIVIDADE =
   'Só http:// ou https://. Mostrado apenas a quem tem lugar nesta atividade (ou à equipe).';
 
-/** O mesmo campo na CRIAÇÃO — sem endereço gravado, então só a modalidade decide. */
-const SALA_ONLINE_NA_CRIACAO = onlineRoomFieldVisibility({
-  modality: 'IN_PERSON',
-  hint: DICA_SALA_ONLINE_DA_ATIVIDADE,
-});
-
 export const metadata = { title: 'Programação' };
 export const dynamic = 'force-dynamic';
 
@@ -126,6 +121,15 @@ export default async function EventSchedulePage({
         title="Programação"
         eyebrow={TENANT_NAV_GROUPS.operacao}
         description="As atividades do evento: horário, sala, vagas e o que a presença vale."
+        actions={
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/programacao/nova`)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            data-testid="btn-nova-atividade"
+          >
+            Nova atividade
+          </Link>
+        }
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
           { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
@@ -143,9 +147,12 @@ export default async function EventSchedulePage({
         </p>
         <div className="space-y-4 pt-4">
           {event.activities.length > 0 ? (
-            <ul className="divide-y divide-border rounded-lg border border-border" data-testid="activity-list">
+            <ul
+              className="divide-y divide-border rounded-xl border border-border bg-card shadow-sm"
+              data-testid="activity-list"
+            >
               {event.activities.map((activity) => (
-                <li key={activity.id} className="space-y-3 p-3 text-sm" data-testid={`activity-row-${activity.id}`}>
+                <li key={activity.id} className="space-y-3 p-4 text-sm" data-testid={`activity-row-${activity.id}`}>
                   <div className="space-y-0.5">
                     <p className="flex flex-wrap items-center gap-2 font-medium">
                       {activity.title}
@@ -365,77 +372,20 @@ export default async function EventSchedulePage({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma atividade programada.</p>
-          )}
-
-          <AdminForm action={saveActivityAction} submitLabel="Criar atividade" testId="create-activity" compact>
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
-            <input type="hidden" name="eventId" value={event.id} />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Identificador" name="slug" required placeholder="minicurso-rust" />
-              <Field label="Título" name="title" required placeholder="Minicurso: Rust para iniciantes" />
-              <SelectField label="Tipo" name="type" options={ACTIVITY_TYPES} defaultValue="LECTURE" />
-              <SelectField label="Situação" name="status" options={ACTIVITY_STATUS} defaultValue="SCHEDULED" />
-              <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue="IN_PERSON" />
-              <SelectField label="Sala" name="roomId" options={roomOptions} />
-              {/**
-                * FASE 68: a sala online da atividade. Em branco = sem sala online
-                * própria (o endereço do EVENTO não é herdado por esta atividade).
-                *
-                * Aqui o formulário CRIA a atividade, e ela nasce PRESENCIAL — o campo
-                * não é desenhado (ver `SALA_ONLINE_NA_CRIACAO`). Quem escolher "Online"
-                * ou "Híbrido" salva e encontra o campo no formulário de EDIÇÃO que abre
-                * logo acima, já com a modalidade que escolheu.
-                */}
-              {SALA_ONLINE_NA_CRIACAO.show ? (
-                <Field
-                  label="Endereço da sala online"
-                  name="onlineUrl"
-                  type="url"
-                  placeholder="https://sala.exemplo.com/entrar"
-                  notice={SALA_ONLINE_NA_CRIACAO.notice}
-                  hint={SALA_ONLINE_NA_CRIACAO.hint}
-                />
-              ) : null}
-              <Field label="Início" name="startsAt" type="datetime-local" required defaultValue={toLocalInput(event.startsAt)} />
-              <Field label="Término" name="endsAt" type="datetime-local" required defaultValue={toLocalInput(new Date(event.startsAt.getTime() + 3_600_000))} />
-              <Field label="Carga horária (min)" name="workloadMinutes" type="number" min={1} required defaultValue={60} />
-              <Field
-                label="Vagas"
-                name="capacity"
-                type="number"
-                min={0}
-                hint="Em branco = sem limite. A sala escolhida passa a ser o teto destas vagas."
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-4">
-              <CheckboxField label="Exige inscrição individual" name="requiresRegistration" defaultChecked />
-              <CheckboxField label="Habilitar lista de espera" name="waitlistEnabled" />
-              <CheckboxField label="Destacar na página" name="isFeatured" />
-              <CheckboxField label="Habilitar credenciamento" name="checkInEnabled" defaultChecked />
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Desmarque <strong>“Exige inscrição individual”</strong> para atividades abertas (palestra,
-              mesa-redonda): quem se inscrever no evento entra nelas automaticamente, e vagas/lista de espera
-              não se aplicam. Minicursos e oficinas normalmente exigem inscrição própria.
+            <p
+              className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm"
+              data-testid="activities-empty"
+            >
+              Nenhuma atividade programada.{' '}
+              <Link
+                href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/programacao/nova`)}
+                className="font-medium text-primary underline underline-offset-4"
+              >
+                Cadastrar a primeira atividade
+              </Link>
+              .
             </p>
-
-            {/**
-              * A atividade NASCE com a confirmação automática (o padrão preserva o
-              * comportamento de sempre). Quem quiser cobrar confirmação escolhe aqui, no
-              * mesmo lugar em que escolhe vagas e lista de espera.
-              */}
-            <ConfirmationFields
-              policy="AUTO"
-              windowDays={null}
-              requirements={[]}
-              place={null}
-              instructions={null}
-            />
-          </AdminForm>
+          )}
         </div>
       </section>
     </main>

@@ -231,10 +231,13 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * FASE 86 acrescentou a tela do modelo DO EVENTO, que nasce com o mesmo
      * `PageHeader` e o mesmo `eyebrow` de `operacao`. A FASE 90 acrescentou a tela
      * de cadastro do novo evento (/administracao/eventos/novo), que nasce migrada
-     * com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`.
+     * com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`. A FASE 91
+     * acrescentou a tela de cadastro de atividade (/administracao/eventos/[eventId]/programacao/nova);
+     * a FASE 93 acrescentou a tela de cadastro de chamada (/administracao/eventos/[eventId]/chamadas/nova),
+     * que nasce migrada com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`.
      */
-    expect(PAGINAS.length).toBe(99);
-    expect(MIGRADAS.length).toBe(84);
+    expect(PAGINAS.length).toBe(101);
+    expect(MIGRADAS.length).toBe(86);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

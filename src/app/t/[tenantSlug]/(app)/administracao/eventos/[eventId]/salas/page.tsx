@@ -18,23 +18,20 @@ export const dynamic = 'force-dynamic';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SALAS — OS ESPAÇOS FÍSICOS E A CAPACIDADE (FASE 55, fatia 3)
+ *  SALAS — OS ESPAÇOS FÍSICOS E A CAPACIDADE (FASE 55, fatia 3 · FASE 92)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE ISTO VIROU PÁGINA, E O QUE A SALA DECIDE
+ *  PADRONIZAÇÃO EM CARDS BRANCOS E CADASTRO RÁPIDO IN-PAGE (ADR-399)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Era a terceira sanfona da raiz do evento; virou página com cartão no grupo
- *  Configurar, como as outras áreas.
+ *  A sala é uma entidade de apoio/catálogo com apenas 2 campos (nome e capacidade
+ *  opcional). O organizador configura várias salas em lote ao planejar o evento.
+ *  Separar em uma rota `/salas/nova` adicionaria atrito desnecessário de navegação.
  *
- *  A capacidade da sala NÃO é enfeite: ela é o **teto das vagas** da atividade, e é
- *  aplicada na reserva atômica (revisão da FASE 3). Sala sem capacidade declarada
- *  significa "sem limite" — e é por isso que o painel de prontidão conta quantas
- *  estão assim: o organizador precisa saber disso ANTES de abrir a inscrição, não
- *  depois de a sala encher.
- *
- *  O `data-testid="rooms-section"` foi preservado (ADR-302): os specs do ciclo de
- *  vida da sala (`room-lifecycle`) e da jornada navegam por ele — o que mudou foi só
- *  o endereço onde a seção vive.
+ *  A FASE 92 padronizou a página em dois cards brancos destacados (`bg-card
+ *  rounded-xl border border-border shadow-sm`), harmonizando com as telas de
+ *  eventos e programação, mantendo o cadastro in-page via Server Action instantâneo
+ *  e preservando todos os seletores contratuais (`rooms-section`, `room-list`,
+ *  `create-room`, etc.).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export default async function EventRoomsPage({
@@ -55,7 +52,7 @@ export default async function EventRoomsPage({
   if (!event) notFound();
 
   return (
-    <main className="max-w-3xl space-y-8" data-testid="event-rooms-page">
+    <main className="max-w-4xl space-y-8" data-testid="event-rooms-page">
       <PageHeader
         title="Salas"
         eyebrow={TENANT_NAV_GROUPS.operacao}
@@ -69,65 +66,76 @@ export default async function EventRoomsPage({
         ]}
       />
 
-      <section data-testid="rooms-section" className="space-y-4">
+      <section data-testid="rooms-section" className="space-y-6">
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <DoorOpen className="size-3.5 shrink-0" aria-hidden />
           Capacidade vazia significa <strong>sem limite</strong>: a vaga passa a ser só a da atividade.
         </p>
-        <div className="space-y-4 pt-4">
+
+        {/* ── CARD 1: Espaços cadastrados (bg-card rounded-xl border border-border shadow-sm) ── */}
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Salas cadastradas ({event.rooms.length})
+          </h2>
+
           {event.rooms.length > 0 ? (
-            <ul className="divide-y divide-border rounded-lg border border-border" data-testid="room-list">
+            <ul
+              className="divide-y divide-border rounded-xl border border-border bg-card shadow-sm"
+              data-testid="room-list"
+            >
               {event.rooms.map((room) => (
-                <li key={room.id} className="space-y-3 p-3 text-sm" data-testid={`room-row-${room.id}`}>
+                <li key={room.id} className="space-y-3 p-4 text-sm" data-testid={`room-row-${room.id}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="font-medium">{room.name}</span>
-                    {/*
-                      "sem limite" e não "0 lugares": a sala que não declara capacidade
-                      não bloqueia nada, e exibir zero faria parecer o contrário.
-                    */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <DoorOpen className="size-4" aria-hidden />
+                      </div>
+                      <span className="font-semibold text-foreground">{room.name}</span>
+                    </div>
+
                     <span
-                      className="code-data text-muted-foreground"
+                      className="code-data inline-flex items-center rounded-md border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-mono text-muted-foreground"
                       data-testid={`room-capacity-${room.id}`}
                     >
                       {roomCapacityLabel(room.capacity)}
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-start gap-3">
-                    <details className="min-w-0 flex-1 rounded-lg border border-border p-2">
-                      <summary className="cursor-pointer text-xs font-medium" data-testid={`edit-room-${room.id}`}>
+                  <div className="flex flex-wrap items-start gap-3 pt-1">
+                    <details className="min-w-0 flex-1 rounded-lg border border-border bg-muted/20 p-3 transition-colors open:bg-muted/30">
+                      <summary
+                        className="cursor-pointer text-xs font-medium text-foreground hover:text-primary"
+                        data-testid={`edit-room-${room.id}`}
+                      >
                         Editar sala
                       </summary>
 
-                      <AdminForm
-                        action={saveRoomAction}
-                        submitLabel="Salvar sala"
-                        testId={`room-form-${room.id}`}
-                        compact
-                      >
-                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                        <input type="hidden" name="eventId" value={event.id} />
-                        <input type="hidden" name="roomId" value={room.id} />
+                      <div className="pt-3">
+                        <AdminForm
+                          action={saveRoomAction}
+                          submitLabel="Salvar sala"
+                          testId={`room-form-${room.id}`}
+                          compact
+                        >
+                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                          <input type="hidden" name="eventId" value={event.id} />
+                          <input type="hidden" name="roomId" value={room.id} />
 
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <Field label="Nome da sala" name="name" required defaultValue={room.name} />
-                          <Field
-                            label="Capacidade"
-                            name="capacity"
-                            type="number"
-                            min={0}
-                            defaultValue={room.capacity ?? ''}
-                            hint="Em branco = sem limite. Com limite, a sala passa a ser o teto das vagas das atividades."
-                          />
-                        </div>
-                      </AdminForm>
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <Field label="Nome da sala" name="name" required defaultValue={room.name} />
+                            <Field
+                              label="Capacidade"
+                              name="capacity"
+                              type="number"
+                              min={0}
+                              defaultValue={room.capacity ?? ''}
+                              hint="Em branco = sem limite. Com limite, a sala passa a ser o teto das vagas das atividades."
+                            />
+                          </div>
+                        </AdminForm>
+                      </div>
                     </details>
 
-                    {/*
-                      Excluir recusa quando alguma atividade usa a sala — e diz quantas
-                      e qual. Sem a recusa, a FK `ON DELETE SET NULL` tiraria a sala da
-                      programação em silêncio.
-                    */}
                     <InlineActionForm
                       action={deleteRoomAction}
                       submitLabel="Excluir"
@@ -149,14 +157,35 @@ export default async function EventRoomsPage({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">Nenhuma sala cadastrada.</p>
+            <div
+              className="rounded-xl border border-border bg-card p-8 text-center shadow-sm space-y-2"
+              data-testid="rooms-empty"
+            >
+              <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <DoorOpen className="size-5" aria-hidden />
+              </div>
+              <p className="text-sm font-medium text-foreground">Nenhuma sala cadastrada.</p>
+              <p className="text-xs text-muted-foreground">
+                Cadastre os espaços físicos do evento abaixo para definir a capacidade e associá-los às atividades.
+              </p>
+            </div>
           )}
+        </div>
+
+        {/* ── CARD 2: Formulário de nova sala (bg-card rounded-xl border border-border p-6 shadow-sm) ── */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
+          <div className="border-b border-border pb-3">
+            <h2 className="text-base font-semibold text-foreground">Cadastrar nova sala</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Adicione os espaços físicos disponíveis no local do evento.
+            </p>
+          </div>
 
           <AdminForm action={saveRoomAction} submitLabel="Salvar sala" testId="create-room" compact>
             <input type="hidden" name="tenantSlug" value={tenantSlug} />
             <input type="hidden" name="eventId" value={event.id} />
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nome da sala" name="name" required placeholder="Auditório Principal" />
               {/*
                 Capacidade OPCIONAL: em branco, a sala não declara limite e quem
@@ -170,7 +199,7 @@ export default async function EventRoomsPage({
                 type="number"
                 min={0}
                 placeholder="Sem limite"
-                hint="Em branco = sem limite definido."
+                hint="Em branco = sem limite definido. Com limite, passa a ser o teto das vagas da atividade."
               />
             </div>
           </AdminForm>

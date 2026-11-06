@@ -256,6 +256,8 @@ test.describe('portal do palestrante', () => {
     // ── 1. A atividade nasce pela tela do evento ──────────────────────────────
     await page.goto(scheduleUrl());
 
+    await page.getByTestId('btn-nova-atividade').click();
+
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill(ACTIVITY_SLUG);
     await createActivity.getByLabel('Título').fill(ACTIVITY_TITLE);
@@ -275,6 +277,7 @@ test.describe('portal do palestrante', () => {
     await expect(createActivity.getByTestId('create-activity-feedback')).toContainText(/criad/i, {
       timeout: 30_000,
     });
+    await page.goto(scheduleUrl());
     await expect(page.getByTestId('activity-list')).toContainText(ACTIVITY_TITLE);
 
     // ── 2. O palestrante é cadastrado na tela de palestrantes ────────────────

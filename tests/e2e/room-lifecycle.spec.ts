@@ -214,6 +214,8 @@ test.describe('a sala limita a atividade', () => {
     /** A Programação ainda mora na RAIZ do evento (fatia 4): a tela de salas não a tem. */
     await page.goto(`/t/${slug}/administracao/eventos/${eventId}/programacao`);
 
+    await page.getByTestId('btn-nova-atividade').click();
+
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill('oficina-grande');
     await createActivity.getByLabel('Título').fill('Oficina Grande');

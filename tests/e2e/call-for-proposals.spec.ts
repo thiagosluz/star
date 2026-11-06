@@ -199,8 +199,9 @@ test.describe('chamadas de propostas', () => {
     await expect(page.getByTestId('calls-panel')).toBeVisible();
     await expect(page.getByTestId('calls-empty')).toBeVisible();
 
-    // ── Criar a chamada ───────────────────────────────────────────────────────
-    await page.getByTestId('create-call-section').locator('summary').click();
+    // ── Criar a chamada (FASE 93: página dedicada /chamadas/nova) ────────────
+    await page.getByTestId('btn-nova-chamada').click();
+    await expect(page).toHaveURL(new RegExp(`/chamadas/nova$`));
 
     const form = page.getByTestId('create-call');
     await form.getByLabel('Tipo de proposta').selectOption('MINICOURSE');
@@ -219,6 +220,9 @@ test.describe('chamadas de propostas', () => {
     await expect(form.getByTestId('create-call-feedback')).toContainText(/criad/i, {
       timeout: 30_000,
     });
+
+    // Retorna ao cockpit de chamadas para gerenciar a chamada recém-criada
+    await page.goto(callsUrl());
 
     /**
      * O rascunho NÃO está no ar: a chamada nasce despublicada, e o painel diz isso.

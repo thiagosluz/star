@@ -167,6 +167,8 @@ test.describe('jornada completa da plataforma', () => {
     // ── 4. Cria atividade na sala ───────────────────────────────────────────
     await expect(page.getByTestId('activities-section')).toBeVisible();
 
+    await page.getByTestId('btn-nova-atividade').click();
+
     const createActivity = page.getByTestId('create-activity');
     await createActivity.getByLabel('Identificador').fill('abertura-plataforma');
     await createActivity.getByLabel('Título').fill('Cerimônia de abertura');
@@ -181,6 +183,7 @@ test.describe('jornada completa da plataforma', () => {
       timeout: 30_000,
     });
 
+    await page.goto(`/t/${tenant.slug}/administracao/eventos/${event.id}/programacao`);
     await expect(page.getByTestId('activity-list')).toContainText('Cerimônia de abertura');
 
     // ── 5. O SERVIDOR recusa conflito de sala ───────────────────────────────
@@ -190,6 +193,7 @@ test.describe('jornada completa da plataforma', () => {
      * para valer. Se ela não estivesse ligada, a agenda pública mostraria duas
      * atividades na mesma sala, no mesmo horário.
      */
+    await page.getByTestId('btn-nova-atividade').click();
     const conflicting = page.getByTestId('create-activity');
     await conflicting.getByLabel('Identificador').fill('palestra-concorrente');
     await conflicting.getByLabel('Título').fill('Palestra no mesmo horário');

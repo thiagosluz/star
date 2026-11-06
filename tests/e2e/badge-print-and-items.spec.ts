@@ -202,7 +202,7 @@ test.describe('checklist item por item e impressão de crachá', () => {
     await signInAs(page, organizerEmail);
     await page.goto(scheduleUrl());
 
-    /** A Programação nasce recolhida, e o `summary` da SEÇÃO é o primeiro. */
+    await page.getByTestId('btn-nova-atividade').click();
 
     const form = page.getByTestId('create-activity');
     await form.getByLabel('Identificador').fill(ACTIVITY_SLUG);

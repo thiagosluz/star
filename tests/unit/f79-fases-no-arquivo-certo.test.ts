@@ -133,12 +133,28 @@ const FASES_HISTORICAS = [
   // começar na 63.
   '61',
   '62',
+  // Movidas na FASE 91: as três mais antigas que restavam (quando o cadastro
+  // de atividade separado encostou o `AGENTS.md` no teto de novo); as 63 a 65
+  // desceram juntas, como estavam, e a tabela passou a começar na 66.
+  '63',
+  '64',
+  '65',
+  // Movidas na FASE 92: as duas mais antigas que restavam (quando a padronização
+  // dos cards de salas encostou o `AGENTS.md` no teto de novo); as 66 e 67
+  // desceram juntas, como estavam, e a tabela passou a começar na 68.
+  '66',
+  '67',
+  // Movidas na FASE 93: as duas mais antigas que restavam (quando o cadastro de
+  // chamadas dedicado encostou o `AGENTS.md` no teto de novo); a 68 e a 69 desceram
+  // como estavam, e a tabela passou a começar na 70.
+  '68',
+  '69',
 ];
 
 /**
- * A tabela corrente começa na F63 — a 26, a 27 e a 28 nunca existiram; a 29 e a
+ * A tabela corrente começa na F70 — a 26, a 27 e a 28 nunca existiram; a 29 e a
  * 30 desceram na F82, a 31 a 35 na F83, a 36 a 42 na F84, a 43 a 49 na F85, a
- * 50 a 59 na F86, a 60 na F87 e a 61 a 62 na F89.
+ * 50 a 59 na F86, a 60 na F87, a 61 a 62 na F89, a 63 a 65 na F91, a 66 a 67 na F92 e a 68 a 69 na F93.
  *
  * A lista é DECLARADA, não derivada do `AGENTS.md`: é o gesto de declarar a fase
  * nova que mantém a catraca honesta (o comentário do cabeçalho explica). A F80
@@ -151,15 +167,18 @@ const FASES_HISTORICAS = [
  * movimento das 50 a 59 (em dois passos) baixou o começo para a 60; a F87 estendeu
  * até a 87 e o movimento da 60 baixou o começo para a 61; a F88 estendeu até a 88;
  * a F89 estendeu até a 89 e o movimento das 61 e 62 baixou o começo para a 63;
- * a F90 estendeu até a 90.
+ * a F90 estendeu até a 90;
+ * a F91 estendeu até a 91 e o movimento das 63 a 65 baixou o começo para a 66;
+ * a F92 estendeu até a 92 e o movimento das 66 e 67 baixou o começo para a 68;
+ * a F93 estendeu até a 93 e o movimento das 68 e 69 baixou o começo para a 70.
  */
-const FASES_CORRENTES = Array.from({ length: 28 }, (_, indice) => String(63 + indice));
+const FASES_CORRENTES = Array.from({ length: 24 }, (_, indice) => String(70 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',
   '13', '14', '15', '16', '17', '23', '24', '25', '21', '22', '29', '30', '31', '32', '33', '34',
   '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '50',
-  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62'];
+  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69'];
 
 function ler(caminho: string): string {
   return readFileSync(join(RAIZ, caminho), 'utf8');
