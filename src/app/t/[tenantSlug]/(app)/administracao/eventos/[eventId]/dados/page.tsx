@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { CalendarRange } from 'lucide-react';
+import { Calendar, CalendarRange } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -98,10 +98,11 @@ export default async function EventDataPage({
   });
 
   return (
-    <main className="max-w-3xl space-y-8" data-testid="event-data-page">
+    <main className="max-w-4xl space-y-8" data-testid="event-data-page">
       <PageHeader
         title="Dados do evento"
         eyebrow={TENANT_NAV_GROUPS.operacao}
+        icon={<Calendar className="size-6 text-primary" aria-hidden />}
         description="Nome, datas, local, modalidade, capacidade e os prazos de inscrição."
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
@@ -112,77 +113,97 @@ export default async function EventDataPage({
         ]}
       />
 
-      <section data-testid="event-details">
-          <AdminForm action={saveEventAction} submitLabel="Salvar evento" testId="edit-event">
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
-            <input type="hidden" name="eventId" value={event.id} />
+      <section
+        className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+        data-testid="event-details"
+        aria-labelledby="dados-evento"
+      >
+        <h2 id="dados-evento" className="text-base font-semibold tracking-tight text-foreground">
+          Dados do evento
+        </h2>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Identificador" name="slug" required defaultValue={event.slug} />
-              <Field label="Título" name="title" required defaultValue={event.title} />
-              <Field label="Resumo" name="summary" defaultValue={event.summary} />
-              <Field label="Local" name="venueName" defaultValue={event.venueName} />
-              {/**
-                * FASE 68: o escritor de `Event.onlineUrl`. O endereço é o da TRANSMISSÃO
-                * do evento; a atividade pode ter o próprio (na programação), e repetir
-                * o do evento é decisão do organizador — não herança.
-                *
-                * O campo só é desenhado em evento Online/Híbrido ou quando já há
-                * endereço gravado (ver `onlineRoomFieldVisibility`, acima).
-                */}
-              {salaOnline.show ? (
-                <Field
-                  label="Endereço da sala online"
-                  name="onlineUrl"
-                  type="url"
-                  defaultValue={event.onlineUrl}
-                  placeholder="https://sala.exemplo.com/entrar"
-                  notice={salaOnline.notice}
-                  hint={salaOnline.hint}
-                />
-              ) : null}
-              <Field label="Cidade" name="city" defaultValue={event.city} />
-              <Field label="UF" name="state" defaultValue={event.state} />
-              <Field label="Início" name="startsAt" type="datetime-local" required defaultValue={toLocalInput(event.startsAt)} />
-              <Field label="Término" name="endsAt" type="datetime-local" required defaultValue={toLocalInput(event.endsAt)} />
-              <Field label="Fuso horário" name="timezone" required defaultValue={event.timezone} />
-              <Field label="Vagas" name="capacity" type="number" min={0} defaultValue={event.capacity} />
-              <Field label="Cor principal" name="primaryColor" defaultValue={event.primaryColor} />
-              <Field label="Inscrições abrem em" name="registrationOpensAt" type="datetime-local" defaultValue={toLocalInput(event.registrationOpensAt)} />
-              <Field label="Inscrições fecham em" name="registrationClosesAt" type="datetime-local" defaultValue={toLocalInput(event.registrationClosesAt)} />
-              {/**
-                * FASE 68: os dois campos da janela de submissão SAÍRAM daqui. Eles
-                * conviviam com o aviso logo abaixo, que manda para `/chamadas` — dois
-                * lugares para o mesmo fato, e o daqui ninguém escrevia. Ficou o
-                * interruptor, que é do EVENTO: ele decide se a chamada é cobrada.
-                */}
-              <CheckboxField
-                label="Este evento recebe trabalhos"
-                name="usesCall"
-                hint="Ligue para receber propostas: a janela, a rubrica e as trilhas ficam em “Chamadas de trabalhos”."
-                defaultChecked={event.usesCall}
+        <AdminForm action={saveEventAction} submitLabel="Salvar evento" testId="edit-event">
+          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+          <input type="hidden" name="eventId" value={event.id} />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Identificador (URL)" name="slug" required defaultValue={event.slug} />
+            <Field label="Título" name="title" required defaultValue={event.title} />
+            <Field label="Resumo" name="summary" defaultValue={event.summary} placeholder="Uma linha sobre o evento" />
+            <Field label="Local" name="venueName" defaultValue={event.venueName} placeholder="Centro de Convenções" />
+            {/**
+              * FASE 68: o escritor de `Event.onlineUrl`. O endereço é o da TRANSMISSÃO
+              * do evento; a atividade pode ter o próprio (na programação), e repetir
+              * o do evento é decisão do organizador — não herança.
+              *
+              * O campo só é desenhado em evento Online/Híbrido ou quando já há
+              * endereço gravado (ver `onlineRoomFieldVisibility`, acima).
+              */}
+            {salaOnline.show ? (
+              <Field
+                label="Endereço da sala online"
+                name="onlineUrl"
+                type="url"
+                defaultValue={event.onlineUrl}
+                placeholder="https://sala.exemplo.com/entrar"
+                notice={salaOnline.notice}
+                hint={salaOnline.hint}
               />
-              <SelectField label="Situação" name="status" options={EVENT_STATUS} defaultValue={event.status} />
-              <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue={event.modality} />
-              <SelectField
-                label="Categoria temática"
-                name="category"
-                options={[{ value: '', label: 'Sem categoria específica' }, ...EVENT_CATEGORY_OPTIONS]}
-                defaultValue={event.category ?? ''}
-              />
-              {/**
-                * FASE 12 (item I3): a instituição escolhe entre evento ABERTO (padrão
-                * desde a FASE 10) e restrito à própria comunidade. Sem esta caixa, a
-                * FASE 10 teria tirado da instituição o direito de fechar um evento.
-                */}
-              <CheckboxField
-                label="Exigir vínculo com a instituição para se inscrever"
-                name="registrationRequiresMembership"
-                hint="Desmarcado, qualquer pessoa com conta pode se inscrever (evento aberto)."
-                defaultChecked={event.registrationRequiresMembership}
-              />
-            </div>
-          </AdminForm>
+            ) : null}
+            <Field label="Cidade" name="city" defaultValue={event.city} placeholder="Salvador" />
+            <Field label="UF" name="state" defaultValue={event.state} placeholder="BA" />
+            <Field label="Início" name="startsAt" type="datetime-local" required defaultValue={toLocalInput(event.startsAt)} />
+            <Field label="Término" name="endsAt" type="datetime-local" required defaultValue={toLocalInput(event.endsAt)} />
+            <Field label="Fuso horário" name="timezone" required defaultValue={event.timezone} />
+            <Field
+              label="Vagas (vazio = ilimitado)"
+              name="capacity"
+              type="number"
+              min={0}
+              defaultValue={event.capacity ?? ''}
+            />
+            <Field
+              label="Cor principal"
+              name="primaryColor"
+              defaultValue={event.primaryColor}
+              placeholder="#1d4ed8"
+              hint="Hexadecimal ou oklch()"
+            />
+            <Field label="Inscrições abrem em" name="registrationOpensAt" type="datetime-local" defaultValue={toLocalInput(event.registrationOpensAt)} />
+            <Field label="Inscrições fecham em" name="registrationClosesAt" type="datetime-local" defaultValue={toLocalInput(event.registrationClosesAt)} />
+            {/**
+              * FASE 68: os dois campos da janela de submissão SAÍRAM daqui. Eles
+              * conviviam com o aviso logo abaixo, que manda para `/chamadas` — dois
+              * lugares para o mesmo fato, e o daqui ninguém escrevia. Ficou o
+              * interruptor, que é do EVENTO: ele decide se a chamada é cobrada.
+              */}
+            <CheckboxField
+              label="Este evento recebe trabalhos"
+              name="usesCall"
+              hint="Ligue para receber propostas: a janela, a rubrica e as trilhas ficam em “Chamadas de trabalhos”."
+              defaultChecked={event.usesCall}
+            />
+            <SelectField label="Situação" name="status" options={EVENT_STATUS} defaultValue={event.status} />
+            <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue={event.modality} />
+            <SelectField
+              label="Categoria temática"
+              name="category"
+              options={[{ value: '', label: 'Sem categoria específica' }, ...EVENT_CATEGORY_OPTIONS]}
+              defaultValue={event.category ?? ''}
+            />
+            {/**
+              * FASE 12 (item I3): a instituição escolhe entre evento ABERTO (padrão
+              * desde a FASE 10) e restrito à própria comunidade. Sem esta caixa, a
+              * FASE 10 teria tirado da instituição o direito de fechar um evento.
+              */}
+            <CheckboxField
+              label="Exigir vínculo com a instituição para se inscrever"
+              name="registrationRequiresMembership"
+              hint="Desmarcado, qualquer pessoa com conta pode se inscrever (evento aberto)."
+              defaultChecked={event.registrationRequiresMembership}
+            />
+          </div>
+        </AdminForm>
       </section>
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">

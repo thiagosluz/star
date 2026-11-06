@@ -7,7 +7,7 @@
  *  ─────────────────────────────────────────────────────────────────────────────
  *  "Presencial · Online · Híbrido" estava digitado à mão em seis pontos:
  *
- *    1. `administracao/eventos/page.tsx`             (o `<select>` do evento novo)
+ *    1. `administracao/eventos/novo/page.tsx`        (o `<select>` do evento novo)
  *    2. `administracao/eventos/[id]/dados/page.tsx`  (o `<select>` dos dados)
  *    3. `administracao/eventos/[id]/programacao/page.tsx` (o `<select>` da atividade)
  *    4. `components/events/event-landing.tsx`        (a etiqueta da página do evento)

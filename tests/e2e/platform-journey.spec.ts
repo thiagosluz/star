@@ -104,8 +104,10 @@ test.describe('jornada completa da plataforma', () => {
      */
     await expect(page.getByRole('heading', { name: /trilha de auditoria/i })).toBeVisible();
 
-    // ── 2. Cria o evento ────────────────────────────────────────────────────
+    // ── 2. Cria o evento (FASE 90: via botão Novo evento e rota dedicada) ──
     await page.goto(`/t/${tenant.slug}/administracao/eventos`);
+    await page.getByTestId('btn-novo-evento').click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/administracao/eventos/novo`));
 
     const createEvent = page.getByTestId('create-event');
     const title = `Congresso da Plataforma ${RUN_ID}`;
@@ -124,7 +126,9 @@ test.describe('jornada completa da plataforma', () => {
       timeout: 30_000,
     });
 
-    // O evento aparece na listagem e pode ser gerenciado.
+    // Retorna para a listagem e gerencia o evento criado.
+    await page.getByRole('link', { name: /voltar para eventos/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/administracao/eventos$`));
     await expect(page.getByTestId('admin-event-list')).toContainText(title);
 
     await page.getByTestId(`manage-${eventSlug}`).click();

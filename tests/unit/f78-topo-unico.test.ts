@@ -229,10 +229,12 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * motivo. A FASE 85 acrescentou a tela de certificados do evento — migrada
      * desde o nascimento, porque a tela é nova e a régua já vale para ela. A
      * FASE 86 acrescentou a tela do modelo DO EVENTO, que nasce com o mesmo
-     * `PageHeader` e o mesmo `eyebrow` de `operacao`.
+     * `PageHeader` e o mesmo `eyebrow` de `operacao`. A FASE 90 acrescentou a tela
+     * de cadastro do novo evento (/administracao/eventos/novo), que nasce migrada
+     * com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`.
      */
-    expect(PAGINAS.length).toBe(98);
-    expect(MIGRADAS.length).toBe(83);
+    expect(PAGINAS.length).toBe(99);
+    expect(MIGRADAS.length).toBe(84);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

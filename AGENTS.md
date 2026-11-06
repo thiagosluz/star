@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 89** (**F56 a F89 entregues**)
-Testes ................. **4732** (Vitest: unit + integração, 267 arquivos) + **509** (Playwright E2E) + 1 skip
-ADRs ................... 396 (numeração GLOBAL e sequencial — a próxima é ADR-397)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 90** (**F56 a F90 entregues**)
+Testes ................. **4738** (Vitest: unit + integração, 268 arquivos) + **510** (Playwright E2E) + 1 skip
+ADRs ................... 397 (numeração GLOBAL e sequencial — a próxima é ADR-398)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -113,7 +113,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4732 testes passando (267 arquivos)
+npm test              # esperado: 4738 testes passando (268 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -128,9 +128,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: **509 passando + 1 skip** (510 casos); medido na F89: +3 cenários novos (E89 e E90);
-                      # casos novos são 9 do corpo, 2 da política, 2 no portão de
-                      # acessibilidade, 1 na tabela do id malformado e 1 da precedência;
+npm run test:e2e      # esperado: **510 passando + 1 skip** (511 casos); medido na F90: +1 cenário novo (em f90);
                       # nenhum vermelho
 ```
 
@@ -712,7 +710,7 @@ tests/{unit,integration,e2e}
 > (FASE 89, quando a linha nova encostou o arquivo no teto) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**63 a 89**).
+> e no `README.md`. A tabela abaixo é a corrente (**63 a 90**).
 
 | Fase | Tema | Situação |
 |---|---|---|
@@ -743,11 +741,12 @@ tests/{unit,integration,e2e}
 | 87 | **O rebrand que fecha: a marca visível × o identificador de memória** — `EMAIL_FROM`, `appName`/`issuer` do 2FA, `/Creator`/`/Producer` dos **3** renderizadores de PDF, o `PRODID` do `.ics` e a amostra do certificado passaram a **Koveno**; **ficaram** as roles `eventflow_app`/`eventflow_admin`, os buckets `eventflow-*`, os cookies `ef_*`, os rótulos `eventflow:*`, o **`UID` do `.ics`** (`eventflow`), os `@eventflow.test`, a senha de fixture e o namespace `--ef-*` — cada um custa sessão, migração, arquivo órfão ou link já emitido (ADR-389). O **remetente** era o último ponto antigo: o default do código já era Koveno e o `.env`/compose sobrepunham `EventFlow` (e o outbox não guarda remetente: a prova exigiu **3 ângulos**); o `emailFromAddress()` real com o shell antigo devolveu `EventFlow` e, sem ele, `Koveno <onboarding@resend.dev>`. Docs vivos atualizados (README, DESIGN, design-system, armadilhas, roadmap, análise) e a **nota de rebrand** no README e no histórico (ADR-390); **96 documentos de fase não se reescrevem**. `f62` **23/23** com as **23 baselines de mtime antigo, sem re-basear**; E2E **506 + 1 skip**. ADR-389/390 | ✅ |
 | 88 | **Leitura única no render (`I10`), `signOut` único na suíte (`I9`) e varredura dos `catch` silenciosos (`B10`)** — `readSponsorAccess` (`React.cache` com dois parâmetros primitivos `(tenantId, userId)` para atingir o `Map` por requisição do despachante `react-server`, mantendo `listSponsorAccess` pura) unifica a leitura de `sponsor_users` entre `TenantLayout`, `DashboardPage` e `SponsorAreaPage` (**2 → 1 consulta** por render, provado em `f75-contexto-uma-vez.test.ts`); os **5** blocos `catch` das contagens e leituras tolerantes (`certificateQueueStats`, `certificateDurationSample`, `emailQueueStats`, `resolveEntryDestinationForUser` e `isEmailChange`) ganharam log estruturado obrigatório (`logger.warn`/`console.error`) mantendo o retorno degradado (`null`/`false`); e o helper único `signOut(page, origin)` (`tests/e2e/helpers.ts`, enviando `data: {}` + `headers: { origin }` e afirmando `response.ok()`) substituiu as **101 chamadas** em **81 arquivos `.spec.ts`** que antes recebiam `415 Unsupported Media Type` sem limpar o cookie de sessão. **17 testes Vitest novos** (15 unit + 2 integração); dívidas **I10**, **B10** e **I9** quitadas (49 → **46**). ADR-391 … 393 | ✅ |
 | 89 | **Performance RSC no shell e contexto (`React.cache` + `Promise.all`), `?evento=` descartado com aviso (`E89`) e fronteira estrita do `.ef-theme` (`E90`)** — `readRequestContext = cache(...)` em `src/lib/auth/session.ts` deduplica sessão, vínculos e principal entre `TenantLayout`, `requirePagePermission` e as páginas filhas (**2 → 1** por render RSC, provado em `f75-contexto-uma-vez.test.ts`), e as **3 portas** do menu lateral rodam em `Promise.all`; `resolveEventQuerySelection` + `discardedEventSelectionNotice` (`src/domain/validation/query-filter-rules.ts`) anunciam com `<Alert tone="warning">` o descarte de `?evento=` malformado, repetido ou ausente de `events` nas **5 telas** (`/credenciamento`, `/credenciamento/crachas`, `/meu-cracha` e `/minha-agenda` com `fallback: 'first'`; `/participantes` com `fallback: 'all'`); e os **12 arquivos** fora do `.ef-theme` migraram de `.ef-*`/`event-theme.css` para tokens semânticos da plataforma, com `descadastro.png` regravada (23/23 a 0 px) e catraca de fonte. **25 testes Vitest novos** (20 unit + 5 integração) + **3 E2E**; dívidas **E89** e **E90** quitadas (46 → **44**). ADR-394 … 396 | ✅ |
+| 90 | **Separação do cadastro de evento (`/eventos/novo`) e cockpit limpo do acervo (`/eventos`)** — o formulário de 17 campos saiu da listagem e virou Server Component dedicado (`/administracao/eventos/novo`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/administracao/eventos` (`data-testid="btn-novo-evento"`); 44 dívidas mantidas. ADR-397 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**44 itens abertos**; A=4, **B=5**, C=1, D=3, **E=25**, F=5, **H=0**, **I=1**) está em **`docs/dividas-tecnicas.md`**; a contagem é **medida linha por linha** e a §3 daquele documento bate com ela desde a FASE 69. Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo), **F78** (a **H1**), **F86** (a **E92**), **F88** (**I10, B10 e I9**) e **F89** (**E89 e E90**). As fases **F66, F73, F74, F75, F77, F80, F81, F83 e F87** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos (a **F74** re-escopou a **E46**; a **F83** provou que o resíduo de 50 instituições no banco de dev é dado local; o ponto de atenção `(a)` da **F75** foi fechado na **F89**). Declaradas no caminho: **I8** (F79 — a segunda cópia das contagens no `README.md`), **E91** (F84), **E93** e **E94** (F86) e **E95** (F87 — a senha de fixture/seed carrega `EventFlow#2026`/`EventFlow@2026` em **18 arquivos**; estética, não segurança). A **F89 quitou dois itens (`E89` e `E90`) e não declarou nenhum**. A contagem **cai de 46 para 44** (E=25).
+**Dívidas técnicas:** o levantamento consolidado (**44 itens abertos**; A=4, **B=5**, C=1, D=3, **E=25**, F=5, **H=0**, **I=1**) está em **`docs/dividas-tecnicas.md`**; a contagem é **medida linha por linha** e a §3 daquele documento bate com ela desde a FASE 69. Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo), **F78** (a **H1**), **F86** (a **E92**), **F88** (**I10, B10 e I9**) e **F89** (**E89 e E90**). As fases **F66, F73, F74, F75, F77, F80, F81, F83, F87 e F90** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos (a **F74** re-escopou a **E46**; a **F83** provou que o resíduo de 50 instituições no banco de dev é dado local; o ponto de atenção `(a)` da **F75** foi fechado na **F89**). Declaradas no caminho: **I8** (F79 — a segunda cópia das contagens no `README.md`), **E91** (F84), **E93** e **E94** (F86) e **E95** (F87 — a senha de fixture/seed carrega `EventFlow#2026`/`EventFlow@2026` em **18 arquivos**; estética, não segurança). A **F89 quitou dois itens (`E89` e `E90`) e não declarou nenhum; a F90 manteve a contagem em 44** (E=25).
 Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **I8** (a segunda cópia das contagens no `README.md` — FASE 79), **E91** (o `tenant:billing:manage` sem leitor: não existe tela de financeiro — FASE 84), **E93** (o detalhamento congelado não é assinado — FASE 86), **E94** (`Activity.minAttendancePercent`/`requiresAttendance` sem leitor — FASE 86), **E95** (a senha de fixture/seed com o nome antigo — FASE 87), **A7** (o falso positivo do casamento por fragmento de tipo sensível) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
 
 ---
@@ -756,7 +755,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-89-contexto-cache-query-evento-e-tema.md`; antes, F88, F87, F86, F85, F84, F83, F82, F81, F80, F79, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69 e F68; a
+   fase entregue** (`docs/fase-90-separacao-cadastro-de-evento.md`; antes, F89, F88, F87, F86, F85, F84, F83, F82, F81, F80, F79, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69 e F68; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
