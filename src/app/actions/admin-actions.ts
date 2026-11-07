@@ -846,6 +846,7 @@ export async function saveCardTemplateAction(
   });
 
   revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas'));
+  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas/nova'));
 
   return result.ok
     ? { ok: true, message: result.created ? 'Carta criada.' : 'Carta atualizada.' }
@@ -943,6 +944,7 @@ export async function deleteCardTemplateAction(
   });
 
   revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas'));
+  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas/nova'));
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };

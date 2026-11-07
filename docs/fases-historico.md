@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67 e 68 a 69 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71 e 72 a 74 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -30,21 +30,25 @@
 > **duas mais antigas que restavam** — **66 e 67** — desceram **como estavam** e a tabela corrente passou a começar na **68**; o `AGENTS.md` terminou
 > em **64.591 bytes**. Na **FASE 93** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
 > **duas mais antigas que restavam** — **68 e 69** — desceram **como estavam** e a tabela corrente passou a começar na **70**; o `AGENTS.md` terminou
-> em **64.630 bytes**.
+> em **64.630 bytes**. Na **FASE 94** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
+> **duas mais antigas que restavam** — **70 e 71** — desceram **como estavam** e a tabela corrente passou a começar na **72**; o `AGENTS.md` terminou
+> em **64.590 bytes**. Na **FASE 95** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
+> **três mais antigas que restavam** — **72 a 74** — desceram **como estavam** e a tabela corrente passou a começar na **75**; o `AGENTS.md` terminou
+> em **64.560 bytes**.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **70** à **93**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **75** à **95**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
 > **A ordem é a cronológica da tabela original**, não a numérica: a numeração identifica o
 > TEMA, e é o humano quem o escolhe pelo nome — por isso a F16, a F17, a F23, a F24 e a F25
 > vieram antes da F15, e a F21 foi entregue depois de todas. As fases movidas na FASE 82, na
-> FASE 83, na FASE 84, na FASE 85, na FASE 86, na FASE 87, na FASE 89, na FASE 91, na FASE 92 e na FASE 93 entram no fim, na ordem em que estavam.
+> FASE 83, na FASE 84, na FASE 85, na FASE 86, na FASE 87, na FASE 89, na FASE 91, na FASE 92, na FASE 93, na FASE 94 e na FASE 95 entram no fim, na ordem em que estavam.
 >
 > **Nota de rebrand.** O produto passou a se chamar **Koveno** em novembro de 2026. Este
 > arquivo e os documentos de fase continuam dizendo **EventFlow** porque são registro do que
@@ -117,3 +121,8 @@
 | 67 | **Mala direta por fatos reais** — catálogo de 15 condições com frase explicativa, composição que recusa em vez de falhar aberto e catraca catálogo↔construtor; aba "Segmentos" com contagem, prévia mascarada e outbox; descadastro com token próprio. Portão 20 → 23; visual 19 → 21. ADR-338 … 340 | ✅ |
 | 68 | **O evento que não era de três dias** — a chamada vira **interruptor do evento** (`usesCall`; ausente **não** desliga) e as **duas colunas da janela são REMOVIDAS**; a chamada da F33 é a única fonte da verdade e o **`CFP_CLOSED` passa a ser devolvido … | ✅ |
 | 69 | **Mutirão dos pequenos** — cinco dívidas quitadas: **E86** (margem de deslocamento pura de 15 min), **E82** (ranking mascarado pós-ordem), **E84** (papéis semânticos no tema do evento, 2 casos WCAG AA), **E83** (gesto repetido) e **E88** (motivo do descadastro sem atraso). ADR-344 … 346 | ✅ |
+| 70 | **A inscrição que não deixa buraco · o formulário que o organizador monta** — reserva de vaga movida para o evento (`EVENT_AUTO`), `registrationRequiresMembership` no servidor e formulário por evento com allowlist de 6 tipos (ADR-347 … 349) … | ✅ |
+| 71 | **A vitrine viva da plataforma · Descoberta e expansão institucional** — descoberta unificada em `/eventos` (abas + redirect 308), taxonomia `EventCategory`, landing com destaques e `/para-instituicoes` com leads (ADR-350 … 353) … | ✅ |
+| 72 | **A API de leitura do evento** — `/api/v1` por evento com **projeção única** (`getPublicEventView`), **chave selada por evento**, 5 rotas, ETag/304 sem `generatedAt`, `Vary: Authorization`, 120/min e 401 uniforme (ADR-354 … 356) … | ✅ |
+| 73 | **O resultado da chamada que o organizador publica** — publicar deixou de ser decidir: `SEM_RESULTADO`/`RASCUNHO`/`PARCIAL`/**`FINAL` travado**, lista derivada mas **escolhida**, quatro gestos sem JavaScript (ADR-357 … 359) … | ✅ |
+| 74 | **A proposta que exige anexo e não pede** — a POSSE do upload vem antes do `inspectObject`, a recusa `NOT_READY` devolve o rascunho e o link, rascunho deixa de ser proposta recebida e a cegueira HERDA da trilha. **E46 re-escopada** (ADR-360 … 362) … | ✅ |

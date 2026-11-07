@@ -309,16 +309,24 @@ test.describe('página pública, patrocínio e autoria', () => {
 
     // ── Patrocinador ──────────────────────────────────────────────────────────
     const sponsorName = `Instituto Parceiro ${RUN_ID}`;
+    await page.getByTestId('btn-novo-patrocinador').click();
+    await expect(page).toHaveURL(new RegExp(`/patrocinadores/novo$`));
     const sponsorForm = page.getByTestId('create-sponsor');
     await sponsorForm.getByLabel('Nome').fill(sponsorName);
     // A primeira cota do seletor é a recém-criada ("Sem cota" vem antes por padrão).
     await sponsorForm.getByLabel('Cota').selectOption({ index: 1 });
     await sponsorForm.getByLabel('Site').fill('https://example.org/parceiro');
     await sponsorForm.getByTestId('admin-submit').click();
+    await expect(sponsorForm.getByTestId('create-sponsor-feedback')).toContainText(/cadastrado/i, {
+      timeout: 20_000,
+    });
 
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores`);
     await expect(page.getByTestId('sponsor-list')).toContainText(sponsorName, { timeout: 20_000 });
 
     // O limite da cota (1) já está ocupado: o segundo é RECUSADO com o motivo.
+    await page.getByTestId('btn-novo-patrocinador').click();
+    await expect(page).toHaveURL(new RegExp(`/patrocinadores/novo$`));
     const secondForm = page.getByTestId('create-sponsor');
     await secondForm.getByLabel('Nome').fill(`Segundo Parceiro ${RUN_ID}`);
     await secondForm.getByLabel('Cota').selectOption({ index: 1 });
@@ -405,11 +413,18 @@ test.describe('página pública, patrocínio e autoria', () => {
       [`Vitrine Grande ${RUN_ID}`, `Marca Grande ${RUN_ID}`],
       [`Vitrine Pequena ${RUN_ID}`, `Marca Pequena ${RUN_ID}`],
     ] as const) {
+      await page.getByTestId('btn-novo-patrocinador').click();
+      await expect(page).toHaveURL(new RegExp(`/patrocinadores/novo$`));
       const form = page.getByTestId('create-sponsor');
       await form.getByLabel('Nome').fill(nomeEmpresa);
       /** O rótulo da opção é o nome da cota, e cotas ilimitadas não têm sufixo. */
       await form.getByLabel('Cota').selectOption({ label: nomeCota });
       await form.getByTestId('admin-submit').click();
+      await expect(form.getByTestId('create-sponsor-feedback')).toContainText(/cadastrado/i, {
+        timeout: 20_000,
+      });
+
+      await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores`);
       await expect(page.getByTestId('sponsor-list')).toContainText(nomeEmpresa, { timeout: 20_000 });
 
       /**

@@ -56,6 +56,7 @@ export interface SponsorActionState {
 
 function revalidateSponsors(tenantSlug: string, eventId: string): void {
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`));
+  revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores/novo`));
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}`));
   revalidatePath(tenantPath(tenantSlug, '/eventos'), 'layout');
 }

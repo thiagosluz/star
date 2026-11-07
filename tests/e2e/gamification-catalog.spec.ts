@@ -111,6 +111,7 @@ test.describe('catálogo de gamificação', () => {
 
     // ── Carta: criar ────────────────────────────────────────────────────────
     await page.goto(`/t/${tenantSlug}/administracao/cartas`);
+    await page.getByTestId('btn-nova-carta').click();
 
     const novaCarta = page.getByTestId('create-card');
     await novaCarta.getByLabel('Identificador').fill(`carta-catalogo-${RUN_ID}`);
@@ -129,6 +130,7 @@ test.describe('catálogo de gamificação', () => {
       });
     });
 
+    await page.goto(`/t/${tenantSlug}/administracao/cartas`);
     await expect(page.getByTestId(`admin-card-${carta.id}`)).toContainText('Carta Original');
 
     // ── Carta: editar ───────────────────────────────────────────────────────

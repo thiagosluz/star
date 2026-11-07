@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { BadgeCheck, Handshake, Tags } from 'lucide-react';
+import { BadgeCheck, Handshake, Plus, Tags } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -8,7 +8,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { withTenant } from '@/lib/db/tenant-client';
-import { listSponsorBoard, listSponsorCandidates } from '@/lib/admin/sponsor-service';
+import { listSponsorBoard } from '@/lib/admin/sponsor-service';
 import {
   DEFAULT_SPONSOR_LOGO_SCALE,
   SPONSOR_LOGO_SCALE_LABELS,
@@ -33,7 +33,6 @@ import {
   requestAssetUploadAction,
 } from '@/app/actions/landing-actions';
 import {
-  copySponsorAction,
   deleteTierAction,
   removeSponsorAction,
   saveSponsorAction,
@@ -133,23 +132,6 @@ export default async function EventSponsorsPage({
   const board = await listSponsorBoard(tenantId, eventId);
   if (!board) notFound();
 
-  /**
-   * Patrocinadores de OUTROS eventos da instituição, para copiar (FASE 23, item E11).
-   * Os que já estão neste evento ficam na lista com o motivo — é melhor dizer
-   * "já está aqui" do que esconder o nome e o organizador procurar por ele.
-   */
-  const candidates = await listSponsorCandidates(tenantId, eventId);
-
-  /**
-   * ─── EXPERIÊNCIA DO PATROCINADOR (FASE 42) ─────────────────────────────────
-   *
-   *  O QR do estande, quem tem acesso à área do patrocinador e os contatos que
-   *  autorizaram a partilha. As consultas são por patrocinador (poucos por evento) e
-   *  rodam em paralelo — a tela já carregava o quadro inteiro antes desta fase.
-   *
-   *  As CARTAS vêm do catálogo da instituição: o QR só pode conceder carta que
-   *  existe, e o serviço recusa id de outra instituição.
-   */
   const returnTo = tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`);
 
   /**
@@ -185,16 +167,6 @@ export default async function EventSponsorsPage({
     }),
   );
 
-  const candidateOptions = [
-    { value: '', label: candidates.length > 0 ? 'Selecione um patrocinador…' : 'Nenhum patrocinador em outros eventos' },
-    ...candidates.map((candidate) => ({
-      value: candidate.sponsorId,
-      label: candidate.alreadyInEvent
-        ? `${candidate.name} (já está neste evento)`
-        : `${candidate.name}${candidate.tierName ? ` — ${candidate.tierName}` : ''} · ${candidate.events.length} evento(s)`,
-    })),
-  ];
-
   const tierChoices = [
     { value: '', label: 'Sem cota (aparece em "Patrocinadores")' },
     ...board.tiers.map((tier) => ({
@@ -215,6 +187,19 @@ export default async function EventSponsorsPage({
             {board.tiers.length} cota(s)
           </>
         }
+        actions={
+          <Link
+            href={tenantPath(
+              tenantSlug,
+              `/administracao/eventos/${eventId}/patrocinadores/novo`,
+            )}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            data-testid="btn-novo-patrocinador"
+          >
+            <Plus className="size-4" aria-hidden />
+            Novo patrocinador
+          </Link>
+        }
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
           { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },
@@ -234,7 +219,7 @@ export default async function EventSponsorsPage({
       </p>
 
       {/* ── Cotas ────────────────────────────────────────────────────────── */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-5" data-testid="tier-section">
+      <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm" data-testid="tier-section">
         <div className="flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-base font-semibold">
             <Tags className="size-4" aria-hidden />
@@ -367,7 +352,7 @@ export default async function EventSponsorsPage({
       </section>
 
       {/* ── Patrocinadores ───────────────────────────────────────────────── */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-5" data-testid="sponsor-section">
+      <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm" data-testid="sponsor-section">
         <div className="flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-base font-semibold">
             <Handshake className="size-4" aria-hidden />
@@ -385,7 +370,7 @@ export default async function EventSponsorsPage({
                 key={sponsor.id}
                 data-testid={`sponsor-${sponsor.id}`}
                 data-active={sponsor.isActive ? 'true' : 'false'}
-                className="space-y-3 rounded-lg border border-border p-4"
+                className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
@@ -562,66 +547,29 @@ export default async function EventSponsorsPage({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground" data-testid="empty-sponsors">
-            Nenhum patrocinador cadastrado.
-          </p>
-        )}
-
-        <div className="border-t border-border pt-4">
-          <h3 className="mb-3 text-sm font-medium">Novo patrocinador</h3>
-          <AdminForm action={saveSponsorAction} submitLabel="Cadastrar patrocinador" testId="create-sponsor" compact>
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
-            <input type="hidden" name="eventId" value={eventId} />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Nome" name="name" required placeholder="Instituto Parceiro" />
-              <SelectField label="Cota" name="tierId" options={tierChoices} defaultValue="" />
-              <Field label="Site" name="websiteUrl" placeholder="https://empresa.com.br" />
-              <Field label="Ordem na página" name="displayOrder" type="number" min={0} defaultValue={0} />
-              <Field label="Contato" name="contactName" />
-              <Field label="E-mail do contato" name="contactEmail" type="email" />
-              <Field label="CNPJ/CPF" name="taxId" hint="Gravado e exibido apenas mascarado" />
-              <Field label="Valor do contrato (R$)" name="contractValueReais" />
-              <Field label="Início do contrato" name="contractStart" type="date" />
-              <Field label="Fim do contrato" name="contractEnd" type="date" />
-            </div>
-
-            <CheckboxField
-              label="Visível na página pública"
-              name="isActive"
-              defaultChecked
-              hint="Você pode cadastrar agora e exibir quando o contrato for assinado."
-            />
-          </AdminForm>
-
-          {/*
-            ── Copiar de outro evento (FASE 23, item E11) ────────────────────────
-            A edição seguinte costuma ter os MESMOS patrocinadores. Redigitar nome,
-            site, contato e logo de cada um é onde o cadastro fica incompleto — e o
-            que se perde primeiro é o logo, que é o que aparece na página.
-          */}
-          <div className="mt-6 space-y-3 border-t border-border pt-4" data-testid="copy-sponsor-section">
-            <h3 className="text-sm font-medium">Copiar de outro evento</h3>
-            <p className="text-xs text-muted-foreground">
-              Copiar traz nome, site, contato, documento e logotipo. O cadastro entra{' '}
-              <strong>oculto e sem valor de contrato</strong>: cada edição tem o seu, e exibir
-              de imediato publicaria uma marca ainda não fechada.
+          <div
+            className="rounded-lg border border-dashed border-border p-8 text-center"
+            data-testid="empty-sponsors"
+          >
+            <Handshake className="mx-auto size-8 text-muted-foreground" aria-hidden />
+            <p className="mt-2 text-sm font-medium">Nenhum patrocinador cadastrado</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Adicione patrocinadores e parceiros para exibir suas marcas e gerenciar contratos.
             </p>
-
-            <AdminForm action={copySponsorAction} submitLabel="Copiar para este evento" testId="copy-sponsor" compact>
-              <input type="hidden" name="tenantSlug" value={tenantSlug} />
-              <input type="hidden" name="eventId" value={eventId} />
-
-              <SelectField
-                label="Patrocinador"
-                name="sourceSponsorId"
-                options={candidateOptions}
-                defaultValue=""
-                hint="A cota é casada pela categoria (Ouro → Ouro). Sem correspondência, o cadastro entra sem cota."
-              />
-            </AdminForm>
+            <div className="mt-4">
+              <Link
+                href={tenantPath(
+                  tenantSlug,
+                  `/administracao/eventos/${eventId}/patrocinadores/novo`,
+                )}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+              >
+                <Plus className="size-3.5" aria-hidden />
+                Cadastrar primeiro patrocinador
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       {/* ── Leitura por QR e acesso do patrocinador (FASE 42) ─────────────── */}

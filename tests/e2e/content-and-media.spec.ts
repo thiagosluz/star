@@ -504,6 +504,8 @@ test.describe('conteúdo e mídia', () => {
     });
 
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${secondEventId}/patrocinadores`);
+    await page.getByTestId('btn-novo-patrocinador').click();
+    await expect(page).toHaveURL(new RegExp(`/patrocinadores/novo$`));
 
     const copySection = page.getByTestId('copy-sponsor-section');
     await expect(copySection).toBeVisible();
@@ -536,12 +538,15 @@ test.describe('conteúdo e mídia', () => {
     expect(copied.tier?.key).toBe('GOLD');
     expect(copied.tier?.name).toBe(`Cota Ouro ${RUN_ID}`);
 
-    // A linha aparece na tela marcada como oculta.
+    // Volta para patrocinadores e a linha aparece na tela marcada como oculta.
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${secondEventId}/patrocinadores`);
     await expect(
       page.locator(`[data-testid="sponsor-${copied.id}"][data-active="false"]`),
     ).toBeVisible();
 
     // Copiar de novo é recusado com o motivo.
+    await page.getByTestId('btn-novo-patrocinador').click();
+    await expect(page).toHaveURL(new RegExp(`/patrocinadores/novo$`));
     const second = page.getByTestId('copy-sponsor');
     await second.getByLabel('Patrocinador').selectOption(sourceSponsorId);
     await second.getByTestId('admin-submit').click();

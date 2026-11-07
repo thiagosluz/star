@@ -60,6 +60,7 @@ export async function restoreCardTemplateAction(
    */
   const slug = String(formData.get('tenantSlug') ?? '');
   revalidatePath(tenantPath(slug, '/administracao/cartas'));
+  revalidatePath(tenantPath(slug, '/administracao/cartas/nova'));
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };

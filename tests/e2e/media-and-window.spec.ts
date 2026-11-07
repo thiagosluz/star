@@ -404,6 +404,8 @@ test.describe('mídia e agendamento', () => {
 
     // ── Copia a origem para o segundo evento ─────────────────────────────────
     await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${secondEventId}/patrocinadores`);
+    await page.getByTestId('btn-novo-patrocinador').click();
+    await expect(page).toHaveURL(new RegExp(`/patrocinadores/novo$`));
 
     const copyForm = page.getByTestId('copy-sponsor');
     await copyForm.getByLabel('Patrocinador').selectOption(sourceSponsorId);
@@ -421,7 +423,8 @@ test.describe('mídia e agendamento', () => {
     expect(copied.isActive).toBe(false);
     expect(copied.contractValueCents).toBeNull();
 
-    // A tela mostra a origem.
+    // Volta ao cockpit para conferir a origem.
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${secondEventId}/patrocinadores`);
     await expect(page.getByTestId(`sponsor-source-${copied.id}`)).toContainText(
       `Instituto Sincronia ${RUN_ID}`,
     );
