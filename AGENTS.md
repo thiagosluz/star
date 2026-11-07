@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 95** (**F56 a F95 entregues**)
-Testes ................. **4767** (Vitest: unit + integração, 273 arquivos) + **515** (Playwright E2E) + 1 skip
-ADRs ................... 402 (numeração GLOBAL e sequencial — a próxima é ADR-403)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 96** (**F56 a F96 entregues**)
+Testes ................. **4774** (Vitest: unit + integração, 274 arquivos) + **516** (Playwright E2E) + 1 skip
+ADRs ................... 408 (numeração GLOBAL e sequencial — a próxima é ADR-409)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -83,7 +83,7 @@ desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso 
 estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto, a
 primeira opção é **mover o próximo bloco para o histórico**, não condensar: o mais antigo ainda
 na tabela da §9 vai para [`docs/fases-historico.md`](docs/fases-historico.md), que guarda as
-fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71** e **72 a 74** (FASE 95),
+fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74** e **75 a 76** (FASE 96),
 movidas como estavam — o cabeçalho de lá registra cada movimento e o byte count —
 e a **§9 carrega a tabela corrente**
 (as fases recentes) + o ponteiro para o histórico. Condensar **apaga detalhe**; mover
@@ -706,16 +706,14 @@ tests/{unit,integration,e2e}
 
 ## 9. Estado por fase e próximos passos
 
-> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71** e **72 a 74**
-> (FASE 95, quando a separação do cadastro de cartas colecionáveis encostou o arquivo no teto) foram movidas
+> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74** e **75 a 76**
+> (FASE 96, quando o fechamento de pool, transação única, edição dedicada de carta e catraca de fronteira encostou o arquivo no teto) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**75 a 95**).
+> e no `README.md`. A tabela abaixo é a corrente (**77 a 96**).
 
 | Fase | Tema | Situação |
 |---|---|---|
-| 75 | **O refactor que mede antes** — a rede de **66 casos** veio antes do movimento; **16** guardas migradas para `guardAction` (+ a `registration` traduzida), com **4 exceções declaradas** (−760 linhas, não 1.500) e catálogo que reprova a cópia nova; a **leitura** extraída dos dois serviços (−2.324 linhas, escrita na mesma transação, catraca por AST); o **contexto** resolvido uma vez por render (2 + 2 → 1 + 1, ≈8 ms — em HTTP é ruído); e as **páginas de erro por área** (0 → 6 arquivos). ADR-363 … 365 | ✅ |
-| 76 | **O mutirão dos 500 que deviam ser 404** — o id malformado era **500 exclusivo do FORMATO** (25 de 42): `isUuid` no domínio + `requireUuidParam` (404 antes de consultar) em 23 páginas/24 params e 9 rotas/11 params; a query não é endereço (3 telas ignoram e anunciam), a API ganhou um envelope `{ok:false,code,message}` e a régua **400 = entrada × 404 = endereço**; a catraca achou 2 buracos e a tabela de 35 casos reprovou a si mesma. ADR-366 … 368 | ✅ |
 | 77 | **O organizador novo** — o **caminho de partida** (3 fatias com os fatos do render, dentro da prontidão, "pronto" proibido por varredura e o alvo resolvido NO CATÁLOGO — o que consertou o link morto de `sem-programacao`); a **exportação na raiz** (o recorte na PROJEÇÃO, 3/3/210 → 2/2/90, o XP do livro-razão, 3 colunas fora e o `ATTENDANCES_CSV` em formato longo, com migração); e o **demo de LEITURA** (`/t/<slug>/exemplo` por vínculo + catraca de escrita provada por hash). ADR-369 … 371 | ✅ |
 | 78 | **O topo único** — a dívida **H1** fechada: **PageHeader server** (split de `navigation.tsx`, sem ~96 ilhas de cliente), com `eyebrow` = grupo de navegação da fonte única, **volta derivada da trilha** e `descriptionTestId`; **81 das 96 páginas migradas** e **15 exceções** motivadas (tema do evento, heróis, renderizador próprio e redirects); **`text-headline`** (16px) eliminado e **6 telas sem `<h1>`** corrigidas. Catracas: **fonte** + **12 telas** no navegador. ADR-372 … 374 | ✅ |
 | 79 | **O `AGENTS.md` volta a respirar** — as fases **1 a 25** saíram da tabela da §9 e foram **movidas como estavam** para `docs/fases-historico.md` (nenhuma linha reescrita), com um ponteiro de três linhas no lugar; a tabela corrente ficou com folga real e uma catraca nova reprova fase histórica na tabela e fase corrente no histórico. ADR-375 | ✅ |
@@ -735,11 +733,12 @@ tests/{unit,integration,e2e}
 | 93 | **Separação do cadastro de chamada (`/chamadas/nova`) e cockpit limpo de chamadas (`/chamadas`)** — o formulário de 11 campos e o editor de rubrica saíram da listagem e viraram Server Component dedicado (`/administracao/eventos/[eventId]/chamadas/nova`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/chamadas` (`data-testid="btn-nova-chamada"`); central de chamadas em cards brancos (`bg-card rounded-xl border border-border shadow-sm p-6`) e empty state atualizado; 44 dívidas mantidas. ADR-400 | ✅ |
 | 94 | **Separação do cadastro de patrocinador (`/patrocinadores/novo`) e cockpit limpo de patrocinadores (`/patrocinadores`)** — o formulário de 12 campos e a cópia de edições anteriores saíram da listagem e viraram Server Component dedicado (`/administracao/eventos/[eventId]/patrocinadores/novo`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/patrocinadores` (`data-testid="btn-novo-patrocinador"`); cockpit com cotas e patrocinadores em cards brancos elevados (`bg-card rounded-xl border border-border shadow-sm p-6`) e empty state com CTA; 44 dívidas mantidas. ADR-401 | ✅ |
 | 95 | **Separação do cadastro de cartas colecionáveis (`/cartas/nova`) e cockpit limpo de cartas (`/cartas`)** — o formulário de 26 campos e a arte 3D holográfica saíram da listagem e viraram Server Component dedicado (`/administracao/cartas/nova`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/cartas` (`data-testid="btn-nova-carta"`); cockpit com cards brancos elevados (`bg-card rounded-xl border border-border shadow-sm p-5`), concessão manual em card limpo e empty state com CTA; 44 dívidas mantidas. ADR-402 | ✅ |
+| 96 | **Pool explícito (`PrismaPg`), transação única por render, edição dedicada de carta (`/cartas/[cardId]/editar`), busca na concessão, hidratação determinística e fronteira cliente/servidor** — `resolveRuntimePoolConfig` e `resolveAdminPoolConfig` dimensionam o pool; `listCardTemplates`/`getCardTemplateForEdit`/`listAdminEvents` aceitam `tx?: TxClient` e consolidam `/administracao/cartas` em **1 transação `withTenant`** (eram 4); a edição de 26 campos virou rota dedicada (`/administracao/cartas/[cardId]/editar`, 404 uniforme) e a concessão manual ganhou busca GET `?participante=` + aviso de truncamento; `ProposalAcceptancePanel` formata `decidedAt` no `eventTimeZone` e `ActiveSessionsList` usa `<time suppressHydrationWarning>`; `ambientTenantId` removido; catraca AST `'use client'` e `revalidateTenantArea`. ADR-403 … 408 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
 
-**Dívidas técnicas:** o levantamento consolidado (**44 itens abertos**; A=4, **B=5**, C=1, D=3, **E=25**, F=5, **H=0**, **I=1**) está em **`docs/dividas-tecnicas.md`**; a contagem é **medida linha por linha** e a §3 daquele documento bate com ela desde a FASE 69. Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo), **F78** (a **H1**), **F86** (a **E92**), **F88** (**I10, B10 e I9**) e **F89** (**E89 e E90**). As fases **F66, F73, F74, F75, F77, F80, F81, F83, F87, F90, F91 e F92** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos (a **F74** re-escopou a **E46**; a **F83** provou que o resíduo de 50 instituições no banco de dev é dado local; o ponto de atenção `(a)` da **F75** foi fechado na **F89**). Declaradas no caminho: **I8** (F79 — a segunda cópia das contagens no `README.md`), **E91** (F84), **E93** e **E94** (F86) e **E95** (F87 — a senha de fixture/seed carrega `EventFlow#2026`/`EventFlow@2026` em **18 arquivos**; estética, não segurança). A **F89 quitou dois itens (`E89` e `E90`) e não declarou nenhum; as F90, F91, F92, F93, F94 e F95 mantiveram a contagem em 44** (E=25).
+**Dívidas técnicas:** o levantamento consolidado (**44 itens abertos**; A=4, **B=5**, C=1, D=3, **E=25**, F=5, **H=0**, **I=1**) está em **`docs/dividas-tecnicas.md`**; a contagem é **medida linha por linha** e a §3 daquele documento bate com ela desde a FASE 69. Quitados recentemente: **F51**, **F52**, **F56** (as nove do tema E), **F60** (**E79, I1, I2, I3**), **F61** (**H3**), **F62** (**H6, I3, E80, E81**), **F64** (a **E84** da página da instituição), **F69** (**E86, E82, E83, E88 e E84**), **F72** (o upload presigned do MinIO novo), **F78** (a **H1**), **F86** (a **E92**), **F88** (**I10, B10 e I9**) e **F89** (**E89 e E90**). As fases **F66, F73, F74, F75, F77, F80, F81, F83, F87, F90, F91 e F92** não quitaram nem declararam item: deixaram pontos de atenção nos próprios documentos (a **F74** re-escopou a **E46**; a **F83** provou que o resíduo de 50 instituições no banco de dev é dado local; o ponto de atenção `(a)` da **F75** foi fechado na **F89**). Declaradas no caminho: **I8** (F79 — a segunda cópia das contagens no `README.md`), **E91** (F84), **E93** e **E94** (F86) e **E95** (F87 — a senha de fixture/seed carrega `EventFlow#2026`/`EventFlow@2026` em **18 arquivos**; estética, não segurança). A **F89 quitou dois itens (`E89` e `E90`) e não declarou nenhum; as F90 a F96 mantiveram a contagem em 44** (E=25).
 Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação individual do endereço de exportação da agenda — FASE 65), **E87** (sem revogação individual do endereço de descadastro — FASE 67), **I8** (a segunda cópia das contagens no `README.md` — FASE 79), **E91** (o `tenant:billing:manage` sem leitor: não existe tela de financeiro — FASE 84), **E93** (o detalhamento congelado não é assinado — FASE 86), **E94** (`Activity.minAttendancePercent`/`requiresAttendance` sem leitor — FASE 86), **E95** (a senha de fixture/seed com o nome antigo — FASE 87), **A7** (o falso positivo do casamento por fragmento de tipo sensível) e **B11** (o custo da prévia da API — 5 chamadas de handler por render — declarado na FASE 72).
 
 ---
@@ -748,7 +747,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 106 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-95-separacao-cadastro-de-cartas.md`; antes, F94, F93, F92, F91, F90, F89, F88, F87, F86, F85, F84, F83, F82, F81, F80, F79, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69 e F68; a
+   fase entregue** (`docs/fase-96-pool-transacao-unica-edicao-de-carta-e-fronteira.md`; antes, F95, F94, F93, F92, F91, F90, F89, F88, F87, F86, F85, F84, F83, F82, F81, F80, F79, F78, F77, F76, F75, F74, F73, F72, F71, F70, F69 e F68; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

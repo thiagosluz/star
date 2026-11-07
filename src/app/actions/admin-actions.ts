@@ -22,6 +22,7 @@ import { headers } from 'next/headers';
 import { z } from 'zod';
 
 import { guardAction } from '@/lib/auth/guard-action';
+import { revalidateTenantArea, TENANT_CACHE_AREAS } from '@/lib/cache/revalidate-area';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { decideReport } from '@/lib/platform/profile-moderation';
 import {
@@ -239,8 +240,9 @@ export async function saveRoomAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.EVENT_UPDATE,
   });
   if (!auth.ok) return auth.state;
@@ -270,7 +272,7 @@ export async function saveRoomAction(
     capacity,
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), `/administracao/eventos/${eventId}`));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.evento(eventId));
 
   return result.ok
     ? { ok: true, message: result.created ? 'Sala criada.' : 'Sala atualizada.' }
@@ -705,8 +707,9 @@ export async function saveTrackAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.TRACK_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -753,7 +756,7 @@ export async function saveTrackAction(
     isActive: formData.get('isActive') !== 'off',
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), `/administracao/eventos/${eventId}`));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.evento(eventId));
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message, details: result.details };
 
@@ -770,8 +773,9 @@ export async function saveCardTemplateAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.CARD_TEMPLATE_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -845,8 +849,7 @@ export async function saveCardTemplateAction(
     },
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas'));
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas/nova'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.cartas);
 
   return result.ok
     ? { ok: true, message: result.created ? 'Carta criada.' : 'Carta atualizada.' }
@@ -857,8 +860,9 @@ export async function saveMissionAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.TASK_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -903,7 +907,7 @@ export async function saveMissionAction(
     displayOrder: toInt(formData.get('displayOrder'), 0),
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/missoes'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.missoes);
 
   return result.ok
     ? { ok: true, message: result.created ? 'Missão criada.' : 'Missão atualizada.' }
@@ -926,8 +930,9 @@ export async function deleteCardTemplateAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.CARD_TEMPLATE_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -943,8 +948,7 @@ export async function deleteCardTemplateAction(
     cardTemplateId,
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas'));
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/cartas/nova'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.cartas);
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };
@@ -963,8 +967,9 @@ export async function deleteMissionAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.TASK_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -980,7 +985,7 @@ export async function deleteMissionAction(
     taskDefinitionId,
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/missoes'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.missoes);
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };
@@ -1002,8 +1007,9 @@ export async function retryCertificateAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   });
   if (!auth.ok) return auth.state;
@@ -1019,7 +1025,7 @@ export async function retryCertificateAction(
     certificateId,
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/certificados'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.certificados);
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
@@ -1037,8 +1043,9 @@ export async function revokeCertificateAdminAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.CERTIFICATE_REVOKE,
   });
   if (!auth.ok) return auth.state;
@@ -1056,7 +1063,7 @@ export async function revokeCertificateAdminAction(
 
   const result = await revokeCertificate({ tenantId: auth.tenantId, certificateId, reason });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/administracao/certificados'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.certificados);
 
   return result.ok
     ? { ok: true, message: 'Certificado revogado.' }
@@ -1070,8 +1077,9 @@ export async function checkInByBadgeAction(
   _prev: AdminActionState | null,
   formData: FormData,
 ): Promise<AdminActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<AdminActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.REGISTRATION_CHECKIN,
   });
   if (!auth.ok) return auth.state;
@@ -1087,7 +1095,7 @@ export async function checkInByBadgeAction(
     staffUserId: auth.userId,
   });
 
-  revalidatePath(tenantPath(String(formData.get('tenantSlug')), '/credenciamento'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.credenciamento);
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 

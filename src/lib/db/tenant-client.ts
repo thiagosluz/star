@@ -50,12 +50,49 @@ function buildRuntimeConnectionString(): string {
   return `postgresql://${user}:${pass}@${host}:${port}/${db}?schema=public`;
 }
 
+export interface RuntimePoolConfig {
+  connectionString: string;
+  max: number;
+  idleTimeoutMillis: number;
+  connectionTimeoutMillis: number;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  DIMENSIONAMENTO EXPLÍCITO DO POOL (FASE 96 · ADR-403)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *  Passar apenas a string de conexão para `new PrismaPg(connString)` delegava o
+ *  limite ao padrão oculto do `pg` (10 conexões), sem visibilidade operacional e
+ *  sem controle por variável de ambiente para alinhar `DB_POOL_MAX × réplicas`
+ *  ao `default_pool_size` do PgBouncer.
+ */
+export function resolveRuntimePoolConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): RuntimePoolConfig {
+  const parsedMax = Number(env.DB_POOL_MAX ?? 10);
+  const max = Number.isInteger(parsedMax) && parsedMax > 0 ? parsedMax : 10;
+
+  const parsedIdle = Number(env.DB_IDLE_TIMEOUT_MS ?? 30_000);
+  const idleTimeoutMillis = Number.isInteger(parsedIdle) && parsedIdle >= 1_000 ? parsedIdle : 30_000;
+
+  const parsedConn = Number(env.DB_CONN_TIMEOUT_MS ?? 5_000);
+  const connectionTimeoutMillis =
+    Number.isInteger(parsedConn) && parsedConn >= 1_000 ? parsedConn : 5_000;
+
+  return {
+    connectionString: buildRuntimeConnectionString(),
+    max,
+    idleTimeoutMillis,
+    connectionTimeoutMillis,
+  };
+}
+
 const globalForRuntime = globalThis as unknown as {
   __eventflowRuntimePrisma?: PrismaClient;
 };
 
 function createRuntimeClient(): PrismaClient {
-  const adapter = new PrismaPg(buildRuntimeConnectionString());
+  const adapter = new PrismaPg(resolveRuntimePoolConfig());
   return new PrismaClient({
     adapter,
     /**
@@ -116,39 +153,19 @@ export class MissingTenantContextError extends Error {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
-//  Contexto ambiente (React `cache` não pode ser importado aqui: este módulo
-//  também roda no worker do BullMQ, fora do Next.js)
-// ───────────────────────────────────────────────────────────────────────────────
-let ambientTenantId: string | null = null;
-
-/**
- * Define o tenant "ambiente" para o processo. Use APENAS em jobs de background,
- * onde não há `withTenant()` por requisição.
- *
- * Deve ser sempre pareado com `clearAmbientTenant()` em um bloco `finally`.
- */
-export function setAmbientTenant(tenantId: string): void {
-  ambientTenantId = tenantId;
-}
-
-export function clearAmbientTenant(): void {
-  ambientTenantId = null;
-}
-
 /**
  * Cliente de dados consciente do tenant.
  *
- * Fora de um contexto, o proxy LANÇA erro em vez de retornar vazio. Falhar
- * ruidosamente é melhor que devolver `[]` e mascarar um bug de escopo — que é
- * exatamente a classe de bug que a RLS existe para impedir.
+ * Fora de `withTenant()` (avaliado exclusivamente via `AsyncLocalStorage`), o proxy
+ * LANÇA erro em vez de retornar vazio. Falhar ruidosamente é melhor que devolver `[]`
+ * e mascarar um bug de escopo — e eliminar variáveis globais de módulo (`ambientTenantId`,
+ * FASE 96 · ADR-407) garante isolamento mesmo sob `concurrency > 1` no worker do BullMQ.
  */
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop, receiver) {
     const ctx = contextStore.getStore();
-    const activeTenant = ctx?.tenantId ?? ambientTenantId;
 
-    if (!activeTenant) {
+    if (!ctx) {
       // Permite acesso a membros internos do Prisma (`$transaction`, etc.) para
       // que `withTenant` possa ser implementado sobre o próprio objeto.
       if (typeof prop === 'string' && prop.startsWith('$')) {
@@ -157,7 +174,7 @@ export const db = new Proxy({} as PrismaClient, {
       throw new MissingTenantContextError(String(prop));
     }
 
-    return Reflect.get(ctx?.tx ?? basePrisma, prop, receiver);
+    return Reflect.get(ctx.tx, prop, receiver);
   },
 });
 
@@ -214,7 +231,7 @@ export async function withTenant<T>(
 
 /** Tenant do contexto corrente (útil para logs e auditoria). */
 export function currentTenantId(): string | undefined {
-  return contextStore.getStore()?.tenantId ?? ambientTenantId ?? undefined;
+  return contextStore.getStore()?.tenantId;
 }
 
 /**

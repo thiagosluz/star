@@ -100,7 +100,7 @@ describe('FASE 95 — Separação do cadastro de cartas colecionáveis (/cartas/
     expect(html).not.toContain('data-testid="create-card-section"');
   });
 
-  it('3. o cockpit renderiza os itens em cards elevados e preserva o form de edição embutido', async () => {
+  it('3. o cockpit renderiza os itens em cards elevados e preserva o link de edição e exclusão', async () => {
     const html = renderToStaticMarkup(
       await AdminCardsPage({
         params: Promise.resolve({ tenantSlug: 'ufba-demo' }),
@@ -110,7 +110,7 @@ describe('FASE 95 — Separação do cadastro de cartas colecionáveis (/cartas/
 
     expect(html).toContain('data-testid="admin-card-card-1"');
     expect(html).toContain('Guardião do Método');
-    expect(html).toContain('data-testid="card-form-card-1"');
+    expect(html).toContain('data-testid="card-edit-card-1"');
     expect(html).toContain('data-testid="card-delete-card-1"');
   });
 

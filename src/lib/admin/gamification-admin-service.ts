@@ -17,7 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { withTenant } from '@/lib/db/tenant-client';
+import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
 import { diffFields, recordAudit } from '@/lib/admin/audit';
 import { resolveArt, resolvePalette } from '@/domain/gamification/card-rules';
@@ -178,15 +178,20 @@ export async function deleteCardTemplate(input: {
         return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Carta não encontrada.' };
       }
 
-      const [missions, qrCodes, ownedBy] = await Promise.all([
-        tx.taskDefinition.count({
-          where: { tenantId: input.tenantId, rewardCardTemplateId: card.id, deletedAt: null },
-        }),
-        tx.sponsorQrCode.count({
-          where: { tenantId: input.tenantId, cardTemplateId: card.id, deletedAt: null },
-        }),
-        tx.userCard.count({ where: { tenantId: input.tenantId, cardTemplateId: card.id } }),
-      ]);
+      /**
+       * Consultas em série na MESMA conexão transacional (`tx`) (FASE 96 · ADR-403):
+       * o driver `pg` enfileira queries simultâneas na mesma conexão e emite
+       * `DeprecationWarning: Calling client.query() when the client is already executing a query`.
+       */
+      const missions = await tx.taskDefinition.count({
+        where: { tenantId: input.tenantId, rewardCardTemplateId: card.id, deletedAt: null },
+      });
+      const qrCodes = await tx.sponsorQrCode.count({
+        where: { tenantId: input.tenantId, cardTemplateId: card.id, deletedAt: null },
+      });
+      const ownedBy = await tx.userCard.count({
+        where: { tenantId: input.tenantId, cardTemplateId: card.id },
+      });
 
       if (missions > 0 || qrCodes > 0) {
         const partes = [
@@ -349,11 +354,12 @@ export interface AdminCardRow {
 export async function listCardTemplates(
   tenantId: string,
   scope: CatalogScope = 'ATIVOS',
+  tx?: TxClient,
 ): Promise<AdminCardRow[]> {
-  return await withTenant(tenantId, async (tx) => {
+  const run = async (client: TxClient): Promise<AdminCardRow[]> => {
     const archived = scope === 'ARQUIVADOS';
 
-    const rows = await tx.cardTemplate.findMany({
+    const rows = await client.cardTemplate.findMany({
       where: { tenantId, ...(archived ? { deletedAt: { not: null } } : { deletedAt: null }) },
       /**
        * Arquivada sai do mais RECENTE para o mais antigo: quem abriu a lista acabou de
@@ -391,7 +397,7 @@ export async function listCardTemplates(
     });
 
     const trail = archived
-      ? await readCatalogArchiveTrail(tx, {
+      ? await readCatalogArchiveTrail(client, {
           tenantId,
           entityType: CATALOG_ENTITY_TYPE.card,
           entityIds: rows.map((row) => row.id),
@@ -422,7 +428,78 @@ export async function listCardTemplates(
       archivedAt: row.deletedAt,
       archivedByName: trail?.get(row.id)?.byName ?? null,
     }));
-  });
+  };
+
+  return tx ? run(tx) : withTenant(tenantId, run);
+}
+
+/**
+ * Busca uma carta ativa pelo ID para a rota dedicada de edição
+ * (`/administracao/cartas/[cardId]/editar`, FASE 96 · ADR-404).
+ *
+ * Retorna `null` se a carta não existir na instituição ou estiver arquivada
+ * (`deletedAt: null`), permitindo que a página responda 404 uniforme.
+ */
+export async function getCardTemplateForEdit(
+  tenantId: string,
+  cardTemplateId: string,
+  tx?: TxClient,
+): Promise<AdminCardRow | null> {
+  const run = async (client: TxClient): Promise<AdminCardRow | null> => {
+    const row = await client.cardTemplate.findFirst({
+      where: { id: cardTemplateId, tenantId, deletedAt: null },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        lore: true,
+        rarity: true,
+        trigger: true,
+        levelRequired: true,
+        maxSupply: true,
+        mintedCount: true,
+        dropWeight: true,
+        isActive: true,
+        isSecret: true,
+        palette: true,
+        art: true,
+        triggerCondition: true,
+        eventId: true,
+        deletedAt: true,
+        _count: { select: { userCards: true, taskDefinitions: true, sponsorQrCodes: true } },
+      },
+    });
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      lore: row.lore,
+      rarity: row.rarity,
+      trigger: row.trigger,
+      levelRequired: row.levelRequired,
+      maxSupply: row.maxSupply,
+      mintedCount: row.mintedCount,
+      dropWeight: row.dropWeight,
+      isActive: row.isActive,
+      isSecret: row.isSecret,
+      palette: row.palette,
+      art: row.art,
+      triggerCondition: row.triggerCondition,
+      ownedBy: row._count.userCards,
+      usedByMissions: row._count.taskDefinitions,
+      usedByQrCodes: row._count.sponsorQrCodes,
+      eventId: row.eventId,
+      archivedAt: null,
+      archivedByName: null,
+    };
+  };
+
+  return tx ? run(tx) : withTenant(tenantId, run);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

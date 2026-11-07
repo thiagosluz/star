@@ -79,8 +79,20 @@ const globalForPrisma = globalThis as unknown as {
   __eventflowAdminPrisma?: PrismaClient;
 };
 
+export function resolveAdminPoolConfig(env: NodeJS.ProcessEnv = process.env) {
+  const parsedMax = Number(env.ADMIN_DB_POOL_MAX ?? env.DB_POOL_MAX ?? 10);
+  const max = Number.isInteger(parsedMax) && parsedMax > 0 ? parsedMax : 10;
+
+  return {
+    connectionString: buildAdminConnectionString(),
+    max,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+  };
+}
+
 function createAdminClient(): PrismaClient {
-  const adapter = new PrismaPg(buildAdminConnectionString());
+  const adapter = new PrismaPg(resolveAdminPoolConfig());
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],

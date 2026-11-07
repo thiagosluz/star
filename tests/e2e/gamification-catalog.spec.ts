@@ -149,6 +149,7 @@ test.describe('catálogo de gamificação', () => {
     await expect(page.getByTestId(`card-form-${carta.id}-feedback`)).toContainText(/atualizada/i, {
       timeout: 30_000,
     });
+    await page.getByTestId('link-voltar-cartas').click();
     await expect(page.getByTestId(`admin-card-${carta.id}`)).toContainText('Carta Editada');
 
     /** E o banco confirma: é o MESMO id, com o nome novo (editar não recria). */

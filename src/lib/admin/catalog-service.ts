@@ -22,7 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { withTenant } from '@/lib/db/tenant-client';
+import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { canDeleteActivity, defaultRequiresRegistration } from '@/domain/events/activity-rules';
 import {
   parseConfirmationRequirements,
@@ -409,9 +409,12 @@ export interface AdminEventRow {
   registrationCount: number;
 }
 
-export async function listAdminEvents(tenantId: string): Promise<AdminEventRow[]> {
-  const rows = await withTenant(tenantId, (tx) =>
-    tx.event.findMany({
+export async function listAdminEvents(
+  tenantId: string,
+  tx?: TxClient,
+): Promise<AdminEventRow[]> {
+  const query = (client: TxClient) =>
+    client.event.findMany({
       where: { tenantId, deletedAt: null },
       orderBy: { startsAt: 'desc' },
       take: 100,
@@ -426,8 +429,9 @@ export async function listAdminEvents(tenantId: string): Promise<AdminEventRow[]
         confirmedCount: true,
         _count: { select: { activities: true, tracks: true, rooms: true, registrations: true } },
       },
-    }),
-  );
+    });
+
+  const rows = tx ? await query(tx) : await withTenant(tenantId, query);
 
   return rows.map((row) => ({
     id: row.id,

@@ -17,12 +17,11 @@
  *  endpoint HTTP, e nada impede alguém de postar nela sem passar pela listagem.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { guardAction } from '@/lib/auth/guard-action';
+import { revalidateTenantArea, TENANT_CACHE_AREAS } from '@/lib/cache/revalidate-area';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
-import { tenantPath } from '@/domain/tenancy/resolution';
 import { restoreCardTemplate, restoreMission } from '@/lib/admin/catalog-archive-service';
 
 export interface CatalogArchiveActionState {
@@ -36,8 +35,9 @@ export async function restoreCardTemplateAction(
   _prev: CatalogArchiveActionState | null,
   formData: FormData,
 ): Promise<CatalogArchiveActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<CatalogArchiveActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.CARD_TEMPLATE_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -54,13 +54,10 @@ export async function restoreCardTemplateAction(
   });
 
   /**
-   * As DUAS vistas são revalidadas: a carta sai da lista de arquivados e volta para o
-   * catálogo ativo. Revalidar só a tela atual deixaria a outra mentindo por um
-   * `router.refresh()` inteiro — e é comum o organizador alternar entre as duas.
+   * As vistas da área de cartas são revalidadas de forma centralizada (FASE 96 · ADR-408),
+   * cobrindo catálogo ativo, arquivados, `/nova` e `/[cardId]/editar`.
    */
-  const slug = String(formData.get('tenantSlug') ?? '');
-  revalidatePath(tenantPath(slug, '/administracao/cartas'));
-  revalidatePath(tenantPath(slug, '/administracao/cartas/nova'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.cartas);
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };
@@ -78,8 +75,9 @@ export async function restoreMissionAction(
   _prev: CatalogArchiveActionState | null,
   formData: FormData,
 ): Promise<CatalogArchiveActionState> {
+  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
   const auth = await guardAction<CatalogArchiveActionState>({
-    tenantSlug: String(formData.get('tenantSlug') ?? ''),
+    tenantSlug,
     permission: PERMISSIONS.TASK_MANAGE,
   });
   if (!auth.ok) return auth.state;
@@ -95,8 +93,7 @@ export async function restoreMissionAction(
     taskDefinitionId,
   });
 
-  const slug = String(formData.get('tenantSlug') ?? '');
-  revalidatePath(tenantPath(slug, '/administracao/missoes'));
+  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.missoes);
 
   if (!result.ok) {
     return { ok: false, code: result.code, message: result.message, details: result.details };

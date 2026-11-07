@@ -783,7 +783,10 @@ export function AccountSessionsList({
                 ) : null}
               </p>
               <p className="text-xs text-muted-foreground">
-                Último uso em {formatMoment(session.lastUsedAt)}
+                Último uso em{' '}
+                <time dateTime={session.lastUsedAt} suppressHydrationWarning>
+                  {formatMoment(session.lastUsedAt)}
+                </time>
                 {session.ipAddress ? ` · ${session.ipAddress}` : ''}
               </p>
             </div>

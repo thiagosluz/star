@@ -237,10 +237,12 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * a FASE 94 acrescentou a tela de cadastro de patrocinador (/administracao/eventos/[eventId]/patrocinadores/novo),
      * que nasce migrada com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`;
      * a FASE 95 acrescentou a tela de cadastro de carta colecionável (/administracao/cartas/nova),
+     * que nasce migrada com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`;
+     * a FASE 96 acrescentou a tela de edição de carta colecionável (/administracao/cartas/[cardId]/editar),
      * que nasce migrada com o mesmo `PageHeader` e o mesmo `eyebrow` de `operacao`.
      */
-    expect(PAGINAS.length).toBe(103);
-    expect(MIGRADAS.length).toBe(88);
+    expect(PAGINAS.length).toBe(104);
+    expect(MIGRADAS.length).toBe(89);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

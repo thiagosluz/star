@@ -48,6 +48,24 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
+function formatDecisionDateInZone(date: Date, timeZone: string): string {
+  try {
+    return date.toLocaleDateString('pt-BR', {
+      timeZone: timeZone || 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return date.toLocaleDateString('pt-BR', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }
+}
+
 export function ProposalAcceptancePanel({
   tenantSlug,
   eventSlug,
@@ -65,6 +83,7 @@ export function ProposalAcceptancePanel({
   roomOptions,
   decidedStatus,
   decidedAt,
+  decidedAtLabel,
   action,
 }: {
   tenantSlug: string;
@@ -92,6 +111,8 @@ export function ProposalAcceptancePanel({
    */
   decidedStatus: string | null;
   decidedAt: Date | null;
+  /** Data já formatada no fuso do evento pelo Server Component (FASE 96 · ADR-405). */
+  decidedAtLabel?: string | null;
   action: (prev: CallActionState | null, formData: FormData) => Promise<CallActionState>;
 }) {
   const [state, formAction] = useActionState<CallActionState | null, FormData>(action, null);
@@ -136,6 +157,9 @@ export function ProposalAcceptancePanel({
    * que o aceite nunca aconteceu (era o que a versão anterior fazia, ao sumir).
    */
   if (decidedStatus) {
+    const resolvedDateLabel =
+      decidedAtLabel ?? (decidedAt ? formatDecisionDateInZone(decidedAt, eventTimeZone) : null);
+
     return (
       <div
         className="space-y-3 rounded-lg border border-border bg-background p-4"
@@ -150,7 +174,7 @@ export function ProposalAcceptancePanel({
                 ? 'rejeitada'
                 : 'revisão solicitada'}
           </span>
-          {decidedAt ? ` em ${decidedAt.toLocaleDateString('pt-BR')}` : ''}.
+          {resolvedDateLabel ? ` em ${resolvedDateLabel}` : ''}.
         </p>
 
         <p className="text-xs text-muted-foreground">
