@@ -78,7 +78,13 @@ export default async function NovaCartaPage({
           </p>
         </div>
 
-        <AdminForm action={saveCardTemplateAction} submitLabel="Criar carta" testId="create-card">
+        <AdminForm
+          action={saveCardTemplateAction}
+          submitLabel="Criar carta"
+          testId="create-card"
+          backHref={tenantPath(tenantSlug, '/administracao/cartas')}
+          backLabel="Ver cartas"
+        >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <CardFormFields
             triggerOptions={TRIGGER_OPTIONS}

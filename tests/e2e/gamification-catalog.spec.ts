@@ -166,6 +166,8 @@ test.describe('catálogo de gamificação', () => {
 
     // ── Missão: criar, editar e excluir ─────────────────────────────────────
     await page.goto(`/t/${tenantSlug}/administracao/missoes`);
+    await page.getByTestId('btn-nova-missao').click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenantSlug}/administracao/missoes/nova$`));
 
     const novaMissao = page.getByTestId('create-mission');
     await novaMissao.getByLabel('Identificador').fill(`missao-catalogo-${RUN_ID}`);
@@ -175,6 +177,8 @@ test.describe('catálogo de gamificação', () => {
     await expect(page.getByTestId('create-mission-feedback')).toContainText(/missão criada/i, {
       timeout: 30_000,
     });
+    await page.getByTestId('create-mission-back-link').click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenantSlug}/administracao/missoes$`));
 
     const missao = await e2eDb.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
@@ -184,7 +188,10 @@ test.describe('catálogo de gamificação', () => {
       });
     });
 
-    await page.getByTestId(`admin-mission-${missao.id}`).getByText('Editar missão').click();
+    await page.getByTestId(`mission-edit-${missao.id}`).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/t/${tenantSlug}/administracao/missoes/${missao.id}/editar$`),
+    );
 
     const edicaoMissao = page.getByTestId(`mission-form-${missao.id}`);
     await edicaoMissao.getByLabel('Nome').fill('Missão Editada');
@@ -194,6 +201,7 @@ test.describe('catálogo de gamificação', () => {
       /atualizada/i,
       { timeout: 30_000 },
     );
+    await page.getByTestId('link-voltar-missoes').click();
     await expect(page.getByTestId(`admin-mission-${missao.id}`)).toContainText('Missão Editada');
 
     // ── Excluir a missão (com o diálogo de confirmação) ─────────────────────

@@ -1,9 +1,11 @@
-import { CalendarDays, Mic, ShieldCheck, UserCheck, UserX } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarDays, Mic, Plus, ShieldCheck, UserCheck, UserX } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { withTenant } from '@/lib/db/tenant-client';
 import { listSpeakers, listEventActivitiesForSpeakers } from '@/lib/speakers/speaker-service';
 import {
   linkSpeakerAction,
@@ -16,7 +18,6 @@ import {
   requestAssetUploadAction,
 } from '@/app/actions/landing-actions';
 import {
-  SpeakerCreateForm,
   SpeakerEditForm,
   SpeakerInviteButton,
   SpeakerLinkForm,
@@ -57,12 +58,17 @@ export default async function EventSpeakersPage({
     permission: PERMISSIONS.SPEAKER_MANAGE,
   });
 
-  const [speakers, activities] = await Promise.all([
-    listSpeakers({ tenantId, eventId }),
-    listEventActivitiesForSpeakers(tenantId, eventId),
-  ]);
+  const { speakers, activities } = await withTenant(tenantId, async (tx) => {
+    const loadedSpeakers = await listSpeakers({ tenantId, eventId }, tx);
+    const loadedActivities = await listEventActivitiesForSpeakers(tenantId, eventId, tx);
+    return { speakers: loadedSpeakers, activities: loadedActivities };
+  });
 
   const activityOptions = activities.map((activity) => ({ id: activity.id, title: activity.title }));
+  const newSpeakerUrl = tenantPath(
+    tenantSlug,
+    `/administracao/eventos/${eventId}/palestrantes/novo`,
+  );
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -78,15 +84,16 @@ export default async function EventSpeakersPage({
           { label: 'Evento', href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
           { label: 'Palestrantes' },
         ]}
-      />
-
-      <SpeakerCreateForm
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        activities={activityOptions}
-        action={saveSpeakerProfileAction}
-        requestUploadAction={requestAssetUploadAction}
-        confirmUploadAction={confirmAssetUploadAction}
+        actions={
+          <Link
+            href={newSpeakerUrl}
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            data-testid="btn-novo-palestrante"
+          >
+            <Plus className="size-4" aria-hidden />
+            Novo palestrante
+          </Link>
+        }
       />
 
       <section className="space-y-4" aria-labelledby="lista-palestrantes">
@@ -95,19 +102,29 @@ export default async function EventSpeakersPage({
         </h2>
 
         {speakers.length === 0 ? (
-          <p
-            className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
+          <div
+            className="flex flex-col items-start justify-between gap-4 rounded-xl border border-dashed border-border bg-card p-6 sm:flex-row sm:items-center"
             data-testid="speakers-empty"
           >
-            Nenhum palestrante cadastrado neste evento. Cadastre quem já confirmou presença para a
-            vitrine pública começar a montar sozinha.
-          </p>
+            <p className="text-sm text-muted-foreground">
+              Nenhum palestrante cadastrado neste evento. Cadastre quem já confirmou presença para a
+              vitrine pública começar a montar sozinha.
+            </p>
+            <Link
+              href={newSpeakerUrl}
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+              data-testid="btn-empty-novo-palestrante"
+            >
+              <Plus className="size-4" aria-hidden />
+              Cadastrar palestrante
+            </Link>
+          </div>
         ) : (
           <ul className="space-y-4" data-testid="speaker-list">
             {speakers.map((speaker) => (
               <li
                 key={speaker.speakerProfileId}
-                className="space-y-4 rounded-lg border border-border bg-card p-5"
+                className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
                 data-testid={`speaker-row-${speaker.speakerProfileId}`}
                 data-confirmed={String(speaker.isConfirmed)}
                 data-has-account={String(speaker.hasAccount)}

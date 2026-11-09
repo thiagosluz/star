@@ -181,7 +181,7 @@ test.describe('foto do palestrante enviada pela organização', () => {
     await signInAs(page, organizerEmail);
     await page.goto(speakersUrl());
 
-    await page.getByTestId('toggle-speaker-form').click();
+    await page.getByTestId('btn-novo-palestrante').click();
 
     const campo = page.getByTestId('speaker-photo-novo');
     await page.getByTestId('speaker-name').fill(SPEAKER_NAME);
@@ -214,6 +214,7 @@ test.describe('foto do palestrante enviada pela organização', () => {
     await expect(page.getByTestId('admin-speaker-feedback')).toContainText(/cadastrado/i, {
       timeout: 30_000,
     });
+    await page.getByTestId('speaker-form-back-link').click();
 
     // ── O banco confirma: WebP e origem ORGANIZATION ─────────────────────────
     const profile = await profileByName();

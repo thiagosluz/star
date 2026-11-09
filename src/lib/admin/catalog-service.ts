@@ -574,9 +574,13 @@ export interface AdminEventDetail extends AdminEventRow {
   }[];
 }
 
-export async function getAdminEvent(tenantId: string, eventId: string): Promise<AdminEventDetail | null> {
-  const event = await withTenant(tenantId, (tx) =>
-    tx.event.findFirst({
+export async function getAdminEvent(
+  tenantId: string,
+  eventId: string,
+  tx?: TxClient,
+): Promise<AdminEventDetail | null> {
+  const run = async (client: TxClient): Promise<AdminEventDetail | null> => {
+    const event = await client.event.findFirst({
       where: { id: eventId, tenantId, deletedAt: null },
       select: {
         id: true,
@@ -667,16 +671,14 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
         },
         _count: { select: { activities: true, tracks: true, rooms: true, registrations: true } },
       },
-    }),
-  );
+    });
 
-  if (!event) return null;
+    if (!event) return null;
 
-  /**
-   * As pendentes de confirmação, por atividade (FASE 34) — uma consulta para todas.
-   */
-  const pendingRows = await withTenant(tenantId, (tx) =>
-    tx.registration.groupBy({
+    /**
+     * As pendentes de confirmação, por atividade (FASE 34) — uma consulta para todas.
+     */
+    const pendingRows = await client.registration.groupBy({
       by: ['activityId'],
       where: {
         tenantId,
@@ -686,37 +688,32 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
         activityId: { not: null },
       },
       _count: { _all: true },
-    }),
-  );
+    });
 
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  OS FATOS DA CHAMADA (FASE 68)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  A prontidão (F53) e o bloco de trilhas da vitrine não podem mais deduzir "há
-   *  chamada" da janela do evento: quem responde é a entidade da FASE 33. UMA leitura
-   *  agregada resolve os dois números — chamadas publicadas e quantas delas não têm
-   *  prazo de encerramento —, e ela é do EVENTO, não da instituição.
-   *
-   *  `deletedAt: null` porque chamada excluída não está no ar: contá-la faria o painel
-   *  anunciar uma chamada que não existe em tela nenhuma.
-   */
-  const [publishedCalls, callsWithoutDeadline] = await withTenant(tenantId, (tx) =>
-    Promise.all([
-      tx.callForProposals.count({
-        where: { tenantId, eventId, isPublished: true, deletedAt: null },
-      }),
-      tx.callForProposals.count({
-        where: { tenantId, eventId, isPublished: true, deletedAt: null, closesAt: null },
-      }),
-    ]),
-  );
+    /**
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  OS FATOS DA CHAMADA (FASE 68)
+     * ─────────────────────────────────────────────────────────────────────────────
+     *  A prontidão (F53) e o bloco de trilhas da vitrine não podem mais deduzir "há
+     *  chamada" da janela do evento: quem responde é a entidade da FASE 33. UMA leitura
+     *  agregada resolve os dois números — chamadas publicadas e quantas delas não têm
+     *  prazo de encerramento —, e ela é do EVENTO, não da instituição.
+     *
+     *  `deletedAt: null` porque chamada excluída não está no ar: contá-la faria o painel
+     *  anunciar uma chamada que não existe em tela nenhuma.
+     */
+    const publishedCalls = await client.callForProposals.count({
+      where: { tenantId, eventId, isPublished: true, deletedAt: null },
+    });
+    const callsWithoutDeadline = await client.callForProposals.count({
+      where: { tenantId, eventId, isPublished: true, deletedAt: null, closesAt: null },
+    });
 
-  const calls = { published: publishedCalls, withoutDeadline: callsWithoutDeadline };
+    const calls = { published: publishedCalls, withoutDeadline: callsWithoutDeadline };
 
-  const pendingByActivity = new Map(
-    pendingRows.map((row) => [row.activityId ?? '', row._count._all]),
-  );
+    const pendingByActivity = new Map(
+      pendingRows.map((row) => [row.activityId ?? '', row._count._all]),
+    );
 
   return {
     id: event.id,
@@ -815,6 +812,9 @@ export async function getAdminEvent(tenantId: string, eventId: string): Promise<
       reviewRubric: parseRubric(track.reviewRubric).rubric,
     })),
   };
+  };
+
+  return tx ? run(tx) : withTenant(tenantId, run);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

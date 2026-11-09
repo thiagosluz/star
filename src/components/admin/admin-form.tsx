@@ -1,8 +1,9 @@
 'use client';
 
-import { useActionState } from 'react';
+import Link from 'next/link';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { AlertCircle, CheckCircle2, Loader2, Save } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, Save, X } from 'lucide-react';
 
 import type { AdminActionState } from '@/app/actions/admin-actions';
 import { Checkbox, Input, Select } from '@/components/ui';
@@ -79,6 +80,8 @@ export function AdminForm({
   testId,
   children,
   compact = false,
+  backHref,
+  backLabel,
 }: {
   action: (prev: AdminActionState | null, formData: FormData) => Promise<AdminActionState>;
   submitLabel: string;
@@ -86,8 +89,29 @@ export function AdminForm({
   children: React.ReactNode;
   /** Formulários de edição ficam fechados por padrão (ver `<details>` nas páginas). */
   compact?: boolean;
+  /**
+   * Destino de retorno exibido no banner de confirmação pós-salvamento e no toast
+   * flutuante nas rotas dedicadas `/novo`, `/nova` e `/editar` (FASE 97 · ADR-411).
+   */
+  backHref?: string;
+  backLabel?: string;
 }) {
   const [state, formAction] = useActionState<AdminActionState | null, FormData>(action, null);
+  const [dismissedState, setDismissedState] = useState<AdminActionState | null>(null);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const toastVisible = state !== null && state !== dismissedState;
+
+  useEffect(() => {
+    if (!state) return;
+
+    feedbackRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+
+    const timer = setTimeout(() => {
+      setDismissedState(state);
+    }, 6_000);
+
+    return () => clearTimeout(timer);
+  }, [state]);
 
   return (
     <form action={formAction} className={compact ? 'space-y-3' : 'space-y-4'} data-testid={testId}>
@@ -97,18 +121,34 @@ export function AdminForm({
 
       {state ? (
         <div
+          ref={feedbackRef}
           role={state.ok ? 'status' : 'alert'}
           data-testid={`${testId}-feedback`}
-          className={`space-y-1 text-sm ${state.ok ? 'text-success-strong' : 'text-destructive'}`}
+          className={`space-y-2 rounded-lg border border-border bg-card p-3.5 text-sm shadow-xs ${
+            state.ok ? 'text-success-strong' : 'text-destructive'
+          }`}
         >
-          <p className="flex items-center gap-1.5">
-            {state.ok ? (
-              <CheckCircle2 className="size-4" aria-hidden />
-            ) : (
-              <AlertCircle className="size-4" aria-hidden />
-            )}
-            {state.message}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="flex items-center gap-1.5 font-medium">
+              {state.ok ? (
+                <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+              ) : (
+                <AlertCircle className="size-4 shrink-0" aria-hidden />
+              )}
+              {state.message}
+            </p>
+
+            {state.ok && backHref ? (
+              <Link
+                href={backHref}
+                data-testid={`${testId}-back-link`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-low px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+              >
+                <ArrowLeft className="size-3.5" aria-hidden />
+                {backLabel ?? 'Ver na listagem'}
+              </Link>
+            ) : null}
+          </div>
 
           {state.details?.length ? (
             <ul className="ml-5 list-disc text-xs">
@@ -117,6 +157,39 @@ export function AdminForm({
               ))}
             </ul>
           ) : null}
+        </div>
+      ) : null}
+
+      {toastVisible && state ? (
+        <div
+          aria-hidden="true"
+          data-testid={`${testId}-toast`}
+          className="fixed right-4 bottom-4 z-50 flex max-w-md items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground shadow-lg"
+        >
+          {state.ok ? (
+            <CheckCircle2 className="size-4 shrink-0 text-success-strong" aria-hidden />
+          ) : (
+            <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden />
+          )}
+          <span className="min-w-0 flex-1 text-xs font-medium">{state.message}</span>
+          {state.ok && backHref ? (
+            <Link
+              href={backHref}
+              tabIndex={-1}
+              className="shrink-0 rounded-md border border-border bg-surface-low px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              {backLabel ?? 'Ver na listagem'}
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setDismissedState(state)}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Fechar aviso"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
         </div>
       ) : null}
     </form>

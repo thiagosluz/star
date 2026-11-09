@@ -24,7 +24,7 @@ import { tenantPath } from '@/domain/tenancy/resolution';
  */
 export const TENANT_CACHE_AREAS = {
   cartas: ['/administracao/cartas', '/administracao/cartas/nova', '/cartas'] as const,
-  missoes: ['/administracao/missoes', '/conquistas'] as const,
+  missoes: ['/administracao/missoes', '/administracao/missoes/nova', '/conquistas'] as const,
   certificados: ['/administracao/certificados', '/certificados'] as const,
   credenciamento: ['/credenciamento'] as const,
   eventosCatalogo: ['/administracao/eventos', '/administracao/eventos/novo', '/eventos'] as const,
@@ -35,6 +35,8 @@ export const TENANT_CACHE_AREAS = {
       `/administracao/eventos/${eventId}/salas`,
       `/administracao/eventos/${eventId}/programacao`,
       `/administracao/eventos/${eventId}/programacao/nova`,
+      `/administracao/eventos/${eventId}/palestrantes`,
+      `/administracao/eventos/${eventId}/palestrantes/novo`,
     ] as const,
   chamadas: (eventId: string) =>
     [

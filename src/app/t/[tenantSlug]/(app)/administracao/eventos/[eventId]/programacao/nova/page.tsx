@@ -117,7 +117,13 @@ export default async function NewActivityPage({
           Dados da atividade
         </h2>
 
-        <AdminForm action={saveActivityAction} submitLabel="Criar atividade" testId="create-activity">
+        <AdminForm
+          action={saveActivityAction}
+          submitLabel="Criar atividade"
+          testId="create-activity"
+          backHref={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/programacao`)}
+          backLabel="Ver programação"
+        >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="eventId" value={event.id} />
 

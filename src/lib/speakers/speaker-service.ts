@@ -750,12 +750,15 @@ export interface AdminSpeakerRow {
 }
 
 /** Palestrantes da instituição (com os vínculos de um evento, quando informado). */
-export async function listSpeakers(input: {
-  tenantId: string;
-  eventId?: string;
-}): Promise<AdminSpeakerRow[]> {
-  return withTenant(input.tenantId, async (tx) => {
-    const profiles = await tx.speakerProfile.findMany({
+export async function listSpeakers(
+  input: {
+    tenantId: string;
+    eventId?: string;
+  },
+  tx?: TxClient,
+): Promise<AdminSpeakerRow[]> {
+  const run = async (client: TxClient): Promise<AdminSpeakerRow[]> => {
+    const profiles = await client.speakerProfile.findMany({
       where: {
         tenantId: input.tenantId,
         deletedAt: null,
@@ -854,7 +857,9 @@ export async function listSpeakers(input: {
       })),
       materialCount: profile._count.materials,
     }));
-  });
+  };
+
+  return tx ? run(tx) : withTenant(input.tenantId, run);
 }
 
 /**
@@ -934,17 +939,20 @@ export async function loadActivityNotes(
 }
 
 /** Atividades do evento (para o seletor do vínculo). */
-export async function listEventActivitiesForSpeakers(  tenantId: string,
+export async function listEventActivitiesForSpeakers(
+  tenantId: string,
   eventId: string,
+  tx?: TxClient,
 ): Promise<{ id: string; title: string; startsAt: Date }[]> {
-  return withTenant(tenantId, (tx) =>
-    tx.activity.findMany({
+  const run = (client: TxClient) =>
+    client.activity.findMany({
       where: { tenantId, eventId, deletedAt: null },
       orderBy: { startsAt: 'asc' },
       take: 200,
       select: { id: true, title: true, startsAt: true },
-    }),
-  );
+    });
+
+  return tx ? run(tx) : withTenant(tenantId, run);
 }
 
 /**

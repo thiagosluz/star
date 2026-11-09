@@ -161,7 +161,7 @@ test.describe('declaração de autorização da foto', () => {
     await signInAs(page, organizerEmail);
     await page.goto(speakersUrl());
 
-    await page.getByTestId('toggle-speaker-form').click();
+    await page.getByTestId('btn-novo-palestrante').click();
 
     /**
      * ─────────────────────────────────────────────────────────────────────────────

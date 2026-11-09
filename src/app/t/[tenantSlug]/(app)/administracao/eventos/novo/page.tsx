@@ -86,7 +86,13 @@ export default async function NewAdminEventPage({
           Dados do evento
         </h2>
 
-        <AdminForm action={saveEventAction} submitLabel="Criar evento" testId="create-event">
+        <AdminForm
+          action={saveEventAction}
+          submitLabel="Criar evento"
+          testId="create-event"
+          backHref={tenantPath(tenantSlug, '/administracao/eventos')}
+          backLabel="Ver eventos"
+        >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
 
           <div className="grid gap-3 sm:grid-cols-2">

@@ -1,7 +1,8 @@
 'use client';
 
-import { useActionState, useRef, useState } from 'react';
-import { Copy, Loader2, Plus, RefreshCw, ShieldCheck, Unlink, UserPlus } from 'lucide-react';
+import Link from 'next/link';
+import { useActionState, useEffect, useRef, useState } from 'react';
+import { ArrowRight, CheckCircle2, Copy, Loader2, Plus, RefreshCw, ShieldCheck, Unlink, UserPlus, X } from 'lucide-react';
 
 import { Alert, Button, ConfirmDialog, Field, Input, Select, fieldAria } from '@/components/ui';
 import {
@@ -37,20 +38,86 @@ import { SpeakerPhotoField } from '@/components/speakers/speaker-photo-field';
 
 type Action = (prev: SpeakerActionState | null, formData: FormData) => Promise<SpeakerActionState>;
 
-function Feedback({ state }: { state: SpeakerActionState | null }) {
+function Feedback({
+  state,
+  backHref,
+  backLabel = 'Ver na listagem',
+}: {
+  state: SpeakerActionState | null;
+  backHref?: string;
+  backLabel?: string;
+}) {
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const [toastOpen, setToastOpen] = useState(false);
+
+  useEffect(() => {
+    if (!state) return;
+    if (typeof feedbackRef.current?.scrollIntoView === 'function') {
+      feedbackRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    if (state.ok) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- dispara notificação efêmera a cada submissão bem-sucedida
+      setToastOpen(true);
+      const timer = setTimeout(() => setToastOpen(false), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [state]);
+
   if (!state) return null;
 
   return (
-    <Alert tone={state.ok ? 'success' : 'danger'} data-testid="admin-speaker-feedback">
-      <span>{state.message ?? (state.ok ? 'Pronto.' : 'Não foi possível concluir.')}</span>
-      {state.details && state.details.length > 0 ? (
-        <ul className="mt-1 list-disc pl-4 text-xs">
-          {state.details.map((detail) => (
-            <li key={detail}>{detail}</li>
-          ))}
-        </ul>
+    <div ref={feedbackRef} className="space-y-2">
+      <Alert tone={state.ok ? 'success' : 'danger'} data-testid="admin-speaker-feedback">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>{state.message ?? (state.ok ? 'Pronto.' : 'Não foi possível concluir.')}</span>
+          {state.ok && backHref ? (
+            <Link
+              href={backHref}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-current/25 bg-background/80 px-3 py-1 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-background"
+              data-testid="speaker-form-back-link"
+            >
+              {backLabel}
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          ) : null}
+        </div>
+        {state.details && state.details.length > 0 ? (
+          <ul className="mt-1 list-disc pl-4 text-xs">
+            {state.details.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        ) : null}
+      </Alert>
+
+      {state.ok && toastOpen ? (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="speaker-form-toast"
+          className="fixed right-4 bottom-4 z-50 flex max-w-md items-center gap-3 rounded-xl border border-success/30 bg-card px-4 py-3 text-sm text-foreground shadow-lg"
+        >
+          <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden />
+          <span className="font-medium">{state.message ?? 'Operação concluída com sucesso.'}</span>
+          {backHref ? (
+            <Link
+              href={backHref}
+              className="ml-1 shrink-0 text-xs font-semibold text-primary underline underline-offset-4"
+            >
+              {backLabel}
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setToastOpen(false)}
+            className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Fechar notificação"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        </div>
       ) : null}
-    </Alert>
+    </div>
   );
 }
 
@@ -394,6 +461,9 @@ export function SpeakerCreateForm({
   action,
   requestUploadAction,
   confirmUploadAction,
+  defaultOpen = false,
+  backHref,
+  backLabel = 'Ver palestrantes',
 }: {
   tenantSlug: string;
   /** Evento que particiona a foto no storage. */
@@ -402,9 +472,12 @@ export function SpeakerCreateForm({
   action: Action;
   requestUploadAction: AssetUploadAction;
   confirmUploadAction: AssetUploadAction;
+  defaultOpen?: boolean;
+  backHref?: string;
+  backLabel?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   // Cadastro novo não tem foto anterior: qualquer imagem publicada aqui é nova.
   const { guardMessage, onSubmit } = usePhotoDeclarationGuard(null);
 
@@ -413,10 +486,12 @@ export function SpeakerCreateForm({
 
   return (
     <div className="space-y-3">
-      <Button type="button" variant="outline" onClick={() => setOpen((value) => !value)} data-testid="toggle-speaker-form">
-        <UserPlus className="size-4" aria-hidden />
-        {open ? 'Fechar cadastro' : 'Cadastrar palestrante'}
-      </Button>
+      {defaultOpen ? null : (
+        <Button type="button" variant="outline" onClick={() => setOpen((value) => !value)} data-testid="toggle-speaker-form">
+          <UserPlus className="size-4" aria-hidden />
+          {open ? 'Fechar cadastro' : 'Cadastrar palestrante'}
+        </Button>
+      )}
 
       {open ? (
         <form
@@ -444,7 +519,11 @@ export function SpeakerCreateForm({
             resposta do serviço aparecem no mesmo `Feedback` — duas caixas de erro na
             mesma tela ensinariam a pessoa a procurar a mensagem em dois lugares.
           */}
-          <Feedback state={guardMessage ? { ok: false, message: guardMessage } : state} />
+          <Feedback
+            state={guardMessage ? { ok: false, message: guardMessage } : state}
+            backHref={backHref}
+            backLabel={backLabel}
+          />
 
           {token ? <InviteTokenBox token={token} expiresAt={expiresAt} /> : null}
 

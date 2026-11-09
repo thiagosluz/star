@@ -632,6 +632,7 @@ export interface AdminMissionRow {
   xpReward: number;
   rewardCardSlug: string | null;
   rewardCardTemplateId: string | null;
+  eventId: string | null;
   repeatEveryHours: number;
   isActive: boolean;
   isVisible: boolean;
@@ -646,11 +647,12 @@ export interface AdminMissionRow {
 export async function listMissions(
   tenantId: string,
   scope: CatalogScope = 'ATIVOS',
+  tx?: TxClient,
 ): Promise<AdminMissionRow[]> {
-  return await withTenant(tenantId, async (tx) => {
+  const run = async (client: TxClient): Promise<AdminMissionRow[]> => {
     const archived = scope === 'ARQUIVADOS';
 
-    const rows = await tx.taskDefinition.findMany({
+    const rows = await client.taskDefinition.findMany({
       where: { tenantId, ...(archived ? { deletedAt: { not: null } } : { deletedAt: null }) },
       /** Arquivada mais recente primeiro — a mesma razão da lista de cartas. */
       orderBy: archived
@@ -667,6 +669,7 @@ export async function listMissions(
         target: true,
         xpReward: true,
         rewardCardTemplateId: true,
+        eventId: true,
         repeatEveryHours: true,
         isActive: true,
         isVisible: true,
@@ -678,7 +681,7 @@ export async function listMissions(
     });
 
     const trail = archived
-      ? await readCatalogArchiveTrail(tx, {
+      ? await readCatalogArchiveTrail(client, {
           tenantId,
           entityType: CATALOG_ENTITY_TYPE.mission,
           entityIds: rows.map((row) => row.id),
@@ -696,6 +699,7 @@ export async function listMissions(
       xpReward: row.xpReward,
       rewardCardSlug: row.rewardCard?.slug ?? null,
       rewardCardTemplateId: row.rewardCardTemplateId,
+      eventId: row.eventId ?? null,
       repeatEveryHours: row.repeatEveryHours,
       isActive: row.isActive,
       isVisible: row.isVisible,
@@ -705,7 +709,73 @@ export async function listMissions(
       archivedAt: row.deletedAt,
       archivedByName: trail?.get(row.id)?.byName ?? null,
     }));
-  });
+  };
+
+  return tx ? run(tx) : withTenant(tenantId, run);
+}
+
+/**
+ * Busca uma missão ativa pelo ID para a rota dedicada de edição
+ * (`/administracao/missoes/[missionId]/editar`, FASE 97 · ADR-409).
+ *
+ * Retorna `null` se a missão não existir na instituição ou estiver arquivada
+ * (`deletedAt: null`), permitindo que a página responda 404 uniforme.
+ */
+export async function getMissionForEdit(
+  tenantId: string,
+  taskDefinitionId: string,
+  tx?: TxClient,
+): Promise<AdminMissionRow | null> {
+  const run = async (client: TxClient): Promise<AdminMissionRow | null> => {
+    const row = await client.taskDefinition.findFirst({
+      where: { id: taskDefinitionId, tenantId, deletedAt: null },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        kind: true,
+        trigger: true,
+        target: true,
+        xpReward: true,
+        rewardCardTemplateId: true,
+        eventId: true,
+        repeatEveryHours: true,
+        isActive: true,
+        isVisible: true,
+        displayOrder: true,
+        deletedAt: true,
+        rewardCard: { select: { slug: true } },
+        progress: { select: { status: true } },
+      },
+    });
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      kind: row.kind,
+      trigger: row.trigger,
+      target: row.target,
+      xpReward: row.xpReward,
+      rewardCardSlug: row.rewardCard?.slug ?? null,
+      rewardCardTemplateId: row.rewardCardTemplateId,
+      eventId: row.eventId ?? null,
+      repeatEveryHours: row.repeatEveryHours,
+      isActive: row.isActive,
+      isVisible: row.isVisible,
+      displayOrder: row.displayOrder,
+      completions: row.progress.filter((entry) => entry.status === 'COMPLETED' || entry.status === 'CLAIMED').length,
+      claims: row.progress.filter((entry) => entry.status === 'CLAIMED').length,
+      archivedAt: null,
+      archivedByName: null,
+    };
+  };
+
+  return tx ? run(tx) : withTenant(tenantId, run);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

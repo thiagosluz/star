@@ -111,6 +111,8 @@ export default async function EditarCartaPage({
           action={saveCardTemplateAction}
           submitLabel="Salvar carta"
           testId={`card-form-${card.id}`}
+          backHref={tenantPath(tenantSlug, '/administracao/cartas')}
+          backLabel="Voltar para Cartas"
         >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="cardTemplateId" value={card.id} />

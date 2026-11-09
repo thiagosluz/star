@@ -121,6 +121,8 @@ export default async function NewSponsorPage({
           action={saveSponsorAction}
           submitLabel="Cadastrar patrocinador"
           testId="create-sponsor"
+          backHref={sponsorsUrl}
+          backLabel="Ver patrocinadores"
           compact
         >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
@@ -185,6 +187,8 @@ export default async function NewSponsorPage({
           action={copySponsorAction}
           submitLabel="Copiar para este evento"
           testId="copy-sponsor"
+          backHref={sponsorsUrl}
+          backLabel="Ver patrocinadores"
           compact
         >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />

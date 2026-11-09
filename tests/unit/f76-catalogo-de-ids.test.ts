@@ -187,6 +187,15 @@ const PAGINAS: readonly PaginaEsperada[] = [
     params: ['eventId'],
   },
   {
+    /**
+     * A tela de cadastro dedicado de palestrante (FASE 97 · ADR-409). Valida
+     * `eventId` antes da permissão e da consulta do evento.
+     */
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/palestrantes/novo/page.tsx',
+    params: ['eventId'],
+  },
+  {
     arquivo:
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/patrocinadores/page.tsx',
     params: ['eventId'],
@@ -228,6 +237,14 @@ const PAGINAS: readonly PaginaEsperada[] = [
   {
     arquivo: 'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/sorteios/page.tsx',
     params: ['eventId'],
+  },
+  {
+    /**
+     * A tela dedicada de edição de missão (FASE 97 · ADR-409). Valida
+     * `missionId` antes da permissão e da consulta ao banco.
+     */
+    arquivo: 'src/app/t/[tenantSlug]/(app)/administracao/missoes/[missionId]/editar/page.tsx',
+    params: ['missionId'],
   },
   {
     arquivo: 'src/app/t/[tenantSlug]/(app)/comite/[submissionId]/page.tsx',
@@ -643,22 +660,22 @@ describe('FASE 76 · o catálogo das páginas com id na URL', () => {
     ).toEqual([]);
   });
 
-  it('são 29 páginas e 30 params — o número medido, não o esperado', () => {
+  it('são 31 páginas e 32 params — o número medido, não o esperado', () => {
     /**
-     * 29 páginas, 30 chamadas: `demandas/[demandId]` tem `eventId` e `demandId`.
+     * 31 páginas, 32 chamadas: `demandas/[demandId]` tem `eventId` e `demandId`.
      * O segundo número é o que pega o caso "a página existe, mas só um dos dois
      * segmentos foi validado" — a igualdade por página já pega, e a contagem
      * torna a regressão visível de relance.
      */
-    expect(PAGINAS).toHaveLength(29);
-    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(30);
+    expect(PAGINAS).toHaveLength(31);
+    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(32);
     expect(PAGINAS_FORA_DA_REGRA).toHaveLength(4);
 
     const paramsEncontrados = PAGINAS_COM_ID.reduce(
       (total, pagina) => total + pagina.params.length,
       0,
     );
-    expect(paramsEncontrados).toBe(34); // 30 positivos + 4 das exceções
+    expect(paramsEncontrados).toBe(36); // 32 positivos + 4 das exceções
   });
 
   it('cada página chama `requireUuidParam` com o MESMO param do segmento', () => {

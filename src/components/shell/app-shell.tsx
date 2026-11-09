@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { MobileNav } from '@/components/shell/mobile-nav';
 import { NavCollapseToggle } from '@/components/shell/nav-collapse-toggle';
+import { RouteProgress } from '@/components/shell/route-progress';
 import { KovenoMark, PLATFORM_BRAND_NAME } from '@/components/ui/brand-mark';
 import { NavLink } from '@/components/ui/navigation';
 import { NAV_MODE_RAIL } from '@/lib/shell/nav-mode';
@@ -225,6 +226,7 @@ export async function AppShell({
 
   return (
     <div className="flex min-h-screen bg-surface">
+      <RouteProgress variant={variant} />
       {/**
         * ───────────────────────────────────────────────────────────────────────────
         *  BARRA LATERAL (desktop) — DOIS ESTADOS (FASE 59)

@@ -114,7 +114,13 @@ export default async function EventNewCallPage({
           </p>
         </div>
 
-        <AdminForm action={saveCallAction} submitLabel="Criar chamada" testId="create-call">
+        <AdminForm
+          action={saveCallAction}
+          submitLabel="Criar chamada"
+          testId="create-call"
+          backHref={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/chamadas`)}
+          backLabel="Ver chamadas"
+        >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="eventSlug" value={event.slug} />

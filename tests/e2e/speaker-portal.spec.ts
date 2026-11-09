@@ -282,7 +282,7 @@ test.describe('portal do palestrante', () => {
 
     // ── 2. O palestrante é cadastrado na tela de palestrantes ────────────────
     await page.goto(speakersUrl());
-    await page.getByTestId('toggle-speaker-form').click();
+    await page.getByTestId('btn-novo-palestrante').click();
 
     const form = page.getByTestId('speaker-form');
     await form.getByTestId('speaker-name').fill(`Ana Convidada ${RUN_ID}`);
@@ -302,6 +302,8 @@ test.describe('portal do palestrante', () => {
     const token = (await page.getByTestId('invite-token').innerText()).trim();
     expect(token.length).toBe(32);
     inviteToken = token;
+
+    await page.getByTestId('speaker-form-back-link').click();
 
     const profileId = await speakerProfileIdByEmail(speakerEmail);
     await expect(page.getByTestId(`speaker-row-${profileId}`)).toContainText('Convite pendente');
@@ -688,7 +690,7 @@ test.describe('portal do palestrante', () => {
     // ── A organização cadastra o perfil para o e-mail dessa conta ──────────────
     await signInAs(page, organizerEmail);
     await page.goto(speakersUrl());
-    await page.getByTestId('toggle-speaker-form').click();
+    await page.getByTestId('btn-novo-palestrante').click();
 
     const form = page.getByTestId('speaker-form');
     await form.getByTestId('speaker-name').fill(`Bruna Convidada ${RUN_ID}`);
@@ -699,6 +701,8 @@ test.describe('portal do palestrante', () => {
     await expect(page.getByTestId('admin-speaker-feedback')).toContainText(/cadastrad/i, {
       timeout: 30_000,
     });
+
+    await page.getByTestId('speaker-form-back-link').click();
 
     const profileId = await speakerProfileIdByEmail(invited.email);
 
