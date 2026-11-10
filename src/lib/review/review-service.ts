@@ -886,8 +886,8 @@ export async function listReviewerTasks(
   tenantId: string,
   reviewerId: string,
 ): Promise<ReviewerTask[]> {
-  const assignments = await withTenant(tenantId, (tx) =>
-    tx.reviewAssignment.findMany({
+  const { assignments, submitted } = await withTenant(tenantId, async (tx) => {
+    const assignmentsRows = await tx.reviewAssignment.findMany({
       where: {
         reviewerId,
         status: { notIn: ['DECLINED', 'RECUSED'] },
@@ -920,20 +920,20 @@ export async function listReviewerTasks(
           },
         },
       },
-    }),
-  );
+    });
 
-  // Quais já têm parecer enviado por este revisor?
-  const submitted = await withTenant(tenantId, (tx) =>
-    tx.review.findMany({
+    const submittedRows = await tx.review.findMany({
       where: {
         reviewerId,
         submittedAt: { not: null },
-        submissionId: { in: assignments.map((a) => a.submission.id) },
+        submissionId: { in: assignmentsRows.map((a) => a.submission.id) },
       },
       select: { submissionId: true },
-    }),
-  );
+    });
+
+    return { assignments: assignmentsRows, submitted: submittedRows };
+  });
+
   const submittedSet = new Set(submitted.map((review) => review.submissionId));
   const now = Date.now();
 
@@ -1242,27 +1242,49 @@ export async function recordDecision(
 /** Fila de submissões para o comitê decidir. */
 export async function listSubmissionsForChair(
   tenantId: string,
-  options: { status?: SubmissionStatus[] } = {},
+  options: {
+    status?: SubmissionStatus[];
+    eventId?: string;
+    search?: string;
+  } = {},
+  client?: TxClient,
 ): Promise<
   {
     id: string;
     protocol: string;
     title: string;
     status: SubmissionStatus;
+    eventId: string;
+    eventTitle: string;
+    eventSlug: string;
     trackName: string | null;
+    callTitle: string | null;
     submittedAt: Date | null;
     reviewCount: number;
     requiredReviews: number;
     averageScore: number | null;
   }[]
 > {
-  const rows = await withTenant(tenantId, (tx) =>
+  const searchTerm = options.search?.trim();
+
+  const query = (tx: TxClient) =>
     tx.submission.findMany({
       where: {
         deletedAt: null,
-        ...(options.status ? { status: { in: options.status } } : {
-          status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'REVISION_REQUESTED'] },
-        }),
+        ...(options.status
+          ? { status: { in: options.status } }
+          : {
+              status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'REVISION_REQUESTED'] },
+            }),
+        ...(options.eventId ? { eventId: options.eventId } : {}),
+        ...(searchTerm
+          ? {
+              OR: [
+                { protocol: { contains: searchTerm, mode: 'insensitive' } },
+                { title: { contains: searchTerm, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
       },
       orderBy: { submittedAt: 'asc' },
       select: {
@@ -1271,14 +1293,18 @@ export async function listSubmissionsForChair(
         title: true,
         status: true,
         submittedAt: true,
+        eventId: true,
+        event: { select: { title: true, slug: true } },
+        call: { select: { title: true } },
         track: { select: { name: true, requiredReviews: true } },
         reviews: {
           where: { submittedAt: { not: null }, deletedAt: null },
           select: { weightedScore: true },
         },
       },
-    }),
-  );
+    });
+
+  const rows = client ? await query(client) : await withTenant(tenantId, query);
 
   return rows.map((row) => {
     const scores = row.reviews
@@ -1290,7 +1316,11 @@ export async function listSubmissionsForChair(
       protocol: row.protocol,
       title: row.title,
       status: row.status as SubmissionStatus,
+      eventId: row.eventId,
+      eventTitle: row.event.title,
+      eventSlug: row.event.slug,
       trackName: row.track?.name ?? null,
+      callTitle: row.call?.title ?? null,
       submittedAt: row.submittedAt,
       reviewCount: row.reviews.length,
       requiredReviews: row.track?.requiredReviews ?? 2,

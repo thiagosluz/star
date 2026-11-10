@@ -1747,8 +1747,9 @@ export async function listMySubmissions(
   tenantId: string,
   userId: string,
   options: { page?: unknown; pageSize?: unknown } = {},
+  client?: TxClient,
 ): Promise<MySubmissionsPage> {
-  const result = await withTenant(tenantId, async (tx) => {
+  const query = async (tx: TxClient) => {
     const where = { submittedById: userId, deletedAt: null };
 
     const total = await tx.submission.count({ where });
@@ -1776,7 +1777,9 @@ export async function listMySubmissions(
     });
 
     return { rows, window };
-  });
+  };
+
+  const result = client ? await query(client) : await withTenant(tenantId, query);
 
   return {
     submissions: result.rows.map((row) => ({

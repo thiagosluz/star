@@ -95,8 +95,10 @@ export default async function TeamPage({ params }: { params: Promise<{ tenantSlu
     permission: PERMISSIONS.TENANT_MEMBER_INVITE,
   });
 
-  const team = await getTeamOverview(tenantId);
-  const invitations = await listInvitations({ tenantId });
+  const [team, invitations] = await Promise.all([
+    getTeamOverview(tenantId),
+    listInvitations({ tenantId }),
+  ]);
 
   /**
    * Papéis oferecidos no convite, com a consequência escrita de cada um.

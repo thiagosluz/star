@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71, 72 a 74, 75 a 76 e 77 a 78 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71, 72 a 74, 75 a 76, 77 a 78 e 79 a 80 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -38,21 +38,23 @@
 > **duas mais antigas que restavam** — **75 e 76** — desceram **como estavam** e a tabela corrente passou a começar na **77**; o `AGENTS.md` terminou
 > em **64.541 bytes**. Na **FASE 97** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
 > **duas mais antigas que restavam** — **77 e 78** — desceram **como estavam** e a tabela corrente passou a começar na **79**; o `AGENTS.md` terminou
-> em **64.296 bytes**.
+> em **64.296 bytes**. Na **FASE 98** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
+> **duas mais antigas que restavam** — **79 e 80** — desceram **como estavam** e a tabela corrente passou a começar na **81**; o `AGENTS.md` terminou
+> com margem confortável abaixo de 64.800 bytes.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **79** à **97**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **81** à **98**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
 > **A ordem é a cronológica da tabela original**, não a numérica: a numeração identifica o
 > TEMA, e é o humano quem o escolhe pelo nome — por isso a F16, a F17, a F23, a F24 e a F25
 > vieram antes da F15, e a F21 foi entregue depois de todas. As fases movidas na FASE 82, na
-> FASE 83, na FASE 84, na FASE 85, na FASE 86, na FASE 87, na FASE 89, na FASE 91, na FASE 92, na FASE 93, na FASE 94, na FASE 95, na FASE 96 e na FASE 97 entram no fim, na ordem em que estavam.
+> FASE 83, na FASE 84, na FASE 85, na FASE 86, na FASE 87, na FASE 89, na FASE 91, na FASE 92, na FASE 93, na FASE 94, na FASE 95, na FASE 96, na FASE 97 e na FASE 98 entram no fim, na ordem em que estavam.
 >
 > **Nota de rebrand.** O produto passou a se chamar **Koveno** em novembro de 2026. Este
 > arquivo e os documentos de fase continuam dizendo **EventFlow** porque são registro do que
@@ -134,3 +136,5 @@
 | 76 | **O mutirão dos 500 que deviam ser 404** — o id malformado era **500 exclusivo do FORMATO** (25 de 42): `isUuid` no domínio + `requireUuidParam` (404 antes de consultar) em 23 páginas/24 params e 9 rotas/11 params; a query não é endereço (3 telas ignoram e anunciam), a API ganhou um envelope `{ok:false,code,message}` e a régua **400 = entrada × 404 = endereço**; a catraca achou 2 buracos e a tabela de 35 casos reprovou a si mesma. ADR-366 … 368 | ✅ |
 | 77 | **O organizador novo** — o **caminho de partida** (3 fatias com os fatos do render, dentro da prontidão, "pronto" proibido por varredura e o alvo resolvido NO CATÁLOGO — o que consertou o link morto de `sem-programacao`); a **exportação na raiz** (o recorte na PROJEÇÃO, 3/3/210 → 2/2/90, o XP do livro-razão, 3 colunas fora e o `ATTENDANCES_CSV` em formato longo, com migração); e o **demo de LEITURA** (`/t/<slug>/exemplo` por vínculo + catraca de escrita provada por hash). ADR-369 … 371 | ✅ |
 | 78 | **O topo único** — a dívida **H1** fechada: **PageHeader server** (split de `navigation.tsx`, sem ~96 ilhas de cliente), com `eyebrow` = grupo de navegação da fonte única, **volta derivada da trilha** e `descriptionTestId`; **81 das 96 páginas migradas** e **15 exceções** motivadas (tema do evento, heróis, renderizador próprio e redirects); **`text-headline`** (16px) eliminado e **6 telas sem `<h1>`** corrigidas. Catracas: **fonte** + **12 telas** no navegador. ADR-372 … 374 | ✅ |
+| 79 | **O `AGENTS.md` volta a respirar** — as fases **1 a 25** saíram da tabela da §9 e foram **movidas como estavam** para `docs/fases-historico.md` (nenhuma linha reescrita), com um ponteiro de três linhas no lugar; a tabela corrente ficou com folga real e uma catraca nova reprova fase histórica na tabela e fase corrente no histórico. ADR-375 | ✅ |
+| 80 | **O ESLint 10, sem mudar uma linha de código** — `eslint` de `^9.39.5` para `^10.13.0` (o alvo medido): **920 arquivos lintados, 0/0** (o mesmo número de antes), `typecheck` 0, **4389 testes**, `build` OK e `npm ci` limpo com o lock novo; os três plugins do `eslint-config-next` (react, jsx-a11y e import) ainda declaram peer `^9` e o npm avisa `ERESOLVE` sem falhar — compatibilidade medida, não declarada; o E2E mediu **6 vermelhos** (3 de `label-content-name-mismatch`, expostos pelo `axe-core` 4.14; 2 de imagem pela seção mascarada que cresce com o dado; 1 intermitente de minuto no `f65`), nenhum do ESLint. ADR-376 | ✅ |

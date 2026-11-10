@@ -58,54 +58,33 @@ export default async function MySubmissionsPage({
   }
 
   const tenantId = context.activeTenant.tenantId;
-  /** O total e a fatia saem da MESMA transação: a contagem não pode divergir da lista. */
-  const page = await listMySubmissions(tenantId, context.user.id, { page: pagina });
-  const submissions = page.submissions;
-
-  /**
-   * O endereço canônico: a PRIMEIRA página não carrega `?pagina=1` — `/submissoes` e
-   * `/submissoes?pagina=1` seriam a mesma tela em dois endereços, e o "Anteriores" da
-   * página 2 tem de voltar para o endereço limpo.
-   */
-  const listHref = (target: number) =>
-    target <= 1
-      ? tenantPath(tenantSlug, '/submissoes')
-      : `${tenantPath(tenantSlug, '/submissoes')}?pagina=${target}`;
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
-   *  OS EVENTOS QUE ACEITAM SUBMISSÃO (FASE 68)
+   *  LEITURA EM TRANSAÇÃO ÚNICA COM TENANT (FASE 98 · ADR-412)
    * ─────────────────────────────────────────────────────────────────────────────
-   *  O filtro lia `cfpClosesAt` — o prazo da JANELA DO EVENTO, que o formulário deixou
-   *  de editar e que ninguém mais escrevia. O resultado era uma porta que nunca
-   *  fechava: evento com chamada encerrada continuava oferecendo "Nova submissão".
+   *  A tela do autor consolidou três consultas antes dispersas:
+   *    1. `listMySubmissions` (total e fatia com paginação)
+   *    2. `openEvents` (eventos sem chamada que aceitam submissão direta por trilha)
+   *    3. `openCalls` (chamadas de propostas publicadas e abertas na instituição)
    *
-   *  Agora quem decide é a CHAMADA da FASE 33 (a única fonte da verdade sobre "está
-   *  aberta"):
-   *
-   *    • **Com chamada publicada**: o caminho daqui não serve — a proposta entra pelo
-   *      formulário da chamada, e o serviço recusa este atalho com `CFP_CLOSED`. O
-   *      evento só aparece enquanto houver chamada ABERTA, aproveitando a mesma régua
-   *      (`opensAt`/`closesAt`) que a chamada usa na leitura.
-   *    • **Sem chamada publicada**: o caminho antigo sobrevive SEM PRAZO (decisão do
-   *      humano), porque é ele que os testes de revisão por pares exercitam — evento
-   *      sem chamada continua aceitando submissão por trilha.
-   *
-   * A janela é a MESMA da chamada, comparada contra UM instante só (`agora`, lido uma
-   * vez): `closesAt` nulo é "sem prazo" e vale; `opensAt` nulo já abriu.
+   *  Ao carregar as chamadas abertas de verdade (e não apenas um `take: 1`), a tela
+   *  deixa de ser um beco sem link quando há chamada aberta, exibindo links diretos
+   *  tanto para autores novatos quanto para quem já tem submissões anteriores.
    */
   const agora = new Date();
-  const openEvents = await withTenant(tenantId, (tx) =>
-    tx.event.findMany({
+  const { page, openEvents, openCalls } = await withTenant(tenantId, async (tx) => {
+    const pageData = await listMySubmissions(
+      tenantId,
+      context.user.id,
+      { page: pagina },
+      tx,
+    );
+
+    const eventsData = await tx.event.findMany({
       where: {
         status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] },
         deletedAt: null,
-        /**
-         * Nenhuma chamada publicada E ABERTA neste instante. As duas condições ficam
-         * no MESMO `none`: separá-las em duas cláusulas erraria os dois lados — uma
-         * chamada agendada (abre amanhã) esconderia o evento hoje sem oferecer caminho
-         * nenhum, e uma encerrada deixaria o atalho antigo em pé.
-         */
         calls: {
           none: {
             isPublished: true,
@@ -126,22 +105,9 @@ export default async function MySubmissionsPage({
           select: { id: true, name: true, requiresBlindReview: true },
         },
       },
-    }),
-  );
+    });
 
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  EXISTE CHAMADA ABERTA? (FASE 68)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  Quando o caminho por trilha fica fechado, a tela não pode simplesmente sumir com
-   *  o botão e dizer "não há chamada de trabalhos aberta": o evento PODE ter uma
-   *  chamada no ar, e a proposta entra por ela. Sem esta leitura, o autor lê uma frase
-   *  falsa e não recebe caminho nenhum — a tela vira um beco.
-   *
-   *  `take: 1` porque a pergunta é de existência, e uma ida ao banco basta.
-   */
-  const chamadaAberta = await withTenant(tenantId, (tx) =>
-    tx.callForProposals.findFirst({
+    const callsData = await tx.callForProposals.findMany({
       where: {
         tenantId,
         deletedAt: null,
@@ -150,9 +116,39 @@ export default async function MySubmissionsPage({
         AND: [{ OR: [{ closesAt: null }, { closesAt: { gt: agora } }] }],
         event: { status: { in: ['PUBLISHED', 'REGISTRATION_OPEN'] }, deletedAt: null },
       },
-      select: { id: true },
-    }),
-  );
+      orderBy: { closesAt: 'asc' },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        closesAt: true,
+        kind: true,
+        event: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+          },
+        },
+      },
+    });
+
+    return { page: pageData, openEvents: eventsData, openCalls: callsData };
+  });
+
+  const submissions = page.submissions;
+  const chamadaAberta = openCalls.length > 0;
+  const firstCall = openCalls[0];
+
+  /**
+   * O endereço canônico: a PRIMEIRA página não carrega `?pagina=1` — `/submissoes` e
+   * `/submissoes?pagina=1` seriam a mesma tela em dois endereços, e o "Anteriores" da
+   * página 2 tem de voltar para o endereço limpo.
+   */
+  const listHref = (target: number) =>
+    target <= 1
+      ? tenantPath(tenantSlug, '/submissoes')
+      : `${tenantPath(tenantSlug, '/submissoes')}?pagina=${target}`;
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -169,9 +165,87 @@ export default async function MySubmissionsPage({
               <Plus className="size-4" aria-hidden />
               Nova submissão
             </Link>
+          ) : openCalls.length === 1 && firstCall ? (
+            <Link
+              href={tenantPath(
+                tenantSlug,
+                `/eventos/${firstCall.event.slug}/chamada/${firstCall.slug}`,
+              )}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              <Plus className="size-4" aria-hidden />
+              Enviar proposta
+            </Link>
+          ) : openCalls.length > 1 ? (
+            <a
+              href="#chamadas-abertas"
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              <Plus className="size-4" aria-hidden />
+              Ver chamadas abertas ({openCalls.length})
+            </a>
           ) : null
         }
       />
+
+      {/* Bloco de chamadas abertas visível quando o autor já possui submissões */}
+      {submissions.length > 0 && openCalls.length > 0 ? (
+        <section
+          id="chamadas-abertas"
+          className="space-y-3 rounded-lg border border-border bg-card p-5"
+          aria-label="Chamadas abertas para envio"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <span className="size-2 rounded-full bg-success inline-block" aria-hidden />
+              Chamadas de trabalhos abertas ({openCalls.length})
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              Envie novas propostas para os eventos ativos
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {openCalls.map((call) => (
+              <div
+                key={call.id}
+                className="flex flex-col justify-between rounded-md border border-border/80 bg-background/60 p-3.5 text-sm"
+              >
+                <div className="space-y-1">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {call.event.title}
+                  </span>
+                  <h3 className="font-medium text-foreground">{call.title}</h3>
+                  {call.closesAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Prazo até{' '}
+                      {new Intl.DateTimeFormat('pt-BR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      }).format(call.closesAt)}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Sem prazo de encerramento definido
+                    </p>
+                  )}
+                </div>
+                <div className="mt-3 pt-2">
+                  <Link
+                    href={tenantPath(
+                      tenantSlug,
+                      `/eventos/${call.event.slug}/chamada/${call.slug}`,
+                    )}
+                    className="inline-flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
+                  >
+                    Enviar proposta →
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {submissions.length === 0 ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6">
@@ -179,12 +253,62 @@ export default async function MySubmissionsPage({
             <FileText className="size-4" aria-hidden />
             Você ainda não submeteu nenhum trabalho.
           </p>
-          {openEvents.length === 0 ? (
+          {openEvents.length === 0 && openCalls.length === 0 ? (
             <p className="text-xs text-muted-foreground" data-testid="no-open-cfp">
-              {chamadaAberta
-                ? 'Há chamada de trabalhos aberta — envie a proposta pela página da chamada.'
-                : 'Não há chamada de trabalhos aberta no momento.'}
+              Não há chamada de trabalhos aberta no momento.
             </p>
+          ) : null}
+
+          {openCalls.length > 0 ? (
+            <div className="space-y-3 pt-2">
+              <p
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                data-testid="no-open-cfp"
+              >
+                {chamadaAberta
+                  ? 'Há chamada de trabalhos aberta — envie a proposta pela página da chamada:'
+                  : 'Não há chamada de trabalhos aberta no momento.'}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {openCalls.map((call) => (
+                  <div
+                    key={call.id}
+                    className="flex flex-col justify-between rounded-md border border-border bg-background p-4 text-sm"
+                  >
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {call.event.title}
+                      </span>
+                      <h3 className="font-medium text-foreground">{call.title}</h3>
+                      {call.closesAt ? (
+                        <p className="text-xs text-muted-foreground">
+                          Prazo até{' '}
+                          {new Intl.DateTimeFormat('pt-BR', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          }).format(call.closesAt)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Sem prazo de encerramento definido
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <Link
+                        href={tenantPath(
+                          tenantSlug,
+                          `/eventos/${call.event.slug}/chamada/${call.slug}`,
+                        )}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90"
+                      >
+                        Enviar proposta →
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
         </div>
       ) : (

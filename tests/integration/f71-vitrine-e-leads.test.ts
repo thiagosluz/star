@@ -65,7 +65,7 @@ describe('F71 — Vitrine Pública, Descoberta e Expansão Institucional', () =>
 
     // 2. Criar eventos com categorias distintas via saveEvent
     const now = new Date();
-    const startTech = new Date(now.getTime() + 86_400_000 * 5); // +5 dias
+    const startTech = new Date(now.getTime() + 86_400_000 * 1); // +1 dia
     const endTech = new Date(startTech.getTime() + 3600_000 * 8); // +8h
 
     const resTech = await saveEvent({

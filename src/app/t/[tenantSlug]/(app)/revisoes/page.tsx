@@ -51,6 +51,7 @@ export default async function ReviewerTasksPage({
    */
   const pending = tasks.filter((task) => !task.hasReview);
   const done = tasks.filter((task) => task.hasReview);
+  const overdueCount = pending.filter((task) => task.isOverdue).length;
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -66,14 +67,51 @@ export default async function ReviewerTasksPage({
         </p>
       ) : (
         <>
+          {/* Resumo de carga do avaliador */}
+          <section className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock
+                  className={`size-3.5 ${
+                    overdueCount > 0
+                      ? 'text-destructive'
+                      : pending.length > 0
+                        ? 'text-warning-strong'
+                        : 'text-success-strong'
+                  }`}
+                  aria-hidden
+                />
+                Pareceres pendentes
+              </p>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-semibold tabular-nums">{pending.length}</span>
+                {overdueCount > 0 ? (
+                  <span className="rounded border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                    {overdueCount} {overdueCount === 1 ? 'prazo vencido' : 'prazos vencidos'}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CheckCircle2 className="size-3.5 text-success-strong" aria-hidden />
+                Pareceres concluídos
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-success-strong">
+                {done.length}
+              </p>
+            </div>
+          </section>
+
           <section className="space-y-3">
             <h2 className="text-sm font-medium">
               Pendentes ({pending.length})
             </h2>
 
             {pending.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nenhum parecer pendente.
+              <p className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+                Nenhum parecer pendente no momento.
               </p>
             ) : (
               <ul className="space-y-3" data-testid="pending-reviews">
@@ -145,15 +183,15 @@ function TaskCard({
           ) : null}
         </div>
 
-        <h3 className="font-medium">{task.title}</h3>
+        <h3 className="font-medium text-foreground">{task.title}</h3>
 
         <p className="line-clamp-2 text-sm text-muted-foreground">{task.abstract}</p>
 
         <p className="text-xs text-muted-foreground">
-          {task.eventTitle}
-          {task.trackName ? ` · ${task.trackName}` : ''}
+          <span className="font-semibold text-foreground/80">{task.eventTitle}</span>
+          {task.trackName ? ` · Trilha: ${task.trackName}` : ''}
           {task.dueAt
-            ? ` · prazo ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(task.dueAt)}`
+            ? ` · Prazo: ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(task.dueAt)}`
             : ''}
         </p>
 
