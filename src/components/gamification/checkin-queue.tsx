@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useOptimistic, useState, useTransition } from 'react';
+import { useActionState, useEffect, useOptimistic } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
@@ -78,12 +78,20 @@ function QueueRow({
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
 }) {
-  const [state, setState] = useState<AttendanceActionState | null>(null);
-  const [isPending, startTransition] = useTransition();
-
   const [optimisticInside, setOptimisticInside] = useOptimistic(
     entry.isInside,
     (_current, next: boolean) => next,
+  );
+
+  const [state, formAction, isPending] = useActionState(
+    async (prevState: AttendanceActionState | null, formData: FormData) => {
+      const mode = formData.get('mode');
+      const nextInside = !optimisticInside;
+      setOptimisticInside(nextInside);
+      const action = mode === 'out' ? checkOutAction : checkInAction;
+      return action(prevState, formData);
+    },
+    null,
   );
 
   useEffect(() => {
@@ -92,18 +100,6 @@ function QueueRow({
     const xp = Number(state.data?.xpAwarded ?? 0);
     if (cards > 0 || xp >= 150) celebrate({ intensity: 'medium' });
   }, [state]);
-
-  function handleFormAction(formData: FormData) {
-    const mode = formData.get('mode');
-    const nextInside = !optimisticInside;
-
-    startTransition(async () => {
-      setOptimisticInside(nextInside);
-      const action = mode === 'out' ? checkOutAction : checkInAction;
-      const result = await action(state, formData);
-      setState(result);
-    });
-  }
 
   return (
     <li
@@ -131,7 +127,7 @@ function QueueRow({
       </div>
 
       <div className="flex items-center gap-2">
-        <form action={handleFormAction}>
+        <form action={formAction}>
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="registrationId" value={entry.registrationId} />
           <input type="hidden" name="mode" value={optimisticInside ? 'out' : 'in'} />

@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
+import { AppLink } from '@/components/ui/app-link';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -69,7 +69,7 @@ export function NavLink({
   const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <Link
+    <AppLink
       href={href}
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
@@ -99,7 +99,7 @@ export function NavLink({
       >
         {label}
       </span>
-    </Link>
+    </AppLink>
   );
 }
 
@@ -122,7 +122,7 @@ export function TabNav({
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
         return (
-          <Link
+          <AppLink
             key={item.href}
             href={item.href}
             aria-current={active ? 'page' : undefined}
@@ -135,7 +135,7 @@ export function TabNav({
           >
             {item.label}
             {item.badge}
-          </Link>
+          </AppLink>
         );
       })}
     </nav>

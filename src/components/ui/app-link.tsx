@@ -35,8 +35,22 @@ export const AppLink = forwardRef<HTMLAnchorElement, AppLinkProps>(function AppL
     <Link
       ref={ref}
       onNavigate={(e) => {
-        if (!skipProgress) {
-          startNavigationProgress();
+        if (!skipProgress && typeof window !== 'undefined') {
+          try {
+            const rawHref = props.href;
+            const dest =
+              typeof rawHref === 'string'
+                ? rawHref
+                : `${rawHref.pathname ?? ''}${rawHref.search ?? ''}`;
+            const url = new URL(dest, window.location.href);
+            const targetPath = `${url.pathname}${url.search}`;
+            const currentPath = `${window.location.pathname}${window.location.search}`;
+            if (targetPath !== currentPath && url.origin === window.location.origin) {
+              startNavigationProgress();
+            }
+          } catch {
+            startNavigationProgress();
+          }
         }
         onNavigate?.(e);
       }}

@@ -1,13 +1,15 @@
-import Link from 'next/link';
-import { AlertTriangle, IdCard, ScanLine } from 'lucide-react';
+import { AlertTriangle, ScanLine } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { getRequestContext } from '@/lib/auth/session';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { withTenant } from '@/lib/db/tenant-client';
-import { tenantPath } from '@/domain/tenancy/resolution';
 import { listCheckinQueue } from '@/lib/events/attendance-service';
+import {
+  CheckinEventFilter,
+  CheckinSearchFilter,
+} from '@/components/credentials/checkin-filter-bar';
 import { CheckinQueue } from '@/components/gamification/checkin-queue';
 import { MonitorConsole, type MonitorActivity } from '@/components/credentials/monitor-console';
 import { checkInAction, checkOutAction } from '@/app/actions/attendance-actions';
@@ -189,44 +191,16 @@ export default async function CheckinPage({
         </p>
       ) : (
         <>
-          <form method="get" className="flex flex-wrap items-end gap-3" data-testid="checkin-filters">
-            <label className="space-y-1 text-xs font-medium">
-              Evento
-              <select
-                name="evento"
-                defaultValue={selectedEventId ?? ''}
-                className="block min-w-64 rounded-md border border-border bg-background px-3 py-2 text-sm"
-                aria-label="Evento"
-                data-testid="checkin-event"
-              >
-                {events.map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.title} · {event.startsAt.toLocaleDateString('pt-BR')}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              type="submit"
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-muted"
-            >
-              Trocar de evento
-            </button>
-
-            {can(principal, PERMISSIONS.ATTENDANCE_MANAGE, {
-              scope: 'TENANT',
-            }) || (selectedEventId && can(principal, PERMISSIONS.ATTENDANCE_MANAGE, { scope: 'EVENT', eventId: selectedEventId })) ? (
-              <Link
-                href={tenantPath(tenantSlug, `/credenciamento/crachas?evento=${selectedEventId ?? ''}`)}
-                data-testid="checkin-badges-link"
-                className="inline-flex items-center gap-2 rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10"
-              >
-                <IdCard className="size-4" aria-hidden />
-                Crachás: emitir e imprimir
-              </Link>
-            ) : null}
-          </form>
+          <CheckinEventFilter
+            tenantSlug={tenantSlug}
+            events={events}
+            selectedEventId={selectedEventId}
+            canManageBadges={
+              Boolean(can(principal, PERMISSIONS.ATTENDANCE_MANAGE, {
+                scope: 'TENANT',
+              }) || (selectedEventId && can(principal, PERMISSIONS.ATTENDANCE_MANAGE, { scope: 'EVENT', eventId: selectedEventId })))
+            }
+          />
 
           {selectedEventId ? (
             <MonitorConsole
@@ -249,28 +223,11 @@ export default async function CheckinPage({
               entrada/saída por aqui.
             </p>
 
-            <form method="get" className="flex flex-wrap items-end gap-3" data-testid="checkin-search-form">
-              <input type="hidden" name="evento" value={selectedEventId ?? ''} />
-              <label className="space-y-1 text-xs font-medium">
-                Buscar
-                <input
-                  type="search"
-                  name="q"
-                  defaultValue={q ?? ''}
-                  placeholder="nome, e-mail ou crachá"
-                  className="block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  aria-label="Buscar participante"
-                  data-testid="checkin-search"
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-muted"
-              >
-                Buscar
-              </button>
-            </form>
+            <CheckinSearchFilter
+              tenantSlug={tenantSlug}
+              selectedEventId={selectedEventId}
+              initialQuery={q ?? ''}
+            />
 
             {queue && !queue.ok ? (
               <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-card p-4 text-sm text-destructive">

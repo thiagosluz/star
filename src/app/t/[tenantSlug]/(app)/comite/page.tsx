@@ -97,9 +97,10 @@ export default async function ChairConsolePage({ params, searchParams }: ComiteP
         hasActiveFilters={hasActiveFilters}
       />
 
-      {/* Cockpit de Submissões com Suspense Real e Streaming Assíncrono (ADR-417 / ADR-420) */}
-      <Suspense key={filterKey} fallback={<SubmissionsListSkeleton />}>
+      {/* Cockpit de Submissões com Suspense Real e Transição Suave sem Flash (ADR-417 / ADR-420 / ADR-428) */}
+      <Suspense fallback={<SubmissionsListSkeleton />}>
         <ComiteResults
+          key={filterKey}
           tenantId={tenantId}
           tenantSlug={tenantSlug}
           evento={evento}

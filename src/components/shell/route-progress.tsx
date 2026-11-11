@@ -3,31 +3,29 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import {
+  KOVENO_NAVIGATION_START_EVENT,
+  KOVENO_NAVIGATION_STOP_EVENT,
+} from '@/components/ui/navigation-progress-bar';
 import { Skeleton } from '@/components/ui';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  FEEDBACK INSTANTÂNEO DE TRANSIÇÃO DE ROTA — `RouteProgress` (FASE 97 · ADR-410)
+ *  UNIFICADO COM `NavigationProgressBar` (FASE 102 · ADR-426)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE CLIENT-SIDE NO `AppShell` E NÃO `loading.tsx` NO LAYOUT PAI
+ *  POR QUE UNIFICADO E INTEGRADO AOS EVENTOS GLOBAIS
  *  ─────────────────────────────────────────────────────────────────────────────
- *  No Next.js 16 + React 19, colocar `loading.tsx` em `/t/[tenantSlug]/(app)` ou
- *  `/superadmin` envolve toda `page.tsx` filha em `<Suspense>` já na renderização
- *  inicial de documento HTML (`renderToStream` / `renderToWebFizzStream`). Como o
- *  layout pai resolve antes da página filha:
- *    1. O servidor despacha `HTTP 200 OK` + `<template id="B:0">` antes de `page.tsx`
- *       executar `notFound()` ou `redirect()`, convertendo respostas reais de 404 e
- *       307 em HTTP 200 (e `htmlLimitedBots` afeta apenas `serveStreamingMetadata`,
- *       não `supportsDynamicResponse`).
- *    2. A página real é enviada dentro de `<div hidden id="S:0">`, que depende de
- *       `<script>$RC("B:0","S:0")</script>` para ficar visível — quebrando o contrato
- *       de aprimoramento progressivo (`javaScriptEnabled: false`).
+ *  Nas fases 97 e 99/101, dois componentes concorrentes de barra de transição
+ *  atuavam em paralelo na mesma coordenada (`top-0 z-50`): o `RouteProgress` no
+ *  `AppShell` e o `NavigationProgressBar` no `RootLayout`.
  *
- *  Em vez de envolver o SSR num `<Suspense>` global, `RouteProgress` atua exatamente
- *  onde ocorre a sensação de travamento em rede real: na navegação SPA entre rotas
- *  internas (`<Link>` / `<a href>`), exibindo feedback imediato na casca (`AppShell`)
- *  sem interferir no status HTTP 404/307 nem na visibilidade sem JavaScript.
+ *  Na FASE 102, a barra visual foi consolidada no `NavigationProgressBar` (com
+ *  progressão suave, temporização e suporte a searchParams), enquanto o
+ *  `RouteProgress` fornece a âncora de acessibilidade semântica (ARIA live region
+ *  e testId) sincronizada com os eventos canônicos de navegação da plataforma,
+ *  eliminando a sobreposição de duas barras no topo da tela.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function RouteProgress({
@@ -38,68 +36,36 @@ export function RouteProgress({
   forceVisible?: boolean;
 }) {
   const pathname = usePathname();
-  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
-
-  const isNavigating = forceVisible || (navigatingTo !== null && navigatingTo !== pathname);
+  const [isNavigating, setIsNavigating] = useState(forceVisible);
 
   useEffect(() => {
-    function handleDocumentClick(event: MouseEvent) {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-
-      const target = event.target instanceof Element ? event.target : null;
-      const anchor = target?.closest('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-
-      if (
-        (anchor.target && anchor.target !== '_self') ||
-        anchor.hasAttribute('download')
-      ) {
-        return;
-      }
-
-      let url: URL;
-      try {
-        url = new URL(anchor.href, window.location.href);
-      } catch {
-        return;
-      }
-
-      if (url.origin !== window.location.origin) return;
-
-      // Mesmo pathname: não dispara barra de transição de página.
-      if (url.pathname === window.location.pathname) return;
-
-      setNavigatingTo(url.pathname);
+    function handleStart() {
+      setIsNavigating(true);
     }
 
-    document.addEventListener('click', handleDocumentClick, true);
+    function handleStop() {
+      setIsNavigating(false);
+    }
+
+    window.addEventListener(KOVENO_NAVIGATION_START_EVENT, handleStart);
+    window.addEventListener(KOVENO_NAVIGATION_STOP_EVENT, handleStop);
+
     return () => {
-      document.removeEventListener('click', handleDocumentClick, true);
+      window.removeEventListener(KOVENO_NAVIGATION_START_EVENT, handleStart);
+      window.removeEventListener(KOVENO_NAVIGATION_STOP_EVENT, handleStop);
     };
   }, []);
 
-  useEffect(() => {
-    if (!navigatingTo || navigatingTo === pathname) return;
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
+    if (isNavigating) {
+      setIsNavigating(false);
+    }
+  }
 
-    const timer = window.setTimeout(() => {
-      setNavigatingTo(null);
-    }, 8_000);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [navigatingTo, pathname]);
-
-  if (!isNavigating) return null;
+  const active = forceVisible || isNavigating;
+  if (!active) return null;
 
   const testId = variant === 'platform' ? 'platform-route-loading' : 'app-route-loading';
   const label =
@@ -114,10 +80,9 @@ export function RouteProgress({
       aria-live="polite"
       aria-busy="true"
       aria-label={label}
-      className="pointer-events-none fixed inset-x-0 top-0 z-50 h-1 overflow-hidden bg-primary/20"
+      className="sr-only"
     >
-      <div className="h-full w-2/3 animate-pulse bg-primary" />
-      <span className="sr-only">{label}</span>
+      <span>{label}</span>
     </div>
   );
 }

@@ -58,11 +58,10 @@ describe('FASE 101 — Correção Empírica da Reatividade, Interceptação Real
       expect(existsSync(queuePath)).toBe(true);
       const src = readFileSync(queuePath, 'utf8');
 
-      // Transição assíncrona com startTransition
-      expect(src).toContain('startTransition(async () => {');
+      // Transição assíncrona idiomática com useActionState do React 19 (ADR-427)
+      expect(src).toContain('useActionState(');
       expect(src).toContain('setOptimisticInside(nextInside);');
-      expect(src).toContain('const result = await action(state, formData);');
-      expect(src).toContain('setState(result);');
+      expect(src).toContain('return action(prevState, formData);');
 
       // Botão desabilitado em trânsito (pending || isPending)
       expect(src).toContain('const busy = pending || isPending;');

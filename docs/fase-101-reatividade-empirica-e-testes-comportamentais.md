@@ -85,7 +85,36 @@ A solução exigiu provar o comportamento com testes reais em Chromium em vez de
 
 ---
 
-## 7. Checklist de Aceite
+## 7. Comandos Operacionais
+
+```bash
+# Validação de qualidade estática
+npm run lint
+npm run typecheck
+
+# Execução dos testes unitários da fase
+npm test tests/unit/f101-reatividade-empirica-e-testes-comportamentais.test.ts
+
+# Bateria completa de testes e validação de banco
+npm test
+npm run db:verify
+npm run db:verify:isolation
+
+# Validação ponta a ponta com Playwright
+npm run test:e2e tests/e2e/f101-reatividade-empirica-e-comportamento.spec.ts
+```
+
+---
+
+## 8. Dívidas Técnicas e Pontos de Atenção
+
+1. **Unificação da barra no topo com `RouteProgress`:** O `AppShell` ainda continha o `RouteProgress` da F97 enquanto o `RootLayout` continha o `NavigationProgressBar`, gerando sobreposição visual consolidada na F102.
+2. **Uso amplo de `AppLink`:** Criado na F101, o `AppLink` precisava de guarda de rota idêntica e adoção nos componentes de navegação (`NavLink` e `TabNav`), endereçado na F102.
+3. **Idiomaticidade do React 19:** O `CheckinQueue` utilizava `startTransition` manual dentro de um handler cliente em vez de `useActionState` direto ligado ao `<form action>`, endereçado na F102.
+
+---
+
+## 9. Checklist de Aceite
 
 - [x] Barra de navegação global intercepta cliques em links internos reais via fase de captura com guardas completas.
 - [x] Componente canônico `<AppLink>` criado e exportado em `@/components/ui` com integração `onNavigate`.

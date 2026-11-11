@@ -13,10 +13,11 @@ describe('FASE 100 — Correções Críticas de Reatividade, Suspense Cirúrgico
       expect(existsSync(pagePath)).toBe(true);
       const src = readFileSync(pagePath, 'utf8');
 
-      // Verifica que ComitePage entrega ComiteFilterBar antes do Suspense
+      // Verifica que ComitePage entrega ComiteFilterBar antes do Suspense com transição suave
       expect(src).toContain('<ComiteFilterBar');
-      expect(src).toContain('<Suspense key={filterKey} fallback={<SubmissionsListSkeleton />}>');
+      expect(src).toContain('<Suspense fallback={<SubmissionsListSkeleton />}>');
       expect(src).toContain('<ComiteResults');
+      expect(src).toContain('key={filterKey}');
       expect(src).toContain('async function ComiteResults(');
 
       // Garante que o isolamento RLS e withTenant estão presentes
@@ -41,8 +42,8 @@ describe('FASE 100 — Correções Críticas de Reatividade, Suspense Cirúrgico
       expect(existsSync(queuePath)).toBe(true);
       const src = readFileSync(queuePath, 'utf8');
 
-      // Transição assíncrona real mantendo o estado pendente até resolução do servidor
-      expect(src).toContain('startTransition(async () => {');
+      // Transição assíncrona idiomática com useActionState mantendo o estado pendente até resolução do servidor (ADR-427)
+      expect(src).toContain('useActionState(');
       expect(src).toContain("formData.get('mode')");
       expect(src).toContain('checkOutAction : checkInAction');
 

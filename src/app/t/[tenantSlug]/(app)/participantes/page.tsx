@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Contact, Search } from 'lucide-react';
+import { Contact } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { can } from '@/domain/rbac/authorization';
@@ -13,6 +13,7 @@ import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
 import { ExportPanel } from '@/components/exports/export-panel';
 import { ENGAGEMENT_LABELS, PARTICIPANT_ORIGIN_LABELS } from '@/domain/participants/participant-rules';
+import { ParticipantFilterBar } from '@/components/participants/participant-filter-bar';
 import { ParticipantDirectory, type DirectoryEntry } from '@/components/participants/participant-directory';
 import { sendParticipantMessageAction } from '@/app/actions/participant-actions';
 
@@ -172,71 +173,14 @@ export default async function ParticipantsPage({
         </Alert>
       ) : null}
 
-      <form method="get" className="flex flex-wrap items-end gap-3" data-testid="participant-filters">
-        <label className="space-y-1 text-xs font-medium">
-          Buscar
-          <input
-            type="search"
-            name="busca"
-            defaultValue={busca ?? ''}
-            placeholder="nome ou e-mail"
-            aria-label="Buscar participante"
-            data-testid="participant-search"
-            className="block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
-          />
-        </label>
-
-        <label className="space-y-1 text-xs font-medium">
-          Evento
-          <select
-            name="evento"
-            defaultValue={selectedEventId ?? ''}
-            aria-label="Evento"
-            data-testid="participant-event"
-            className="block min-w-64 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
-          >
-            <option value="">Todos os eventos</option>
-            {events.map((event) => (
-              <option key={event.id} value={event.id}>
-                {event.title} · {event.startsAt.toLocaleDateString('pt-BR')}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex items-center gap-2 pb-2 text-xs">
-          <input
-            type="checkbox"
-            name="certificado"
-            value="1"
-            defaultChecked={certificado === '1'}
-            data-testid="participant-only-certificate"
-            className="size-3.5"
-          />
-          Só quem tem certificado
-        </label>
-
-        <label className="flex items-center gap-2 pb-2 text-xs">
-          <input
-            type="checkbox"
-            name="presente"
-            value="1"
-            defaultChecked={presente === '1'}
-            data-testid="participant-only-attended"
-            className="size-3.5"
-          />
-          Só quem já compareceu
-        </label>
-
-        <button
-          type="submit"
-          data-testid="participant-filter-apply"
-          className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-muted"
-        >
-          <Search className="size-3.5" aria-hidden />
-          Filtrar
-        </button>
-      </form>
+      <ParticipantFilterBar
+        tenantSlug={tenantSlug}
+        events={events}
+        initialBusca={busca ?? ''}
+        initialEvento={selectedEventId ?? ''}
+        initialCertificado={certificado === '1'}
+        initialPresente={presente === '1'}
+      />
 
       {!listing.ok ? (
         <p className="rounded-lg border border-destructive/40 bg-card p-4 text-sm text-destructive">
