@@ -1,12 +1,18 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, Clock, Inbox, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Inbox,
+  Users,
+} from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { listSubmissionsForChair } from '@/lib/review/review-service';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { withTenant } from '@/lib/db/tenant-client';
+import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { EmptyState, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { ComiteFilterBar } from '@/components/review/comite-filter-bar';
@@ -15,6 +21,15 @@ import type { SubmissionStatus } from '@/domain/review/submission-rules';
 
 export const metadata = { title: 'Comitê científico' };
 export const dynamic = 'force-dynamic';
+
+interface ComitePageProps {
+  params: Promise<{ tenantSlug: string }>;
+  searchParams: Promise<{
+    evento?: string;
+    status?: string;
+    busca?: string;
+  }>;
+}
 
 const STATUS_LABEL: Record<string, string> = {
   SUBMITTED: 'Aguardando atribuição',
@@ -25,28 +40,23 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * Painel do comitê científico.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  COCKPIT DO COMITÊ CIENTÍFICO (FASE 98 · ADR-413 / FASE 99 · ADR-417 / FASE 100 · ADR-420)
  *
- * Mostra a fila de submissões com o estado do quórum de pareceres. O objetivo é
- * responder a uma pergunta prática: "o que precisa da minha atenção agora?".
- *
- * Na FASE 98 (ADR-413), a fila ganhou cockpit com filtros de evento, status/quórum
- * e busca por protocolo/título em transação única, exibindo o evento em cada card.
- *
- * Na FASE 99 (ADR-416/417), a barra de filtros passa a usar `useTransition` e debounce,
- * e a listagem dinâmica é isolada em um boundary local de `<Suspense>`, mantendo
- * o cabeçalho e os cartões de estatísticas estáveis sem desmontagem de layout.
- *
- * Exige `submission:read:any`: ver a fila inteira significa ler títulos e resumos
- * de trabalhos de terceiros, o que não é papel de um participante.
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  STREAMING E SUSPENSE CIRÚRGICO REAL
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Na FASE 100:
+ *    • O Server Component da página (`ChairConsolePage`) carrega a lista leve de eventos
+ *      e entrega o cabeçalho e a barra de filtros instantaneamente ao navegador;
+ *    • A listagem de submissões e o resumo das métricas são executados dentro
+ *      de um componente assíncrono isolado (`ComiteResults`), envolvido por
+ *      `<Suspense key={filterKey} fallback={<SubmissionsListSkeleton />}>`;
+ *    • O streaming do Next.js 16 App Router exibe o esqueleto no milissegundo zero,
+ *      eliminando a sensação de travamento na navegação e na troca de filtros.
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
-export default async function ChairConsolePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ tenantSlug: string }>;
-  searchParams: Promise<{ evento?: string; status?: string; busca?: string }>;
-}) {
+export default async function ChairConsolePage({ params, searchParams }: ComitePageProps) {
   const { tenantSlug } = await params;
   const { evento, status: statusParam, busca } = await searchParams;
 
@@ -55,6 +65,65 @@ export default async function ChairConsolePage({
     permission: PERMISSIONS.SUBMISSION_READ_ANY,
   });
 
+  const events = await withTenant(tenantId, async (tx: TxClient) => {
+    return tx.event.findMany({
+      where: { deletedAt: null },
+      orderBy: { startsAt: 'desc' },
+      select: { id: true, title: true },
+    });
+  });
+
+  const hasActiveFilters = Boolean(evento || statusParam || busca);
+  const filterKey = `${evento ?? ''}-${statusParam ?? ''}-${busca ?? ''}`;
+
+  return (
+    <main className="max-w-5xl space-y-8">
+      <PageHeader
+        title="Comitê científico"
+        eyebrow={TENANT_NAV_GROUPS.comite}
+        description={`Fila de avaliação e decisões em ${tenantName}.`}
+      />
+
+      {/* 
+        Barra de Filtros e Busca Reativa (ADR-416 / ADR-422)
+        Contrato de query preservado no cockpit: name="busca", name="evento", name="status" e ação de "Limpar filtros".
+      */}
+      <ComiteFilterBar
+        tenantSlug={tenantSlug}
+        events={events}
+        initialBusca={busca ?? ''}
+        initialEvento={evento ?? ''}
+        initialStatus={statusParam ?? ''}
+        hasActiveFilters={hasActiveFilters}
+      />
+
+      {/* Cockpit de Submissões com Suspense Real e Streaming Assíncrono (ADR-417 / ADR-420) */}
+      <Suspense key={filterKey} fallback={<SubmissionsListSkeleton />}>
+        <ComiteResults
+          tenantId={tenantId}
+          tenantSlug={tenantSlug}
+          evento={evento}
+          busca={busca}
+          statusParam={statusParam}
+        />
+      </Suspense>
+    </main>
+  );
+}
+
+async function ComiteResults({
+  tenantId,
+  tenantSlug,
+  evento,
+  busca,
+  statusParam,
+}: {
+  tenantId: string;
+  tenantSlug: string;
+  evento?: string;
+  busca?: string;
+  statusParam?: string;
+}) {
   const statusList =
     statusParam === 'ACCEPTED'
       ? (['ACCEPTED'] as SubmissionStatus[])
@@ -64,14 +133,8 @@ export default async function ChairConsolePage({
           ? (['SUBMITTED', 'UNDER_REVIEW', 'REVISION_REQUESTED', 'ACCEPTED', 'REJECTED'] as SubmissionStatus[])
           : undefined;
 
-  const { events, submissions: rawSubmissions } = await withTenant(tenantId, async (tx) => {
-    const eventsList = await tx.event.findMany({
-      where: { deletedAt: null },
-      orderBy: { startsAt: 'desc' },
-      select: { id: true, title: true },
-    });
-
-    const list = await listSubmissionsForChair(
+  const rawSubmissions = await withTenant(tenantId, async (tx: TxClient) => {
+    return listSubmissionsForChair(
       tenantId,
       {
         eventId: evento || undefined,
@@ -80,8 +143,6 @@ export default async function ChairConsolePage({
       },
       tx,
     );
-
-    return { events: eventsList, submissions: list };
   });
 
   // Métricas calculadas sobre os trabalhos carregados
@@ -99,8 +160,6 @@ export default async function ChairConsolePage({
     return true;
   });
 
-  const hasActiveFilters = Boolean(evento || statusParam || busca);
-
   const filterHref = (newStatus?: string) => {
     const p = new URLSearchParams();
     if (evento) p.set('evento', evento);
@@ -110,16 +169,10 @@ export default async function ChairConsolePage({
     return `${tenantPath(tenantSlug, '/comite')}${qs ? `?${qs}` : ''}`;
   };
 
-  const filterKey = `${evento ?? ''}-${statusParam ?? ''}-${busca ?? ''}`;
+  const hasActiveFilters = Boolean(evento || statusParam || busca);
 
   return (
-    <main className="max-w-5xl space-y-8">
-      <PageHeader
-        title="Comitê científico"
-        eyebrow={TENANT_NAV_GROUPS.comite}
-        description={`Fila de avaliação e decisões em ${tenantName}.`}
-      />
-
+    <div className="space-y-8">
       {/* Cartões de status e métricas */}
       <section className="grid gap-4 sm:grid-cols-3" data-testid="chair-summary">
         <Link
@@ -160,105 +213,90 @@ export default async function ChairConsolePage({
         </Link>
       </section>
 
-      {/* 
-        Barra de Filtros e Busca Reativa (ADR-416)
-        Contrato de query preservado no cockpit: name="busca", name="evento", name="status" e ação de "Limpar filtros".
-      */}
-      <ComiteFilterBar
-        tenantSlug={tenantSlug}
-        events={events}
-        initialBusca={busca ?? ''}
-        initialEvento={evento ?? ''}
-        initialStatus={statusParam ?? ''}
-        hasActiveFilters={hasActiveFilters}
-      />
-
-      {/* Lista de Submissões com Suspense Granular (ADR-417) */}
-      <Suspense key={filterKey} fallback={<SubmissionsListSkeleton />}>
-        {submissions.length === 0 ? (
-          hasActiveFilters ? (
-            <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              <div className="space-y-2">
-                <p>Nenhuma submissão encontrada com os filtros selecionados.</p>
-                <Link
-                  href={tenantPath(tenantSlug, '/comite')}
-                  className="inline-block text-xs font-semibold text-primary underline"
-                >
-                  Limpar filtros da busca
-                </Link>
-              </div>
+      {/* Lista de Submissões */}
+      {submissions.length === 0 ? (
+        hasActiveFilters ? (
+          <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+            <div className="space-y-2">
+              <p>Nenhuma submissão encontrada com os filtros selecionados.</p>
+              <Link
+                href={tenantPath(tenantSlug, '/comite')}
+                className="inline-block text-xs font-semibold text-primary underline"
+              >
+                Limpar filtros da busca
+              </Link>
             </div>
-          ) : (
-            <EmptyState
-              icon={Inbox}
-              title="Nenhuma submissão aguardando avaliação"
-              description="Quando autores enviarem propostas e artigos científicos para as chamadas da instituição, os trabalhos aparecerão aqui para distribuição de pareceristas e deliberação."
-            />
-          )
+          </div>
         ) : (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium">Submissões ({submissions.length})</h2>
-            </div>
+          <EmptyState
+            icon={Inbox}
+            title="Nenhuma submissão aguardando avaliação"
+            description="Quando autores enviarem propostas e artigos científicos para as chamadas da instituição, os trabalhos aparecerão aqui para distribuição de pareceristas e deliberação."
+          />
+        )
+      ) : (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Submissões ({submissions.length})</h2>
+          </div>
 
-            <ul className="space-y-3" data-testid="chair-submissions">
-              {submissions.map((submission) => {
-                const quorumReached = submission.reviewCount >= submission.requiredReviews;
-                return (
-                  <li
-                    key={submission.id}
-                    className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
-                  >
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
-                          {submission.protocol}
+          <ul className="space-y-3" data-testid="chair-submissions">
+            {submissions.map((submission) => {
+              const quorumReached = submission.reviewCount >= submission.requiredReviews;
+              return (
+                <li
+                  key={submission.id}
+                  className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
+                >
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
+                        {submission.protocol}
+                      </span>
+                      <span
+                        className={`rounded border px-2 py-0.5 text-xs ${
+                          quorumReached
+                            ? 'border-success/40 text-success-strong'
+                            : 'border-warning/40 text-warning-strong'
+                        }`}
+                        data-testid="quorum-status"
+                      >
+                        {submission.reviewCount}/{submission.requiredReviews} pareceres
+                      </span>
+                      {!quorumReached && submission.reviewCount === 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded border border-destructive/40 px-2 py-0.5 text-xs text-destructive">
+                          <AlertTriangle className="size-3" aria-hidden />
+                          sem revisor
                         </span>
-                        <span
-                          className={`rounded border px-2 py-0.5 text-xs ${
-                            quorumReached
-                              ? 'border-success/40 text-success-strong'
-                              : 'border-warning/40 text-warning-strong'
-                          }`}
-                          data-testid="quorum-status"
-                        >
-                          {submission.reviewCount}/{submission.requiredReviews} pareceres
-                        </span>
-                        {!quorumReached && submission.reviewCount === 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded border border-destructive/40 px-2 py-0.5 text-xs text-destructive">
-                            <AlertTriangle className="size-3" aria-hidden />
-                            sem revisor
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <h3 className="font-medium text-foreground">{submission.title}</h3>
-
-                      <p className="text-xs text-muted-foreground">
-                        <span className="font-semibold text-foreground/80">{submission.eventTitle}</span>
-                        {submission.callTitle ? ` · ${submission.callTitle}` : ''}
-                        {submission.trackName ? ` · ${submission.trackName}` : ''}
-                        {` · ${STATUS_LABEL[submission.status] ?? submission.status}`}
-                        {submission.averageScore !== null
-                          ? ` · média ${submission.averageScore.toFixed(1)}`
-                          : ''}
-                      </p>
+                      ) : null}
                     </div>
 
-                    <Link
-                      href={tenantPath(tenantSlug, `/comite/${submission.id}`)}
-                      className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
-                    >
-                      Analisar
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
-      </Suspense>
-    </main>
+                    <h3 className="font-medium text-foreground">{submission.title}</h3>
+
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground/80">{submission.eventTitle}</span>
+                      {submission.callTitle ? ` · ${submission.callTitle}` : ''}
+                      {submission.trackName ? ` · ${submission.trackName}` : ''}
+                      {` · ${STATUS_LABEL[submission.status] ?? submission.status}`}
+                      {submission.averageScore !== null
+                        ? ` · média ${submission.averageScore.toFixed(1)}`
+                        : ''}
+                    </p>
+                  </div>
+
+                  <Link
+                    href={tenantPath(tenantSlug, `/comite/${submission.id}`)}
+                    className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+                  >
+                    Analisar
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 }
 

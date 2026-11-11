@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 99** (**F56 a F99 entregues**)
-Testes ................. **4803** (Vitest: unit + integração, 277 arquivos) + **517** (Playwright E2E) + 1 skip
-ADRs ................... 419 (numeração GLOBAL e sequencial — a próxima é ADR-420)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 100** (**F56 a F100 entregues**)
+Testes ................. **4808** (Vitest: unit + integração, 278 arquivos) + **518** (Playwright E2E) + 1 skip
+ADRs ................... 422 (numeração GLOBAL e sequencial — a próxima é ADR-423)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -711,7 +711,7 @@ tests/{unit,integration,e2e}
 > encostou o arquivo no teto) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**83 a 99**).
+> e no `README.md`. A tabela abaixo é a corrente (**83 a 100**).
 
 | Fase | Tema | Situação |
 |---|---|---|
@@ -732,6 +732,7 @@ tests/{unit,integration,e2e}
 | 97 | **Unificação de Missões e Palestrantes em cockpit limpo + transação única, `RouteProgress` no `AppShell` e confirmação pós-criação (`backHref` + Toast)** — `/administracao/missoes` (com `/missoes/nova` e `/missoes/[missionId]/editar`, 404 uniforme e `eventId` preservado) e `/administracao/eventos/[eventId]/palestrantes` (com `/palestrantes/novo` e `getAdminEvent` componível com `tx`) rodam em **1 transação `withTenant`**; `RouteProgress` + `RouteLoadingSkeleton` no `AppShell` (`tenant` e `platform`) entregam feedback instantâneo em `<Link>` sem envolver o SSR num `<Suspense>` que converteria 404/307 em HTTP 200 ou esconderia a página sem JS (`<div hidden id="S:0">`, armadilha 107); e as **9** rotas dedicadas conectam `backHref`/`backLabel` com `scrollIntoView` + Toast flutuante. ADR-409 … 411 | ✅ |
 | 98 | **Destravar `/submissoes` (visão do autor), cockpit de avaliação do comitê científico (`/comite`) e concorrência de consultas (`/revisoes` e `/administracao/equipe`)** — `/submissoes` unificada em **1 transação `withTenant`** com catálogo direto e links clicáveis para chamadas de propostas ativas (`#chamadas-abertas`); `listSubmissionsForChair` enriquecida com `eventId`, `eventTitle`, `eventSlug`, `callTitle`, e suporte a filtros por evento, situação/quórum e busca textual; cockpit `/comite` em **1 transação `withTenant`** com barra de filtros e cards de métricas agregadas; `listReviewerTasks` consolidada em **1 transação `withTenant`** com cards de métricas em `/revisoes`; e paralelização via `Promise.all` em `/administracao/equipe`. ADR-412 … 414 | ✅ |
 | 99 | **Excelência de UX, reatividade e foco operacional (`NavigationProgressBar`, filtros `useTransition`, `useOptimistic`, suspense granular e atalhos)** — `NavigationProgressBar` no layout raiz entrega feedback visual suave em navegações internas; `/comite` ganha `ComiteFilterBar` com debounce (300ms) e `useTransition` (scroll estável), além de `<Suspense>` local com `SubmissionsListSkeleton`; credenciamento em `/credenciamento` adota `useOptimistic` do React 19 para feedback instantâneo no balcão e autofocus no leitor de crachá; atalho `/` foca busca e `Esc` limpa; e empty states de `/revisoes` e `/certificados` passam a orientar os próximos passos com CTAs diretos. ADR-415 … 419 | ✅ |
+| 100 | **Correções críticas de reatividade, suspense cirúrgico e comportamento operacional** — `/comite` desacopla a entrega do shell (PageHeader + ComiteFilterBar imediatos) e delega o carregamento a `ComiteResults` sob Suspense real com SubmissionsListSkeleton (ADR-420); CheckinQueue unifica useActionState com useOptimistic garantindo feedback de erro persistente (role="alert") no balcão (ADR-421); NavigationProgressBar escuta no borbulhamento respeitando defaultPrevented, suporta navegação programática (startNavigationProgress) e motion-reduce; e ComiteFilterBar adota latestFiltersRef contra stale closures, limpeza real com Escape, trava de atalho em contentEditable e anúncio acessível via aria-live. ADR-420 … 422 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.

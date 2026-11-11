@@ -9,21 +9,21 @@ import { celebrate } from '@/components/gamification/celebration';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Fila de credenciamento — operação de balcão (FASE 99 · ADR-418)
+ *  Fila de credenciamento — operação de balcão (FASE 99 · ADR-418 / FASE 100 · ADR-421)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  MICRO-INTERAÇÃO OTIMISTA (useOptimistic DO REACT 19)
+ *  MICRO-INTERAÇÃO OTIMISTA COM TRATAMENTO UNIFICADO DE ERROS (REACT 19)
  *  ─────────────────────────────────────────────────────────────────────────────
  *  No balcão com fila e centenas de pessoas chegando, qualquer delay de 300ms a
  *  1s enquanto a Server Action viaja causa incerteza e cliques repetidos.
  *
- *  Com `useOptimistic`, o clique em "Credenciar" ou "Registrar saída" atualiza
- *  a linha no milissegundo zero:
- *    • O botão alterna o rótulo de imediato;
- *    • O data-inside reflete a nova situação no DOM;
- *    • Se a Server Action retornar sucesso, a revalidação consolida o dado;
- *    • Se a Server Action falhar (ex.: atividade lotada), a linha reverte
- *      automaticamente ao estado real do banco com mensagem de erro.
+ *  Na FASE 100 (ADR-421):
+ *    • Unificação do despachante em um único `useActionState`, garantindo que
+ *      respostas de erro (ex.: atividade lotada, QR expirado) persistam no
+ *      estado do componente e sejam exibidas visualmente ao operador (role="alert"),
+ *      mesmo após o rollback otimista de `useOptimistic`;
+ *    • Suporte a `prefers-reduced-motion` no indicador de pulso;
+ *    • Estado vazio alinhado aos padrões visuais de card da instituição.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -71,15 +71,21 @@ function QueueRow({
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
 }) {
-  const [inState, inAction] = useActionState<AttendanceActionState | null, FormData>(checkInAction, null);
-  const [outState, outAction] = useActionState<AttendanceActionState | null, FormData>(checkOutAction, null);
+  const [state, formAction] = useActionState<AttendanceActionState | null, FormData>(
+    async (prev, formData) => {
+      const mode = formData.get('mode');
+      if (mode === 'out') {
+        return checkOutAction(prev, formData);
+      }
+      return checkInAction(prev, formData);
+    },
+    null,
+  );
 
   const [optimisticInside, setOptimisticInside] = useOptimistic(
     entry.isInside,
     (_current, next: boolean) => next,
   );
-
-  const state = optimisticInside ? inState : outState;
 
   useEffect(() => {
     if (!state?.ok) return;
@@ -91,11 +97,7 @@ function QueueRow({
   async function handleFormAction(formData: FormData) {
     const nextInside = !optimisticInside;
     setOptimisticInside(nextInside);
-    if (optimisticInside) {
-      await outAction(formData);
-    } else {
-      await inAction(formData);
-    }
+    await formAction(formData);
   }
 
   return (
@@ -111,7 +113,7 @@ function QueueRow({
           {entry.activityTitle ? ` · ${entry.activityTitle}` : ' · evento'}
         </p>
         {optimisticInside && !entry.isInside ? (
-          <p className="flex items-center gap-1 text-xs text-primary animate-pulse">
+          <p className="flex items-center gap-1 text-xs text-primary animate-pulse motion-reduce:animate-none">
             <ShieldCheck className="size-3" aria-hidden />
             Credenciando agora…
           </p>
@@ -127,6 +129,7 @@ function QueueRow({
         <form action={handleFormAction}>
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="registrationId" value={entry.registrationId} />
+          <input type="hidden" name="mode" value={optimisticInside ? 'out' : 'in'} />
           <ActionButton mode={optimisticInside ? 'out' : 'in'} />
         </form>
       </div>
@@ -167,13 +170,15 @@ export function CheckinQueue({
 }) {
   if (entries.length === 0) {
     return (
-      <p
-        className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
+      <div
+        className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground"
         data-testid="queue-empty"
       >
-        Nenhuma inscrição confirmada encontrada. Ajuste a busca ou verifique se o evento tem
-        inscrições confirmadas.
-      </p>
+        <p>
+          Nenhuma inscrição confirmada encontrada. Ajuste a busca ou verifique se o evento tem
+          inscrições confirmadas.
+        </p>
+      </div>
     );
   }
 

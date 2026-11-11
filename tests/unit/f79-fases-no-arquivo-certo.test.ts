@@ -193,7 +193,7 @@ const FASES_HISTORICAS = [
  * A lista é DECLARADA, não derivada do `AGENTS.md`: é o gesto de declarar a fase
  * nova que mantém a catraca honesta (o comentário do cabeçalho explica).
  */
-const FASES_CORRENTES = Array.from({ length: 17 }, (_, indice) => String(83 + indice));
+const FASES_CORRENTES = Array.from({ length: 18 }, (_, indice) => String(83 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',

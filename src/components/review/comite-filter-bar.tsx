@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useTransition, useState } from 'react';
+import { useCallback, useEffect, useRef, useTransition, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Filter, Loader2, Search, X } from 'lucide-react';
 
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { startNavigationProgress } from '@/components/ui';
 
 export interface ComiteFilterBarProps {
   tenantSlug: string;
@@ -18,20 +19,20 @@ export interface ComiteFilterBarProps {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  BARRA DE FILTROS REATIVA DO COMITÊ (FASE 99 · ADR-416 / ADR-419)
+ *  BARRA DE FILTROS REATIVA DO COMITÊ (FASE 99 · ADR-416 / FASE 100 · ADR-422)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE USETRANSITION + DEBOUNCE EM VEZ DE GET BRUTO
+ *  POR QUE USETRANSITION + DEBOUNCE COM REFS E TRATAMENTO DE TECLADO ROBUSTO
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Antes desta fase, trocar um <select> ou buscar por nome submetia um formulário
- *  GET tradicional. O Next.js executava uma navegação completa de Server Component,
- *  recarregando a página, pulando o scroll e exigindo cliques manuais.
- *
- *  Agora:
- *    • O campo de busca tem debounce de 300ms com useTransition;
- *    • A troca de <select> é instantânea sem reload de página (scroll: false);
- *    • Tecla '/' foca o input de busca automaticamente (power-user experience);
- *    • O formulário mantém method="GET" para fallback progressivo e suporte a testes.
+ *  Na FASE 100:
+ *    • O debounce na busca lê referências sincronizadas (`latestFiltersRef`) para
+ *      impedir que digitação concorrente com troca de select cause closures
+ *      desatualizadas ou desfaça seleções;
+ *    • A tecla 'Escape' limpa a busca ativa e dispara a transição caso haja texto,
+ *      ou libera o foco (blur) se o campo já estiver vazio;
+ *    • O atalho '/' não intercepta elementos `contentEditable` além de inputs;
+ *    • Dispara `startNavigationProgress()` integrando com a barra global;
+ *    • Informa tecnologias assistivas via `aria-live="polite"` durante `isPending`.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function ComiteFilterBar({
@@ -54,6 +55,13 @@ export function ComiteFilterBar({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Mantém refs atualizadas para leitura fresca dentro do timer de debounce
+  const latestFiltersRef = useRef({ busca: initialBusca, evento: initialEvento, status: initialStatus });
+
+  useEffect(() => {
+    latestFiltersRef.current = { busca, evento, status };
+  }, [busca, evento, status]);
+
   // Sincroniza estado durante o render caso mudem externamente (ex.: clique em StatCard ou URL)
   const [prevProps, setPrevProps] = useState({ initialBusca, initialEvento, initialStatus });
   if (
@@ -67,66 +75,89 @@ export function ComiteFilterBar({
     setStatus(initialStatus);
   }
 
-  // Atalho de teclado: '/' foca a busca, 'Escape' cancela o foco
+  const applyFilters = useCallback(
+    (newBusca: string, newEvento: string, newStatus: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+
+      if (newBusca.trim()) {
+        params.set('busca', newBusca.trim());
+      } else {
+        params.delete('busca');
+      }
+
+      if (newEvento) {
+        params.set('evento', newEvento);
+      } else {
+        params.delete('evento');
+      }
+
+      if (newStatus) {
+        params.set('status', newStatus);
+      } else {
+        params.delete('status');
+      }
+
+      startNavigationProgress();
+      startTransition(() => {
+        const query = params.toString();
+        const targetUrl = query ? `${pathname}?${query}` : pathname;
+        router.replace(targetUrl, { scroll: false });
+      });
+    },
+    [pathname, router, searchParams],
+  );
+
+  // Atalho de teclado: '/' foca a busca, 'Escape' limpa a busca ou libera o foco
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const activeTag = document.activeElement?.tagName;
-      if (e.key === '/' && activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isInputOrEditable =
+        activeElement?.tagName === 'INPUT' ||
+        activeElement?.tagName === 'TEXTAREA' ||
+        activeElement?.tagName === 'SELECT' ||
+        Boolean(activeElement?.isContentEditable);
+
+      if (e.key === '/' && !isInputOrEditable) {
         e.preventDefault();
         searchInputRef.current?.focus();
-      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
-        searchInputRef.current?.blur();
+      } else if (e.key === 'Escape' && activeElement === searchInputRef.current) {
+        if (latestFiltersRef.current.busca.trim().length > 0) {
+          e.preventDefault();
+          setBusca('');
+          latestFiltersRef.current.busca = '';
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          applyFilters('', latestFiltersRef.current.evento, latestFiltersRef.current.status);
+        } else {
+          searchInputRef.current?.blur();
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  function applyFilters(newBusca: string, newEvento: string, newStatus: string) {
-    const params = new URLSearchParams(searchParams.toString());
-
-    if (newBusca.trim()) {
-      params.set('busca', newBusca.trim());
-    } else {
-      params.delete('busca');
-    }
-
-    if (newEvento) {
-      params.set('evento', newEvento);
-    } else {
-      params.delete('evento');
-    }
-
-    if (newStatus) {
-      params.set('status', newStatus);
-    } else {
-      params.delete('status');
-    }
-
-    startTransition(() => {
-      const query = params.toString();
-      const targetUrl = query ? `${pathname}?${query}` : pathname;
-      router.replace(targetUrl, { scroll: false });
-    });
-  }
+  }, [applyFilters]);
 
   function handleBuscaChange(val: string) {
     setBusca(val);
+    latestFiltersRef.current.busca = val;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
-      applyFilters(val, evento, status);
+      applyFilters(val, latestFiltersRef.current.evento, latestFiltersRef.current.status);
     }, 300);
   }
 
   function handleEventoChange(val: string) {
     setEvento(val);
-    applyFilters(busca, val, status);
+    latestFiltersRef.current.evento = val;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    applyFilters(latestFiltersRef.current.busca, val, latestFiltersRef.current.status);
   }
 
   function handleStatusChange(val: string) {
     setStatus(val);
-    applyFilters(busca, evento, val);
+    latestFiltersRef.current.status = val;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    applyFilters(latestFiltersRef.current.busca, latestFiltersRef.current.evento, val);
   }
 
   return (
@@ -141,6 +172,10 @@ export function ComiteFilterBar({
           applyFilters(busca, evento, status);
         }}
       >
+        <span className="sr-only" aria-live="polite">
+          {isPending ? 'Atualizando submissões do comitê...' : 'Lista de submissões atualizada.'}
+        </span>
+
         <div className="grid gap-3 sm:grid-cols-12">
           <div className="sm:col-span-5">
             <label htmlFor="busca" className="sr-only">
@@ -249,4 +284,3 @@ export function ComiteFilterBar({
     </section>
   );
 }
-

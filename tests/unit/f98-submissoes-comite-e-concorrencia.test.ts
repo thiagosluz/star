@@ -46,10 +46,11 @@ describe('FASE 98 — Destravar visão do autor, cockpit do comitê e concorrên
       'utf8',
     );
 
-    it('executa leitura consolidada de eventos e submissões em transação única withTenant', () => {
-      const withTenantMatches = pageSrc.match(/withTenant\(/g);
-      expect(withTenantMatches).toHaveLength(1);
-      expect(pageSrc).toContain('const { events, submissions: rawSubmissions } = await withTenant(');
+    it('executa leituras sob transação withTenant em boundary assíncrono com Suspense (FASE 100 · ADR-420)', () => {
+      expect(pageSrc).toContain('withTenant(');
+      expect(pageSrc).toContain('<Suspense');
+      expect(pageSrc).toContain('fallback={<SubmissionsListSkeleton />}');
+      expect(pageSrc).toContain('ComiteResults');
     });
 
     it('possui barra de busca e filtros de evento e status/quórum', () => {
