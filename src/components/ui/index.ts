@@ -55,3 +55,4 @@ export { Breadcrumbs, PageHeader, type Crumb } from './page-header';
 export { NavLink, TabNav } from './navigation';
 export { NavigationProgressBar } from './navigation-progress-bar';
 export { startNavigationProgress, stopNavigationProgress } from './navigation-progress-bar';
+export { AppLink, type AppLinkProps } from './app-link';

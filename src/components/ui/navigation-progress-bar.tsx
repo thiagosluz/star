@@ -1,13 +1,13 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 import { cn } from '@/lib/utils/cn';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  BARRA DE PROGRESSO DE NAVEGAÇÃO GLOBAL (FASE 99 · ADR-415 / FASE 100 · ADR-422)
+ *  BARRA DE PROGRESSO DE NAVEGAÇÃO GLOBAL (FASE 99 · ADR-415 / FASE 101 · ADR-423)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE EXISTE E POR QUE É CLIENT-SIDE LEVE E RESILIENTE
@@ -16,12 +16,16 @@ import { cn } from '@/lib/utils/cn';
  *  ou programáticas (useTransition / router.replace / router.push) acontecem via
  *  client router (RSC streaming). O navegador NÃO ativa o spinner nativo da aba.
  *
- *  Na FASE 100 (ADR-422):
- *    • O listener de cliques escuta no ciclo de borbulhamento (bubble phase, não
- *      capture), respeitando de forma fidedigna e.defaultPrevented (ex.: links
- *      interceptados que cancelam navegação);
- *    • Suporte nativo a navegações programáticas via evento `koveno:navigation-start`
- *      e helper `startNavigationProgress()`;
+ *  Na FASE 101 (ADR-423):
+ *    • O listener de cliques escuta na fase de captura (capture: true) antes de
+ *      handlers locais, interceptando a intenção de navegação para links internos
+ *      válidos sem ser silenciado pelo preventDefault intrínseco do router do Next.js;
+ *    • Ignora links externos, abas novas (_blank), downloads, âncoras locais (#),
+ *      links com role="button", links com data-no-progress e cliques na mesma URL;
+ *    • O componente canônico <AppLink> integra-se nativamente via prop onNavigate;
+ *    • Suporte a transições programáticas via startNavigationProgress() / stopNavigationProgress();
+ *    • Conclusão via requestAnimationFrame sem cascading renders no React 19;
+ *    • Failsafe suave que conclui e esmaece em caso de rede lenta ou cancelamento;
  *    • Respeito irrestrito a `prefers-reduced-motion` com classes motion-reduce.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -51,7 +55,7 @@ function NavigationProgressBarInner() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const currentPathRef = useRef<string>('');
 
-  function completeProgress() {
+  const completeProgress = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
@@ -62,9 +66,9 @@ function NavigationProgressBarInner() {
       setStatus('idle');
       setProgress(0);
     }, 250);
-  }
+  }, []);
 
-  function startProgress() {
+  const startProgress = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
@@ -82,42 +86,48 @@ function NavigationProgressBarInner() {
       });
     }, 100);
 
-    // Failsafe: se a navegação falhar ou for abortada, reseta após 8 segundos
+    // Failsafe: se a navegação demorar excessivamente ou for abortada, conclui suavemente
     timeoutRef.current = setTimeout(() => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      setStatus('idle');
-      setProgress(0);
-    }, 8000);
-  }
+      completeProgress();
+    }, 10000);
+  }, [completeProgress]);
 
-  // Atualiza o caminho corrente após resolução
+  // Atualiza o caminho corrente após resolução da rota
   useEffect(() => {
     const fullPath = `${pathname}?${searchParams.toString()}`;
     if (currentPathRef.current && currentPathRef.current !== fullPath) {
       if (status === 'loading') {
-        const finishTimer = setTimeout(() => {
+        const raf = requestAnimationFrame(() => {
           completeProgress();
-        }, 0);
+        });
         currentPathRef.current = fullPath;
-        return () => clearTimeout(finishTimer);
+        return () => cancelAnimationFrame(raf);
       }
     }
     currentPathRef.current = fullPath;
-  }, [pathname, searchParams, status]);
+  }, [pathname, searchParams, status, completeProgress]);
 
-  // Interceptador de cliques em links internos (fase de borbulhamento) e eventos programáticos
+  // Interceptador de cliques em links internos (fase de captura) e eventos programáticos
   useEffect(() => {
     function handleDocumentClick(e: MouseEvent) {
-      // Se outro handler já cancelou o evento (ex: modal, preventDefault), não ativa a barra
-      if (e.defaultPrevented) return;
-      if (e.button !== 0) return; // apenas botão esquerdo
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if (e.button !== 0) return; // apenas botão esquerdo principal
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // ignora cliques com modificadores
 
       const target = (e.target as HTMLElement)?.closest('a');
       if (!target) return;
+      if (target.hasAttribute('data-no-progress')) return;
+      if (target.getAttribute('role') === 'button') return;
 
       const href = target.getAttribute('href');
-      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+      if (
+        !href ||
+        href.startsWith('#') ||
+        href.startsWith('javascript:') ||
+        href.startsWith('mailto:') ||
+        href.startsWith('tel:')
+      ) {
+        return;
+      }
       if (target.target === '_blank' || target.hasAttribute('download')) return;
 
       try {
@@ -131,7 +141,7 @@ function NavigationProgressBarInner() {
 
         startProgress();
       } catch {
-        // Href inválido, ignora
+        // Href malformado, ignora
       }
     }
 
@@ -143,19 +153,19 @@ function NavigationProgressBarInner() {
       completeProgress();
     }
 
-    // Escuta na fase de borbulhamento (false) para respeitar e.defaultPrevented
-    document.addEventListener('click', handleDocumentClick, false);
+    // Escuta na fase de captura (true) para interceptar antes de preventDefault do cliente
+    document.addEventListener('click', handleDocumentClick, true);
     window.addEventListener(KOVENO_NAVIGATION_START_EVENT, handleCustomStart);
     window.addEventListener(KOVENO_NAVIGATION_STOP_EVENT, handleCustomStop);
 
     return () => {
-      document.removeEventListener('click', handleDocumentClick, false);
+      document.removeEventListener('click', handleDocumentClick, true);
       window.removeEventListener(KOVENO_NAVIGATION_START_EVENT, handleCustomStart);
       window.removeEventListener(KOVENO_NAVIGATION_STOP_EVENT, handleCustomStop);
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, []);
+  }, [completeProgress, startProgress]);
 
   if (status === 'idle') return null;
 

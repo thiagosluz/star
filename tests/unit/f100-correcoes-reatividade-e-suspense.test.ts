@@ -34,21 +34,21 @@ describe('FASE 100 — Correções Críticas de Reatividade, Suspense Cirúrgico
     });
   });
 
-  describe('2. Tratamento Unificado de Erros com useOptimistic e useActionState (ADR-421)', () => {
+  describe('2. Tratamento Unificado de Erros com useOptimistic e Transição Assíncrona (ADR-421 / ADR-424)', () => {
     const queuePath = resolve(root, 'src/components/gamification/checkin-queue.tsx');
 
-    it('CheckinQueue unifica o despachante de formulário e preserva feedback de erro após rollback otimista', () => {
+    it('CheckinQueue executa Server Action assíncrona com useOptimistic e preserva feedback de erro após rollback', () => {
       expect(existsSync(queuePath)).toBe(true);
       const src = readFileSync(queuePath, 'utf8');
 
-      // Unificação em useActionState único para não perder state em caso de erro
-      expect(src).toContain('useActionState<AttendanceActionState | null, FormData>');
+      // Transição assíncrona real mantendo o estado pendente até resolução do servidor
+      expect(src).toContain('startTransition(async () => {');
       expect(src).toContain("formData.get('mode')");
-      expect(src).toContain('checkOutAction(prev, formData)');
-      expect(src).toContain('checkInAction(prev, formData)');
+      expect(src).toContain('checkOutAction : checkInAction');
 
-      // useOptimistic integrado com reversão segura
+      // useOptimistic integrado com reversão segura e botão desabilitado em pendência
       expect(src).toContain('useOptimistic(');
+      expect(src).toContain('disabled={busy}');
       expect(src).toContain("role={state.ok ? 'status' : 'alert'}");
       expect(src).toContain('data-testid={`checkin-feedback-${entry.registrationId}`}');
 
@@ -58,18 +58,18 @@ describe('FASE 100 — Correções Críticas de Reatividade, Suspense Cirúrgico
     });
   });
 
-  describe('3. Barra de Navegação Resiliente e Filtros com Debounce Seguro (ADR-422)', () => {
+  describe('3. Barra de Navegação Resiliente e Filtros com Debounce Seguro (ADR-422 / ADR-423)', () => {
     const progressBarPath = resolve(root, 'src/components/ui/navigation-progress-bar.tsx');
     const filterBarPath = resolve(root, 'src/components/review/comite-filter-bar.tsx');
 
-    it('NavigationProgressBar escuta na fase de borbulhamento e suporta navegação programática', () => {
+    it('NavigationProgressBar escuta na fase de captura para links internos e suporta navegação programática', () => {
       expect(existsSync(progressBarPath)).toBe(true);
       const src = readFileSync(progressBarPath, 'utf8');
 
       expect(src).toContain('export function startNavigationProgress');
       expect(src).toContain('export function stopNavigationProgress');
-      expect(src).toContain('addEventListener(\'click\', handleDocumentClick, false)');
-      expect(src).toContain('if (e.defaultPrevented) return;');
+      expect(src).toContain("addEventListener('click', handleDocumentClick, true)");
+      expect(src).toContain('target.hasAttribute(\'data-no-progress\')');
       expect(src).toContain('koveno:navigation-start');
       expect(src).toContain('motion-reduce:transition-none');
     });

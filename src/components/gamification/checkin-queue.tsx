@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useActionState, useOptimistic } from 'react';
+import { useEffect, useOptimistic, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
@@ -9,19 +9,25 @@ import { celebrate } from '@/components/gamification/celebration';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Fila de credenciamento — operação de balcão (FASE 99 · ADR-418 / FASE 100 · ADR-421)
+ *  Fila de credenciamento — operação de balcão (FASE 99 · ADR-418 / FASE 101 · ADR-424)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  MICRO-INTERAÇÃO OTIMISTA COM TRATAMENTO UNIFICADO DE ERROS (REACT 19)
+ *  MICRO-INTERAÇÃO OTIMISTA ESTÁVEL E TRATAMENTO RESILIENTE DE ERROS (REACT 19)
  *  ─────────────────────────────────────────────────────────────────────────────
  *  No balcão com fila e centenas de pessoas chegando, qualquer delay de 300ms a
  *  1s enquanto a Server Action viaja causa incerteza e cliques repetidos.
  *
- *  Na FASE 100 (ADR-421):
- *    • Unificação do despachante em um único `useActionState`, garantindo que
- *      respostas de erro (ex.: atividade lotada, QR expirado) persistam no
- *      estado do componente e sejam exibidas visualmente ao operador (role="alert"),
- *      mesmo após o rollback otimista de `useOptimistic`;
+ *  Na FASE 101 (ADR-424):
+ *    • O useOptimistic é executado dentro de uma transição assíncrona real (startTransition
+ *      com await na Server Action), garantindo que o estado "Credenciando agora…"
+ *      permaneça visível durante toda a viagem de rede e banco, em vez de reverter
+ *      instantaneamente em 0ms;
+ *    • O botão de ação é desabilitado tanto por useFormStatus().pending quanto por
+ *      isPending da transição, impedindo cliques duplos que poderiam enviar uma
+ *      saída acidental após uma entrada;
+ *    • Caso a Server Action falhe (ex.: atividade lotada, QR expirado), o estado
+ *      reverte de forma segura e a mensagem com role="alert" e text-destructive
+ *      permanece visível na linha para intervenção do operador;
  *    • Suporte a `prefers-reduced-motion` no indicador de pulso;
  *    • Estado vazio alinhado aos padrões visuais de card da instituição.
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -36,13 +42,14 @@ export interface QueueEntry {
   checkedInAtLabel: string | null;
 }
 
-function ActionButton({ mode }: { mode: 'in' | 'out' }) {
+function ActionButton({ mode, isPending }: { mode: 'in' | 'out'; isPending: boolean }) {
   const { pending } = useFormStatus();
+  const busy = pending || isPending;
 
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={busy}
       data-testid={mode === 'in' ? 'checkin-button' : 'checkout-button'}
       className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition disabled:opacity-60 ${
         mode === 'in'
@@ -55,7 +62,7 @@ function ActionButton({ mode }: { mode: 'in' | 'out' }) {
       ) : (
         <LogOut className="size-3.5" aria-hidden />
       )}
-      {pending ? 'Registrando…' : mode === 'in' ? 'Credenciar' : 'Registrar saída'}
+      {busy ? 'Registrando…' : mode === 'in' ? 'Credenciar' : 'Registrar saída'}
     </button>
   );
 }
@@ -71,16 +78,8 @@ function QueueRow({
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
 }) {
-  const [state, formAction] = useActionState<AttendanceActionState | null, FormData>(
-    async (prev, formData) => {
-      const mode = formData.get('mode');
-      if (mode === 'out') {
-        return checkOutAction(prev, formData);
-      }
-      return checkInAction(prev, formData);
-    },
-    null,
-  );
+  const [state, setState] = useState<AttendanceActionState | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const [optimisticInside, setOptimisticInside] = useOptimistic(
     entry.isInside,
@@ -94,10 +93,16 @@ function QueueRow({
     if (cards > 0 || xp >= 150) celebrate({ intensity: 'medium' });
   }, [state]);
 
-  async function handleFormAction(formData: FormData) {
+  function handleFormAction(formData: FormData) {
+    const mode = formData.get('mode');
     const nextInside = !optimisticInside;
-    setOptimisticInside(nextInside);
-    await formAction(formData);
+
+    startTransition(async () => {
+      setOptimisticInside(nextInside);
+      const action = mode === 'out' ? checkOutAction : checkInAction;
+      const result = await action(state, formData);
+      setState(result);
+    });
   }
 
   return (
@@ -130,7 +135,7 @@ function QueueRow({
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="registrationId" value={entry.registrationId} />
           <input type="hidden" name="mode" value={optimisticInside ? 'out' : 'in'} />
-          <ActionButton mode={optimisticInside ? 'out' : 'in'} />
+          <ActionButton mode={optimisticInside ? 'out' : 'in'} isPending={isPending} />
         </form>
       </div>
 

@@ -97,10 +97,19 @@ export function ComiteFilterBar({
         params.delete('status');
       }
 
+      const query = params.toString();
+      const targetUrl = query ? `${pathname}?${query}` : pathname;
+
+      const currentQuery = searchParams.toString();
+      const currentUrl = currentQuery ? `${pathname}?${currentQuery}` : pathname;
+
+      // Idempotência (ADR-425): se a URL final for idêntica à atual, não ativa a barra nem transiciona
+      if (targetUrl === currentUrl) {
+        return;
+      }
+
       startNavigationProgress();
       startTransition(() => {
-        const query = params.toString();
-        const targetUrl = query ? `${pathname}?${query}` : pathname;
         router.replace(targetUrl, { scroll: false });
       });
     },

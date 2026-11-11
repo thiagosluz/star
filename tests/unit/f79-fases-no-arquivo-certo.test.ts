@@ -183,23 +183,27 @@ const FASES_HISTORICAS = [
   // a 81 e a 82 desceram como estavam, e a tabela passou a começar na 83.
   '81',
   '82',
+  // Movida na FASE 101: a mais antiga que restava (quando as correções empíricas
+  // encostaram o `AGENTS.md` no teto de novo); a 83 desceu como estava, e a tabela
+  // passou a começar na 84.
+  '83',
 ];
 
 /**
- * A tabela corrente começa na F83 — a 26, a 27 e a 28 nunca existiram; a 29 e a
+ * A tabela corrente começa na F84 — a 26, a 27 e a 28 nunca existiram; a 29 e a
  * 30 desceram na F82, a 31 a 35 na F83, a 36 a 42 na F84, a 43 a 49 na F85, a
- * 50 a 59 na F86, a 60 na F87, a 61 a 62 na F89, a 63 a 65 na F91, a 66 a 67 na F92, a 68 a 69 na F93, a 70 a 71 na F94, a 72 a 74 na F95, a 75 a 76 na F96, a 77 a 78 na F97, a 79 a 80 na F98 e a 81 a 82 na F99.
+ * 50 a 59 na F86, a 60 na F87, a 61 a 62 na F89, a 63 a 65 na F91, a 66 a 67 na F92, a 68 a 69 na F93, a 70 a 71 na F94, a 72 a 74 na F95, a 75 a 76 na F96, a 77 a 78 na F97, a 79 a 80 na F98, a 81 a 82 na F99 e a 83 na F101.
  *
  * A lista é DECLARADA, não derivada do `AGENTS.md`: é o gesto de declarar a fase
  * nova que mantém a catraca honesta (o comentário do cabeçalho explica).
  */
-const FASES_CORRENTES = Array.from({ length: 18 }, (_, indice) => String(83 + indice));
+const FASES_CORRENTES = Array.from({ length: 18 }, (_, indice) => String(84 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',
   '13', '14', '15', '16', '17', '23', '24', '25', '21', '22', '29', '30', '31', '32', '33', '34',
   '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '50',
-  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76', '77', '78', '79', '80', '81', '82'];
+  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76', '77', '78', '79', '80', '81', '82', '83'];
 
 function ler(caminho: string): string {
   return readFileSync(join(RAIZ, caminho), 'utf8');
