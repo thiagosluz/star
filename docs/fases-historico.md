@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71, 72 a 74, 75 a 76, 77 a 78 e 79 a 80 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71, 72 a 74, 75 a 76, 77 a 78, 79 a 80 e 81 a 82 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -40,14 +40,16 @@
 > **duas mais antigas que restavam** — **77 e 78** — desceram **como estavam** e a tabela corrente passou a começar na **79**; o `AGENTS.md` terminou
 > em **64.296 bytes**. Na **FASE 98** a linha nova levou o `AGENTS.md` a encostar no teto novamente: as
 > **duas mais antigas que restavam** — **79 e 80** — desceram **como estavam** e a tabela corrente passou a começar na **81**; o `AGENTS.md` terminou
-> com margem confortável abaixo de 64.800 bytes.
+> com margem confortável abaixo de 64.800 bytes. Na **FASE 99** a linha nova levou o `AGENTS.md` a **64.903 bytes** (acima do teto);
+> as **duas mais antigas que restavam** — **81 e 82** — desceram **como estavam** e a tabela corrente passou a começar na **83**; o `AGENTS.md`
+> terminou com margem segura abaixo de 64.800 bytes.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **81** à **98**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **83** à **99**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
@@ -138,3 +140,5 @@
 | 78 | **O topo único** — a dívida **H1** fechada: **PageHeader server** (split de `navigation.tsx`, sem ~96 ilhas de cliente), com `eyebrow` = grupo de navegação da fonte única, **volta derivada da trilha** e `descriptionTestId`; **81 das 96 páginas migradas** e **15 exceções** motivadas (tema do evento, heróis, renderizador próprio e redirects); **`text-headline`** (16px) eliminado e **6 telas sem `<h1>`** corrigidas. Catracas: **fonte** + **12 telas** no navegador. ADR-372 … 374 | ✅ |
 | 79 | **O `AGENTS.md` volta a respirar** — as fases **1 a 25** saíram da tabela da §9 e foram **movidas como estavam** para `docs/fases-historico.md` (nenhuma linha reescrita), com um ponteiro de três linhas no lugar; a tabela corrente ficou com folga real e uma catraca nova reprova fase histórica na tabela e fase corrente no histórico. ADR-375 | ✅ |
 | 80 | **O ESLint 10, sem mudar uma linha de código** — `eslint` de `^9.39.5` para `^10.13.0` (o alvo medido): **920 arquivos lintados, 0/0** (o mesmo número de antes), `typecheck` 0, **4389 testes**, `build` OK e `npm ci` limpo com o lock novo; os três plugins do `eslint-config-next` (react, jsx-a11y e import) ainda declaram peer `^9` e o npm avisa `ERESOLVE` sem falhar — compatibilidade medida, não declarada; o E2E mediu **6 vermelhos** (3 de `label-content-name-mismatch`, expostos pelo `axe-core` 4.14; 2 de imagem pela seção mascarada que cresce com o dado; 1 intermitente de minuto no `f65`), nenhum do ESLint. ADR-376 | ✅ |
+| 81 | **O rótulo que cabe no nome · a altura que não depende do dado** — os **3 `aria-label`** passaram a **começar** pelo texto visível (`Baixar .ics…`, `Adicionar a próxima…`, `Baixar a minha agenda…`), com catraca de fonte de **6 casos**; a seção de destaques da raiz passou a reservar **duas fileiras de cartão** (498 px = 2 × 237 + vão) e o resumo a uma linha, então a página mede **714 px de seção / 3334 px de página** com 0 a 6 eventos — provado com **um evento a mais** e o `f62` **duas vezes a 0 px**, sem re-basear; o intermitente de minuto do `f65` virou determinístico (a expectativa usa o instante gravado); o portão fechou **39/39** e o `f62` **23/23**. ADR-377 | ✅ |
+| 82 | **A porta de entrada** — o destino de quem entra virou **regra pura** (`resolveEntryDestination`: `redirectTo` **OVERRIDE** → plataforma → vínculo `ACTIVE` → convite → `/eventos`, com **14 recusas** de destino), consumida só na ENTRADA por um adaptador que não derruba o login; o **`redirectTo` do login, morto**, voltou a valer sem `tenantSlug` e o `//evil.test` do 2FA foi fechado por **uma** validação; o rodapé do seletor passou a **"Ir ao painel da instituição"** (com um vínculo a linha é `<span>`, então era o único caminho) e o bloco de conta de `/superadmin` ganhou a **porta de volta**; `/eventos` no portão achou `select-name` nos **3 filtros**. **62** testes unit + **8** E2E. ADR-378/379 | ✅ |

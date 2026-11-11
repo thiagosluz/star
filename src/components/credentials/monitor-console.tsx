@@ -163,6 +163,10 @@ export function MonitorConsole({
       : null;
 
   useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     if (state) {
       inputRef.current?.focus();
     }

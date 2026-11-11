@@ -11,7 +11,7 @@ import { listCertificates } from '@/lib/certificates/certificate-service';
 import { withTenant } from '@/lib/db/tenant-client';
 import { RequestCertificateForm } from '@/components/certificates/request-form';
 import { RevokeCertificateForm } from '@/components/certificates/issue-panel';
-import { PageHeader } from '@/components/ui';
+import { EmptyState, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { requestMyCertificateAction, revokeCertificateAction } from '@/app/actions/certificate-actions';
 
@@ -110,13 +110,20 @@ export default async function CertificatesPage({
         </h2>
 
         {certificates.length === 0 ? (
-          <p
-            className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground"
+          <EmptyState
             data-testid="certificates-empty"
-          >
-            Você ainda não tem certificados. Faça o credenciamento no evento (a presença precisa
-            atingir 75 % da carga da atividade) e emita acima.
-          </p>
+            icon={Award}
+            title="Nenhum certificado emitido ainda"
+            description="Você ainda não tem certificados. Faça o credenciamento no evento (a presença precisa atingir 75 % da carga da atividade) e emita no formulário acima."
+            action={
+              <a
+                href="#emitir"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Emitir um certificado acima
+              </a>
+            }
+          />
         ) : (
           <ul className="space-y-3" data-testid="certificate-list">
             {certificates.map((certificate) => (

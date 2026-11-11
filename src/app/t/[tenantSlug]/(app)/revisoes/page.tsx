@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CheckCircle2, Clock, Download, EyeOff } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Clock, Download, EyeOff } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { listReviewerTasks } from '@/lib/review/review-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { PageHeader } from '@/components/ui';
+import { EmptyState, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Revisões' };
@@ -62,9 +62,19 @@ export default async function ReviewerTasksPage({
       />
 
       {tasks.length === 0 ? (
-        <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-          Você não tem pareceres atribuídos no momento.
-        </p>
+        <EmptyState
+          icon={ClipboardList}
+          title="Você não tem pareceres atribuídos no momento."
+          description="Nenhum parecer atribuído no momento. As atribuições de trabalhos são distribuídas pelo comitê científico após o encerramento das submissões de cada chamada. Quando novos artigos forem designados para você, eles aparecerão aqui com os respectivos prazos."
+          action={
+            <Link
+              href={tenantPath(tenantSlug, '/submissoes')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              Ver chamadas e submissões
+            </Link>
+          }
+        />
       ) : (
         <>
           {/* Resumo de carga do avaliador */}

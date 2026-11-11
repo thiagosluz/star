@@ -1,13 +1,16 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, Clock, Filter, Search, Users, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Inbox, Users } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { listSubmissionsForChair } from '@/lib/review/review-service';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
-import { PageHeader } from '@/components/ui';
+import { EmptyState, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
+import { ComiteFilterBar } from '@/components/review/comite-filter-bar';
+import { SubmissionsListSkeleton } from '@/components/review/submissions-list-skeleton';
 import type { SubmissionStatus } from '@/domain/review/submission-rules';
 
 export const metadata = { title: 'Comitê científico' };
@@ -29,6 +32,10 @@ const STATUS_LABEL: Record<string, string> = {
  *
  * Na FASE 98 (ADR-413), a fila ganhou cockpit com filtros de evento, status/quórum
  * e busca por protocolo/título em transação única, exibindo o evento em cada card.
+ *
+ * Na FASE 99 (ADR-416/417), a barra de filtros passa a usar `useTransition` e debounce,
+ * e a listagem dinâmica é isolada em um boundary local de `<Suspense>`, mantendo
+ * o cabeçalho e os cartões de estatísticas estáveis sem desmontagem de layout.
  *
  * Exige `submission:read:any`: ver a fila inteira significa ler títulos e resumos
  * de trabalhos de terceiros, o que não é papel de um participante.
@@ -103,6 +110,8 @@ export default async function ChairConsolePage({
     return `${tenantPath(tenantSlug, '/comite')}${qs ? `?${qs}` : ''}`;
   };
 
+  const filterKey = `${evento ?? ''}-${statusParam ?? ''}-${busca ?? ''}`;
+
   return (
     <main className="max-w-5xl space-y-8">
       <PageHeader
@@ -151,170 +160,104 @@ export default async function ChairConsolePage({
         </Link>
       </section>
 
-      {/* Barra de Filtros e Busca */}
-      <section className="rounded-lg border border-border bg-card p-4">
-        <form method="GET" action={tenantPath(tenantSlug, '/comite')} className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-12">
-            <div className="sm:col-span-5">
-              <label htmlFor="busca" className="sr-only">
-                Buscar submissões
-              </label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" aria-hidden />
-                <input
-                  id="busca"
-                  name="busca"
-                  defaultValue={busca ?? ''}
-                  placeholder="Buscar por título ou protocolo..."
-                  className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
+      {/* 
+        Barra de Filtros e Busca Reativa (ADR-416)
+        Contrato de query preservado no cockpit: name="busca", name="evento", name="status" e ação de "Limpar filtros".
+      */}
+      <ComiteFilterBar
+        tenantSlug={tenantSlug}
+        events={events}
+        initialBusca={busca ?? ''}
+        initialEvento={evento ?? ''}
+        initialStatus={statusParam ?? ''}
+        hasActiveFilters={hasActiveFilters}
+      />
+
+      {/* Lista de Submissões com Suspense Granular (ADR-417) */}
+      <Suspense key={filterKey} fallback={<SubmissionsListSkeleton />}>
+        {submissions.length === 0 ? (
+          hasActiveFilters ? (
+            <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+              <div className="space-y-2">
+                <p>Nenhuma submissão encontrada com os filtros selecionados.</p>
+                <Link
+                  href={tenantPath(tenantSlug, '/comite')}
+                  className="inline-block text-xs font-semibold text-primary underline"
+                >
+                  Limpar filtros da busca
+                </Link>
               </div>
             </div>
-
-            <div className="sm:col-span-3">
-              <label htmlFor="evento" className="sr-only">
-                Filtrar por evento
-              </label>
-              <select
-                id="evento"
-                name="evento"
-                defaultValue={evento ?? ''}
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Todos os eventos</option>
-                {events.map((ev) => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="sm:col-span-3">
-              <label htmlFor="status" className="sr-only">
-                Filtrar por situação
-              </label>
-              <select
-                id="status"
-                name="status"
-                defaultValue={statusParam ?? ''}
-                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Todas em avaliação</option>
-                <option value="NO_REVIEWER">Sem revisor</option>
-                <option value="WAITING_QUORUM">Aguardando pareceres</option>
-                <option value="READY">Prontas para decisão</option>
-                <option value="ACCEPTED">Aceitas</option>
-                <option value="REJECTED">Rejeitadas</option>
-                <option value="ALL">Todas as situações</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2 sm:col-span-1">
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center rounded-md bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition hover:opacity-90"
-                title="Aplicar filtros"
-              >
-                <Filter className="size-4" aria-hidden />
-              </button>
-            </div>
-          </div>
-
-          {hasActiveFilters ? (
-            <div className="flex items-center justify-between border-t border-border pt-2.5 text-xs text-muted-foreground">
-              <span>Filtros ativos aplicados na fila</span>
-              <Link
-                href={tenantPath(tenantSlug, '/comite')}
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-              >
-                <X className="size-3" aria-hidden />
-                Limpar filtros
-              </Link>
-            </div>
-          ) : null}
-        </form>
-      </section>
-
-      {/* Lista de Submissões */}
-      {submissions.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          {hasActiveFilters ? (
-            <div className="space-y-2">
-              <p>Nenhuma submissão encontrada com os filtros selecionados.</p>
-              <Link
-                href={tenantPath(tenantSlug, '/comite')}
-                className="inline-block text-xs font-semibold text-primary underline"
-              >
-                Limpar filtros da busca
-              </Link>
-            </div>
           ) : (
-            <p>Nenhuma submissão aguardando avaliação no momento.</p>
-          )}
-        </div>
-      ) : (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium">Submissões ({submissions.length})</h2>
-          </div>
+            <EmptyState
+              icon={Inbox}
+              title="Nenhuma submissão aguardando avaliação"
+              description="Quando autores enviarem propostas e artigos científicos para as chamadas da instituição, os trabalhos aparecerão aqui para distribuição de pareceristas e deliberação."
+            />
+          )
+        ) : (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium">Submissões ({submissions.length})</h2>
+            </div>
 
-          <ul className="space-y-3" data-testid="chair-submissions">
-            {submissions.map((submission) => {
-              const quorumReached = submission.reviewCount >= submission.requiredReviews;
-              return (
-                <li
-                  key={submission.id}
-                  className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
-                >
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
-                        {submission.protocol}
-                      </span>
-                      <span
-                        className={`rounded border px-2 py-0.5 text-xs ${
-                          quorumReached
-                            ? 'border-success/40 text-success-strong'
-                            : 'border-warning/40 text-warning-strong'
-                        }`}
-                        data-testid="quorum-status"
-                      >
-                        {submission.reviewCount}/{submission.requiredReviews} pareceres
-                      </span>
-                      {!quorumReached && submission.reviewCount === 0 ? (
-                        <span className="inline-flex items-center gap-1 rounded border border-destructive/40 px-2 py-0.5 text-xs text-destructive">
-                          <AlertTriangle className="size-3" aria-hidden />
-                          sem revisor
+            <ul className="space-y-3" data-testid="chair-submissions">
+              {submissions.map((submission) => {
+                const quorumReached = submission.reviewCount >= submission.requiredReviews;
+                return (
+                  <li
+                    key={submission.id}
+                    className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-card p-4"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded border border-border px-2 py-0.5 code-data text-muted-foreground">
+                          {submission.protocol}
                         </span>
-                      ) : null}
+                        <span
+                          className={`rounded border px-2 py-0.5 text-xs ${
+                            quorumReached
+                              ? 'border-success/40 text-success-strong'
+                              : 'border-warning/40 text-warning-strong'
+                          }`}
+                          data-testid="quorum-status"
+                        >
+                          {submission.reviewCount}/{submission.requiredReviews} pareceres
+                        </span>
+                        {!quorumReached && submission.reviewCount === 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded border border-destructive/40 px-2 py-0.5 text-xs text-destructive">
+                            <AlertTriangle className="size-3" aria-hidden />
+                            sem revisor
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <h3 className="font-medium text-foreground">{submission.title}</h3>
+
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground/80">{submission.eventTitle}</span>
+                        {submission.callTitle ? ` · ${submission.callTitle}` : ''}
+                        {submission.trackName ? ` · ${submission.trackName}` : ''}
+                        {` · ${STATUS_LABEL[submission.status] ?? submission.status}`}
+                        {submission.averageScore !== null
+                          ? ` · média ${submission.averageScore.toFixed(1)}`
+                          : ''}
+                      </p>
                     </div>
 
-                    <h3 className="font-medium text-foreground">{submission.title}</h3>
-
-                    <p className="text-xs text-muted-foreground">
-                      <span className="font-semibold text-foreground/80">{submission.eventTitle}</span>
-                      {submission.callTitle ? ` · ${submission.callTitle}` : ''}
-                      {submission.trackName ? ` · ${submission.trackName}` : ''}
-                      {` · ${STATUS_LABEL[submission.status] ?? submission.status}`}
-                      {submission.averageScore !== null
-                        ? ` · média ${submission.averageScore.toFixed(1)}`
-                        : ''}
-                    </p>
-                  </div>
-
-                  <Link
-                    href={tenantPath(tenantSlug, `/comite/${submission.id}`)}
-                    className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
-                  >
-                    Analisar
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+                    <Link
+                      href={tenantPath(tenantSlug, `/comite/${submission.id}`)}
+                      className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+                    >
+                      Analisar
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+      </Suspense>
     </main>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useActionState } from 'react';
+import { useEffect, useActionState, useOptimistic } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
@@ -10,14 +9,21 @@ import { celebrate } from '@/components/gamification/celebration';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Fila de credenciamento — operação de balcão
+ *  Fila de credenciamento — operação de balcão (FASE 99 · ADR-418)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O BOTÃO É ÚNICO E O ESTADO É DERIVADO
+ *  MICRO-INTERAÇÃO OTIMISTA (useOptimistic DO REACT 19)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Quem já entrou vê "Registrar saída"; quem não entrou vê "Credenciar". Dois
- *  botões para a mesma linha seriam um convite a clicar no errado — no balcão,
- *  com fila, ninguém lê duas opções.
+ *  No balcão com fila e centenas de pessoas chegando, qualquer delay de 300ms a
+ *  1s enquanto a Server Action viaja causa incerteza e cliques repetidos.
+ *
+ *  Com `useOptimistic`, o clique em "Credenciar" ou "Registrar saída" atualiza
+ *  a linha no milissegundo zero:
+ *    • O botão alterna o rótulo de imediato;
+ *    • O data-inside reflete a nova situação no DOM;
+ *    • Se a Server Action retornar sucesso, a revalidação consolida o dado;
+ *    • Se a Server Action falhar (ex.: atividade lotada), a linha reverte
+ *      automaticamente ao estado real do banco com mensagem de erro.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -68,21 +74,12 @@ function QueueRow({
   const [inState, inAction] = useActionState<AttendanceActionState | null, FormData>(checkInAction, null);
   const [outState, outAction] = useActionState<AttendanceActionState | null, FormData>(checkOutAction, null);
 
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  QUAL RESULTADO EXIBIR: O DA TRANSIÇÃO QUE ACABOU DE ACONTECER
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  `inState ?? outState` parecia razoável e estava ERRADO: depois do primeiro
-   *  check-in, o resultado da ENTRADA ficava gravado para sempre e o operador nunca
-   *  via o resultado da SAÍDA — nem a mensagem de "presença insuficiente para
-   *  pontuar", que é justamente a informação que ele precisa dar ao participante.
-   *
-   *  A escolha é derivada do ESTADO da linha (vindo do servidor após a
-   *  revalidação): quem está dentro acabou de entrar; quem está fora acabou de
-   *  sair. O `useActionState` não tem setter, então derivar é também a forma mais
-   *  simples de manter os dois resultados em sincronia com a realidade.
-   */
-  const state = entry.isInside ? inState : outState;
+  const [optimisticInside, setOptimisticInside] = useOptimistic(
+    entry.isInside,
+    (_current, next: boolean) => next,
+  );
+
+  const state = optimisticInside ? inState : outState;
 
   useEffect(() => {
     if (!state?.ok) return;
@@ -91,11 +88,21 @@ function QueueRow({
     if (cards > 0 || xp >= 150) celebrate({ intensity: 'medium' });
   }, [state]);
 
+  async function handleFormAction(formData: FormData) {
+    const nextInside = !optimisticInside;
+    setOptimisticInside(nextInside);
+    if (optimisticInside) {
+      await outAction(formData);
+    } else {
+      await inAction(formData);
+    }
+  }
+
   return (
     <li
       className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
       data-testid={`queue-${entry.registrationId}`}
-      data-inside={entry.isInside ? 'true' : 'false'}
+      data-inside={optimisticInside ? 'true' : 'false'}
     >
       <div className="min-w-0 space-y-0.5">
         <p className="truncate text-sm font-medium">{entry.userName}</p>
@@ -103,7 +110,12 @@ function QueueRow({
           {entry.userEmail}
           {entry.activityTitle ? ` · ${entry.activityTitle}` : ' · evento'}
         </p>
-        {entry.checkedInAtLabel ? (
+        {optimisticInside && !entry.isInside ? (
+          <p className="flex items-center gap-1 text-xs text-primary animate-pulse">
+            <ShieldCheck className="size-3" aria-hidden />
+            Credenciando agora…
+          </p>
+        ) : entry.checkedInAtLabel && optimisticInside ? (
           <p className="flex items-center gap-1 text-xs text-success-strong">
             <ShieldCheck className="size-3" aria-hidden />
             Entrada registrada às {entry.checkedInAtLabel}
@@ -112,10 +124,10 @@ function QueueRow({
       </div>
 
       <div className="flex items-center gap-2">
-        <form action={entry.isInside ? outAction : inAction}>
+        <form action={handleFormAction}>
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="registrationId" value={entry.registrationId} />
-          <ActionButton mode={entry.isInside ? 'out' : 'in'} />
+          <ActionButton mode={optimisticInside ? 'out' : 'in'} />
         </form>
       </div>
 
