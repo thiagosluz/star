@@ -1,11 +1,11 @@
 'use client';
 
-import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Inbox, UserRound } from 'lucide-react';
 
 import { MessageComposer } from '@/components/participants/message-composer';
 import type { ParticipantActionState } from '@/app/actions/participant-actions';
+import { AppLink } from '@/components/ui/app-link';
 
 /** Linha do diretório já pronta para a tela (datas como texto, domínio aplicado). */
 export interface DirectoryEntry {
@@ -29,7 +29,7 @@ export interface DirectoryEntry {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Diretório de participantes (FASE 32)
+ *  Diretório de participantes (FASE 32 / FASE 103 · ADR-431)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  POR QUE A SELEÇÃO VIVE AQUI, E NÃO NA URL
@@ -42,6 +42,14 @@ export interface DirectoryEntry {
  *  O E-MAIL JÁ VEM MASCARADO DO SERVIDOR (`maskEmail`, no domínio): a lista é a tela
  *  mais copiada da instituição, e o endereço completo só aparece na ficha de quem
  *  decidiu abrir aquele cadastro.
+ *
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  NAVEGAÇÃO POR TECLADO OPERACIONAL (FASE 103 · ADR-431)
+ *  ─────────────────────────────────────────────────────────────────────────────
+ *  Operadores que gerenciam listas longas de participantes utilizam:
+ *    • `ArrowDown` / `ArrowUp` para circular pelas pessoas da tabela;
+ *    • `Enter` para abrir a ficha do participante ativo;
+ *    • `Espaço` para alternar a marcação da caixa de mensagem da pessoa ativa.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function ParticipantDirectory({
@@ -58,6 +66,7 @@ export function ParticipantDirectory({
   selectedEventId: string | null;
 }) {
   const [selected, setSelected] = useState<readonly string[]>([]);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const toggle = (userId: string, checked: boolean): void => {
     setSelected((current) =>
@@ -66,6 +75,48 @@ export function ParticipantDirectory({
   };
 
   const allSelected = entries.length > 0 && entries.every((entry) => selected.includes(entry.userId));
+
+  useEffect(() => {
+    if (entries.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIndex((prev) => (prev === null ? 0 : Math.min(prev + 1, entries.length - 1)));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIndex((prev) => (prev === null ? 0 : Math.max(prev - 1, 0)));
+      } else if (e.key === 'Enter' && activeIndex !== null) {
+        const activeUser = entries[activeIndex];
+        if (activeUser) {
+          const openLink = document.querySelector<HTMLAnchorElement>(
+            `[data-testid="participant-open-${activeUser.userId}"]`,
+          );
+          if (openLink) {
+            e.preventDefault();
+            openLink.click();
+          }
+        }
+      } else if (e.key === ' ' && activeIndex !== null && canMessage) {
+        const activeUser = entries[activeIndex];
+        if (activeUser) {
+          e.preventDefault();
+          toggle(activeUser.userId, !selected.includes(activeUser.userId));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [entries, activeIndex, selected, canMessage]);
 
   return (
     <div className="space-y-4">
@@ -120,8 +171,6 @@ export function ParticipantDirectory({
               Selecionar a página
             </label>
           ) : null}
-
-
         </div>
       </div>
 
@@ -130,103 +179,118 @@ export function ParticipantDirectory({
           Nenhum participante encontrado com estes filtros.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full text-sm" data-testid="participant-list">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                {/**
-                  * A coluna de seleção e a de ações NÃO têm texto visível, e é por isso
-                  * que trazem o rótulo em `sr-only` em vez de `aria-label`: o `aria-label`
-                  * nomeia o cabeçalho para o leitor de tela, mas o `axe` continua vendo
-                  * uma célula de cabeçalho VAZIA (`empty-table-header`) — o texto
-                  * escondido resolve os dois, sem mudar um pixel da tabela.
-                  */}
-                {canMessage ? (
-                  <th className="w-8 px-2 py-2">
-                    <span className="sr-only">Selecionar</span>
-                  </th>
-                ) : null}
-                <th className="px-3 py-2 text-left">Pessoa</th>
-                <th className="px-3 py-2 text-left">Participação</th>
-                <th className="px-3 py-2 text-left">Presença</th>
-                <th className="px-3 py-2 text-left">Entrega</th>
-                <th className="px-3 py-2">
-                  <span className="sr-only">Ações</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.userId} className="border-t border-border/60" data-testid={`participant-row-${entry.userId}`}>
+        <>
+          <p className="sr-only" data-testid="directory-keyboard-hint">
+            Use as setas para baixo e para cima para navegar nas linhas, Enter para abrir a ficha 360 e Espaço para selecionar.
+          </p>
+
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm" data-testid="participant-list">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  {/**
+                    * A coluna de seleção e a de ações NÃO têm texto visível, e é por isso
+                    * que trazem o rótulo em `sr-only` em vez de `aria-label`: o `aria-label`
+                    * nomeia o cabeçalho para o leitor de tela, mas o `axe` continua vendo
+                    * uma célula de cabeçalho VAZIA (`empty-table-header`) — o texto
+                    * escondido resolve os dois, sem mudar um pixel da tabela.
+                    */}
                   {canMessage ? (
-                    <td className="px-2 py-2 align-top">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(entry.userId)}
-                        onChange={(event) => toggle(entry.userId, event.target.checked)}
-                        aria-label={`Selecionar ${entry.name}`}
-                        data-testid={`participant-select-${entry.userId}`}
-                        className="size-3.5"
-                      />
-                    </td>
+                    <th className="w-8 px-2 py-2">
+                      <span className="sr-only">Selecionar</span>
+                    </th>
                   ) : null}
-
-                  <td className="px-3 py-2 align-top">
-                    <p className="font-medium" data-testid={`participant-name-${entry.userId}`}>
-                      {entry.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground" data-testid={`participant-email-${entry.userId}`}>
-                      {entry.emailMasked}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{entry.originLabel}</p>
-                    <ul className="mt-1 flex flex-wrap gap-1">
-                      {entry.engagement.map((tag) => (
-                        <li
-                          key={tag}
-                          className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground"
-                        >
-                          {tag}
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-
-                  <td className="px-3 py-2 align-top text-xs">
-                    <p>{entry.events} evento(s)</p>
-                    <p className="text-muted-foreground">{entry.confirmed} inscrição(ões) confirmada(s)</p>
-                  </td>
-
-                  <td className="px-3 py-2 align-top text-xs">
-                    <p data-testid={`participant-rate-${entry.userId}`}>{entry.rateLabel}</p>
-                    <p className="text-muted-foreground">
-                      {entry.visits} visita(s) · {entry.minutes} min
-                    </p>
-                  </td>
-
-                  <td className="px-3 py-2 align-top text-xs">
-                    <p>{entry.certificates} certificado(s)</p>
-                    <p className="text-muted-foreground">
-                      {entry.cards} carta(s) · {entry.xp} XP
-                    </p>
-                  </td>
-
-                  <td className="px-3 py-2 align-top text-right">
-                    <Link
-                      href={`/t/${tenantSlug}/participantes/${entry.userId}`}
-                      data-testid={`participant-open-${entry.userId}`}
-                      className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-4"
-                    >
-                      <UserRound className="size-3.5" aria-hidden />
-                      Abrir ficha
-                    </Link>
-                  </td>
+                  <th className="px-3 py-2 text-left">Pessoa</th>
+                  <th className="px-3 py-2 text-left">Participação</th>
+                  <th className="px-3 py-2 text-left">Presença</th>
+                  <th className="px-3 py-2 text-left">Entrega</th>
+                  <th className="px-3 py-2">
+                    <span className="sr-only">Ações</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {entries.map((entry, index) => (
+                  <tr
+                    key={entry.userId}
+                    onClick={() => setActiveIndex(index)}
+                    className={`border-t border-border/60 transition-colors cursor-pointer ${
+                      activeIndex === index
+                        ? 'bg-primary/5 ring-1 ring-inset ring-primary'
+                        : 'hover:bg-muted/30'
+                    }`}
+                    data-testid={`participant-row-${entry.userId}`}
+                    data-active-row={activeIndex === index ? 'true' : 'false'}
+                  >
+                    {canMessage ? (
+                      <td className="px-2 py-2 align-top">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(entry.userId)}
+                          onChange={(event) => toggle(entry.userId, event.target.checked)}
+                          aria-label={`Selecionar ${entry.name}`}
+                          data-testid={`participant-select-${entry.userId}`}
+                          className="size-3.5"
+                        />
+                      </td>
+                    ) : null}
+
+                    <td className="px-3 py-2 align-top">
+                      <p className="font-medium" data-testid={`participant-name-${entry.userId}`}>
+                        {entry.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground" data-testid={`participant-email-${entry.userId}`}>
+                        {entry.emailMasked}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{entry.originLabel}</p>
+                      <ul className="mt-1 flex flex-wrap gap-1">
+                        {entry.engagement.map((tag) => (
+                          <li
+                            key={tag}
+                            className="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground"
+                          >
+                            {tag}
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+
+                    <td className="px-3 py-2 align-top text-xs">
+                      <p>{entry.events} evento(s)</p>
+                      <p className="text-muted-foreground">{entry.confirmed} inscrição(ões) confirmada(s)</p>
+                    </td>
+
+                    <td className="px-3 py-2 align-top text-xs">
+                      <p data-testid={`participant-rate-${entry.userId}`}>{entry.rateLabel}</p>
+                      <p className="text-muted-foreground">
+                        {entry.visits} visita(s) · {entry.minutes} min
+                      </p>
+                    </td>
+
+                    <td className="px-3 py-2 align-top text-xs">
+                      <p>{entry.certificates} certificado(s)</p>
+                      <p className="text-muted-foreground">
+                        {entry.cards} carta(s) · {entry.xp} XP
+                      </p>
+                    </td>
+
+                    <td className="px-3 py-2 align-top text-right">
+                      <AppLink
+                        href={`/t/${tenantSlug}/participantes/${entry.userId}`}
+                        data-testid={`participant-open-${entry.userId}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium underline underline-offset-4"
+                      >
+                        <UserRound className="size-3.5" aria-hidden />
+                        Abrir ficha
+                      </AppLink>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
 }
-

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useOptimistic } from 'react';
+import { useActionState, useEffect, useOptimistic, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
@@ -9,27 +9,16 @@ import { celebrate } from '@/components/gamification/celebration';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Fila de credenciamento — operação de balcão (FASE 99 · ADR-418 / FASE 101 · ADR-424)
+ *  Fila de credenciamento — operação de balcão (FASE 99 / 101 / FASE 103 · ADR-431)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  MICRO-INTERAÇÃO OTIMISTA ESTÁVEL E TRATAMENTO RESILIENTE DE ERROS (REACT 19)
+ *  NAVEGAÇÃO POR TECLADO POWER-USER (ADR-431)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  No balcão com fila e centenas de pessoas chegando, qualquer delay de 300ms a
- *  1s enquanto a Server Action viaja causa incerteza e cliques repetidos.
- *
- *  Na FASE 101 (ADR-424):
- *    • O useOptimistic é executado dentro de uma transição assíncrona real (startTransition
- *      com await na Server Action), garantindo que o estado "Credenciando agora…"
- *      permaneça visível durante toda a viagem de rede e banco, em vez de reverter
- *      instantaneamente em 0ms;
- *    • O botão de ação é desabilitado tanto por useFormStatus().pending quanto por
- *      isPending da transição, impedindo cliques duplos que poderiam enviar uma
- *      saída acidental após uma entrada;
- *    • Caso a Server Action falhe (ex.: atividade lotada, QR expirado), o estado
- *      reverte de forma segura e a mensagem com role="alert" e text-destructive
- *      permanece visível na linha para intervenção do operador;
- *    • Suporte a `prefers-reduced-motion` no indicador de pulso;
- *    • Estado vazio alinhado aos padrões visuais de card da instituição.
+ *  No balcão com fila intensa, operadores usam o teclado para agilidade máxima:
+ *    • `ArrowDown` / `ArrowUp` navegam pelas linhas da fila de credenciamento;
+ *    • A linha selecionada ganha destaque visual e `data-active-row="true"`;
+ *    • `Enter` aciona instantaneamente a ação primária (Credenciar ou Registrar saída)
+ *      da linha ativa, sem necessidade de tocar no mouse.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -72,11 +61,15 @@ function QueueRow({
   tenantSlug,
   checkInAction,
   checkOutAction,
+  isActive,
+  onSelect,
 }: {
   entry: QueueEntry;
   tenantSlug: string;
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
+  isActive: boolean;
+  onSelect: () => void;
 }) {
   const [optimisticInside, setOptimisticInside] = useOptimistic(
     entry.isInside,
@@ -103,9 +96,15 @@ function QueueRow({
 
   return (
     <li
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
+      onClick={onSelect}
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 transition-colors ${
+        isActive
+          ? 'border-primary bg-card ring-2 ring-primary ring-offset-2 ring-offset-background'
+          : 'border-border bg-card'
+      }`}
       data-testid={`queue-${entry.registrationId}`}
       data-inside={optimisticInside ? 'true' : 'false'}
+      data-active-row={isActive ? 'true' : 'false'}
     >
       <div className="min-w-0 space-y-0.5">
         <p className="truncate text-sm font-medium">{entry.userName}</p>
@@ -169,6 +168,43 @@ export function CheckinQueue({
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
 }) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (entries.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev === null ? 0 : Math.min(prev + 1, entries.length - 1)));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev === null ? 0 : Math.max(prev - 1, 0)));
+      } else if (e.key === 'Enter' && selectedIndex !== null) {
+        const activeEntry = entries[selectedIndex];
+        if (activeEntry) {
+          const rowEl = document.querySelector(`[data-testid="queue-${activeEntry.registrationId}"]`);
+          const buttonEl = rowEl?.querySelector<HTMLButtonElement>('button[type="submit"]');
+          if (buttonEl && !buttonEl.disabled) {
+            e.preventDefault();
+            buttonEl.click();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [entries, selectedIndex]);
+
   if (entries.length === 0) {
     return (
       <div
@@ -184,16 +220,28 @@ export function CheckinQueue({
   }
 
   return (
-    <ul className="space-y-2" data-testid="checkin-queue">
-      {entries.map((entry) => (
-        <QueueRow
-          key={entry.registrationId}
-          entry={entry}
-          tenantSlug={tenantSlug}
-          checkInAction={checkInAction}
-          checkOutAction={checkOutAction}
-        />
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="queue-keyboard-hint">
+        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono">↓</kbd>
+        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono">↑</kbd>
+        {' '}navegar linhas ·{' '}
+        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono">Enter</kbd>
+        {' '}credenciar
+      </p>
+
+      <ul className="space-y-2" data-testid="checkin-queue">
+        {entries.map((entry, index) => (
+          <QueueRow
+            key={entry.registrationId}
+            entry={entry}
+            tenantSlug={tenantSlug}
+            checkInAction={checkInAction}
+            checkOutAction={checkOutAction}
+            isActive={selectedIndex === index}
+            onSelect={() => setSelectedIndex(index)}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }

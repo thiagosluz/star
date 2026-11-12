@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { Suspense } from 'react';
 import { Contact } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
@@ -6,23 +6,19 @@ import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
-import { listParticipants } from '@/lib/participants/participant-service';
 import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
 import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
-import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
-import { ExportPanel } from '@/components/exports/export-panel';
-import { ENGAGEMENT_LABELS, PARTICIPANT_ORIGIN_LABELS } from '@/domain/participants/participant-rules';
 import { ParticipantFilterBar } from '@/components/participants/participant-filter-bar';
-import { ParticipantDirectory, type DirectoryEntry } from '@/components/participants/participant-directory';
-import { sendParticipantMessageAction } from '@/app/actions/participant-actions';
+import { ParticipantSkeleton } from '@/components/participants/participant-skeleton';
+import { ParticipantResults } from '@/components/participants/participant-results';
 
 export const metadata = { title: 'Participantes' };
 export const dynamic = 'force-dynamic';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DIRETÓRIO DE PARTICIPANTES DA INSTITUIÇÃO (FASE 32)
+ *  DIRETÓRIO DE PARTICIPANTES DA INSTITUIÇÃO (FASE 32 / FASE 103 · ADR-430)
  *  `/t/<slug>/participantes?busca=&evento=&certificado=1&presente=1&pagina=2`
  *
  *  ─────────────────────────────────────────────────────────────────────────────
@@ -37,15 +33,11 @@ export const dynamic = 'force-dynamic';
  *  quem é, o que viveu aqui e o que já recebemos de nós.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  O E-MAIL COMPLETO NÃO APARECE NA LISTA
+ *  STREAMING E SUSPENSE CIRÚRGICO (FASE 103 · ADR-430)
  *  ─────────────────────────────────────────────────────────────────────────────
- *  `maskEmail` roda no servidor, e a lista recebe o endereço já mascarado: a tela é
- *  copiada, printada e projetada. O endereço completo é dado de contato e aparece na
- *  ficha — onde a abertura fica registrada na trilha.
- *
- *  A exportação (CSV) é ação de OUTRA permissão? Não: é a mesma (`participant:read`),
- *  mas deixa rastro próprio (`AuditAction.EXPORT`) com autor, filtros e número de
- *  linhas, porque um arquivo sai da plataforma.
+ *  O cabeçalho e a barra de filtros são entregues imediatamente ao cliente,
+ *  enquanto o carregamento pesado de participantes com histórico consolidado
+ *  roda em streaming via `<Suspense fallback={<ParticipantSkeleton />}>`.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export default async function ParticipantsPage({
@@ -97,62 +89,7 @@ export default async function ParticipantsPage({
   });
   const { selectedEventId } = eventSelection;
 
-  const listing = await listParticipants({
-    tenantId,
-    query: busca?.trim() || undefined,
-    eventId: selectedEventId ?? undefined,
-    onlyWithCertificate: certificado === '1',
-    onlyAttended: presente === '1',
-    page: Number.parseInt(pagina ?? '1', 10) || 1,
-  });
-
-  const entries: DirectoryEntry[] =
-    listing.ok === true
-      ? listing.entries.map((entry) => ({
-          userId: entry.userId,
-          name: entry.name,
-          emailMasked: entry.emailMasked,
-          originLabel: PARTICIPANT_ORIGIN_LABELS[entry.origin],
-          events: entry.events,
-          confirmed: entry.confirmed,
-          attended: entry.attended,
-          visits: entry.visits,
-          minutes: entry.minutes,
-          certificates: entry.certificates,
-          cards: entry.cards,
-          xp: entry.xp,
-          rateLabel: entry.rate.hasData ? `${entry.rate.percent}%` : '—',
-          ratePercent: entry.rate.percent,
-          engagement: entry.engagement.map((tag) => ENGAGEMENT_LABELS[tag]),
-          lastActivityLabel: entry.lastActivityAt
-            ? entry.lastActivityAt.toLocaleDateString('pt-BR')
-            : null,
-        }))
-      : [];
-
-  const query = new URLSearchParams();
-  if (busca) query.set('busca', busca);
-  if (selectedEventId) query.set('evento', selectedEventId);
-  if (certificado === '1') query.set('certificado', '1');
-  if (presente === '1') query.set('presente', '1');
-
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  A EXPORTAÇÃO PASSOU A SER UM PEDIDO (FASE 49)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  O link direto de download virou formulário: exportar cria uma linha em
-   *  `data_exports` (autor, filtros, prazo de 24 h) e o arquivo é gerado no download,
-   *  com marca d'água. A dívida E44 pedia exatamente isto — prazo e controle de
-   *  destino —, e o "destino" é a lista de exportações recentes abaixo do botão.
-   */
-  const recentExports = await listRecentDataExports({ tenantId, kind: 'PARTICIPANTS_CSV' });
-  const createdExport = exportacao ? await getDataExport({ tenantId, exportId: exportacao }) : null;
-  const pageHref = (target: number): string => {
-    const next = new URLSearchParams(query);
-    next.set('pagina', String(target));
-
-    return `${tenantPath(tenantSlug, '/participantes')}?${next}`;
-  };
+  const filterKey = `${busca ?? ''}-${selectedEventId ?? ''}-${certificado ?? ''}-${presente ?? ''}-${pagina ?? ''}-${exportacao ?? ''}-${erro ?? ''}`;
 
   return (
     <main className="max-w-6xl space-y-6">
@@ -182,86 +119,21 @@ export default async function ParticipantsPage({
         initialPresente={presente === '1'}
       />
 
-      {!listing.ok ? (
-        <p className="rounded-lg border border-destructive/40 bg-card p-4 text-sm text-destructive">
-          {listing.message}
-        </p>
-      ) : (
-        <>
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground" data-testid="participant-summary">
-              {listing.page.total} pessoa(s) na instituição · página {listing.page.page} de{' '}
-              {listing.page.totalPages}
-            </p>
-
-            {/**
-              * ─────────────────────────────────────────────────────────────────
-              *  O RECORTE É DITO NA TELA (FASE 77 · fatia 2)
-              * ─────────────────────────────────────────────────────────────────
-              *  Com um evento escolhido, as colunas de presença e entrega passam a
-              *  ser DAQUELE evento (é o que o CSV do evento também entrega). Sem
-              *  esta linha, o número mudaria de significado sem avisar — e o
-              *  organizador leria "Visitas: 2" como se fosse a vida da pessoa.
-              */}
-            {selectedEventId ? (
-              <p className="text-xs text-muted-foreground" data-testid="participant-event-scope">
-                Inscrições, presenças, visitas, minutos, comparecimento, certificados, cartas e XP
-                são deste evento. O total de eventos e os rótulos continuam sendo da pessoa na
-                instituição.
-              </p>
-            ) : null}
-
-            {listing.truncated ? (
-              <p className="text-xs text-warning-strong" data-testid="participant-truncated">
-                A lista mostra as primeiras pessoas do filtro — refine a busca ou exporte o CSV para o
-                conjunto completo.
-              </p>
-            ) : null}
-          </div>
-
-          <ExportPanel
-            tenantSlug={tenantSlug}
-            kinds={['PARTICIPANTS_CSV']}
-            returnTo={tenantPath(tenantSlug, '/participantes') + (query.size > 0 ? `?${query}` : '')}
-            filters={{
-              busca: busca ?? undefined,
-              evento: selectedEventId ?? undefined,
-              certificado: certificado === '1',
-              presente: presente === '1',
-            }}
-            error={erro ?? null}
-            created={createdExport?.kind === 'PARTICIPANTS_CSV' ? createdExport : null}
-            recent={recentExports}
-            testId="export-participants"
-          />
-
-          <ParticipantDirectory
-            entries={entries}
-            tenantSlug={tenantSlug}
-            action={sendParticipantMessageAction}
-            canMessage={canMessage}
-            selectedEventId={selectedEventId}
-          />
-
-          {listing.page.totalPages > 1 ? (
-            <nav className="flex items-center gap-3 text-sm" data-testid="participant-pagination">
-              {listing.page.page > 1 ? (
-                <Link href={pageHref(listing.page.page - 1)} className="underline underline-offset-4">
-                  Anterior
-                </Link>
-              ) : null}
-              <span className="text-xs text-muted-foreground">
-                {listing.page.page} / {listing.page.totalPages}
-              </span>
-              {listing.page.page < listing.page.totalPages ? (
-                <Link href={pageHref(listing.page.page + 1)} className="underline underline-offset-4">
-                  Próxima
-                </Link>
-              ) : null}
-            </nav>
-          ) : null}
-        </>
-      )}
+      <Suspense fallback={<ParticipantSkeleton />}>
+        <ParticipantResults
+          key={filterKey}
+          tenantId={tenantId}
+          tenantSlug={tenantSlug}
+          canMessage={canMessage}
+          busca={busca}
+          selectedEventId={selectedEventId ?? undefined}
+          certificado={certificado}
+          presente={presente}
+          pagina={pagina}
+          exportacao={exportacao}
+          erro={erro}
+        />
+      </Suspense>
 
       <p className="text-xs text-muted-foreground">
         A abertura da ficha de uma pessoa e toda exportação ficam registradas na trilha de auditoria,

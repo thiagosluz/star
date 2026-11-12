@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
-import Link from 'next/link';
 import type { ComponentProps, ReactNode } from 'react';
 
+import { AppLink } from './app-link';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -68,12 +68,12 @@ export function Breadcrumbs({ items, className }: { items: readonly Crumb[]; cla
                 <ChevronRight className="size-3.5 text-on-surface-variant/60" aria-hidden />
               ) : null}
               {item.href && !isLast ? (
-                <Link
+                <AppLink
                   href={item.href}
                   className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                 >
                   {item.label}
-                </Link>
+                </AppLink>
               ) : (
                 <span
                   aria-current={isLast ? 'page' : undefined}
@@ -177,12 +177,12 @@ export function PageHeader({
              * e não "seta para a esquerda, Voltar para X". O destino está escrito
              * na frase — é o que os 15 links "← Painel" não faziam.
              */
-            <Link
+            <AppLink
               href={parent.href}
               className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
             >
               <span aria-hidden>←</span> Voltar para {parent.label}
-            </Link>
+            </AppLink>
           ) : null}
         </div>
       ) : null}

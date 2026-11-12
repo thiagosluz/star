@@ -202,7 +202,7 @@ export function ParticipantFilterBar({
             name="busca"
             value={busca}
             onChange={(e) => handleBuscaChange(e.target.value)}
-            placeholder="nome ou e-mail (Pressione / para buscar)"
+            placeholder="nome ou e-mail"
             aria-label="Buscar participante"
             data-testid="participant-search"
             className="block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"

@@ -32,6 +32,7 @@ import {
   type CertificatePreviewVariant,
 } from '@/domain/certificates/certificate-layout-rules';
 import { Input, Select, Textarea } from '@/components/ui';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * Id do aviso que ensina os atalhos do palco — referenciado por cada caixa com
@@ -792,6 +793,9 @@ export function CertificateTemplateEditor({
     saveAction,
     null,
   );
+
+  const isDirty = !saveState?.ok && JSON.stringify(elements) !== JSON.stringify(model.elements);
+  useUnsavedChanges(isDirty);
   const [previewState, previewFormAction] = useActionState<CertificateTemplateActionState | null, FormData>(
     previewAction,
     null,

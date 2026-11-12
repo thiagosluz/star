@@ -1,3 +1,6 @@
+'use client';
+
+import { useOptimistic, useTransition } from 'react';
 import { Heart } from 'lucide-react';
 
 import { toggleFavoriteAction } from '@/app/actions/agenda-actions';
@@ -5,17 +8,21 @@ import type { AgendaMarksVariant } from '@/components/events/agenda-marks';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ADICIONAR / REMOVER DA MINHA AGENDA (FASE 65 · fatia 2)
+ *  ADICIONAR / REMOVER DA MINHA AGENDA (FASE 65 · fatia 2 / FASE 103 · ADR-429)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  É UM `<form>` DE VERDADE, E ISSO É O REQUISITO
+ *  100% OTIMISTA NO REACT 19 COM PROGRESSIVE ENHANCEMENT NATIVO PRESERVADO
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Nenhum `onClick`, nenhum `useActionState`, nenhum estado de cliente: o botão é a
- *  submissão nativa de um formulário cujo `action` é a Server Action. Sem JavaScript
- *  o POST acontece igual (o Next publica os campos de progressive enhancement no
- *  próprio HTML), e a resposta é a navegação de volta para a mesma página. O E2E
- *  desta fatia roda com `javaScriptEnabled: false` justamente para que trocar isto
- *  por um clique de cliente reprove na hora.
+ *  Na FASE 103 (ADR-429):
+ *    • O componente adota `useOptimistic` e `useTransition` do React 19 para
+ *      chavear a interface em 0ms (preenchimento do ícone de coração, texto do
+ *      botão, aria-pressed e estilização de fundo imediata);
+ *    • Preserva rigorosamente o `<form action={toggleFavoriteAction}>` para
+ *      garantir que cenários sem JavaScript (`javaScriptEnabled: false` no E2E
+ *      da F65) continuem executando o POST nativo e o redirecionamento do Next.js;
+ *    • Quando o JavaScript está ativo, o `onSubmit` intercepta a submissão,
+ *      dispara a mutação otimista na transição e executa a Server Action em
+ *      segundo plano com reconexão automática ao estado real.
  *
  *  ─────────────────────────────────────────────────────────────────────────────
  *  O `userId` NÃO ESTÁ AQUI — E NÃO PODE ESTAR
@@ -36,6 +43,7 @@ import type { AgendaMarksVariant } from '@/components/events/agenda-marks';
  *
  *  O estado do botão é `aria-pressed` (botão de alternância), e não um segundo
  *  rótulo: é o mesmo controle, com o mesmo alvo, em dois estados.
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function FavoriteButton({
   tenantSlug,
@@ -57,28 +65,48 @@ export function FavoriteButton({
   origem: 'PROGRAMACAO' | 'MINHA_AGENDA';
   variant: AgendaMarksVariant;
 }) {
-  const rotuloVisivel = favorited ? 'Remover da minha agenda' : 'Adicionar à minha agenda';
+  const [optimisticFavorited, setOptimisticFavorited] = useOptimistic(
+    favorited,
+    (_current, next: boolean) => next,
+  );
+  const [isPending, startTransition] = useTransition();
+
+  const rotuloVisivel = optimisticFavorited ? 'Remover da minha agenda' : 'Adicionar à minha agenda';
 
   const classes =
     variant === 'tema'
       ? 'inline-flex items-center gap-1.5 rounded-md border border-current px-3 py-1.5 text-xs font-medium transition hover:opacity-80'
       : 'inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent';
 
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(async () => {
+      setOptimisticFavorited(!optimisticFavorited);
+      await toggleFavoriteAction(formData);
+    });
+  };
+
   return (
-    <form action={toggleFavoriteAction} data-testid={`agenda-form-${activityId}`}>
+    <form
+      action={toggleFavoriteAction}
+      onSubmit={handleSubmit}
+      data-testid={`agenda-form-${activityId}`}
+    >
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="eventId" value={eventId} />
       <input type="hidden" name="eventSlug" value={eventSlug} />
       <input type="hidden" name="activityId" value={activityId} />
       <input type="hidden" name="origem" value={origem} />
-      <input type="hidden" name="intencao" value={favorited ? 'remover' : 'adicionar'} />
+      <input type="hidden" name="intencao" value={optimisticFavorited ? 'remover' : 'adicionar'} />
 
       <button
         type="submit"
-        aria-pressed={favorited}
+        aria-pressed={optimisticFavorited}
         aria-label={`${rotuloVisivel}: ${activityTitle}`}
         data-testid={`agenda-favoritar-${activityId}`}
-        data-favorited={String(favorited)}
+        data-favorited={String(optimisticFavorited)}
+        data-pending={String(isPending)}
         className={classes}
         /**
          * O estado marcado também se VÊ: um leve tingimento tirado do `currentColor`
@@ -90,7 +118,7 @@ export function FavoriteButton({
          * é usado nos DOIS vocabulários: no tema do evento e no painel da plataforma.
          */
         style={
-          favorited
+          optimisticFavorited
             ? { backgroundColor: 'color-mix(in oklab, currentColor 14%, transparent)' }
             : undefined
         }
@@ -98,7 +126,7 @@ export function FavoriteButton({
         <Heart
           className="size-3.5 shrink-0"
           aria-hidden
-          fill={favorited ? 'currentColor' : 'none'}
+          fill={optimisticFavorited ? 'currentColor' : 'none'}
         />
         {rotuloVisivel}
       </button>

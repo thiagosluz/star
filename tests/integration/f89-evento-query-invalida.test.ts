@@ -192,6 +192,22 @@ vi.mock('../../src/components/participants/participant-directory', () => ({
     ),
 }));
 
+vi.mock('../../src/components/participants/participant-results', () => ({
+  ParticipantResults: (props: { selectedEventId?: string }) => {
+    if (props.selectedEventId === eventPrimeiroId) {
+      return createElement('div', { 'data-testid': 'directory-selected-entries' }, NOME_PESSOA_PRIMEIRO);
+    }
+    if (props.selectedEventId === eventSegundoId) {
+      return createElement('div', { 'data-testid': 'directory-selected-entries' }, NOME_PESSOA_SEGUNDO);
+    }
+    return createElement(
+      'div',
+      { 'data-testid': 'directory-selected-entries' },
+      `${NOME_PESSOA_PRIMEIRO} | ${NOME_PESSOA_SEGUNDO}`,
+    );
+  },
+}));
+
 vi.mock('../../src/components/exports/export-panel', () => ({
   ExportPanel: () => null,
 }));
