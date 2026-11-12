@@ -66,9 +66,13 @@ export function ConfirmationItemsChecklist({
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
       updateOptimistic({ itemId, status });
-      const result = await resolveConfirmationItemAction(null, formData);
-      if (result && !result.ok) {
-        setErrorMessage(result.message ?? 'Não foi possível registrar a confirmação.');
+      try {
+        const result = await resolveConfirmationItemAction(null, formData);
+        if (result && !result.ok) {
+          setErrorMessage(result.message ?? 'Não foi possível registrar a confirmação.');
+        }
+      } catch {
+        setErrorMessage('Erro de conexão ao registrar confirmação.');
       }
     });
   };

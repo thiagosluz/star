@@ -92,16 +92,32 @@ export function SubmissionDraftForm({
     trackId: initial.trackId ?? '',
   });
 
+  const [lastSaved, setLastSaved] = useState({
+    title: initial.title,
+    abstract: initial.abstract,
+    language: initial.language,
+    trackId: initial.trackId ?? '',
+  });
+
+  const [lastProcessedState, setLastProcessedState] = useState(state);
+
+  if (state !== lastProcessedState) {
+    setLastProcessedState(state);
+    if (state?.ok) {
+      setLastSaved(fields);
+    }
+  }
+
   const update = (patch: Partial<typeof fields>) =>
     setFields((previous) => ({ ...previous, ...patch }));
 
   const isDirty =
-    fields.title !== initial.title ||
-    fields.abstract !== initial.abstract ||
-    fields.language !== initial.language ||
-    fields.trackId !== (initial.trackId ?? '');
+    fields.title !== lastSaved.title ||
+    fields.abstract !== lastSaved.abstract ||
+    fields.language !== lastSaved.language ||
+    fields.trackId !== lastSaved.trackId;
 
-  useUnsavedChanges(isDirty && !state?.ok);
+  useUnsavedChanges(isDirty);
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-card p-5">

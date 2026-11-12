@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Inbox, UserRound } from 'lucide-react';
 
 import { MessageComposer } from '@/components/participants/message-composer';
 import type { ParticipantActionState } from '@/app/actions/participant-actions';
 import { AppLink } from '@/components/ui/app-link';
+import { tenantPath } from '@/domain/tenancy/resolution';
 
 /** Linha do diretório já pronta para a tela (datas como texto, domínio aplicado). */
 export interface DirectoryEntry {
@@ -118,13 +119,27 @@ export function ParticipantDirectory({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [entries, activeIndex, selected, canMessage]);
 
+  const prevActiveIndexRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (activeIndex === null || !entries[activeIndex]) return;
-    const activeUserId = entries[activeIndex].userId;
-    const activeRow = document.querySelector<HTMLElement>(
-      `[data-testid="participant-row-${activeUserId}"]`,
-    );
-    activeRow?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (activeIndex === null || !entries[activeIndex]) {
+      prevActiveIndexRef.current = activeIndex;
+      return;
+    }
+    if (prevActiveIndexRef.current !== activeIndex) {
+      prevActiveIndexRef.current = activeIndex;
+      const activeUserId = entries[activeIndex].userId;
+      const activeRow = document.querySelector<HTMLElement>(
+        `[data-testid="participant-row-${activeUserId}"]`,
+      );
+      const prefersReducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      activeRow?.scrollIntoView({
+        block: 'nearest',
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      });
+    }
   }, [activeIndex, entries]);
 
   return (
@@ -190,7 +205,7 @@ export function ParticipantDirectory({
         >
           <p>Nenhum participante encontrado com estes filtros.</p>
           <AppLink
-            href={`/t/${tenantSlug}/participantes`}
+            href={tenantPath(tenantSlug, '/participantes')}
             className="text-xs font-medium text-primary underline underline-offset-4"
             data-testid="directory-clear-filters"
           >
@@ -201,7 +216,7 @@ export function ParticipantDirectory({
         <>
           <div aria-live="polite" className="sr-only" data-testid="directory-live-region">
             {activeIndex !== null && entries[activeIndex]
-              ? `Selecionado: ${entries[activeIndex].name}`
+              ? `Linha atual ${activeIndex + 1} de ${entries.length}: ${entries[activeIndex].name}`
               : ''}
           </div>
 

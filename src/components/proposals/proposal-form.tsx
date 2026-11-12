@@ -85,7 +85,19 @@ export function ProposalForm({
   action: (prev: CallActionState | null, formData: FormData) => Promise<CallActionState>;
 }) {
   const [state, formAction] = useActionState<CallActionState | null, FormData>(action, null);
-  const [isDirty, setIsDirty] = useState(false);
+  const [formDataState, setFormDataState] = useState({
+    title: '',
+    abstract: '',
+    keywords: '',
+    language: 'pt-BR',
+    campos: {} as Record<string, string>,
+  });
+
+  const isDirty =
+    formDataState.title.trim().length > 0 ||
+    formDataState.abstract.trim().length > 0 ||
+    formDataState.keywords.trim().length > 0 ||
+    Object.values(formDataState.campos).some((val) => val.trim().length > 0);
 
   useUnsavedChanges(isDirty && !state?.ok);
 
@@ -139,9 +151,6 @@ export function ProposalForm({
   return (
     <form
       action={formAction}
-      onChange={() => {
-        if (!isDirty) setIsDirty(true);
-      }}
       className="space-y-5"
       data-testid="proposal-form"
     >
@@ -158,6 +167,8 @@ export function ProposalForm({
           minLength={3}
           maxLength={300}
           aria-label="Título"
+          value={formDataState.title}
+          onChange={(e) => setFormDataState((prev) => ({ ...prev, title: e.target.value }))}
           placeholder="Como a organização deve identificar sua proposta"
         />
       </div>
@@ -172,6 +183,8 @@ export function ProposalForm({
           maxLength={MAX_ABSTRACT_LENGTH}
           rows={6}
           aria-label="Resumo"
+          value={formDataState.abstract}
+          onChange={(e) => setFormDataState((prev) => ({ ...prev, abstract: e.target.value }))}
           placeholder="O que você propõe, para quem e por quê. É o texto que os avaliadores leem."
         />
         {/*
@@ -194,6 +207,8 @@ export function ProposalForm({
             required
             maxLength={400}
             aria-label="Palavras-chave"
+            value={formDataState.keywords}
+            onChange={(e) => setFormDataState((prev) => ({ ...prev, keywords: e.target.value }))}
             placeholder="extensão, saúde digital, telemedicina"
           />
           {/*
@@ -214,6 +229,8 @@ export function ProposalForm({
             name="language"
             maxLength={16}
             aria-label="Idioma"
+            value={formDataState.language}
+            onChange={(e) => setFormDataState((prev) => ({ ...prev, language: e.target.value }))}
             placeholder="pt-BR"
           />
         </div>
@@ -244,6 +261,13 @@ export function ProposalForm({
                     maxLength={field.maxLength}
                     rows={4}
                     aria-label={field.label}
+                    value={formDataState.campos[field.key] ?? ''}
+                    onChange={(e) =>
+                      setFormDataState((prev) => ({
+                        ...prev,
+                        campos: { ...prev.campos, [field.key]: e.target.value },
+                      }))
+                    }
                     data-testid={`proposal-${field.key}`}
                   />
                 ) : (
@@ -256,6 +280,13 @@ export function ProposalForm({
                     max={field.input === 'NUMBER' ? field.max : undefined}
                     maxLength={field.maxLength}
                     aria-label={field.label}
+                    value={formDataState.campos[field.key] ?? ''}
+                    onChange={(e) =>
+                      setFormDataState((prev) => ({
+                        ...prev,
+                        campos: { ...prev.campos, [field.key]: e.target.value },
+                      }))
+                    }
                     data-testid={`proposal-${field.key}`}
                   />
                 )}

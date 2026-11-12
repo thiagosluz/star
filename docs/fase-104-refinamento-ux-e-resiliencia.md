@@ -34,15 +34,13 @@ O desafio mais intrincado da FASE 104 reside na **intersecção entre Server Act
 Em Next.js App Router, `redirect()` opera lançando uma exceção interna com `digest: "NEXT_REDIRECT"`. No `FavoriteButton`, quando um usuário anônimo clica no botão de favoritar, a Server Action `toggleFavoriteAction` executa `redirect('/login?redirectTo=...')`.
 Se um bloco `try / catch` tradicional envolver a chamada dentro da transição do cliente para exibir o erro na UI, ele captura inadvertidamente a exceção `NEXT_REDIRECT`, interpretando-a erroneamente como falha de rede e impedindo o redirecionamento legítimo para o login.
 
-A solução exigiu uma diferenciação rigorosa da anatomia do erro:
+A solução exigiu o uso da função canônica `unstable_rethrow` do `next/navigation`:
 ```typescript
 try {
   await toggleFavoriteAction(formData);
-} catch (error) {
-  if (isRedirectError(error)) {
-    throw error; // Re-lança para que o Next.js router processe a navegação
-  }
-  setFeedback('Não foi possível salvar.');
+} catch (err) {
+  unstable_rethrow(err); // Re-lança erros internos de navegação (NEXT_REDIRECT / NEXT_NOT_FOUND)
+  setFeedback('Não foi possível atualizar a agenda no momento.');
 }
 ```
 Dessa forma, redirecionamentos legítimos de autenticação continuam fluindo sem impedimento, enquanto falhas genuínas de infraestrutura ou concorrência ativam o feedback de rollback com anúncio acessível para leitores de tela.
@@ -89,7 +87,9 @@ No `ParticipantFilterBar`, a busca textual conta com um debounce de 300ms via `s
 | Sintoma Encontrado em Teste | Causa Raiz | Correção Aplicada |
 |---|---|---|
 | Erro TS2345 em `ConfirmationItemsChecklist`: `string \| undefined` não atribuível a `string`. | `result.message` retornado pela Server Action é tipado opcionalmente na interface de retorno. | Fornecido valor de fallback seguro: `setErrorMessage(result.message ?? 'Não foi possível registrar a confirmação.');`. |
-| Falha potencial no redirecionamento anônimo de `FavoriteButton` ao capturar erro de transição. | O Next.js lança uma exceção especial com `NEXT_REDIRECT` ao executar `redirect()`, que era absorvida pelo catch genérico. | Adicionada checagem com `isRedirectError(error)` para re-lançar o erro imediatamente. |
+| Regressão visual de 3.273 a 3.817 pixels em `f62-regressao-visual.spec.ts` (`participantes-desktop-claro.png`). | Padding incondicional `pr-10` no input sem largura fixa (`min-w-56`) de `ParticipantFilterBar` expandiu sua largura intrínseca de 269px para 306px, deslocando todos os filtros adjacentes em 37px à direita. | Padding condicionado a `busca \|\| isPending ? 'pr-10' : ''`, mantendo o snapshot idêntico ao baseline quando o campo está vazio. |
+| Aviso de ESLint TS `@typescript-eslint/no-unused-vars` em `ConfirmationItemsChecklist`. | Parâmetro `_err` no bloco catch dentro da transição do checklist foi capturado mas não utilizado, violando o portão de 0 warnings. | Adotado optional catch binding nativo `catch { ... }`, sem declaração de variável não utilizada. |
+| Redirecionamento anônimo em `FavoriteButton` interceptado por bloco catch de mutação otimista. | No Next.js App Router, `redirect()` opera lançando uma exceção interna com digest `NEXT_REDIRECT` que não pode ser engolida por catch genérico. | Adoção da função canônica `unstable_rethrow(err)` de `next/navigation` antes do fallback de mensagem de erro. |
 | Inconsistência de texto ao clicar no botão `(×)` de limpeza da busca enquanto o debounce estava ativo. | O callback do `setTimeout` agendado 300ms antes disparava após a limpeza, reinserindo a busca digitada. | Limpeza explícita do timer através de `clearTimeout(debounceTimerRef.current)` antes de disparar o reset. |
 
 ---

@@ -205,29 +205,36 @@ export function ParticipantFilterBar({
             placeholder="nome ou e-mail"
             aria-label="Buscar participante"
             data-testid="participant-search"
-            className="block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal pr-8"
+            className={`block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal ${
+              busca || isPending ? 'pr-10' : ''
+            }`}
           />
-          {busca ? (
-            <button
-              type="button"
-              onClick={() => {
-                setBusca('');
-                if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-                inputRef.current?.focus();
-                applyFilters({ nextBusca: '' });
-              }}
-              data-testid="participant-search-clear"
-              aria-label="Limpar campo de busca"
-              className="absolute right-2.5 top-2.5 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition"
-            >
-              <X className="size-3.5" aria-hidden />
-            </button>
-          ) : isPending ? (
-            <span
-              role="status"
-              aria-label="Buscando"
-              className="absolute right-2.5 top-2.5 size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent"
-            />
+          {isPending || busca ? (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {isPending && (
+                <span
+                  role="status"
+                  aria-label="Buscando"
+                  className="size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                />
+              )}
+              {busca ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBusca('');
+                    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                    inputRef.current?.focus();
+                    applyFilters({ nextBusca: '' });
+                  }}
+                  data-testid="participant-search-clear"
+                  aria-label="Limpar campo de busca"
+                  className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </label>

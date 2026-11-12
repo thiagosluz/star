@@ -1,6 +1,7 @@
 'use client';
 
 import { useOptimistic, useState, useTransition } from 'react';
+import { unstable_rethrow } from 'next/navigation';
 import { Heart } from 'lucide-react';
 
 import { toggleFavoriteAction } from '@/app/actions/agenda-actions';
@@ -89,9 +90,7 @@ export function FavoriteButton({
       try {
         await toggleFavoriteAction(formData);
       } catch (err) {
-        if ((err as Error)?.message?.includes('NEXT_REDIRECT')) {
-          throw err;
-        }
+        unstable_rethrow(err);
         setFeedback('Não foi possível atualizar a agenda no momento.');
       }
     });
@@ -146,7 +145,12 @@ export function FavoriteButton({
       </span>
 
       {feedback ? (
-        <span role="alert" aria-live="assertive" className="sr-only" data-testid={`agenda-error-${activityId}`}>
+        <span
+          role="alert"
+          aria-live="assertive"
+          className="mt-1 block text-xs text-destructive font-medium"
+          data-testid={`agenda-error-${activityId}`}
+        >
           {feedback}
         </span>
       ) : null}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useOptimistic, useState } from 'react';
+import { useActionState, useEffect, useOptimistic, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
@@ -205,11 +205,25 @@ export function CheckinQueue({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [entries, selectedIndex]);
 
+  const prevSelectedIndexRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (selectedIndex === null || !entries[selectedIndex]) return;
-    const activeRegId = entries[selectedIndex].registrationId;
-    const activeRow = document.querySelector<HTMLElement>(`[data-testid="queue-${activeRegId}"]`);
-    activeRow?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (selectedIndex === null || !entries[selectedIndex]) {
+      prevSelectedIndexRef.current = selectedIndex;
+      return;
+    }
+    if (prevSelectedIndexRef.current !== selectedIndex) {
+      prevSelectedIndexRef.current = selectedIndex;
+      const activeRegId = entries[selectedIndex].registrationId;
+      const activeRow = document.querySelector<HTMLElement>(`[data-testid="queue-${activeRegId}"]`);
+      const prefersReducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      activeRow?.scrollIntoView({
+        block: 'nearest',
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      });
+    }
   }, [selectedIndex, entries]);
 
   if (entries.length === 0) {
