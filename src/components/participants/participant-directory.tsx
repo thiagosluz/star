@@ -118,6 +118,15 @@ export function ParticipantDirectory({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [entries, activeIndex, selected, canMessage]);
 
+  useEffect(() => {
+    if (activeIndex === null || !entries[activeIndex]) return;
+    const activeUserId = entries[activeIndex].userId;
+    const activeRow = document.querySelector<HTMLElement>(
+      `[data-testid="participant-row-${activeUserId}"]`,
+    );
+    activeRow?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeIndex, entries]);
+
   return (
     <div className="space-y-4">
       {canMessage ? (
@@ -175,11 +184,27 @@ export function ParticipantDirectory({
       </div>
 
       {entries.length === 0 ? (
-        <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground" data-testid="directory-empty">
-          Nenhum participante encontrado com estes filtros.
-        </p>
+        <div
+          className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground flex flex-wrap items-center justify-between gap-3"
+          data-testid="directory-empty"
+        >
+          <p>Nenhum participante encontrado com estes filtros.</p>
+          <AppLink
+            href={`/t/${tenantSlug}/participantes`}
+            className="text-xs font-medium text-primary underline underline-offset-4"
+            data-testid="directory-clear-filters"
+          >
+            Limpar todos os filtros
+          </AppLink>
+        </div>
       ) : (
         <>
+          <div aria-live="polite" className="sr-only" data-testid="directory-live-region">
+            {activeIndex !== null && entries[activeIndex]
+              ? `Selecionado: ${entries[activeIndex].name}`
+              : ''}
+          </div>
+
           <p className="sr-only" data-testid="directory-keyboard-hint">
             Use as setas para baixo e para cima para navegar nas linhas, Enter para abrir a ficha 360 e Espaço para selecionar.
           </p>

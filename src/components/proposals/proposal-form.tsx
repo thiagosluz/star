@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Send } from 'lucide-react';
+
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 import type { CallActionState } from '@/app/actions/call-actions';
 import { Button, Input, Label, Textarea } from '@/components/ui';
@@ -83,6 +85,9 @@ export function ProposalForm({
   action: (prev: CallActionState | null, formData: FormData) => Promise<CallActionState>;
 }) {
   const [state, formAction] = useActionState<CallActionState | null, FormData>(action, null);
+  const [isDirty, setIsDirty] = useState(false);
+
+  useUnsavedChanges(isDirty && !state?.ok);
 
   /**
    * O protocolo é a única prova que o proponente leva. Ele fica em destaque, e não
@@ -132,7 +137,14 @@ export function ProposalForm({
   }
 
   return (
-    <form action={formAction} className="space-y-5" data-testid="proposal-form">
+    <form
+      action={formAction}
+      onChange={() => {
+        if (!isDirty) setIsDirty(true);
+      }}
+      className="space-y-5"
+      data-testid="proposal-form"
+    >
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="eventSlug" value={eventSlug} />
       <input type="hidden" name="callSlug" value={callSlug} />

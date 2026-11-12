@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useOptimistic, useTransition } from 'react';
+import { useActionState, useOptimistic, useState, useTransition } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { resolveConfirmationItemAction } from '@/app/actions/admin-actions';
@@ -54,6 +54,7 @@ export function ConfirmationItemsChecklist({
 
   const [isPending, startTransition] = useTransition();
   const [, formAction] = useActionState(resolveConfirmationItemAction, null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleFormSubmit = (
     itemId: string,
@@ -61,10 +62,14 @@ export function ConfirmationItemsChecklist({
     e: React.FormEvent<HTMLFormElement>,
   ) => {
     e.preventDefault();
+    setErrorMessage(null);
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
       updateOptimistic({ itemId, status });
-      await resolveConfirmationItemAction(null, formData);
+      const result = await resolveConfirmationItemAction(null, formData);
+      if (result && !result.ok) {
+        setErrorMessage(result.message ?? 'Não foi possível registrar a confirmação.');
+      }
     });
   };
 
@@ -82,6 +87,17 @@ export function ConfirmationItemsChecklist({
       <p className="text-xs font-medium" data-testid={`items-summary-${registrationId}`}>
         Checklist: {isPending ? currentSummary : itemsSummary}
       </p>
+
+      {errorMessage ? (
+        <p
+          role="alert"
+          aria-live="assertive"
+          className="text-xs text-destructive font-medium"
+          data-testid={`item-error-${registrationId}`}
+        >
+          {errorMessage}
+        </p>
+      ) : null}
 
       <ul className="space-y-1.5">
         {optimisticItems.map((item) => (

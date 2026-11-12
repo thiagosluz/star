@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 import { Button, Field, Input, Select, Textarea, fieldAria } from '@/components/ui';
 import { KeywordsInput } from '@/components/review/keywords-input';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import {
   MAX_ABSTRACT_LENGTH,
   MIN_ABSTRACT_LENGTH,
@@ -93,6 +94,14 @@ export function SubmissionDraftForm({
 
   const update = (patch: Partial<typeof fields>) =>
     setFields((previous) => ({ ...previous, ...patch }));
+
+  const isDirty =
+    fields.title !== initial.title ||
+    fields.abstract !== initial.abstract ||
+    fields.language !== initial.language ||
+    fields.trackId !== (initial.trackId ?? '');
+
+  useUnsavedChanges(isDirty && !state?.ok);
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-card p-5">

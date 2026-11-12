@@ -1,6 +1,6 @@
 'use client';
 
-import { useOptimistic, useTransition } from 'react';
+import { useOptimistic, useState, useTransition } from 'react';
 import { Heart } from 'lucide-react';
 
 import { toggleFavoriteAction } from '@/app/actions/agenda-actions';
@@ -70,6 +70,7 @@ export function FavoriteButton({
     (_current, next: boolean) => next,
   );
   const [isPending, startTransition] = useTransition();
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const rotuloVisivel = optimisticFavorited ? 'Remover da minha agenda' : 'Adicionar à minha agenda';
 
@@ -80,10 +81,19 @@ export function FavoriteButton({
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setFeedback(null);
     const formData = new FormData(event.currentTarget);
+    const nextState = !optimisticFavorited;
     startTransition(async () => {
-      setOptimisticFavorited(!optimisticFavorited);
-      await toggleFavoriteAction(formData);
+      setOptimisticFavorited(nextState);
+      try {
+        await toggleFavoriteAction(formData);
+      } catch (err) {
+        if ((err as Error)?.message?.includes('NEXT_REDIRECT')) {
+          throw err;
+        }
+        setFeedback('Não foi possível atualizar a agenda no momento.');
+      }
     });
   };
 
@@ -130,6 +140,16 @@ export function FavoriteButton({
         />
         {rotuloVisivel}
       </button>
+
+      <span aria-live="polite" className="sr-only" data-testid={`agenda-live-${activityId}`}>
+        {optimisticFavorited ? 'Atividade adicionada à sua agenda' : 'Atividade removida da sua agenda'}
+      </span>
+
+      {feedback ? (
+        <span role="alert" aria-live="assertive" className="sr-only" data-testid={`agenda-error-${activityId}`}>
+          {feedback}
+        </span>
+      ) : null}
     </form>
   );
 }

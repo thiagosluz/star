@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertTriangle, BadgeCheck, Clock, Search, Users } from 'lucide-react';
 
+import { AppLink } from '@/components/ui/app-link';
+
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -260,11 +262,22 @@ export default async function EventConfirmationsPage({
                 </h2>
 
                 {queue.pending.length === 0 ? (
-                  <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                    {busca
-                      ? 'Ninguém aguardando confirmação com essa busca.'
-                      : 'Ninguém aguardando confirmação nesta atividade.'}
-                  </p>
+                  <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground flex flex-wrap items-center justify-between gap-2">
+                    <p>
+                      {busca
+                        ? 'Ninguém aguardando confirmação com essa busca.'
+                        : 'Ninguém aguardando confirmação nesta atividade.'}
+                    </p>
+                    {busca ? (
+                      <AppLink
+                        href={tenantPath(tenantSlug, `${basePath}?atividade=${queue.selected.activityId}`)}
+                        className="text-xs text-primary underline underline-offset-4"
+                        data-testid="confirmation-clear-search"
+                      >
+                        Limpar busca
+                      </AppLink>
+                    ) : null}
+                  </div>
                 ) : (
                   <ul className="divide-y divide-border rounded-lg border border-border" data-testid="confirmation-pending">
                     {queue.pending.map((row) => (

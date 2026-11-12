@@ -205,6 +205,13 @@ export function CheckinQueue({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [entries, selectedIndex]);
 
+  useEffect(() => {
+    if (selectedIndex === null || !entries[selectedIndex]) return;
+    const activeRegId = entries[selectedIndex].registrationId;
+    const activeRow = document.querySelector<HTMLElement>(`[data-testid="queue-${activeRegId}"]`);
+    activeRow?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedIndex, entries]);
+
   if (entries.length === 0) {
     return (
       <div
@@ -221,6 +228,12 @@ export function CheckinQueue({
 
   return (
     <div className="space-y-2">
+      <div aria-live="polite" className="sr-only" data-testid="queue-live-region">
+        {selectedIndex !== null && entries[selectedIndex]
+          ? `Selecionado para credenciamento: ${entries[selectedIndex].userName}`
+          : ''}
+      </div>
+
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="queue-keyboard-hint">
         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono">↓</kbd>
         <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono">↑</kbd>
