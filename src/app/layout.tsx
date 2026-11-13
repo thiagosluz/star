@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 
 import { NavigationProgressBar } from '@/components/ui';
+import { UnsavedChangesDialog } from '@/components/ui/unsaved-changes-dialog';
 import { themeMarkup } from '@/lib/theme/theme-mode';
 import { readThemeMode } from '@/lib/theme/theme-mode-server';
 import { cn } from '@/lib/utils/cn';
@@ -98,6 +99,7 @@ export default async function RootLayout({
     >
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
         <NavigationProgressBar />
+        <UnsavedChangesDialog />
         {children}
       </body>
     </html>

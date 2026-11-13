@@ -4,7 +4,8 @@
  *
  *  Valida em navegador real (Chromium):
  *    1. Credenciamento: limpeza rápida (×) e empty state acionável ("Limpar busca") na fila;
- *    2. Comitê: silêncio inicial de aria-live, aria-label em Aplicar filtros e limpeza rápida (×).
+ *    2. Comitê: silêncio inicial de aria-live, aria-label em Aplicar filtros e limpeza rápida (×);
+ *    3. Nova submissão: sair com rascunho digitado abre ConfirmDialog do sistema (sem window.confirm).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomUUID } from 'node:crypto';
@@ -168,6 +169,74 @@ test.describe('FASE 106 — Fechamento de UX em Formulários e Filtros', () => {
 
     await expect(searchInput).toHaveValue('');
     await expect(page).not.toHaveURL(/busca=protocolo-teste/);
+  });
+
+  test('3. Nova submissão: sair com alterações não salvas abre ConfirmDialog do sistema (sem window.confirm)', async ({
+    page,
+  }) => {
+    const tenant = await createTenant({
+      label: 'f106-unsaved-modal',
+      name: `Instituição Modal Rascunho F106 ${RUN_ID}`,
+    });
+    const participant = await createUser(page, tenant.id, 'Autor Rascunho F106', 'PARTICIPANT');
+    const event = await createEvent({
+      tenantId: tenant.id,
+      slug: `evento-submissao-f106-${RUN_ID}`,
+      title: `Evento Submissão F106 ${RUN_ID}`,
+      status: 'REGISTRATION_OPEN',
+    });
+
+    await e2eDb.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
+      await tx.track.create({
+        data: {
+          tenantId: tenant.id,
+          eventId: event.id,
+          name: 'Trilha Geral',
+          slug: 'trilha-geral',
+          requiresBlindReview: false,
+          isActive: true,
+        },
+      });
+    });
+
+    let nativeDialogsCount = 0;
+    page.on('dialog', async (dialog) => {
+      nativeDialogsCount += 1;
+      await dialog.dismiss();
+    });
+
+    await signInAs(page, participant.email);
+    await page.goto(`/t/${tenant.slug}/submissoes/nova`);
+    await page.waitForLoadState('networkidle');
+
+    const titleInput = page.locator('[name="title"]');
+    await expect(titleInput).toBeVisible();
+    await titleInput.fill('Artigo em andamento sobre acessibilidade');
+
+    const sidebarLink = page.locator(`nav a[href="/t/${tenant.slug}/meus-compartilhamentos"]`).first();
+    await expect(sidebarLink).toBeVisible();
+    await sidebarLink.click();
+
+    const modal = page.locator('[data-testid="unsaved-changes-dialog"]');
+    await expect(modal).toBeVisible();
+    await expect(modal).toHaveAttribute('role', 'alertdialog');
+    await expect(modal).toContainText('Sair sem salvar alterações?');
+
+    const cancelBtn = page.locator('[data-testid="unsaved-changes-dialog-cancel"]');
+    await expect(cancelBtn).toBeFocused();
+    await cancelBtn.click();
+
+    await expect(modal).not.toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/submissoes/nova$`));
+    await expect(titleInput).toHaveValue('Artigo em andamento sobre acessibilidade');
+
+    await sidebarLink.click();
+    await expect(modal).toBeVisible();
+    await page.locator('[data-testid="unsaved-changes-dialog-confirm"]').click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/meus-compartilhamentos$`));
+    expect(nativeDialogsCount).toBe(0);
   });
 });
 

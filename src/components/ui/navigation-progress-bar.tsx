@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils/cn';
 
 export const KOVENO_NAVIGATION_START_EVENT = 'koveno:navigation-start';
 export const KOVENO_NAVIGATION_STOP_EVENT = 'koveno:navigation-stop';
+export const KOVENO_NAVIGATION_CANCEL_EVENT = 'koveno:navigation-cancel';
 
 export function startNavigationProgress() {
   if (typeof window !== 'undefined') {
@@ -42,6 +43,12 @@ export function startNavigationProgress() {
 export function stopNavigationProgress() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(KOVENO_NAVIGATION_STOP_EVENT));
+  }
+}
+
+export function cancelNavigationProgress() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(KOVENO_NAVIGATION_CANCEL_EVENT));
   }
 }
 
@@ -66,6 +73,13 @@ function NavigationProgressBarInner() {
       setStatus('idle');
       setProgress(0);
     }, 250);
+  }, []);
+
+  const cancelProgress = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setStatus('idle');
+    setProgress(0);
   }, []);
 
   const startProgress = useCallback(() => {
@@ -110,6 +124,7 @@ function NavigationProgressBarInner() {
   // Interceptador de cliques em links internos (fase de captura) e eventos programáticos
   useEffect(() => {
     function handleDocumentClick(e: MouseEvent) {
+      if (e.defaultPrevented) return;
       if (e.button !== 0) return; // apenas botão esquerdo principal
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // ignora cliques com modificadores
 
@@ -153,19 +168,25 @@ function NavigationProgressBarInner() {
       completeProgress();
     }
 
+    function handleCustomCancel() {
+      cancelProgress();
+    }
+
     // Escuta na fase de captura (true) para interceptar antes de preventDefault do cliente
     document.addEventListener('click', handleDocumentClick, true);
     window.addEventListener(KOVENO_NAVIGATION_START_EVENT, handleCustomStart);
     window.addEventListener(KOVENO_NAVIGATION_STOP_EVENT, handleCustomStop);
+    window.addEventListener(KOVENO_NAVIGATION_CANCEL_EVENT, handleCustomCancel);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick, true);
       window.removeEventListener(KOVENO_NAVIGATION_START_EVENT, handleCustomStart);
       window.removeEventListener(KOVENO_NAVIGATION_STOP_EVENT, handleCustomStop);
+      window.removeEventListener(KOVENO_NAVIGATION_CANCEL_EVENT, handleCustomCancel);
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [completeProgress, startProgress]);
+  }, [cancelProgress, completeProgress, startProgress]);
 
   if (status === 'idle') return null;
 

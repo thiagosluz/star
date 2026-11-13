@@ -55,4 +55,6 @@ export { Breadcrumbs, PageHeader, type Crumb } from './page-header';
 export { NavLink, TabNav } from './navigation';
 export { NavigationProgressBar } from './navigation-progress-bar';
 export { startNavigationProgress, stopNavigationProgress } from './navigation-progress-bar';
+export { cancelNavigationProgress } from './navigation-progress-bar';
+export { UnsavedChangesDialog } from './unsaved-changes-dialog';
 export { AppLink, type AppLinkProps } from './app-link';

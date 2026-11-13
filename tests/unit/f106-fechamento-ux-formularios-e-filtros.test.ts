@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -158,6 +158,38 @@ describe('FASE 106 · Preservação de Formulários Acadêmicos, Paridade de Fil
       expect(submitBtn?.getAttribute('aria-label')).toBe('Aplicar filtros');
       expect(clearBtn).not.toBeNull();
       expect(clearBtn?.getAttribute('aria-label')).toBe('Limpar busca');
+    });
+
+    it('nenhum arquivo em src/ chama window.confirm/alert/prompt e UnsavedChangesDialog está montado no RootLayout', () => {
+      const arquivos = (readdirSync(join(process.cwd(), 'src'), { recursive: true }) as string[])
+        .filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'));
+
+      const violacoes: string[] = [];
+      for (const rel of arquivos) {
+        const conteudo = readFileSync(join(process.cwd(), 'src', rel), 'utf-8');
+        if (/\bwindow\.(confirm|alert|prompt)\s*\(/.test(conteudo)) {
+          violacoes.push(rel);
+        }
+      }
+      expect(violacoes).toEqual([]);
+
+      const hookSource = readFileSync(
+        join(process.cwd(), 'src/hooks/use-unsaved-changes.ts'),
+        'utf-8',
+      );
+      expect(hookSource).toContain('koveno:unsaved-leave-request');
+      expect(hookSource).toContain('koveno:navigation-cancel');
+
+      const dialogSource = readFileSync(
+        join(process.cwd(), 'src/components/ui/unsaved-changes-dialog.tsx'),
+        'utf-8',
+      );
+      expect(dialogSource).toContain('ConfirmDialog');
+      expect(dialogSource).toContain('testId="unsaved-changes-dialog"');
+      expect(dialogSource).toContain('tone="danger"');
+
+      const layoutSource = readFileSync(join(process.cwd(), 'src/app/layout.tsx'), 'utf-8');
+      expect(layoutSource).toContain('<UnsavedChangesDialog />');
     });
   });
 });

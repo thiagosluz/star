@@ -8,19 +8,19 @@
 
 | Entregável | Arquivos Modificados / Criados | Responsabilidade Principal |
 |---|---|---|
-| **Formulários Acadêmicos Controlados e Guardião (ADR-437)** | `src/components/review/review-form.tsx`<br>`src/components/review/decision-form.tsx`<br>`src/components/review/create-submission-form.tsx` | Estado controlado em React 19 para preservar valores após erro `{ ok: false }` e `useUnsavedChanges` contra perda de rascunho. |
+| **Formulários Acadêmicos Controlados e Modal de Saída (ADR-437)** | `src/components/review/review-form.tsx`<br>`src/components/review/decision-form.tsx`<br>`src/components/review/create-submission-form.tsx`<br>`src/hooks/use-unsaved-changes.ts`<br>`src/components/ui/unsaved-changes-dialog.tsx`<br>`src/components/ui/navigation-progress-bar.tsx`<br>`src/app/layout.tsx` | Estado controlado em React 19 para preservar valores após erro `{ ok: false }`, substituição definitiva de `window.confirm` pelo `<UnsavedChangesDialog />` (`ConfirmDialog` no `RootLayout`) e cancelamento limpo do progresso global. |
 | **Busca e Fila de Credenciamento (ADR-438)** | `src/components/credentials/checkin-filter-bar.tsx`<br>`src/components/gamification/checkin-queue.tsx`<br>`src/app/t/[tenantSlug]/(app)/credenciamento/page.tsx` | Botão `(×)` instantâneo, limpeza de timer no unmount e `Escape`, guarda `isContentEditable`, blur no `Escape` vazio e `clearSearchHref` em `CheckinQueue`. |
 | **Barra de Filtros do Comitê (ADR-438)** | `src/components/review/comite-filter-bar.tsx` | Silêncio inicial de `aria-live` (`hasFiltered`), `aria-label="Aplicar filtros"`, botão `(×)`, limpeza de timer no unmount e `AppLink` em `"Limpar filtros"`. |
-| **Testes Automatizados** | `tests/unit/f106-fechamento-ux-formularios-e-filtros.test.ts`<br>`tests/e2e/f106-fechamento-ux-formularios-e-filtros.spec.ts` | 6 novos testes unitários (Vitest) + 2 novos cenários E2E (Playwright) cobrindo estado controlado, `aria-live`, limpeza de filtros e proteção de formulário. |
+| **Testes Automatizados** | `tests/unit/f106-fechamento-ux-formularios-e-filtros.test.ts`<br>`tests/e2e/f106-fechamento-ux-formularios-e-filtros.spec.ts` | 7 novos testes unitários (Vitest, incluindo catraca anti-`window.confirm`) + 3 novos cenários E2E (Playwright) cobrindo estado controlado, `aria-live`, limpeza de filtros e modal de saída. |
 
 ### Números da Fase
-- **Arquivos criados na aplicação:** 0
-- **Arquivos modificados na aplicação:** 7 (`review-form.tsx`, `decision-form.tsx`, `create-submission-form.tsx`, `checkin-filter-bar.tsx`, `checkin-queue.tsx`, `credenciamento/page.tsx`, `comite-filter-bar.tsx`)
+- **Arquivos criados na aplicação:** 1 (`src/components/ui/unsaved-changes-dialog.tsx`)
+- **Arquivos modificados na aplicação:** 11 (`review-form.tsx`, `decision-form.tsx`, `create-submission-form.tsx`, `checkin-filter-bar.tsx`, `checkin-queue.tsx`, `credenciamento/page.tsx`, `comite-filter-bar.tsx`, `use-unsaved-changes.ts`, `navigation-progress-bar.tsx`, `components/ui/index.ts`, `app/layout.tsx`)
 - **Novos arquivos de teste:** 2 (`tests/unit/f106-fechamento-ux-formularios-e-filtros.test.ts` e `tests/e2e/f106-fechamento-ux-formularios-e-filtros.spec.ts`)
-- **Novos testes unitários:** 6
-- **Novos testes E2E:** 2
-- **Total da suíte Vitest:** 4.848 testes passando (284 arquivos)
-- **Total da suíte Playwright:** 534 testes passando + 1 skip (535 cenários)
+- **Novos testes unitários:** 7
+- **Novos testes E2E:** 3
+- **Total da suíte Vitest:** 4.849 testes passando (284 arquivos)
+- **Total da suíte Playwright:** 535 testes passando + 1 skip (536 cenários)
 - **Migrações de banco:** 0
 - **ADRs introduzidas:** 2 (ADR-437, ADR-438 — numeração global sequencial)
 
@@ -46,8 +46,8 @@ Os campos `recommendation`, `feedbackToAuthor` e `confidentialComments` (`Review
 
 ### ADR-437 — Estado Controlado e Guardião de Rascunhos em Formulários Acadêmicos
 - **Contexto:** `ReviewForm`, `DecisionForm` e `CreateSubmissionForm` usavam inputs não controlados (`defaultValue`) em `<form action={formAction}>` e não protegiam alterações não salvas contra saída acidental.
-- **Decisão:** Controlar os campos no estado do componente e acionar `useUnsavedChanges(isDirty && !state?.ok)` (e `!alreadySubmitted` em `ReviewForm`), integrando `KeywordsInput` controlado em `CreateSubmissionForm`.
-- **Justificativa:** Impede que o reset automático do React 19 apague pareceres, decisões ou palavras-chave em retornos `{ ok: false }` e evita perda acidental por navegação.
+- **Decisão:** Controlar os campos no estado do componente e acionar `useUnsavedChanges(isDirty && !state?.ok)` (e `!alreadySubmitted` em `ReviewForm`), integrando `KeywordsInput` controlado em `CreateSubmissionForm`, e substituir `window.confirm` em `useUnsavedChanges` pelo componente global `<UnsavedChangesDialog />` (baseado em `<ConfirmDialog>` com `tone="danger"` montado em `RootLayout`) com `cancelNavigationProgress()` ao interceptar cliques internos.
+- **Justificativa:** Impede que o reset automático do React 19 apague pareceres, decisões ou palavras-chave em retornos `{ ok: false }`, elimina a única chamada restante de `window.confirm` no sistema e mantém a consistência visual/acessível do padrão Koveno.
 - **Consequências:** Formulários acadêmicos mantêm os dados preenchidos após erros de validação e alertam antes de descartar rascunhos em andamento.
 
 ### ADR-438 — Paridade de Limpeza, Foco Seguro e Silêncio Inicial de `aria-live` em Filtros Operacionais
@@ -75,22 +75,22 @@ npm test
 ```
 *Resultado:*
 - **284 arquivos de teste** executados.
-- **4.848 testes passando** (100% verde).
-- `tests/unit/f106-fechamento-ux-formularios-e-filtros.test.ts` com 6 testes cobrindo ADR-437 e ADR-438.
+- **4.849 testes passando** (100% verde).
+- `tests/unit/f106-fechamento-ux-formularios-e-filtros.test.ts` com 7 testes cobrindo ADR-437, ADR-438 e a catraca anti-`window.confirm`.
 
 ### 6.2 Testes E2E (Playwright)
 ```bash
 npm run test:e2e
 ```
 *Resultado:*
-- **534 cenários passando**, **1 cenário ignorado (skip)** de um total de **535 cenários** (12.8m).
-- `tests/e2e/f106-fechamento-ux-formularios-e-filtros.spec.ts` validou os 2 novos cenários em navegador real (Chromium).
+- **535 cenários passando**, **1 cenário ignorado (skip)** de um total de **536 cenários** (9.8m).
+- `tests/e2e/f106-fechamento-ux-formularios-e-filtros.spec.ts` validou os 3 novos cenários em navegador real (Chromium).
 
 ### 6.3 Qualidade Estática, Build e Contrato de Banco
 ```bash
 npm run lint                # 0 erros, 0 avisos
 npm run typecheck           # 0 erros TypeScript
-npm run build               # Compiled successfully in 7.9s (TypeScript 7.6s, 19/19 estáticas)
+npm run build               # Compiled successfully in 25.5s (TypeScript 36.0s, 19/19 estáticas)
 npm run db:verify           # Contrato íntegro
 npm run db:verify:isolation # 9/9 verificações passaram
 npm run db:partitions       # Partições ativas verificadas
@@ -127,6 +127,7 @@ npm run test:e2e
 - [x] `CheckinSearchFilter` com botão `(×)`, guarda `isContentEditable`, limpeza de debounce em `Escape`/unmount e blur no `Escape` vazio.
 - [x] `CheckinQueue` e `/credenciamento` com `clearSearchHref` via `<AppLink>` no estado vazio.
 - [x] `ComiteFilterBar` com `aria-live` silencioso até interação (`hasFiltered`), `aria-label="Aplicar filtros"`, botão `(×)`, limpeza de timer no unmount e `<AppLink>` em `"Limpar filtros"`.
-- [x] Novos testes unitários (6) e E2E (2) criados e passando.
+- [x] `useUnsavedChanges` substituído por `<UnsavedChangesDialog />` (`ConfirmDialog` global no `RootLayout`) com `cancelNavigationProgress()`, eliminando o último `window.confirm` da aplicação.
+- [x] Novos testes unitários (7) e E2E (3) criados e passando.
 - [x] Bateria completa de verificação (lint, typecheck, Vitest, build, db:verify, db:verify:isolation, db:partitions e Playwright E2E) 100% verde.
 

@@ -2,31 +2,62 @@
 
 import { useEffect } from 'react';
 
+export const KOVENO_UNSAVED_LEAVE_REQUEST_EVENT = 'koveno:unsaved-leave-request';
+
+export interface UnsavedLeaveRequestDetail {
+  href: string;
+  message: string;
+  title?: string;
+}
+
+// Permite concluir uma saída externa/documental depois que o usuário já confirmou no modal do sistema
+let bypassNextBeforeUnload = false;
+
+export function allowNextUnload() {
+  bypassNextBeforeUnload = true;
+}
+
+export function requestUnsavedLeave(detail: UnsavedLeaveRequestDetail) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('koveno:navigation-cancel'));
+  window.dispatchEvent(
+    new CustomEvent<UnsavedLeaveRequestDetail>(KOVENO_UNSAVED_LEAVE_REQUEST_EVENT, {
+      detail,
+    }),
+  );
+}
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PREVENÇÃO DE PERDA DE RASCUNHO EM EDITORES CRÍTICOS (FASE 103 · ADR-431)
  *
  *  ─────────────────────────────────────────────────────────────────────────────
- *  PROTEÇÃO CONTRA NAVEGAÇÃO ACIDENTAL E FECHAMENTO DE ABA
+ *  PROTEÇÃO CONTRA NAVEGAÇÃO ACIDENTAL COM DIÁLOGO DO SISTEMA
  *  ─────────────────────────────────────────────────────────────────────────────
- *  Em editores visuais e formulários complexos (como o editor visual de certificados),
- *  qualquer recarga acidental, clique em breadcrumb ou fechar de aba descartaria
- *  minutos de diagramação.
+ *  Em editores visuais e formulários complexos (submissão, parecer, decisão,
+ *  proposta e editor de certificados), cliques acidentais em links do menu
+ *  lateral, breadcrumbs ou cabeçalho descartariam dados não salvos.
  *
  *  Este hook intercepta:
- *    1. `beforeunload`: aciona o diálogo nativo do navegador para fechar ou recarregar a aba;
- *    2. Cliques em links locais: captura na fase de captura (`capture: true`) e pergunta
- *       ao operador se deseja descartar as alterações não salvas.
+ *    1. `beforeunload`: aciona o aviso nativo exigido pelo navegador ao fechar
+ *       ou recarregar a aba;
+ *    2. Cliques em links internos (`capture: true`): cancela a barra de progresso
+ *       global e solicita confirmação via `<UnsavedChangesDialog />` (`ConfirmDialog`
+ *       do sistema), eliminando o antigo `window.confirm` do navegador.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function useUnsavedChanges(
   isDirty: boolean,
-  message = 'Você tem alterações não salvas no rascunho. Deseja realmente sair desta página?',
+  message = 'Você tem alterações não salvas no rascunho. Se sair agora, o que ainda não foi salvo será perdido.',
 ) {
   useEffect(() => {
     if (!isDirty) return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (bypassNextBeforeUnload) {
+        bypassNextBeforeUnload = false;
+        return;
+      }
       e.preventDefault();
       e.returnValue = '';
     };
@@ -40,14 +71,23 @@ export function useUnsavedChanges(
       const anchor = target?.closest('a');
       if (!anchor) return;
       if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      if (anchor.hasAttribute('data-bypass-unsaved-guard')) return;
+
       const href = anchor.getAttribute('href');
-      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+      if (
+        !href ||
+        href.startsWith('#') ||
+        href.startsWith('javascript:') ||
+        href.startsWith('mailto:') ||
+        href.startsWith('tel:')
+      ) {
+        return;
+      }
       if (anchor.href === window.location.href) return;
 
-      if (!window.confirm(message)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      e.preventDefault();
+      e.stopPropagation();
+      requestUnsavedLeave({ href: anchor.href, message });
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -59,4 +99,3 @@ export function useUnsavedChanges(
     };
   }, [isDirty, message]);
 }
-
