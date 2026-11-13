@@ -32,12 +32,17 @@ export function useUnsavedChanges(
     };
 
     const handleClick = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      // Cliques com modificadores ou botão auxiliar abrem nova aba/janela e não descartam o rascunho atual
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
       const target = e.target as HTMLElement | null;
       const anchor = target?.closest('a');
       if (!anchor) return;
       if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
       const href = anchor.getAttribute('href');
       if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+      if (anchor.href === window.location.href) return;
 
       if (!window.confirm(message)) {
         e.preventDefault();

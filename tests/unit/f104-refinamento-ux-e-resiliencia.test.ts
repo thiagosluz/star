@@ -44,7 +44,8 @@ describe('FASE 104 · Refinamento de UX, Rollback Otimista, Auto-scroll e Resili
       const live = dom.querySelector('[data-testid="agenda-live-00000000-0000-0000-0000-000000000002"]');
       expect(live).not.toBeNull();
       expect(live?.getAttribute('aria-live')).toBe('polite');
-      expect(live?.textContent).toContain('agenda');
+      // Na FASE 105, a região viva nasce vazia para não gerar ruído em leitores de tela antes da interação
+      expect(live?.textContent).toBe('');
     });
 
     it('ConfirmationItemsChecklist estrutura checklist com aria-live no container e suporte a erros', () => {

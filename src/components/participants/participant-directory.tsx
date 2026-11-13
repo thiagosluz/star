@@ -7,6 +7,7 @@ import { MessageComposer } from '@/components/participants/message-composer';
 import type { ParticipantActionState } from '@/app/actions/participant-actions';
 import { AppLink } from '@/components/ui/app-link';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { clampListIndex, shouldIgnoreListKeyEvent } from '@/hooks/keyboard-navigation';
 
 /** Linha do diretório já pronta para a tela (datas como texto, domínio aplicado). */
 export interface DirectoryEntry {
@@ -67,7 +68,8 @@ export function ParticipantDirectory({
   selectedEventId: string | null;
 }) {
   const [selected, setSelected] = useState<readonly string[]>([]);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [rawActiveIndex, setActiveIndex] = useState<number | null>(null);
+  const activeIndex = clampListIndex(rawActiveIndex, entries.length);
 
   const toggle = (userId: string, checked: boolean): void => {
     setSelected((current) =>
@@ -81,20 +83,22 @@ export function ParticipantDirectory({
     if (entries.length === 0) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
+      if (shouldIgnoreListKeyEvent(e)) {
         return;
       }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveIndex((prev) => (prev === null ? 0 : Math.min(prev + 1, entries.length - 1)));
+        setActiveIndex((prev) => {
+          const clamped = clampListIndex(prev, entries.length);
+          return clamped === null ? 0 : Math.min(clamped + 1, entries.length - 1);
+        });
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setActiveIndex((prev) => (prev === null ? 0 : Math.max(prev - 1, 0)));
+        setActiveIndex((prev) => {
+          const clamped = clampListIndex(prev, entries.length);
+          return clamped === null ? 0 : Math.max(clamped - 1, 0);
+        });
       } else if (e.key === 'Enter' && activeIndex !== null) {
         const activeUser = entries[activeIndex];
         if (activeUser) {

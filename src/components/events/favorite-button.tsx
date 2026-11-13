@@ -72,6 +72,7 @@ export function FavoriteButton({
   );
   const [isPending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   const rotuloVisivel = optimisticFavorited ? 'Remover da minha agenda' : 'Adicionar à minha agenda';
 
@@ -83,6 +84,7 @@ export function FavoriteButton({
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFeedback(null);
+    setHasInteracted(true);
     const formData = new FormData(event.currentTarget);
     const nextState = !optimisticFavorited;
     startTransition(async () => {
@@ -141,7 +143,11 @@ export function FavoriteButton({
       </button>
 
       <span aria-live="polite" className="sr-only" data-testid={`agenda-live-${activityId}`}>
-        {optimisticFavorited ? 'Atividade adicionada à sua agenda' : 'Atividade removida da sua agenda'}
+        {hasInteracted
+          ? optimisticFavorited
+            ? 'Atividade adicionada à sua agenda'
+            : 'Atividade removida da sua agenda'
+          : ''}
       </span>
 
       {feedback ? (

@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 104** (**F56 a F104 entregues**)
-Testes ................. **4834** (Vitest: unit + integração, 282 arquivos) + **530** (Playwright E2E) + 1 skip
-ADRs ................... 434 (numeração GLOBAL e sequencial — a próxima é ADR-435)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 105** (**F56 a F105 entregues**)
+Testes ................. **4842** (Vitest: unit + integração, 283 arquivos) + **532** (Playwright E2E) + 1 skip
+ADRs ................... 436 (numeração GLOBAL e sequencial — a próxima é ADR-437)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -113,7 +113,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4834 testes passando (282 arquivos)
+npm test              # esperado: 4842 testes passando (283 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -128,7 +128,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: **530 passando + 1 skip** (531 casos); medido na F104: +3 cenários novos (em f104);
+npm run test:e2e      # esperado: **532 passando + 1 skip** (533 casos); medido na F105: +2 cenários novos (em f105);
                       # nenhum vermelho
 ```
 
@@ -709,7 +709,7 @@ tests/{unit,integration,e2e}
 > As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103) e **86** (FASE 104) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**87 a 104**).
+> e no `README.md`. A tabela abaixo é a corrente (**87 a 105**).
 
 | Fase | Tema | Situação |
 |---|---|---|
@@ -731,6 +731,7 @@ tests/{unit,integration,e2e}
 | 102 | **Consolidação de progresso global, check-in idiomático React 19 e filtros operacionais reativos** — guarda contra mesma URL em `AppLink` e remoção da barra duplicada em `RouteProgress`, transformando-o em âncora semântica de acessibilidade (`sr-only`) com escuta a eventos globais (ADR-426); `QueueRow` refatorado para uso 100% idiomático de `useActionState` conectado ao `<form action={formAction}>`, com `setOptimisticInside` síncrono no payload de transição, bloqueio estrito contra duplo clique via `pending || isPending` e rollback seguro (ADR-427); `key={filterKey}` realocado da casca do `<Suspense>` para `<ComiteResults>` no comitê sem flash de esqueleto, e filtros operacionais reativos com debounce, atalho `/` e `Escape` no balcão e participantes preservando No-JS (ADR-428). 7 testes Vitest + 3 E2E. ADR-426 … 428 | ✅ |
 | 103 | **UX operacional: micro-interações otimistas, streaming de dados, teclado power-user e proteção de rascunho** — **`FavoriteButton` 100% otimista no React 19** (`useOptimistic` + `useTransition` em 0ms com progressive enhancement nativo do `<form action={toggleFavoriteAction}>` preservado para No-JS/`javaScriptEnabled: false`); **streaming e Suspense granular em `/participantes`** (`ParticipantResults` sob `<Suspense key={filterKey} fallback={<ParticipantSkeleton />}>`, mantendo `PageHeader` e `ParticipantFilterBar` reativos); **fila de confirmação reativa e otimista** (`ConfirmationItemsChecklist` com `useOptimistic` e `resolveConfirmationItemAction` instantâneo sem flash de página inteira); **expansão canônica do `AppLink`** (`Breadcrumbs` e link de volta do `PageHeader` preservando o contrato de Server Component com 0 hooks); **navegação operacional por teclado** (`ArrowDown`/`ArrowUp` + `Enter`) em `CheckinQueue` e `ParticipantDirectory`; **proteção de rascunho em editores críticos** (`useUnsavedChanges` no editor visual de certificados contra perda acidental por recarga ou clique de link). **6 testes Vitest** novos + **3 cenários E2E**; E2E **527 passando + 1 skip** (528 casos). ADR-429/430/431 | ✅ |
 | 104 | **Refinamento de UX: Feedback de Rollback Otimista, Auto-scroll Operacional por Teclado, Empty States Acionáveis, Limpeza Rápida de Filtros e Expansão de Proteção de Rascunhos** — tratamento explícito de falhas em mutações otimistas com rollback perceptível e anúncio acessível (`aria-live="polite"` e `role="alert"`) em `FavoriteButton` e `ConfirmationItemsChecklist`, com preservação de `NEXT_REDIRECT` para redirecionamento anônimo legítimo (ADR-432); auto-scroll suave (`scrollIntoView`) e região viva de acessibilidade na navegação por teclado (`ArrowDown`/`ArrowUp`) no credenciamento (`CheckinQueue`) e diretório (`ParticipantDirectory`) sem salto visual (ADR-433); empty states acionáveis com restauração rápida de filtros em 1 clique no diretório e confirmações (ADR-434); guardião de rascunhos (`useUnsavedChanges`) expandido para `ProposalForm` e `SubmissionDraftForm` contra perda acidental; e botão de limpeza instantânea `(×)` com cancelamento de debounce em `ParticipantFilterBar`. **7 testes Vitest** novos + **3 cenários E2E**; E2E **530 passando + 1 skip** (531 casos). ADR-432 … 434 | ✅ |
+| 105 | **Polimento de UX, Acessibilidade Assistiva e Guardião de Rascunhos** — guardas de foco interativo e limites (`shouldIgnoreListKeyEvent` e `clampListIndex` em `src/hooks/keyboard-navigation.ts`) evitando sequestro de `Enter`/`Espaço` em links, botões, `summary` e `contentEditable` no `ParticipantDirectory` e `CheckinQueue` (ADR-435); silêncio inicial da região `aria-live="polite"` no `FavoriteButton` até a primeira interação na sessão (ADR-436); rastreamento completo de `keywords` em `SubmissionDraftForm` (`KeywordsInput` controlado opcional) com rótulo `"Salvando…"` durante `pending`; e prevenção de falsos positivos no `useUnsavedChanges` em cliques modificados (`Ctrl`/`Meta`/`Shift`/`Alt`) ou mesma URL. **8 testes Vitest** novos + **2 cenários E2E**; Vitest **4842** (283 arquivos); E2E **532 passando + 1 skip** (533 casos). ADR-435 … 436 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.

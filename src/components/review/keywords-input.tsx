@@ -27,17 +27,29 @@ export function KeywordsInput({
   name = 'keywords',
   id,
   defaultValue = '',
+  value: controlledValue,
+  onValueChange,
 }: {
   name?: string;
   id?: string;
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (nextValue: string) => void;
 }) {
-  const [value, setValue] = useState(defaultValue);
+  const [internalValue, setInternalValue] = useState(defaultValue);
+  const value = controlledValue ?? internalValue;
   const fieldId = id ?? name;
   const counterId = `${fieldId}-count`;
 
   const count = normalizeKeywords(value.split(',')).length;
   const enough = count >= MIN_KEYWORDS && count <= MAX_KEYWORDS;
+
+  const handleChange = (nextValue: string) => {
+    if (controlledValue === undefined) {
+      setInternalValue(nextValue);
+    }
+    onValueChange?.(nextValue);
+  };
 
   return (
     <div className="space-y-1.5">
@@ -45,7 +57,7 @@ export function KeywordsInput({
         id={fieldId}
         name={name}
         value={value}
-        onChange={(event) => setValue(event.target.value)}
+        onChange={(event) => handleChange(event.target.value)}
         placeholder="aprendizado de máquina, saúde pública, epidemiologia"
         maxLength={600}
         aria-describedby={counterId}

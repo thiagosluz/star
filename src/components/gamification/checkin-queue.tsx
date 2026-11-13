@@ -6,6 +6,7 @@ import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
 import type { AttendanceActionState } from '@/app/actions/attendance-actions';
 import { celebrate } from '@/components/gamification/celebration';
+import { clampListIndex, shouldIgnoreListKeyEvent } from '@/hooks/keyboard-navigation';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -168,26 +169,29 @@ export function CheckinQueue({
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
 }) {
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [rawSelectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const selectedIndex = clampListIndex(rawSelectedIndex, entries.length);
 
   useEffect(() => {
     if (entries.length === 0) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
+      if (shouldIgnoreListKeyEvent(e)) {
         return;
       }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev === null ? 0 : Math.min(prev + 1, entries.length - 1)));
+        setSelectedIndex((prev) => {
+          const clamped = clampListIndex(prev, entries.length);
+          return clamped === null ? 0 : Math.min(clamped + 1, entries.length - 1);
+        });
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev === null ? 0 : Math.max(prev - 1, 0)));
+        setSelectedIndex((prev) => {
+          const clamped = clampListIndex(prev, entries.length);
+          return clamped === null ? 0 : Math.max(clamped - 1, 0);
+        });
       } else if (e.key === 'Enter' && selectedIndex !== null) {
         const activeEntry = entries[selectedIndex];
         if (activeEntry) {

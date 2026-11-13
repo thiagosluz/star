@@ -44,7 +44,7 @@ function SaveButton() {
   return (
     <Button type="submit" variant="outline" disabled={pending} data-testid="save-draft">
       {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-      Salvar dados
+      {pending ? 'Salvando…' : 'Salvar dados'}
     </Button>
   );
 }
@@ -85,9 +85,12 @@ export function SubmissionDraftForm({
    * duas palavras-chave veria "revise os dados" e o formulário em branco, perdendo
    * exatamente o texto que estava corrigindo (armadilha 5).
    */
+  const initialKeywords = initial.keywords.join(', ');
+
   const [fields, setFields] = useState({
     title: initial.title,
     abstract: initial.abstract,
+    keywords: initialKeywords,
     language: initial.language,
     trackId: initial.trackId ?? '',
   });
@@ -95,6 +98,7 @@ export function SubmissionDraftForm({
   const [lastSaved, setLastSaved] = useState({
     title: initial.title,
     abstract: initial.abstract,
+    keywords: initialKeywords,
     language: initial.language,
     trackId: initial.trackId ?? '',
   });
@@ -114,6 +118,7 @@ export function SubmissionDraftForm({
   const isDirty =
     fields.title !== lastSaved.title ||
     fields.abstract !== lastSaved.abstract ||
+    fields.keywords !== lastSaved.keywords ||
     fields.language !== lastSaved.language ||
     fields.trackId !== lastSaved.trackId;
 
@@ -161,7 +166,11 @@ export function SubmissionDraftForm({
         </Field>
 
         <Field name="keywords" label="Palavras-chave" required>
-          <KeywordsInput defaultValue={initial.keywords.join(', ')} />
+          <KeywordsInput
+            defaultValue={initialKeywords}
+            value={fields.keywords}
+            onValueChange={(keywords) => update({ keywords })}
+          />
         </Field>
 
         <Field name="language" label="Idioma">
