@@ -1,11 +1,12 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, Gavel } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
 import type { ReviewConsensus } from '@/domain/review/review-rules';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 const inputClass =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-ring/40';
@@ -51,6 +52,13 @@ export function DecisionForm({
   action: (prev: ActionState | null, formData: FormData) => Promise<ActionState>;
 }) {
   const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
+  // Campos controlados: o React 19 reseta inputs não controlados após action mesmo em erro
+  const [decision, setDecision] = useState('');
+  const [notes, setNotes] = useState('');
+  const [overrideQuorum, setOverrideQuorum] = useState(false);
+
+  const isDirty = decision !== '' || notes.trim().length > 0 || overrideQuorum;
+  useUnsavedChanges(isDirty && !state?.ok);
 
   if (state?.ok) {
     return (
@@ -151,7 +159,14 @@ export function DecisionForm({
         <label htmlFor="decision" className="text-sm font-medium">
           Decisão
         </label>
-        <select id="decision" name="decision" required className={inputClass} defaultValue="">
+        <select
+          id="decision"
+          name="decision"
+          required
+          className={inputClass}
+          value={decision}
+          onChange={(event) => setDecision(event.target.value)}
+        >
           <option value="" disabled>
             Selecione…
           </option>
@@ -174,13 +189,21 @@ export function DecisionForm({
           rows={4}
           maxLength={4000}
           className={inputClass}
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
           placeholder="Fundamentação da decisão, que será comunicada ao autor."
         />
       </div>
 
       {!quorumSatisfied ? (
         <label className="flex items-start gap-2.5 rounded-md border border-warning/40 bg-warning-soft p-3 text-xs">
-          <input type="checkbox" name="overrideQuorum" className="mt-0.5" />
+          <input
+            type="checkbox"
+            name="overrideQuorum"
+            checked={overrideQuorum}
+            onChange={(event) => setOverrideQuorum(event.target.checked)}
+            className="mt-0.5"
+          />
           <span className="text-warning-strong">
             Decidir mesmo sem o quórum completo. A justificativa acima é obrigatória e
             ficará registrada na auditoria.

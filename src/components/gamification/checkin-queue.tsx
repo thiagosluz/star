@@ -6,6 +6,7 @@ import { Clock, LogIn, LogOut, ShieldCheck, TriangleAlert } from 'lucide-react';
 
 import type { AttendanceActionState } from '@/app/actions/attendance-actions';
 import { celebrate } from '@/components/gamification/celebration';
+import { AppLink } from '@/components/ui/app-link';
 import { clampListIndex, shouldIgnoreListKeyEvent } from '@/hooks/keyboard-navigation';
 
 /**
@@ -163,11 +164,13 @@ export function CheckinQueue({
   tenantSlug,
   checkInAction,
   checkOutAction,
+  clearSearchHref,
 }: {
   entries: readonly QueueEntry[];
   tenantSlug: string;
   checkInAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
   checkOutAction: (prev: AttendanceActionState | null, formData: FormData) => Promise<AttendanceActionState>;
+  clearSearchHref?: string;
 }) {
   const [rawSelectedIndex, setSelectedIndex] = useState<number | null>(null);
   const selectedIndex = clampListIndex(rawSelectedIndex, entries.length);
@@ -233,13 +236,24 @@ export function CheckinQueue({
   if (entries.length === 0) {
     return (
       <div
-        className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground"
+        className="space-y-3 rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground"
         data-testid="queue-empty"
       >
         <p>
           Nenhuma inscrição confirmada encontrada. Ajuste a busca ou verifique se o evento tem
           inscrições confirmadas.
         </p>
+        {clearSearchHref ? (
+          <div>
+            <AppLink
+              href={clearSearchHref}
+              data-testid="queue-clear-search"
+              className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+            >
+              Limpar busca
+            </AppLink>
+          </div>
+        ) : null}
       </div>
     );
   }

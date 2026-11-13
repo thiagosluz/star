@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useTransition, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { Filter, Loader2, Search, X } from 'lucide-react';
 
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { AppLink } from '@/components/ui/app-link';
 import { startNavigationProgress } from '@/components/ui';
 
 export interface ComiteFilterBarProps {
@@ -51,9 +51,16 @@ export function ComiteFilterBar({
   const [busca, setBusca] = useState(initialBusca);
   const [evento, setEvento] = useState(initialEvento);
   const [status, setStatus] = useState(initialStatus);
+  const [hasFiltered, setHasFiltered] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
 
   // Mantém refs atualizadas para leitura fresca dentro do timer de debounce
   const latestFiltersRef = useRef({ busca: initialBusca, evento: initialEvento, status: initialStatus });
@@ -108,6 +115,7 @@ export function ComiteFilterBar({
         return;
       }
 
+      setHasFiltered(true);
       startNavigationProgress();
       startTransition(() => {
         router.replace(targetUrl, { scroll: false });
@@ -181,8 +189,12 @@ export function ComiteFilterBar({
           applyFilters(busca, evento, status);
         }}
       >
-        <span className="sr-only" aria-live="polite">
-          {isPending ? 'Atualizando submissões do comitê...' : 'Lista de submissões atualizada.'}
+        <span className="sr-only" aria-live="polite" data-testid="comite-filter-live">
+          {isPending
+            ? 'Atualizando submissões do comitê...'
+            : hasFiltered
+              ? 'Lista de submissões atualizada.'
+              : ''}
         </span>
 
         <div className="grid gap-3 sm:grid-cols-12">
@@ -202,22 +214,41 @@ export function ComiteFilterBar({
                 value={busca}
                 onChange={(e) => handleBuscaChange(e.target.value)}
                 placeholder="Buscar por título ou protocolo..."
-                className="w-full rounded-md border border-input bg-background pl-9 pr-9 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full rounded-md border border-input bg-background pl-9 pr-14 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 data-testid="comite-search-input"
               />
-              {isPending ? (
-                <Loader2
-                  className="pointer-events-none absolute right-3 top-2.5 size-4 animate-spin text-muted-foreground"
-                  aria-hidden
-                />
-              ) : (
-                <kbd
-                  className="pointer-events-none absolute right-2.5 top-2 hidden rounded border border-border bg-muted/60 px-1.5 py-0.5 text-xs font-medium text-muted-foreground sm:inline-block"
-                  title="Pressione / para focar"
-                >
-                  /
-                </kbd>
-              )}
+              <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                {busca.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                      setBusca('');
+                      latestFiltersRef.current.busca = '';
+                      applyFilters('', latestFiltersRef.current.evento, latestFiltersRef.current.status);
+                      searchInputRef.current?.focus();
+                    }}
+                    aria-label="Limpar busca"
+                    data-testid="comite-search-clear"
+                    className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                ) : null}
+                {isPending ? (
+                  <Loader2
+                    className="pointer-events-none size-4 animate-spin text-muted-foreground"
+                    aria-hidden
+                  />
+                ) : busca.length === 0 ? (
+                  <kbd
+                    className="pointer-events-none hidden rounded border border-border bg-muted/60 px-1.5 py-0.5 text-xs font-medium text-muted-foreground sm:inline-block"
+                    title="Pressione / para focar"
+                  >
+                    /
+                  </kbd>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -267,6 +298,7 @@ export function ComiteFilterBar({
           <div className="flex items-center gap-2 sm:col-span-1">
             <button
               type="submit"
+              aria-label="Aplicar filtros"
               className="inline-flex w-full items-center justify-center rounded-md bg-secondary px-3 py-1.5 text-sm font-medium text-secondary-foreground transition hover:opacity-90"
               title="Aplicar filtros"
               data-testid="comite-filter-submit"
@@ -279,14 +311,14 @@ export function ComiteFilterBar({
         {hasActiveFilters ? (
           <div className="flex items-center justify-between border-t border-border pt-2.5 text-xs text-muted-foreground">
             <span>Filtros ativos aplicados na fila</span>
-            <Link
+            <AppLink
               href={tenantPath(tenantSlug, '/comite')}
               className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
               data-testid="comite-filter-clear"
             >
               <X className="size-3" aria-hidden />
               Limpar filtros
-            </Link>
+            </AppLink>
           </div>
         ) : null}
       </form>

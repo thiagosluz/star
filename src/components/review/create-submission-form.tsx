@@ -6,6 +6,7 @@ import { AlertCircle, Send } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
 import { KeywordsInput } from '@/components/review/keywords-input';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 const inputClass =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-ring/40';
@@ -74,12 +75,20 @@ export function CreateSubmissionForm({
     eventId: events[0]?.id ?? '',
     title: '',
     abstract: '',
+    keywords: '',
     language: 'pt-BR',
     trackId: events[0]?.tracks[0]?.id ?? '',
   });
 
   const update = (patch: Partial<typeof fields>) =>
     setFields((previous) => ({ ...previous, ...patch }));
+
+  const isDirty =
+    fields.title.trim().length > 0 ||
+    fields.abstract.trim().length > 0 ||
+    fields.keywords.trim().length > 0;
+
+  useUnsavedChanges(isDirty && !state?.ok);
 
   if (events.length === 0) {
     return (
@@ -181,7 +190,10 @@ export function CreateSubmissionForm({
           dica, e o rascunho nascia com uma palavra-chave para ser recusado no envio.
           Quem valida continua sendo o servidor — aqui a mesma regra aparece cedo.
         */}
-        <KeywordsInput />
+        <KeywordsInput
+          value={fields.keywords}
+          onValueChange={(keywords) => update({ keywords })}
+        />
       </div>
 
       <div className="space-y-1.5">

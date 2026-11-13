@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { IdCard } from 'lucide-react';
+import { IdCard, X } from 'lucide-react';
 
 import { AppLink } from '@/components/ui/app-link';
 import { startNavigationProgress } from '@/components/ui/navigation-progress-bar';
@@ -132,6 +132,19 @@ export function CheckinSearchFilter({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestQueryRef = useRef(query);
+
+  useEffect(() => {
+    latestQueryRef.current = query;
+  }, [query]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   const applyFilter = useCallback(
     (nextQuery: string) => {
@@ -161,15 +174,28 @@ export function CheckinSearchFilter({
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (
-        e.key === '/' &&
-        !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)
-      ) {
+      const targetEl = e.target as HTMLElement | null;
+      const isEditable =
+        targetEl?.tagName === 'INPUT' ||
+        targetEl?.tagName === 'TEXTAREA' ||
+        targetEl?.tagName === 'SELECT' ||
+        Boolean(targetEl?.isContentEditable);
+
+      if (e.key === '/' && !isEditable) {
         e.preventDefault();
         inputRef.current?.focus();
       } else if (e.key === 'Escape' && document.activeElement === inputRef.current) {
-        setQuery('');
-        applyFilter('');
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+        }
+        if (latestQueryRef.current.trim().length > 0) {
+          e.preventDefault();
+          setQuery('');
+          latestQueryRef.current = '';
+          applyFilter('');
+        } else {
+          inputRef.current?.blur();
+        }
       }
     }
 
@@ -179,12 +205,23 @@ export function CheckinSearchFilter({
 
   function handleInputChange(val: string) {
     setQuery(val);
+    latestQueryRef.current = val;
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
     debounceTimerRef.current = setTimeout(() => {
       applyFilter(val);
     }, 300);
+  }
+
+  function handleClear() {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setQuery('');
+    latestQueryRef.current = '';
+    applyFilter('');
+    inputRef.current?.focus();
   }
 
   return (
@@ -204,22 +241,35 @@ export function CheckinSearchFilter({
         <div className="relative">
           <input
             ref={inputRef}
-            type="search"
+            type="text"
             name="q"
             value={query}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder="nome, e-mail ou crachá (Pressione / para buscar)"
-            className="block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className={`block min-w-56 rounded-md border border-border bg-background px-3 py-2 text-sm ${query || isPending ? 'pr-10' : ''}`}
             aria-label="Buscar participante"
             data-testid="checkin-search"
           />
-          {isPending && (
-            <span
-              role="status"
-              aria-label="Buscando"
-              className="absolute right-2.5 top-2.5 size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent"
-            />
-          )}
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+            {query.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClear}
+                aria-label="Limpar busca"
+                data-testid="checkin-search-clear"
+                className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3.5" aria-hidden />
+              </button>
+            )}
+            {isPending && (
+              <span
+                role="status"
+                aria-label="Buscando"
+                className="size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent"
+              />
+            )}
+          </div>
         </div>
       </label>
 

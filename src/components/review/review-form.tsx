@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, Send } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
 import type { RubricCriterion } from '@/domain/review/review-rules';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 const RECOMMENDATIONS = [
   { value: 'ACCEPT', label: 'Aceitar' },
@@ -56,6 +57,18 @@ export function ReviewForm({
 }) {
   const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
   const [scores, setScores] = useState<Record<string, number>>({});
+  // Campos controlados: o React 19 reseta inputs não controlados após action mesmo em erro
+  const [recommendation, setRecommendation] = useState('');
+  const [feedbackToAuthor, setFeedbackToAuthor] = useState('');
+  const [confidentialComments, setConfidentialComments] = useState('');
+
+  const isDirty =
+    Object.keys(scores).length > 0 ||
+    recommendation !== '' ||
+    feedbackToAuthor.trim().length > 0 ||
+    confidentialComments.trim().length > 0;
+
+  useUnsavedChanges(isDirty && !state?.ok && !alreadySubmitted);
 
   if (alreadySubmitted) {
     return (
@@ -172,7 +185,8 @@ export function ReviewForm({
           name="recommendation"
           required
           className={inputClass}
-          defaultValue=""
+          value={recommendation}
+          onChange={(event) => setRecommendation(event.target.value)}
         >
           <option value="" disabled>
             Selecione…
@@ -196,6 +210,8 @@ export function ReviewForm({
           rows={5}
           maxLength={8000}
           className={inputClass}
+          value={feedbackToAuthor}
+          onChange={(event) => setFeedbackToAuthor(event.target.value)}
           placeholder="Pontos fortes, fragilidades e sugestões de melhoria. Estes comentários são devolvidos ao autor."
         />
       </section>
@@ -211,6 +227,8 @@ export function ReviewForm({
           rows={3}
           maxLength={8000}
           className={inputClass}
+          value={confidentialComments}
+          onChange={(event) => setConfidentialComments(event.target.value)}
           placeholder="Observações que não devem ser vistas pelo autor."
         />
         <p className="text-xs text-muted-foreground">

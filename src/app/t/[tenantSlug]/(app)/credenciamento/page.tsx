@@ -15,6 +15,7 @@ import { MonitorConsole, type MonitorActivity } from '@/components/credentials/m
 import { checkInAction, checkOutAction } from '@/app/actions/attendance-actions';
 import { closeSessionsAction, recordPresenceAction } from '@/app/actions/credential-actions';
 import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
+import { tenantPath } from '@/domain/tenancy/resolution';
 import { Alert, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
@@ -246,6 +247,14 @@ export default async function CheckinPage({
                   tenantSlug={tenantSlug}
                   checkInAction={checkInAction}
                   checkOutAction={checkOutAction}
+                  clearSearchHref={
+                    q
+                      ? tenantPath(
+                          tenantSlug,
+                          `/credenciamento${selectedEventId ? `?evento=${selectedEventId}` : ''}`,
+                        )
+                      : undefined
+                  }
                 />
               </>
             )}
