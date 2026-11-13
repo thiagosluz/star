@@ -33,7 +33,7 @@ function AcceptSubmit() {
       data-testid="accept-invitation-submit"
     >
       {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <UserRoundPlus className="size-4" aria-hidden />}
-      Aceitar convite
+      {pending ? 'Aceitando…' : 'Aceitar convite'}
     </button>
   );
 }

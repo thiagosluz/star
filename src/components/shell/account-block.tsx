@@ -6,6 +6,7 @@ import { ThemeChoice } from '@/components/theme/theme-choice';
 import { TenantMenu, type MembershipSummary } from '@/components/tenancy/tenant-menu';
 import { Avatar } from '@/components/ui/feedback';
 import { buttonClasses } from '@/components/ui/button';
+import { FormStatusButton } from '@/components/ui/form-status-button';
 import { MINHA_AREA_LABEL } from '@/domain/platform/vitrine-account-rules';
 import { NAV_MODE_RAIL } from '@/lib/shell/nav-mode';
 import { readNavMode } from '@/lib/shell/nav-mode-server';
@@ -138,15 +139,16 @@ export async function AccountBlock({
       </details>
 
       <form action={signOutAction} className="shrink-0">
-        <button
-          type="submit"
+        <FormStatusButton
           title="Sair da conta"
           aria-label="Sair da conta"
           data-testid="sign-out"
-          className="inline-flex size-9 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground"
+          showSpinner
+          pendingContent={<span className="sr-only">Saindo…</span>}
+          className="inline-flex size-9 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground disabled:opacity-60"
         >
           <LogOut className="size-4" aria-hidden />
-        </button>
+        </FormStatusButton>
       </form>
     </div>
   );

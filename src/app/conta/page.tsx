@@ -50,12 +50,12 @@ import { VerificationNotice } from '@/components/communication/verification-noti
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import {
   Badge,
-  Button,
   buttonClasses,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
+  FormStatusButton,
   PageHeader,
 } from '@/components/ui';
 
@@ -491,9 +491,14 @@ export default async function AccountPage({
         )}
 
         <form action={signOutAction}>
-          <Button type="submit" variant="outline" size="sm" data-testid="account-sign-out">
+          <FormStatusButton
+            className={buttonClasses({ variant: 'outline', size: 'sm' })}
+            showSpinner
+            pendingContent="Saindo…"
+            data-testid="account-sign-out"
+          >
             Sair da conta
-          </Button>
+          </FormStatusButton>
         </form>
       </footer>
     </main>

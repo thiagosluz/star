@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Maximize2, Pause, Play, Radio, RotateCcw, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
 
 import { ConfettiBurst } from '@/components/raffles/confetti-burst';
+import { AppLink } from '@/components/ui';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -592,7 +593,7 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
                   Prêmio oferecido por <strong className="font-medium">{round.sponsorName}</strong>
                 </p>
               ) : null}
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground" suppressHydrationWarning>
                 {round.winners.length} titular(es)
                 {round.alternates.length > 0 ? ` · ${round.alternates.length} suplente(s)` : ''}
                 {drawnAtLabel ? ` · apurado em ${drawnAtLabel}` : ''}
@@ -688,14 +689,14 @@ export function RaffleStage({ model, liveUrl }: { model: StageModel; liveUrl: st
           )}
 
           <div className="flex flex-wrap items-center justify-center gap-4">
-            <a
+            <AppLink
               href={model.auditHref}
               className="inline-flex items-center gap-2 underline underline-offset-4"
               data-testid="stage-audit-link"
             >
               <ShieldCheck className="size-4" aria-hidden />
               Conferir a auditoria deste sorteio
-            </a>
+            </AppLink>
 
             <button
               type="button"

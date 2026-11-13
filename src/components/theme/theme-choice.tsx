@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { setThemeModeAction } from '@/app/actions/theme-actions';
 import { buttonClasses } from '@/components/ui/button';
+import { FormStatusButton } from '@/components/ui/form-status-button';
 import {
   THEME_MODES,
   THEME_MODE_DESCRIPTIONS,
@@ -150,9 +151,8 @@ export async function ThemeChoice({
     const selecionado = modo === atual;
 
     return (
-      <button
+      <FormStatusButton
         key={modo}
-        type="submit"
         name="tema"
         value={modo}
         /**
@@ -172,7 +172,7 @@ export async function ThemeChoice({
         )}
       >
         {conteudoDaOpcao(modo, variant)}
-      </button>
+      </FormStatusButton>
     );
   });
 

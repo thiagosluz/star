@@ -40,6 +40,9 @@ export interface ActionState {
    */
   code?: string;
   fieldErrors?: Record<string, string[]>;
+  values?: {
+    email?: string;
+  };
 }
 
 const signUpSchema = z.object({
@@ -471,10 +474,15 @@ export async function requestPasswordResetAction(
   _prev: ActionState | null,
   formData: FormData,
 ): Promise<ActionState> {
-  const parsed = requestResetSchema.safeParse({ email: formData.get('email') });
+  const rawEmail = formData.get('email');
+  const parsed = requestResetSchema.safeParse({ email: rawEmail });
 
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Informe um e-mail válido.' };
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Informe um e-mail válido.',
+      values: { email: typeof rawEmail === 'string' ? rawEmail : '' },
+    };
   }
 
   try {

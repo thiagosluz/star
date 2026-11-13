@@ -126,7 +126,7 @@ export function SponsorScanForm({
           ) : (
             <Share2 className="size-4" aria-hidden />
           )}
-          Autorizar e registrar
+          {pending ? 'Registrando…' : 'Autorizar e registrar'}
         </button>
 
         <button
@@ -137,8 +137,12 @@ export function SponsorScanForm({
           data-testid="scan-no-consent"
           className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-60"
         >
-          <EyeOff className="size-4" aria-hidden />
-          Registrar sem compartilhar
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <EyeOff className="size-4" aria-hidden />
+          )}
+          {pending ? 'Registrando…' : 'Registrar sem compartilhar'}
         </button>
       </div>
     </form>

@@ -66,6 +66,8 @@ export interface PlatformActionState {
     role?: string;
     estimatedEvents?: string;
     message?: string;
+    status?: string;
+    notes?: string;
   };
 }
 
@@ -612,13 +614,17 @@ export async function updateLeadStatusAction(
   const id = formData.get('id');
   const status = formData.get('status');
   const notes = formData.get('notes');
+  const submittedValues = {
+    status: typeof status === 'string' ? status : undefined,
+    notes: typeof notes === 'string' ? notes : undefined,
+  };
 
   if (typeof id !== 'string' || !id) {
-    return failure('INVALID_INPUT', 'Identificador do lead obrigatório.');
+    return { ...failure('INVALID_INPUT', 'Identificador do lead obrigatório.'), values: submittedValues };
   }
 
   if (typeof status !== 'string' || !isLeadStatus(status)) {
-    return failure('INVALID_INPUT', 'Status do lead inválido.');
+    return { ...failure('INVALID_INPUT', 'Status do lead inválido.'), values: submittedValues };
   }
 
   const updated = await updateInstitutionLeadStatus(id, {
@@ -627,7 +633,7 @@ export async function updateLeadStatusAction(
   });
 
   if (!updated) {
-    return failure('NOT_FOUND', 'Lead não encontrado.');
+    return { ...failure('NOT_FOUND', 'Lead não encontrado.'), values: submittedValues };
   }
 
   await recordAudit({

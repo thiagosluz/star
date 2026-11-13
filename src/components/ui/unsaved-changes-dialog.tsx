@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import {
@@ -67,7 +67,9 @@ export function UnsavedChangesDialog() {
         if (`${url.pathname}${url.search}` !== currentUrl) {
           startNavigationProgress();
         }
-        router.push(nextUrl);
+        startTransition(() => {
+          router.push(nextUrl);
+        });
         return;
       }
     } catch {

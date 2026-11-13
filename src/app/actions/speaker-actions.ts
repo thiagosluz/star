@@ -65,6 +65,9 @@ export interface SpeakerActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
+  values?: {
+    token?: string;
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -669,6 +672,9 @@ export async function claimSpeakerInviteAction(
   _prev: SpeakerActionState | null,
   formData: FormData,
 ): Promise<SpeakerActionState> {
+  const rawToken = formData.get('token');
+  const tokenValue = typeof rawToken === 'string' ? rawToken : undefined;
+
   const parsed = z
     .object({
       tenantSlug: z.string().trim().min(1).max(63),
@@ -678,11 +684,11 @@ export async function claimSpeakerInviteAction(
     .safeParse({
       tenantSlug: formData.get('tenantSlug'),
       speakerProfileId: (formData.get('speakerProfileId') as string) || undefined,
-      token: (formData.get('token') as string) || undefined,
+      token: (rawToken as string) || undefined,
     });
 
   if (!parsed.success) {
-    return { ok: false, code: 'INVALID_INPUT', message: 'Convite inválido.' };
+    return { ok: false, code: 'INVALID_INPUT', message: 'Convite inválido.', values: { token: tokenValue } };
   }
 
   const user = await getAuthenticatedUser();
@@ -691,12 +697,13 @@ export async function claimSpeakerInviteAction(
       ok: false,
       code: 'NOT_AUTHENTICATED',
       message: 'Entre na sua conta para aceitar o convite de palestrante.',
+      values: { token: tokenValue },
     };
   }
 
   const tenant = await resolveTenant(parsed.data.tenantSlug);
   if (!tenant) {
-    return { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.' };
+    return { ok: false, code: 'NOT_FOUND', message: 'Instituição não encontrada.', values: { token: tokenValue } };
   }
 
   const result = await claimSpeakerProfile({
@@ -707,7 +714,9 @@ export async function claimSpeakerInviteAction(
     token: parsed.data.token ?? null,
   });
 
-  if (!result.ok) return { ok: false, code: result.code, message: result.message };
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, values: { token: tokenValue } };
+  }
 
   /**
    * O vínculo com a instituição nasce aqui, quando ainda não existe.

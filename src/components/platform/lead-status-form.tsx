@@ -38,7 +38,7 @@ export function LeadStatusForm({
         <select
           id={`status-${leadId}`}
           name="status"
-          defaultValue={currentStatus}
+          defaultValue={state.values?.status ?? currentStatus}
           className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:border-primary focus:outline-hidden"
           data-testid={`lead-status-select-${leadId}`}
         >
@@ -58,7 +58,7 @@ export function LeadStatusForm({
           id={`notes-${leadId}`}
           name="notes"
           rows={2}
-          defaultValue={currentNotes ?? ''}
+          defaultValue={state.values?.notes ?? currentNotes ?? ''}
           placeholder="Ex: Reunião agendada para terça às 14h com o pró-reitor..."
           className="w-full rounded-md border border-border bg-background p-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden"
           data-testid={`lead-notes-input-${leadId}`}

@@ -83,6 +83,12 @@ export function CreateSubmissionForm({
   const update = (patch: Partial<typeof fields>) =>
     setFields((previous) => ({ ...previous, ...patch }));
 
+  const selectedEvent = events.find((event) => event.id === fields.eventId) ?? events[0];
+  const availableTracks = selectedEvent?.tracks ?? [];
+  const activeTrackId = availableTracks.some((track) => track.id === fields.trackId)
+    ? fields.trackId
+    : (availableTracks[0]?.id ?? '');
+
   const isDirty =
     fields.title.trim().length > 0 ||
     fields.abstract.trim().length > 0 ||
@@ -132,7 +138,12 @@ export function CreateSubmissionForm({
           required
           className={inputClass}
           value={fields.eventId}
-          onChange={(event) => update({ eventId: event.target.value })}
+          onChange={(event) => {
+            const nextEventId = event.target.value;
+            const nextEvent = events.find((item) => item.id === nextEventId);
+            const nextTrackId = nextEvent?.tracks[0]?.id ?? '';
+            update({ eventId: nextEventId, trackId: nextTrackId });
+          }}
         >
           {events.map((event) => (
             <option key={event.id} value={event.id}>
@@ -222,17 +233,15 @@ export function CreateSubmissionForm({
           name="trackId"
           required
           className={inputClass}
-          value={fields.trackId}
+          value={activeTrackId}
           onChange={(event) => update({ trackId: event.target.value })}
         >
-          {events.flatMap((event) =>
-            event.tracks.map((track) => (
-              <option key={track.id} value={track.id}>
-                {event.title} · {track.name}
-                {track.requiresBlindReview ? ' (revisão cega)' : ''}
-              </option>
-            )),
-          )}
+          {availableTracks.map((track) => (
+            <option key={track.id} value={track.id}>
+              {track.name}
+              {track.requiresBlindReview ? ' (revisão cega)' : ''}
+            </option>
+          ))}
         </select>
       </div>
 

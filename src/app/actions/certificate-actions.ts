@@ -57,6 +57,10 @@ export interface CertificateActionState {
   /** Motivos por campo, quando a recusa vem de um validador do domínio. */
   details?: readonly string[];
   data?: Record<string, unknown>;
+  values?: {
+    minRatioPercent?: string;
+    minMinutes?: string;
+  };
 }
 
 
@@ -298,11 +302,18 @@ export async function saveCertificatePolicyAction(
   _prev: CertificateActionState | null,
   formData: FormData,
 ): Promise<CertificateActionState> {
+  const rawRatio = formData.get('minRatioPercent');
+  const rawMinutes = formData.get('minMinutes');
+  const values = {
+    minRatioPercent: typeof rawRatio === 'string' ? rawRatio : '',
+    minMinutes: typeof rawMinutes === 'string' ? rawMinutes : '',
+  };
+
   const parsed = certificatePolicySchema.safeParse({
     tenantSlug: formData.get('tenantSlug'),
     eventId: formData.get('eventId'),
-    minRatioPercent: formData.get('minRatioPercent'),
-    minMinutes: formData.get('minMinutes'),
+    minRatioPercent: rawRatio,
+    minMinutes: rawMinutes,
   });
 
   if (!parsed.success) {
@@ -310,6 +321,7 @@ export async function saveCertificatePolicyAction(
       ok: false,
       code: 'INVALID_INPUT',
       message: 'Informe o percentual mínimo (50 a 100) e o piso em minutos (1 a 240).',
+      values,
     };
   }
 
@@ -347,6 +359,7 @@ export async function saveCertificatePolicyAction(
       code: result.code,
       message: result.message,
       details: result.details,
+      values,
     };
   }
 

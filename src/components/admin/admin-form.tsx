@@ -118,7 +118,9 @@ export function AdminForm({
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const toastVisible = state !== null && state !== dismissedState;
 
-  useUnsavedChanges(Boolean(warnUnsaved ?? backHref) && dirty && !state?.ok);
+  // Não condiciona a `!state?.ok`: `lastSavedState` acima já limpa `dirty` após o
+  // salvamento, e uma 2ª edição deve rearmar o guardião normalmente.
+  useUnsavedChanges(Boolean(warnUnsaved ?? backHref) && dirty);
 
   useEffect(() => {
     if (!state) return;

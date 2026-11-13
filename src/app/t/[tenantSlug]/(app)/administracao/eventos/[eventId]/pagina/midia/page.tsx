@@ -20,7 +20,7 @@ import {
 import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { AssetUploader } from '@/components/admin/asset-uploader';
-import { Alert, PageHeader } from '@/components/ui';
+import { Alert, GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   confirmAssetUploadAction,
@@ -198,8 +198,7 @@ export default async function EventMediaLibraryPage({
       </section>
 
       {/* ── Filtros ──────────────────────────────────────────────────────── */}
-      <form
-        method="get"
+      <GetSearchForm
         action={mediaPath}
         className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-card p-4"
         data-testid="media-filters"
@@ -280,7 +279,7 @@ export default async function EventMediaLibraryPage({
         >
           limpar
         </Link>
-      </form>
+      </GetSearchForm>
 
       {/* ── Acervo ───────────────────────────────────────────────────────── */}
       <section className="space-y-3 rounded-xl border border-border bg-card p-5" data-testid="media-library">

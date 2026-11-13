@@ -149,6 +149,7 @@ export default async function MyPublicProfilePage({
         action={savePublicProfileAction}
         submitLabel="Salvar perfil"
         testId="save-public-profile"
+        warnUnsaved
       >
         <input type="hidden" name="tenantSlug" value={tenantSlug} />
 

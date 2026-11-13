@@ -190,7 +190,7 @@ function LiveEligibility({
         {state ? `${state.eligibleCount} elegível(is) agora` : 'Contando elegíveis…'}
       </span>
       {state?.lastCheckInAt ? (
-        <span>
+        <span suppressHydrationWarning>
           último check-in às{' '}
           {new Date(state.lastCheckInAt).toLocaleTimeString('pt-BR', {
             hour: '2-digit',
@@ -198,7 +198,7 @@ function LiveEligibility({
           })}
         </span>
       ) : null}
-      <span>
+      <span suppressHydrationWarning>
         {failed
           ? 'não foi possível atualizar agora'
           : state

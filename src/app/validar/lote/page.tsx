@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { AlertTriangle, BadgeCheck, Ban, ClipboardCheck, Info, XCircle } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
-import { PageHeader } from '@/components/ui';
+import { GetSearchForm, PageHeader } from '@/components/ui';
 import { PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { verifyCertificateBatch } from '@/lib/certificates/certificate-batch-service';
 import { CERTIFICATE_BATCH_LIMIT } from '@/domain/certificates/certificate-batch-rules';
@@ -90,7 +90,7 @@ export default async function CertificateBatchPage({
       />
 
       {/* ── Formulário (GET: funciona sem JavaScript) ─────────────────────── */}
-      <form method="get" action="/validar/lote" className="space-y-3" data-testid="batch-form">
+      <GetSearchForm action="/validar/lote" className="space-y-3" data-testid="batch-form">
         <label className="block space-y-1 text-sm" htmlFor="codigos">
           <span className="font-medium">Códigos dos certificados</span>
           <span className="block text-xs text-muted-foreground">
@@ -128,7 +128,7 @@ export default async function CertificateBatchPage({
             limpar
           </Link>
         </div>
-      </form>
+      </GetSearchForm>
 
       {/* ── Recusa: acima do teto, lista longa ou lista vazia ─────────────── */}
       {outcome && !outcome.ok ? (

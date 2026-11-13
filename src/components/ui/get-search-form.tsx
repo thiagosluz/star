@@ -45,6 +45,14 @@ export function GetSearchForm({
     const url = new URL(baseTarget, window.location.origin);
     const params = new URLSearchParams(url.search);
     const formData = new FormData(event.currentTarget);
+    const nativeEvent = event.nativeEvent as SubmitEvent | undefined;
+    const submitter = nativeEvent?.submitter ?? null;
+    if (
+      (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
+      submitter.name
+    ) {
+      formData.append(submitter.name, submitter.value);
+    }
 
     // Substitui os parâmetros de busca pelo formulário submetido, espelhando `<form method="get">`.
     const nextParams = new URLSearchParams();

@@ -4,7 +4,7 @@ import { Building2 } from 'lucide-react';
 
 import { getRequestContext } from '@/lib/auth/session';
 import { signOutAction } from '@/app/actions/auth-actions';
-import { PageHeader } from '@/components/ui';
+import { FormStatusButton, PageHeader } from '@/components/ui';
 import { TenantSwitcher } from '@/components/tenancy/tenant-switcher';
 import { ENTRY_DISCOVERY_PATH } from '@/domain/platform/entry-destination-rules';
 import { tenantDashboardPath } from '@/domain/platform/vitrine-account-rules';
@@ -80,12 +80,12 @@ export default async function SelectTenantPage() {
           </Link>
 
           <form action={signOutAction}>
-            <button
-              type="submit"
-              className="text-muted-foreground underline underline-offset-4"
+            <FormStatusButton
+              pendingContent="Saindo…"
+              className="text-muted-foreground underline underline-offset-4 disabled:opacity-60"
             >
               Sair da conta
-            </button>
+            </FormStatusButton>
           </form>
         </footer>
       </main>
@@ -137,12 +137,12 @@ export default async function SelectTenantPage() {
           {exitLink.label}
         </Link>
         <form action={signOutAction}>
-          <button
-            type="submit"
-            className="text-muted-foreground underline underline-offset-4"
+          <FormStatusButton
+            pendingContent="Saindo…"
+            className="text-muted-foreground underline underline-offset-4 disabled:opacity-60"
           >
             Sair da conta
-          </button>
+          </FormStatusButton>
         </form>
       </footer>
     </main>

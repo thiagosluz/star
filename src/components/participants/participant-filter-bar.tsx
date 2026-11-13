@@ -295,7 +295,7 @@ export function ParticipantFilterBar({
         >
           <option value="">Todos os eventos</option>
           {events.map((evt) => (
-            <option key={evt.id} value={evt.id}>
+            <option key={evt.id} value={evt.id} suppressHydrationWarning>
               {evt.title} · {new Date(evt.startsAt).toLocaleDateString('pt-BR')}
             </option>
           ))}

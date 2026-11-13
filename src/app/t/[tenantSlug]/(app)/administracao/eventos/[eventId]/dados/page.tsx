@@ -122,7 +122,7 @@ export default async function EventDataPage({
           Dados do evento
         </h2>
 
-        <AdminForm action={saveEventAction} submitLabel="Salvar evento" testId="edit-event">
+        <AdminForm action={saveEventAction} submitLabel="Salvar evento" testId="edit-event" warnUnsaved>
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
           <input type="hidden" name="eventId" value={event.id} />
 

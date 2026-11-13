@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { IdCard, X } from 'lucide-react';
 
 import { AppLink } from '@/components/ui/app-link';
+import { GetSearchForm } from '@/components/ui/get-search-form';
 import { startNavigationProgress } from '@/components/ui/navigation-progress-bar';
 import { tenantPath } from '@/domain/tenancy/resolution';
 
@@ -71,7 +72,7 @@ export function CheckinEventFilter({
   }
 
   return (
-    <form method="get" className="flex flex-wrap items-end gap-3" data-testid="checkin-filters">
+    <GetSearchForm className="flex flex-wrap items-end gap-3" data-testid="checkin-filters">
       <label className="space-y-1 text-xs font-medium">
         Evento
         <select
@@ -83,7 +84,7 @@ export function CheckinEventFilter({
           data-testid="checkin-event"
         >
           {events.map((event) => (
-            <option key={event.id} value={event.id}>
+            <option key={event.id} value={event.id} suppressHydrationWarning>
               {event.title} · {new Date(event.startsAt).toLocaleDateString('pt-BR')}
             </option>
           ))}
@@ -107,7 +108,7 @@ export function CheckinEventFilter({
           Crachás: emitir e imprimir
         </AppLink>
       ) : null}
-    </form>
+    </GetSearchForm>
   );
 }
 

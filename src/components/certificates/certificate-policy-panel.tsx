@@ -159,7 +159,7 @@ export function CertificatePolicyPanel({
                 min={policyPercent(CERTIFICATE_POLICY_LIMITS.minRatio.min)}
                 max={policyPercent(CERTIFICATE_POLICY_LIMITS.minRatio.max)}
                 step={1}
-                defaultValue={policyPercent(policy.minRatio)}
+                defaultValue={state?.values?.minRatioPercent ?? policyPercent(policy.minRatio)}
                 required
                 data-testid="certificate-policy-min-ratio"
               />
@@ -178,7 +178,7 @@ export function CertificatePolicyPanel({
                 min={CERTIFICATE_POLICY_LIMITS.minMinutes.min}
                 max={CERTIFICATE_POLICY_LIMITS.minMinutes.max}
                 step={1}
-                defaultValue={policy.minMinutes}
+                defaultValue={state?.values?.minMinutes ?? policy.minMinutes}
                 required
                 data-testid="certificate-policy-min-minutes"
               />
@@ -246,7 +246,7 @@ function SaveButton() {
       data-testid="certificate-policy-save"
     >
       {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
-      Salvar regra de presença
+      {pending ? 'Salvando regra…' : 'Salvar regra de presença'}
     </Button>
   );
 }

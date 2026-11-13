@@ -8,7 +8,8 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getOwnCredential } from '@/lib/events/credential-service';
 import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
-import { Alert, PageHeader } from '@/components/ui';
+import { Alert, GetSearchForm, PageHeader } from '@/components/ui';
+import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { OwnBadge } from '@/components/credentials/own-badge';
 import { generateOwnCredentialAction } from '@/app/actions/credential-actions';
@@ -74,7 +75,7 @@ export default async function OwnBadgePage({
       },
       orderBy: { startsAt: 'desc' },
       take: 30,
-      select: { id: true, title: true, slug: true, startsAt: true },
+      select: { id: true, title: true, slug: true, startsAt: true, timezone: true },
     }),
   );
 
@@ -116,7 +117,7 @@ export default async function OwnBadgePage({
         </p>
       ) : (
         <>
-          <form method="get" className="flex flex-wrap items-end gap-3">
+          <GetSearchForm className="flex flex-wrap items-end gap-3">
             <label className="space-y-1 text-xs font-medium">
               Evento
               <select
@@ -128,7 +129,7 @@ export default async function OwnBadgePage({
               >
                 {events.map((event) => (
                   <option key={event.id} value={event.id}>
-                    {event.title} · {event.startsAt.toLocaleDateString('pt-BR')}
+                    {event.title} · {formatZonedDateTime(event.startsAt, event.timezone)}
                   </option>
                 ))}
               </select>
@@ -140,7 +141,7 @@ export default async function OwnBadgePage({
             >
               Ver
             </button>
-          </form>
+          </GetSearchForm>
 
           {badge && !badge.ok ? (
             <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-soft p-4 text-sm text-warning-strong">
@@ -157,6 +158,8 @@ export default async function OwnBadgePage({
               tenantName={tenantName}
               eventSlug={badge.eventSlug}
               startsAtLabel={badge.startsAt.toLocaleString('pt-BR', {
+                timeZone:
+                  events.find((item) => item.id === badge.eventId)?.timezone || 'America/Sao_Paulo',
                 dateStyle: 'long',
                 timeStyle: 'short',
               })}

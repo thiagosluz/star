@@ -574,6 +574,12 @@ export async function completeEventRegistrationDataAction(
       ok: false,
       code: 'CONSENT_REQUIRED',
       message: 'É necessário autorizar o tratamento dos seus dados para salvar.',
+      values: {
+        cpf: data.cpf,
+        accessibilityNotes: data.accessibilityNotes,
+        consentData: data.consentData,
+        consentImage: data.consentImage,
+      },
     };
   }
 

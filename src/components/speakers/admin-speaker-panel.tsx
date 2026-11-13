@@ -152,7 +152,7 @@ export function InviteTokenBox({ token, expiresAt }: { token: string; expiresAt:
         </Button>
       </div>
       {expiresAt ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground" suppressHydrationWarning>
           Válido até {new Date(expiresAt).toLocaleDateString('pt-BR')}. Depois disso, gere outro.
         </p>
       ) : null}
@@ -356,7 +356,7 @@ function SpeakerFields({
             data-testid={`speaker-photo-declaration-current-${speaker.speakerProfileId}`}
             data-declaration-version={speaker.photoDeclaration.version ?? ''}
           >
-            <p>
+            <p suppressHydrationWarning>
               Declaração gravada: redação{' '}
               <strong className="font-medium">{speaker.photoDeclaration.version ?? 'anterior'}</strong>
               {speaker.photoDeclaration.channelLabel

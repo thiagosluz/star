@@ -63,6 +63,7 @@ export function RequestResetForm({ action }: { action: Action }) {
           required
           maxLength={255}
           autoComplete="email"
+          defaultValue={state?.values?.email ?? ''}
           data-testid="reset-email"
         />
       </Field>
@@ -175,7 +176,7 @@ export function TwoFactorChallengeForm({
 
       <Button type="submit" disabled={pending} className="w-full" data-testid="submit-challenge">
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ShieldCheck className="size-4" aria-hidden />}
-        Confirmar e entrar
+        {pending ? 'Confirmando…' : 'Confirmar e entrar'}
       </Button>
 
       <p className="text-xs text-muted-foreground">

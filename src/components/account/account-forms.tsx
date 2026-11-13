@@ -14,7 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
-import { Alert, Button, ConfirmDialog, Field, Input } from '@/components/ui';
+import { Alert, AppLink, Button, ConfirmDialog, Field, Input } from '@/components/ui';
 import { uploadAssetFile } from '@/components/admin/asset-upload';
 import type { AccountActionState } from '@/app/actions/account-actions';
 import {
@@ -73,9 +73,9 @@ function Feedback({ state, testId }: { state: AccountActionState | null; testId:
       ) : null}
       {state.code === 'SESSION_NOT_FRESH' ? (
         <span className="mt-2 block text-xs">
-          <a className="underline underline-offset-4" href="/login?redirectTo=%2Fconta">
+          <AppLink className="underline underline-offset-4" href="/login?redirectTo=%2Fconta">
             Entrar novamente
-          </a>{' '}
+          </AppLink>{' '}
           e voltar para cá.
         </span>
       ) : null}
@@ -494,16 +494,22 @@ export function AccountPasswordForm({
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={pending} data-testid="save-account-password">
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <KeyRound className="size-4" aria-hidden />}
-          {hasPassword ? 'Trocar senha' : 'Criar senha'}
+          {hasPassword
+            ? pending
+              ? 'Trocando…'
+              : 'Trocar senha'
+            : pending
+              ? 'Criando…'
+              : 'Criar senha'}
         </Button>
 
-        <a
+        <AppLink
           href="/esqueci-senha"
           className="text-xs text-muted-foreground underline underline-offset-4"
           data-testid="account-forgot-password"
         >
           Esqueci a minha senha
-        </a>
+        </AppLink>
       </div>
 
       {hasPassword ? (
@@ -580,7 +586,7 @@ export function AccountTwoFactorPanel({
 
         <Button type="submit" disabled={starting} data-testid="two-factor-start">
           {starting ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ShieldCheck className="size-4" aria-hidden />}
-          Configurar aplicativo autenticador
+          {starting ? 'Configurando…' : 'Configurar aplicativo autenticador'}
         </Button>
       </form>
     );
@@ -659,7 +665,7 @@ export function AccountTwoFactorPanel({
 
           <Button type="submit" disabled={confirming} data-testid="two-factor-confirm">
             {confirming ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-            Ativar segundo fator
+            {confirming ? 'Ativando…' : 'Ativar segundo fator'}
           </Button>
         </form>
       </div>
@@ -694,7 +700,7 @@ export function AccountTwoFactorPanel({
 
         <Button type="submit" variant="outline" disabled={regenerating} data-testid="two-factor-regenerate">
           {regenerating ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-          Gerar códigos novos
+          {regenerating ? 'Gerando…' : 'Gerar códigos novos'}
         </Button>
 
         {regenerated.length > 0 ? (
@@ -730,7 +736,7 @@ export function AccountTwoFactorPanel({
 
         <Button type="submit" variant="outline" disabled={disabling} data-testid="two-factor-disable">
           {disabling ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-          Desligar segundo fator
+          {disabling ? 'Desligando…' : 'Desligar segundo fator'}
         </Button>
       </form>
     </div>

@@ -30,7 +30,7 @@ import {
   toTimelineDemands,
 } from '@/lib/events/demand-timeline';
 import { timelineWindow } from '@/domain/events/demand-timeline-rules';
-import { PageHeader } from '@/components/ui';
+import { GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   createColumnAction,
@@ -338,7 +338,7 @@ export default async function EventDemandsPage({
       ) : null}
 
       {/* ── Filtros ─────────────────────────────────────────────────────────── */}
-      <form method="get" action={boardPath} className="flex flex-wrap items-end gap-2" data-testid="demand-filters">
+      <GetSearchForm action={boardPath} className="flex flex-wrap items-end gap-2" data-testid="demand-filters">
         {/**
           * O formulário é um GET com os campos da barra: sem a vista no endereço, filtrar
           * no Gantt ou no calendário devolveria o Kanban — a pessoa perderia a vista ao
@@ -425,7 +425,7 @@ export default async function EventDemandsPage({
         >
           limpar
         </Link>
-      </form>
+      </GetSearchForm>
 
       {/* ── Nova demanda ────────────────────────────────────────────────────── */}
       {canManage ? (

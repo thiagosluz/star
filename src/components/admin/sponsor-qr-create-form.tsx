@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom';
 import { AlertTriangle, Loader2, QrCode } from 'lucide-react';
 
 import type { SponsorQrConfirmationState } from '@/app/actions/sponsor-qr-actions';
+import { AppLink } from '@/components/ui';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -240,13 +241,13 @@ export function SponsorQrCreateForm({
             </>
           ) : (
             <>
-              <a
+              <AppLink
                 href={stepTwoHref}
                 data-testid={`qr-repeat-continue-${sponsorId}`}
                 className="inline-block underline underline-offset-4"
               >
                 Continuar e criar o QR assim mesmo
-              </a>
+              </AppLink>
 
               <label className="flex items-start gap-2 text-xs font-normal">
                 <input

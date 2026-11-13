@@ -82,6 +82,7 @@ import {
   Card,
   EmptyState,
   Field,
+  GetSearchForm,
   Input,
   PageHeader,
   SectionHeading,
@@ -652,7 +653,7 @@ async function SegmentsPanel({
           description="Escolha as condições do catálogo — todas precisam valer — e, se quiser, um “exceto quem…”. O endereço desta página guarda a seleção: dá para mandar o link para outra pessoa conferir."
         />
 
-        <form method="GET" action={basePath} className="space-y-6" data-testid="segment-form">
+        <GetSearchForm action={basePath} className="space-y-6" data-testid="segment-form">
           {/**
            * `aba` e `segmento` são o ENDEREÇO da própria tela: sem eles o envio cairia
            * na caixa de saída e a seleção se perderia.
@@ -799,7 +800,7 @@ async function SegmentsPanel({
               </button>
             ) : null}
           </div>
-        </form>
+        </GetSearchForm>
       </section>
 
       {step === 'recusado' && refusal ? (

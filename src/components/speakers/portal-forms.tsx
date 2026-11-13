@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Trash2, Upload } from 'lucide-react';
 
@@ -680,9 +680,10 @@ export function SpeakerNotesForm({
    */
   useEffect(() => {
     if (state?.ok && redirectTo) {
-      startNavigationProgress();
-      router.push(redirectTo);
-      router.refresh();
+      startTransition(() => {
+        startNavigationProgress();
+        router.push(redirectTo);
+      });
     }
   }, [state, redirectTo, router]);
 
@@ -703,7 +704,7 @@ export function SpeakerNotesForm({
                               {invite.activities.length} atividade(s):{' '}
                               {invite.activities.map((activity) => activity.title).join(', ')}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-muted-foreground" suppressHydrationWarning>
                               {invite.hasValidToken
                                 ? invite.inviteExpiresAt
                                   ? `Código do convite válido até ${new Date(invite.inviteExpiresAt).toLocaleDateString('pt-BR')}.`
@@ -747,7 +748,7 @@ export function SpeakerNotesForm({
                             <Field name="token" label="Código de convite" hint="O código que a organização entregou a você.">
                               <Input
                                 {...fieldAria('token')}
-                                defaultValue={defaultToken}
+                                defaultValue={state?.values?.token ?? defaultToken}
                                 placeholder="ABCD2345EFGH6789..."
                                 maxLength={64}
                                 aria-label="Código de convite"

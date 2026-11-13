@@ -59,3 +59,4 @@ export { cancelNavigationProgress } from './navigation-progress-bar';
 export { UnsavedChangesDialog } from './unsaved-changes-dialog';
 export { AppLink, type AppLinkProps } from './app-link';
 export { GetSearchForm } from './get-search-form';
+export { FormStatusButton } from './form-status-button';

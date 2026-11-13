@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom';
 import { Ban, CheckCircle2, Dices, Globe, Loader2, Medal, Trophy } from 'lucide-react';
 
 import type { RaffleActionState } from '@/app/actions/raffle-actions';
+import { AppLink, GetSearchForm } from '@/components/ui';
 
 /**
  * Histórico de apurações.
@@ -949,7 +950,7 @@ export function RaffleHistory({
    *  conversão das datas é do servidor, no fuso da instituição.
    */
   const filterForm = (
-    <form method="get" action={basePath} className="flex flex-wrap items-end gap-2" data-testid="raffle-filter">
+    <GetSearchForm action={basePath} className="flex flex-wrap items-end gap-2" data-testid="raffle-filter">
       <label className="space-y-1 text-xs">
         <span className="block text-muted-foreground">Situação</span>
         <select
@@ -996,11 +997,11 @@ export function RaffleHistory({
       </button>
 
       {filter.active ? (
-        <a href={basePath} data-testid="raffle-filter-clear" className="px-1 py-1 text-xs underline">
+        <AppLink href={basePath} data-testid="raffle-filter-clear" className="px-1 py-1 text-xs underline">
           limpar
-        </a>
+        </AppLink>
       ) : null}
-    </form>
+    </GetSearchForm>
   );
 
   if (raffles.length === 0) {
@@ -1067,22 +1068,22 @@ export function RaffleHistory({
           </span>
           <span className="flex items-center gap-2">
             {page > 1 ? (
-              <a
+              <AppLink
                 href={`${basePath}?pagina=${page - 1}${filterQuery}`}
                 data-testid="raffle-page-prev"
                 className="rounded-md border border-border px-2 py-1 hover:bg-muted"
               >
                 Anteriores
-              </a>
+              </AppLink>
             ) : null}
             {page < totalPages ? (
-              <a
+              <AppLink
                 href={`${basePath}?pagina=${page + 1}${filterQuery}`}
                 data-testid="raffle-page-next"
                 className="rounded-md border border-border px-2 py-1 hover:bg-muted"
               >
                 Próximos
-              </a>
+              </AppLink>
             ) : null}
           </span>
         </nav>

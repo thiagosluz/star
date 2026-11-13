@@ -7,7 +7,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { getMyAgenda } from '@/lib/events/agenda-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
-import { Alert, PageHeader } from '@/components/ui';
+import { Alert, GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { AgendaMarks } from '@/components/events/agenda-marks';
 import { AgendaClashNotice } from '@/components/events/agenda-clash-notice';
@@ -256,7 +256,7 @@ export default async function MyAgendaPage({
         </div>
       ) : (
         <>
-          <form method="get" className="flex flex-wrap items-end gap-3">
+          <GetSearchForm className="flex flex-wrap items-end gap-3">
             <label className="space-y-1 text-xs font-medium">
               Evento
               <select
@@ -288,7 +288,7 @@ export default async function MyAgendaPage({
             >
               Ver
             </button>
-          </form>
+          </GetSearchForm>
 
           {/**
             * ── A SALA ONLINE DO EVENTO (FASE 69) ─────────────────────────────────

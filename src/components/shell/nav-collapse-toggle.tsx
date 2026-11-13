@@ -1,6 +1,7 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 import { toggleNavModeAction } from '@/app/actions/nav-actions';
+import { FormStatusButton } from '@/components/ui/form-status-button';
 import { NAV_MODE_RAIL, type NavMode } from '@/lib/shell/nav-mode';
 
 /**
@@ -36,12 +37,13 @@ export function NavCollapseToggle({ mode }: { mode: NavMode }) {
 
   return (
     <form action={toggleNavModeAction} className="shrink-0">
-      <button
-        type="submit"
+      <FormStatusButton
         title={rotulo}
         aria-expanded={!recolhida}
         data-testid="nav-collapse-toggle"
-        className="inline-flex size-9 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground"
+        showSpinner
+        pendingContent={<span className="sr-only">{rotulo}</span>}
+        className="inline-flex size-9 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground disabled:opacity-60"
       >
         {recolhida ? (
           <PanelLeftOpen className="size-4" aria-hidden />
@@ -49,7 +51,7 @@ export function NavCollapseToggle({ mode }: { mode: NavMode }) {
           <PanelLeftClose className="size-4" aria-hidden />
         )}
         <span className="sr-only">{rotulo}</span>
-      </button>
+      </FormStatusButton>
     </form>
   );
 }

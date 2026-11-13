@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { withTenant } from '@/lib/db/tenant-client';
 import { getInstitutionIntelligence } from '@/lib/participants/insight-service';
-import { PageHeader } from '@/components/ui';
+import { GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   INTELLIGENCE_RANGES,
@@ -95,7 +95,7 @@ export default async function PanoramaPage({
         </p>
       ) : (
         <>
-          <form method="get" className="flex flex-wrap items-end gap-3" data-testid="panorama-filters">
+          <GetSearchForm className="flex flex-wrap items-end gap-3" data-testid="panorama-filters">
             <label className="space-y-1 text-xs font-medium">
               Período
               <select
@@ -144,7 +144,7 @@ export default async function PanoramaPage({
             >
               Aplicar
             </button>
-          </form>
+          </GetSearchForm>
 
           <p className="text-xs text-muted-foreground" data-testid="panorama-range-label">
             {result.insight.range.label} · fuso {result.insight.range.timeZone}
