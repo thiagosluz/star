@@ -1,10 +1,11 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 import { Button, Checkbox } from '@/components/ui';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import {
   EVENT_API_SECTION_INFO,
   type EventApiKeyState,
@@ -49,6 +50,25 @@ export function EventApiSectionsForm({
   ) => Promise<EventApiActionState>;
 }) {
   const [retorno, formAction] = useActionState<EventApiActionState | null, FormData>(action, null);
+  const [draft, setDraft] = useState<EventApiSectionToggles>(() => ({ ...secoes }));
+  const [prevSecoes, setPrevSecoes] = useState(secoes);
+
+  if (
+    secoes.palestrantes !== prevSecoes.palestrantes ||
+    secoes.patrocinadores !== prevSecoes.patrocinadores ||
+    secoes.chamadas !== prevSecoes.chamadas
+  ) {
+    setPrevSecoes(secoes);
+    setDraft({ ...secoes });
+  }
+
+  const isDirty =
+    state === 'ACTIVE' && EVENT_API_SECTION_INFO.some((info) => draft[info.section] !== secoes[info.section]);
+
+  useUnsavedChanges(
+    isDirty,
+    'Você alterou as seções públicas da API do evento e ainda não salvou. Se sair agora, as alterações serão perdidas.',
+  );
 
   if (state !== 'ACTIVE') {
     return (
@@ -85,7 +105,11 @@ export function EventApiSectionsForm({
                 id={id}
                 name={info.section}
                 value="on"
-                defaultChecked={secoes[info.section]}
+                defaultChecked={draft[info.section]}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setDraft((previous) => ({ ...previous, [info.section]: checked }));
+                }}
                 data-testid={id}
                 className="mt-0.5"
               />
@@ -134,7 +158,7 @@ function SubmitSecoes() {
   return (
     <Button type="submit" disabled={pending} size="sm" data-testid="event-api-sections-submit">
       {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
-      Salvar seções
+      {pending ? 'Salvando…' : 'Salvar seções'}
     </Button>
   );
 }

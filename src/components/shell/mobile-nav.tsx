@@ -1,7 +1,8 @@
 'use client';
 
 import { Menu, X } from 'lucide-react';
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { KovenoMark } from '@/components/ui/brand-mark';
@@ -84,14 +85,78 @@ export function MobileNav({
   brandLabel: string;
 }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const portalWrapperRef = useRef<HTMLDivElement>(null);
   /** `false` no servidor e no primeiro render do cliente — ver `useIsInteractive`. */
   const montado = useIsInteractive();
+
+  // Fecha a gaveta assim que uma transição de rota do App Router conclui.
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    if (open) {
+      setOpen(false);
+    }
+  }
+
+  function closeDrawer(restoreFocus = true) {
+    setOpen(false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        openButtonRef.current?.focus();
+      });
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
 
+    const frame = requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    const portalWrapper = portalWrapperRef.current;
+    const inertBackups: Array<{ element: HTMLElement; wasInert: boolean }> = [];
+    if ('inert' in HTMLElement.prototype) {
+      for (const child of Array.from(document.body.children)) {
+        if (child instanceof HTMLElement && child !== portalWrapper) {
+          inertBackups.push({ element: child, wasInert: child.inert });
+          child.inert = true;
+        }
+      }
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDrawer(true);
+        return;
+      }
+
+      if (event.key === 'Tab' && drawerRef.current) {
+        const focusables = Array.from(
+          drawerRef.current.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => el.getAttribute('aria-hidden') !== 'true');
+
+        if (focusables.length === 0) return;
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+
+        if (event.shiftKey && (active === first || !drawerRef.current.contains(active))) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && (active === last || !drawerRef.current.contains(active))) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
     };
 
     const previousOverflow = document.body.style.overflow;
@@ -99,6 +164,10 @@ export function MobileNav({
     window.addEventListener('keydown', onKeyDown);
 
     return () => {
+      cancelAnimationFrame(frame);
+      for (const { element, wasInert } of inertBackups) {
+        element.inert = wasInert;
+      }
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
@@ -107,9 +176,11 @@ export function MobileNav({
   return (
     <>
       <button
+        ref={openButtonRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-expanded={open}
+        aria-controls="mobile-navigation-drawer"
         aria-label="Abrir menu de navegação"
         data-testid="open-navigation"
         className="inline-flex size-10 items-center justify-center rounded-sm border border-border bg-card text-foreground lg:hidden"
@@ -120,6 +191,7 @@ export function MobileNav({
       {montado
         ? createPortal(
             <div
+              ref={portalWrapperRef}
               className={cn(
                 'fixed inset-0 z-50 lg:hidden',
                 open ? 'pointer-events-auto' : 'pointer-events-none',
@@ -127,7 +199,7 @@ export function MobileNav({
               aria-hidden={!open}
             >
               <div
-                onClick={() => setOpen(false)}
+                onClick={() => closeDrawer(true)}
                 className={cn(
                   'absolute inset-0 bg-inverse-surface/40 transition-opacity',
                   open ? 'opacity-100' : 'opacity-0',
@@ -135,6 +207,11 @@ export function MobileNav({
               />
 
               <aside
+                ref={drawerRef}
+                id="mobile-navigation-drawer"
+                role="dialog"
+                aria-modal={open || undefined}
+                aria-label="Menu de navegação"
                 data-testid="mobile-navigation"
                 className={cn(
                   /**
@@ -157,8 +234,9 @@ export function MobileNav({
                     <span>{brandLabel}</span>
                   </p>
                   <button
+                    ref={closeButtonRef}
                     type="button"
-                    onClick={() => setOpen(false)}
+                    onClick={() => closeDrawer(true)}
                     aria-label="Fechar menu"
                     className="inline-flex size-9 items-center justify-center rounded-sm text-muted-foreground hover:bg-surface-low"
                   >

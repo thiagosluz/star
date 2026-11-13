@@ -1,13 +1,15 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Check, ChevronDown } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Check, ChevronDown, Loader2 } from "lucide-react";
 
 import {
   switchTenantAction,
   type SwitchContextState,
 } from "@/app/actions/context-actions";
+import { AppLink } from "@/components/ui/app-link";
 import { cn } from "@/lib/utils/cn";
 
 export interface MembershipSummary {
@@ -16,6 +18,40 @@ export interface MembershipSummary {
   tenantName: string;
   status: "INVITED" | "ACTIVE" | "SUSPENDED" | "REMOVED";
   roles: readonly string[];
+}
+
+function SwitchTenantOptionButton({
+  membership,
+  isCurrent,
+  isInvite,
+}: {
+  membership: MembershipSummary;
+  isCurrent: boolean;
+  isInvite: boolean;
+}) {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={isCurrent || isInvite || pending}
+      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60 disabled:hover:bg-transparent"
+    >
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{membership.tenantName}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {pending
+            ? "Entrando na instituição…"
+            : `${membership.roles.join(" · ") || "Sem papel"}${isInvite ? " · convite pendente" : ""}`}
+        </span>
+      </span>
+      {pending ? (
+        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+      ) : isCurrent ? (
+        <Check className="size-4 shrink-0 text-primary" aria-hidden />
+      ) : null}
+    </button>
+  );
 }
 
 function MenuItem({
@@ -36,7 +72,6 @@ function MenuItem({
     switchTenantAction,
     null,
   );
-  const { pending } = useFormStatus();
 
   const isCurrent = currentSlug !== undefined && membership.tenantSlug === currentSlug;
   const isInvite = membership.status === "INVITED";
@@ -46,20 +81,11 @@ function MenuItem({
       <form action={formAction}>
         <input type="hidden" name="tenantSlug" value={membership.tenantSlug} />
         <input type="hidden" name="redirectTo" value="/dashboard" />
-        <button
-          type="submit"
-          disabled={isCurrent || isInvite || pending}
-          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60 disabled:hover:bg-transparent"
-        >
-          <span className="min-w-0">
-            <span className="block truncate font-medium">{membership.tenantName}</span>
-            <span className="block truncate text-xs text-muted-foreground">
-              {membership.roles.join(" · ") || "Sem papel"}
-              {isInvite ? " · convite pendente" : ""}
-            </span>
-          </span>
-          {isCurrent ? <Check className="size-4 shrink-0 text-primary" aria-hidden /> : null}
-        </button>
+        <SwitchTenantOptionButton
+          membership={membership}
+          isCurrent={isCurrent}
+          isInvite={isInvite}
+        />
       </form>
       {state?.message ? (
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
@@ -130,6 +156,52 @@ export function TenantMenu({
    */
   label?: string;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  function closeMenu(restoreFocus = false) {
+    if (detailsRef.current?.open) {
+      detailsRef.current.open = false;
+    }
+    if (restoreFocus) {
+      summaryRef.current?.focus();
+    }
+  }
+
+  useEffect(() => {
+    if (detailsRef.current?.open) {
+      detailsRef.current.open = false;
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && detailsRef.current && !detailsRef.current.contains(target)) {
+        closeMenu(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu(true);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   return (
     /**
      * ─────────────────────────────────────────────────────────────────────────────
@@ -144,9 +216,15 @@ export function TenantMenu({
      *  Com `min-w-0` a cadeia inteira passa a poder truncar: o nome e o e-mail são
      *  `truncate`, o chevron não encolhe, e os botões mantêm o tamanho.
      */
-    <details className="group relative min-w-0">
+    <details
+      ref={detailsRef}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="group relative min-w-0"
+    >
       <summary
+        ref={summaryRef}
         aria-label={label}
+        aria-expanded={open}
         data-testid="account-tenant-menu"
         className={cn(
           'flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md border border-border text-sm transition hover:bg-accent',
@@ -210,19 +288,21 @@ export function TenantMenu({
             global: nome, e-mail, senha, segundo fator e dispositivos valem em qualquer
             casa.
           */}
-          <a
+          <AppLink
             href="/conta"
+            onClick={() => closeMenu(false)}
             className="block rounded-md px-3 py-2 text-xs font-medium transition hover:bg-accent"
             data-testid="menu-my-account"
           >
             Minha conta
-          </a>
-          <a
+          </AppLink>
+          <AppLink
             href="/selecionar-instituicao"
+            onClick={() => closeMenu(false)}
             className="block rounded-md px-3 py-2 text-xs font-medium transition hover:bg-accent"
           >
             Ver todas as instituições
-          </a>
+          </AppLink>
         </div>
       </div>
     </details>

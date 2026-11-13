@@ -57,6 +57,16 @@ export interface PlatformActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
+  /** Valores submetidos retornados em erro para evitar o reset de formulário do React 19. */
+  values?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    organization?: string;
+    role?: string;
+    estimatedEvents?: string;
+    message?: string;
+  };
 }
 
 /** Rota do painel — invalidada depois de qualquer mudança de estado. */
@@ -547,21 +557,32 @@ export async function submitInstitutionLeadAction(
   const estimatedEvents = formData.get('estimatedEvents');
   const message = formData.get('message');
 
-  const validation = validateLeadInput({
+  const submittedValues = {
     name: typeof name === 'string' ? name : '',
     email: typeof email === 'string' ? email : '',
-    phone: typeof phone === 'string' ? phone : null,
+    phone: typeof phone === 'string' ? phone : '',
     organization: typeof organization === 'string' ? organization : '',
+    role: typeof role === 'string' ? role : '',
+    estimatedEvents:
+      typeof estimatedEvents === 'string' ? estimatedEvents : '3 a 5 eventos por ano',
+    message: typeof message === 'string' ? message : '',
+  };
+
+  const validation = validateLeadInput({
+    name: submittedValues.name,
+    email: submittedValues.email,
+    phone: typeof phone === 'string' ? phone : null,
+    organization: submittedValues.organization,
     roleInOrg: typeof role === 'string' ? role : null,
     estimatedEventsPerYear: typeof estimatedEvents === 'string' ? estimatedEvents : null,
     message: typeof message === 'string' ? message : null,
   });
 
   if (!validation.ok) {
-    return failure(
-      validation.code,
-      validation.message,
-    );
+    return {
+      ...failure(validation.code, validation.message),
+      values: submittedValues,
+    };
   }
 
   try {
@@ -572,10 +593,13 @@ export async function submitInstitutionLeadAction(
     };
   } catch (error) {
     console.error('[platform] falha ao registrar lead:', error);
-    return failure(
-      'INTERNAL',
-      'Não foi possível registrar seu contato agora. Tente novamente mais tarde.',
-    );
+    return {
+      ...failure(
+        'INTERNAL',
+        'Não foi possível registrar seu contato agora. Tente novamente mais tarde.',
+      ),
+      values: submittedValues,
+    };
   }
 }
 

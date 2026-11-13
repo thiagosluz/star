@@ -29,6 +29,8 @@ import { inviteMemberAction, type CommunicationActionState } from '@/app/actions
  *  (o que invalida o anterior, pela lista de convites).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+const INITIAL_INVITE_STATE: CommunicationActionState = { ok: false };
+
 function SubmitButton() {
   const { pending } = useFormStatus();
 
@@ -39,7 +41,7 @@ function SubmitButton() {
       ) : (
         <MailPlus className="size-4" aria-hidden />
       )}
-      Enviar convite
+      {pending ? 'Enviando…' : 'Enviar convite'}
     </Button>
   );
 }
@@ -55,26 +57,21 @@ export function InviteMemberForm({
   const [role, setRole] = useState(roles[0]?.value ?? 'STAFF');
   const [message, setMessage] = useState('');
 
-  const [state, formAction] = useActionState<CommunicationActionState, FormData>(
-    /**
-     * Depois de um convite registrado, os campos são limpos AQUI — e não num efeito:
-     * deixar o endereço anterior preenchido convida ao segundo clique, e o segundo
-     * clique revogaria o convite que acabou de sair (um convite pendente por
-     * endereço). Limpar dentro do fluxo da action respeita a regra do lint de efeitos
-     * (`react-hooks/set-state-in-effect`) e mantém o formulário previsível.
-     */
-    async (previous, formData) => {
-      const result = await inviteMemberAction(previous, formData);
+  const [state, formAction] = useActionState(inviteMemberAction, INITIAL_INVITE_STATE);
+  const [syncedState, setSyncedState] = useState(state);
 
-      if (result.ok) {
-        setEmail('');
-        setMessage('');
-      }
-
-      return result;
-    },
-    { ok: false },
-  );
+  /**
+   * Depois de um convite registrado, os campos são limpos via comparação no render:
+   * evita closure dentro de `useActionState` (preservando SSR `$ACTION_*` sem JS)
+   * e evita `setState` dentro de `useEffect`.
+   */
+  if (state !== syncedState) {
+    setSyncedState(state);
+    if (state.ok) {
+      setEmail('');
+      setMessage('');
+    }
+  }
 
   const selected = roles.find((entry) => entry.value === role);
   const roleHint = selected ? `Ao aceitar, terá ${selected.consequence}.` : undefined;

@@ -71,6 +71,15 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
+  useRouter: () => ({
+    push: () => undefined,
+    replace: () => undefined,
+    refresh: () => undefined,
+    back: () => undefined,
+    forward: () => undefined,
+    prefetch: () => undefined,
+  }),
+  usePathname: () => '/',
 }));
 
 vi.mock('next/cache', () => ({

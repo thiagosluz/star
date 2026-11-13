@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Building2, Search } from 'lucide-react';
 
 import { ProvisionTenantForm } from '@/components/platform/platform-forms';
-import { Badge, buttonClasses, PageHeader } from '@/components/ui';
+import { Badge, buttonClasses, GetSearchForm, PageHeader } from '@/components/ui';
 import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { getTenantSummaries } from '@/lib/platform/tenant-service';
@@ -77,7 +77,7 @@ export default async function PlatformTenantsPage({
 
       <section className="rounded-xl border border-border bg-card">
         <header className="flex flex-wrap items-center gap-3 border-b border-border p-5">
-          <form method="get" action="/superadmin/tenants" className="flex flex-1 flex-wrap gap-2" role="search">
+          <GetSearchForm action="/superadmin/tenants" omitEmpty className="flex flex-1 flex-wrap gap-2" role="search">
             <input type="hidden" name="estado" value={statusFilter === 'ALL' ? '' : statusFilter} />
             <div className="relative min-w-[14rem] flex-1">
               <Search
@@ -100,7 +100,7 @@ export default async function PlatformTenantsPage({
             >
               Buscar
             </button>
-          </form>
+          </GetSearchForm>
 
           <nav className="flex flex-wrap gap-1" aria-label="Filtrar por estado">
             {filters.map((filter) => {

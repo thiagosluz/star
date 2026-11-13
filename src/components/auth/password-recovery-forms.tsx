@@ -69,7 +69,7 @@ export function RequestResetForm({ action }: { action: Action }) {
 
       <Button type="submit" disabled={pending} className="w-full" data-testid="request-reset">
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <MailCheck className="size-4" aria-hidden />}
-        Enviar link de redefinição
+        {pending ? 'Enviando…' : 'Enviar link de redefinição'}
       </Button>
     </form>
   );
@@ -119,7 +119,7 @@ export function ResetPasswordForm({ action, token }: { action: Action; token: st
 
       <Button type="submit" disabled={pending} className="w-full" data-testid="submit-reset">
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <KeyRound className="size-4" aria-hidden />}
-        Definir nova senha
+        {pending ? 'Salvando…' : 'Definir nova senha'}
       </Button>
 
       <p className="text-xs text-muted-foreground">

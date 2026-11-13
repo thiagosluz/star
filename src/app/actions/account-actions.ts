@@ -62,6 +62,11 @@ export interface AccountActionState {
   message?: string;
   details?: readonly string[];
   data?: Record<string, unknown>;
+  /** Valores digitados (sem senhas) preservados em caso de recusa. */
+  values?: {
+    name?: string;
+    email?: string;
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -169,13 +174,16 @@ export async function updateAccountProfileAction(
   const user = await getAuthenticatedUser();
   if (!user) return NOT_AUTHENTICATED;
 
-  const parsed = profileSchema.safeParse({ name: formData.get('name') });
+  const rawName = formData.get('name');
+  const submittedName = typeof rawName === 'string' ? rawName : '';
+  const parsed = profileSchema.safeParse({ name: rawName });
 
   if (!parsed.success) {
     return {
       ok: false,
       code: 'INVALID_INPUT',
       message: parsed.error.issues[0]?.message ?? 'Dados inválidos.',
+      values: { name: submittedName },
     };
   }
 
@@ -189,7 +197,12 @@ export async function updateAccountProfileAction(
       headers: await headers(),
     });
   } catch (error) {
-    return { ok: false, code: 'INTERNAL', message: authMessage(error).message };
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: authMessage(error).message,
+      values: { name: submittedName },
+    };
   }
 
   revalidatePath('/conta');
@@ -222,8 +235,10 @@ export async function requestEmailChangeAction(
   const user = await getAuthenticatedUser();
   if (!user) return NOT_AUTHENTICATED;
 
+  const rawEmail = formData.get('email');
+  const submittedEmail = typeof rawEmail === 'string' ? rawEmail : '';
   const parsed = emailSchema.safeParse({
-    email: formData.get('email'),
+    email: rawEmail,
     password: formData.get('password'),
   });
 
@@ -232,6 +247,7 @@ export async function requestEmailChangeAction(
       ok: false,
       code: 'INVALID_INPUT',
       message: parsed.error.issues[0]?.message ?? 'Dados inválidos.',
+      values: { email: submittedEmail },
     };
   }
 
@@ -240,6 +256,7 @@ export async function requestEmailChangeAction(
       ok: false,
       code: 'SAME_EMAIL',
       message: 'Este já é o e-mail da sua conta.',
+      values: { email: submittedEmail },
     };
   }
 
@@ -251,7 +268,12 @@ export async function requestEmailChangeAction(
       headers: requestHeaders,
     });
   } catch (error) {
-    return { ok: false, code: 'INVALID_PASSWORD', message: authMessage(error).message };
+    return {
+      ok: false,
+      code: 'INVALID_PASSWORD',
+      message: authMessage(error).message,
+      values: { email: submittedEmail },
+    };
   }
 
   try {
@@ -261,7 +283,7 @@ export async function requestEmailChangeAction(
     });
   } catch (error) {
     const { message, code } = authMessage(error);
-    return { ok: false, code: code ?? 'INTERNAL', message };
+    return { ok: false, code: code ?? 'INTERNAL', message, values: { email: submittedEmail } };
   }
 
   /**

@@ -5,6 +5,7 @@ import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2, Loader2, Plus, Trash2 } 
 
 import type { ActionState } from '@/app/actions/review-actions';
 import { Button, Input } from '@/components/ui';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -40,6 +41,19 @@ export interface AuthorRow {
   isCorresponding: boolean;
 }
 
+function serializeAuthors(rows: readonly AuthorRow[]): string {
+  return JSON.stringify(
+    rows.map((row) => ({
+      userId: row.userId ?? null,
+      name: row.name,
+      email: row.email ?? '',
+      institution: row.institution ?? '',
+      orcidId: row.orcidId ?? '',
+      isCorresponding: row.isCorresponding,
+    })),
+  );
+}
+
 export function AuthorEditor({
   tenantSlug,
   submissionId,
@@ -54,12 +68,37 @@ export function AuthorEditor({
   /** Falso depois do envio: a lista fica somente leitura, com o motivo na tela. */
   editable: boolean;
 }) {
-  const [authors, setAuthors] = useState<AuthorRow[]>(
+  const initialList: AuthorRow[] =
     initialAuthors.length > 0
       ? initialAuthors
-      : [{ userId: null, name: '', email: null, institution: null, orcidId: null, isCorresponding: true }],
+      : [{ userId: null, name: '', email: null, institution: null, orcidId: null, isCorresponding: true }];
+  const [authors, setAuthors] = useState<AuthorRow[]>(initialList);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => serializeAuthors(initialList));
+  const [prevInitialSerialized, setPrevInitialSerialized] = useState(() =>
+    serializeAuthors(initialList),
   );
   const [state, formAction, pending] = useActionState<ActionState | null, FormData>(action, null);
+  const [syncedState, setSyncedState] = useState(state);
+
+  const nextInitialSerialized = serializeAuthors(initialList);
+  if (nextInitialSerialized !== prevInitialSerialized) {
+    setPrevInitialSerialized(nextInitialSerialized);
+    setAuthors(initialList);
+    setSavedSnapshot(nextInitialSerialized);
+  }
+
+  if (state !== syncedState) {
+    setSyncedState(state);
+    if (state?.ok) {
+      setSavedSnapshot(serializeAuthors(authors));
+    }
+  }
+
+  const isDirty = editable && serializeAuthors(authors) !== savedSnapshot;
+  useUnsavedChanges(
+    isDirty,
+    'Você alterou a lista de autores e ainda não salvou. Se sair agora, essas alterações serão perdidas.',
+  );
 
   function update(index: number, patch: Partial<AuthorRow>) {
     setAuthors((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));

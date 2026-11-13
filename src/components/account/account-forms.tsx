@@ -94,6 +94,13 @@ export function AccountProfileForm({
   action: Action;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+  const [name, setName] = useState(() => state?.values?.name ?? currentName);
+  const [prevCurrentName, setPrevCurrentName] = useState(currentName);
+
+  if (currentName !== prevCurrentName) {
+    setPrevCurrentName(currentName);
+    setName(currentName);
+  }
 
   return (
     <form action={formAction} className="space-y-3" data-testid="account-profile-form">
@@ -105,7 +112,8 @@ export function AccountProfileForm({
         <Input
           id="account-name"
           name="name"
-          defaultValue={currentName}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
           required
           minLength={3}
           maxLength={160}
@@ -137,6 +145,15 @@ export function AccountEmailForm({
   action: Action;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+  const [email, setEmail] = useState(() => state?.values?.email ?? '');
+  const [syncedState, setSyncedState] = useState(state);
+
+  if (state !== syncedState) {
+    setSyncedState(state);
+    if (state?.ok) {
+      setEmail('');
+    }
+  }
 
   return (
     <form action={formAction} className="space-y-3" data-testid="account-email-form">
@@ -168,6 +185,8 @@ export function AccountEmailForm({
             id="account-new-email"
             name="email"
             type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             maxLength={255}
             autoComplete="email"
             data-testid="account-new-email"

@@ -34,13 +34,15 @@ import {
  *  (`updateMemberRolesAction`) reconfere a permissão — esconder não é autorizar.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+const INITIAL_MEMBER_STATE: MemberActionState = { ok: false };
+
 function SaveRolesButton() {
   const { pending } = useFormStatus();
 
   return (
     <Button type="submit" size="sm" disabled={pending} data-testid="save-roles-submit">
       {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
-      Salvar papéis
+      {pending ? 'Salvando…' : 'Salvar papéis'}
     </Button>
   );
 }
@@ -59,21 +61,26 @@ export function MemberRolesForm({
   options: readonly { value: string; label: string }[];
 }) {
   const [selected, setSelected] = useState<readonly string[]>(currentRoles);
+  const [state, formAction] = useActionState(updateMemberRolesAction, INITIAL_MEMBER_STATE);
+  const [syncedState, setSyncedState] = useState(state);
+  const [prevCurrentRoles, setPrevCurrentRoles] = useState(currentRoles);
 
-  const [state, formAction] = useActionState<MemberActionState, FormData>(
-    async (previous, formData) => {
-      const result = await updateMemberRolesAction(previous, formData);
+  if (currentRoles !== prevCurrentRoles) {
+    setPrevCurrentRoles(currentRoles);
+    setSelected(currentRoles);
+  }
 
-      /**
-       * Na recusa, a seleção da tela volta a ser a do BANCO: deixar marcado o que a
-       * instituição tentou e não pôde aplicar faria a pessoa acreditar que valeu.
-       */
-      if (!result.ok) setSelected(currentRoles);
-
-      return result;
-    },
-    { ok: false },
-  );
+  /**
+   * Na recusa, a seleção da tela volta a ser a do BANCO via comparação no render
+   * (mantendo `useActionState(updateMemberRolesAction, ...)` direto para preservar
+   * o progressive enhancement sem JavaScript).
+   */
+  if (state !== syncedState) {
+    setSyncedState(state);
+    if (!state.ok) {
+      setSelected(currentRoles);
+    }
+  }
 
   function toggle(role: string) {
     setSelected((previous) =>

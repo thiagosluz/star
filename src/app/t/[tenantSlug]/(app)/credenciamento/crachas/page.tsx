@@ -10,7 +10,7 @@ import { BadgeRoster, type RosterCategoryOption, type RosterEntry } from '@/comp
 import { issueCredentialsAction, revokeCredentialAction } from '@/app/actions/credential-actions';
 import { setCredentialCategoryAction } from '@/app/actions/credential-category-actions';
 import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
-import { Alert, PageHeader } from '@/components/ui';
+import { Alert, GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Crachás' };
@@ -166,7 +166,7 @@ export default async function BadgesPage({
         </Alert>
       ) : null}
 
-      <form method="get" className="flex flex-wrap items-end gap-3" data-testid="badge-filters">
+      <GetSearchForm className="flex flex-wrap items-end gap-3" data-testid="badge-filters">
         <label className="space-y-1 text-xs font-medium">
           Evento
           <select
@@ -235,7 +235,7 @@ export default async function BadgesPage({
           <Search className="size-3.5" aria-hidden />
           Filtrar
         </button>
-      </form>
+      </GetSearchForm>
 
       {roster && !roster.ok ? (
         <p className="rounded-lg border border-destructive/40 bg-card p-4 text-sm text-destructive">

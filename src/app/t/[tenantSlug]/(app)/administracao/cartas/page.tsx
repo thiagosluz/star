@@ -20,7 +20,7 @@ import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { deleteCardTemplateAction } from '@/app/actions/admin-actions';
 import { restoreCardTemplateAction } from '@/app/actions/catalog-archive-actions';
 import { grantCardAction } from '@/app/actions/gamification-actions';
-import { PageHeader } from '@/components/ui';
+import { GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { TRIGGER_LABELS } from '@/components/gamification/card-form-fields';
 
@@ -359,8 +359,7 @@ export default async function AdminCardsPage({
               </p>
             </div>
 
-            <form
-              method="get"
+            <GetSearchForm
               action={tenantPath(tenantSlug, '/administracao/cartas')}
               className="flex items-center gap-2"
               data-testid="grant-participant-search"
@@ -383,7 +382,7 @@ export default async function AdminCardsPage({
                 <Search className="size-3.5" aria-hidden />
                 Buscar
               </button>
-            </form>
+            </GetSearchForm>
           </div>
 
           {totalParticipants > participants.length ? (

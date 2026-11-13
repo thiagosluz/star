@@ -314,6 +314,7 @@ export function ConfirmSubmitButton({
   testId: string;
 }) {
   const [open, setOpen] = useState(false);
+  const { pending } = useFormStatus();
 
   return (
     <>
@@ -321,11 +322,12 @@ export function ConfirmSubmitButton({
         type="button"
         variant={variant}
         size={size}
+        disabled={pending}
         onClick={() => setOpen(true)}
         data-testid={testId}
       >
-        {icon}
-        {label}
+        {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : icon}
+        {pending ? 'Processando…' : label}
       </Button>
 
       <ConfirmDialog

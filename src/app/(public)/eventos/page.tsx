@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { GetSearchForm } from '@/components/ui';
 import { KovenoMark } from '@/components/ui/brand-mark';
 import {
   EVENT_CATEGORIES,
@@ -223,10 +224,10 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
       <main className="mx-auto max-w-7xl px-6 py-10" data-testid="unified-events-explorer">
         {activeTab === 'eventos' && (
           <div>
-            {/* Barra de Filtros (Formulário GET sem dependência de JavaScript) */}
-            <form
-              method="get"
+            {/* Barra de Filtros (Formulário GET progressivo com fallback sem JS) */}
+            <GetSearchForm
               action="/eventos"
+              omitEmpty
               className="mb-8 space-y-4 rounded-2xl border border-border bg-card p-5 shadow-xs"
               role="search"
               data-testid="events-search-form"
@@ -353,7 +354,7 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
                   </button>
                 </div>
               </div>
-            </form>
+            </GetSearchForm>
 
             {/* Grid de Eventos */}
             {eventsResult && eventsResult.items.length > 0 ? (
@@ -516,7 +517,7 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
         {activeTab === 'instituicoes' && directoryResult && (
           <div data-testid="organizations-directory">
             {/* Busca rápida de instituições */}
-            <form method="get" action="/eventos" className="mb-6 flex max-w-xl gap-2" role="search">
+            <GetSearchForm action="/eventos" omitEmpty className="mb-6 flex max-w-xl gap-2" role="search">
               <input type="hidden" name="aba" value="instituicoes" />
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -537,7 +538,7 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
               >
                 Buscar
               </button>
-            </form>
+            </GetSearchForm>
 
             <p className="mb-6 text-xs text-muted-foreground" data-testid="directory-summary">
               {query

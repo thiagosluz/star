@@ -59,6 +59,8 @@ export interface RegistrationActionState {
   values?: {
     cpf?: string;
     accessibilityNotes?: string;
+    consentData?: boolean;
+    consentImage?: boolean;
     /**
      * ─────────────────────────────────────────────────────────────────────────────
      *  O QUE A PESSOA RESPONDEU NOS CAMPOS DECLARADOS (FASE 70 · fatia 4)
@@ -205,6 +207,11 @@ export async function registerForActivityAction(
       ok: false,
       code: 'CONSENT_REQUIRED',
       message: 'É necessário autorizar o tratamento dos seus dados para se inscrever.',
+      values: {
+        accessibilityNotes: data.accessibilityNotes,
+        consentData: data.consentData,
+        consentImage: data.consentImage,
+      },
     };
   }
 
@@ -336,6 +343,12 @@ export async function registerForEventAction(
       ok: false,
       code: 'CONSENT_REQUIRED',
       message: 'É necessário autorizar o tratamento dos seus dados para se inscrever.',
+      values: {
+        cpf: data.cpf,
+        accessibilityNotes: data.accessibilityNotes,
+        consentData: data.consentData,
+        consentImage: data.consentImage,
+      },
     };
   }
 
@@ -365,6 +378,8 @@ export async function registerForEventAction(
   const values = {
     cpf: data.cpf,
     accessibilityNotes: data.accessibilityNotes,
+    consentData: data.consentData,
+    consentImage: data.consentImage,
     declaredFields: typed,
   };
 
@@ -597,6 +612,8 @@ export async function completeEventRegistrationDataAction(
   const values = {
     cpf: data.cpf,
     accessibilityNotes: data.accessibilityNotes,
+    consentData: data.consentData,
+    consentImage: data.consentImage,
     declaredFields: typed,
   };
 

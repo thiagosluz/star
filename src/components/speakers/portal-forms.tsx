@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Trash2, Upload } from 'lucide-react';
 
-import { Alert, Button, ConfirmDialog, Field, Input, Select, Textarea, fieldAria } from '@/components/ui';
+import { Alert, Button, ConfirmDialog, Field, Input, Select, Textarea, fieldAria, startNavigationProgress } from '@/components/ui';
 import {
   MATERIAL_ACCEPT_ATTRIBUTE,
   MATERIAL_KINDS,
@@ -680,8 +680,9 @@ export function SpeakerNotesForm({
    */
   useEffect(() => {
     if (state?.ok && redirectTo) {
-                    router.push(redirectTo);
-                  router.refresh();
+      startNavigationProgress();
+      router.push(redirectTo);
+      router.refresh();
     }
   }, [state, redirectTo, router]);
 
@@ -718,7 +719,8 @@ export function SpeakerNotesForm({
                                 disabled={pending}
                                 data-testid={`claim-invite-${invite.speakerProfileId}`}
                               >
-                                Sou eu — assumir este perfil
+                                {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
+                                {pending ? 'Confirmando…' : 'Sou eu — assumir este perfil'}
                               </Button>
                             </form>
                           </li>
@@ -755,7 +757,8 @@ export function SpeakerNotesForm({
                           </div>
 
                           <Button type="submit" variant="outline" disabled={pending} data-testid="claim-by-token">
-                            Usar código
+                            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
+                            {pending ? 'Verificando…' : 'Usar código'}
                           </Button>
                         </form>
                       </details>

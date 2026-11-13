@@ -7,8 +7,7 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { listCertificatesForAdmin } from '@/lib/admin/gamification-admin-service';
 import { listAdminEvents } from '@/lib/admin/catalog-service';
 import { AdminForm, Field } from '@/components/admin/admin-form';
-import { Alert } from '@/components/ui';
-import { PageHeader } from '@/components/ui';
+import { Alert, GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
 import { retryCertificateAction, revokeCertificateAdminAction } from '@/app/actions/admin-actions';
@@ -137,7 +136,7 @@ export default async function AdminCertificatesPage({
         </Alert>
       ) : null}
 
-      <form method="get" className="flex flex-wrap items-end gap-3" data-testid="certificate-filters">
+      <GetSearchForm className="flex flex-wrap items-end gap-3" data-testid="certificate-filters">
         <label className="space-y-1 text-xs font-medium">
           Situação
           <select
@@ -185,7 +184,7 @@ export default async function AdminCertificatesPage({
         <button type="submit" className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
           Filtrar
         </button>
-      </form>
+      </GetSearchForm>
 
       {certificates.length === 0 ? (
         <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground" data-testid="certificates-admin-empty">

@@ -181,7 +181,13 @@ export function EventRegistrationForm({
         <legend className="mb-1 text-sm font-medium">Consentimentos</legend>
 
         <label className="flex items-start gap-2.5 text-sm">
-          <input type="checkbox" name="consentData" className="mt-0.5" required />
+          <input
+            type="checkbox"
+            name="consentData"
+            defaultChecked={Boolean(state?.values?.consentData)}
+            className="mt-0.5"
+            required
+          />
           <span>
             Autorizo o tratamento dos meus dados pessoais para fins de organização deste
             evento. <span className="ef-muted-on-card">(obrigatório)</span>
@@ -189,7 +195,12 @@ export function EventRegistrationForm({
         </label>
 
         <label className="flex items-start gap-2.5 text-sm">
-          <input type="checkbox" name="consentImage" className="mt-0.5" />
+          <input
+            type="checkbox"
+            name="consentImage"
+            defaultChecked={Boolean(state?.values?.consentImage)}
+            className="mt-0.5"
+          />
           <span>
             Autorizo o uso da minha imagem em registros e divulgação do evento.{' '}
             <span className="ef-muted-on-card">(opcional)</span>

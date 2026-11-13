@@ -14,7 +14,7 @@ import { listEventWaitlist } from '@/lib/events/registration-read-service';
 import { confirmRegistrationAction } from '@/app/actions/admin-actions';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { ConfirmationItemsChecklist } from '@/components/admin/confirmation-items-checklist';
-import { PageHeader } from '@/components/ui';
+import { GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 
 export const metadata = { title: 'Confirmações de vaga' };
@@ -219,7 +219,7 @@ export default async function EventConfirmationsPage({
                 ) : null}
 
                 {/* ── Busca: nome ou e-mail, resolvida no banco ─────────────── */}
-                <form method="get" className="mt-3 flex flex-wrap items-end gap-2">
+                <GetSearchForm className="mt-3 flex flex-wrap items-end gap-2">
                   <input type="hidden" name="atividade" value={queue.selected.activityId} />
                   <label className="space-y-1 text-xs">
                     <span className="block text-muted-foreground">
@@ -251,7 +251,7 @@ export default async function EventConfirmationsPage({
                       limpar
                     </Link>
                   ) : null}
-                </form>
+                </GetSearchForm>
               </section>
 
               {/* ── Quem aguarda confirmação ─────────────────────────────────── */}

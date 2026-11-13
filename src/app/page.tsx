@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import { ThemeChoice } from '@/components/theme/theme-choice';
+import { GetSearchForm } from '@/components/ui';
 import { KovenoMark } from '@/components/ui/brand-mark';
 import { getRequestContext } from '@/lib/auth/session';
 import { buildTenantUrl } from '@/domain/tenancy/resolution';
@@ -207,9 +208,9 @@ export default async function PlatformHomePage() {
 
           {/* Campo de Busca Rápida de Eventos */}
           <div className="mx-auto max-w-2xl">
-            <form
+            <GetSearchForm
               action="/eventos"
-              method="GET"
+              omitEmpty
               className="flex flex-col sm:flex-row items-stretch gap-2 rounded-xl border border-border bg-card p-2 shadow-sm"
               data-testid="home-search-form"
             >
@@ -231,7 +232,7 @@ export default async function PlatformHomePage() {
                 <span>Explorar</span>
                 <ArrowRight className="size-4" aria-hidden />
               </button>
-            </form>
+            </GetSearchForm>
 
             {/* Categorias em alta */}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">

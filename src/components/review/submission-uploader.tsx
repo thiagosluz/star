@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle2, FileUp, Loader2, ShieldCheck, XCircle } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -131,6 +132,12 @@ export function SubmissionUploader({
   const [file, setFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const isBusy = phase !== 'idle' && phase !== 'done' && phase !== 'error';
+
+  useUnsavedChanges(
+    isBusy,
+    'O envio do arquivo ainda está em andamento. Se sair agora, o upload será interrompido.',
+  );
 
   /**
    * Executa o fluxo completo. Chamado no submit do formulário, porque é aqui que
@@ -296,8 +303,9 @@ export function SubmissionUploader({
               ref={inputRef}
               type="file"
               accept="application/pdf,.pdf"
+              disabled={isBusy}
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="mb-2 block w-full max-w-56 text-xs file:mr-2 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
+              className="mb-2 block w-full max-w-56 text-xs file:mr-2 file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs disabled:cursor-not-allowed disabled:opacity-60"
               aria-label={KIND_LABELS[kind]}
             />
             <SubmitButton phase={phase} />
