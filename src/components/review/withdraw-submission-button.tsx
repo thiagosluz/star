@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
-import { Undo2 } from 'lucide-react';
+import { Loader2, Undo2 } from 'lucide-react';
 
 import { Button, ConfirmDialog } from '@/components/ui';
 import type { ActionState } from '@/app/actions/review-actions';
@@ -41,7 +41,7 @@ export function WithdrawSubmissionButton({
   title: string;
   action: (prev: ActionState | null, formData: FormData) => Promise<ActionState>;
 }) {
-  const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
+  const [state, formAction, pending] = useActionState<ActionState | null, FormData>(action, null);
   const [confirming, setConfirming] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -64,11 +64,16 @@ export function WithdrawSubmissionButton({
           type="button"
           variant="destructive"
           size="sm"
+          disabled={pending}
           onClick={() => setConfirming(true)}
           data-testid="withdraw-submission"
         >
-          <Undo2 className="size-3.5" aria-hidden />
-          Retirar submissão
+          {pending ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : (
+            <Undo2 className="size-3.5" aria-hidden />
+          )}
+          {pending ? 'Retirando…' : 'Retirar submissão'}
         </Button>
 
         <ConfirmDialog

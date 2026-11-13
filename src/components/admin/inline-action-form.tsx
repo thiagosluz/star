@@ -87,7 +87,7 @@ export function InlineActionForm<S extends InlineActionState>({
   className?: string;
   quietSuccess?: boolean;
 }) {
-  const [state, formAction] = useActionState<S | null, FormData>(action, null);
+  const [state, formAction, pending] = useActionState<S | null, FormData>(action, null);
   const [confirming, setConfirming] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -107,9 +107,11 @@ export function InlineActionForm<S extends InlineActionState>({
             type="button"
             variant={variant}
             size="sm"
+            disabled={pending}
             onClick={() => setConfirming(true)}
             data-testid={`${testId}-open`}
           >
+            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
             {submitLabel}
           </Button>
         ) : (

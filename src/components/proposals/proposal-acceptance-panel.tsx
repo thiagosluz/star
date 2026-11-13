@@ -2,11 +2,11 @@
 
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import Link from 'next/link';
 import { AlertCircle, CalendarPlus, CheckCircle2, Loader2, Mail } from 'lucide-react';
 
 import type { CallActionState } from '@/app/actions/call-actions';
-import { Button, Checkbox, Input, Label, Select, Textarea } from '@/components/ui';
+import { AppLink, Button, Checkbox, Input, Label, Select, Textarea } from '@/components/ui';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -118,6 +118,25 @@ export function ProposalAcceptancePanel({
   const [state, formAction] = useActionState<CallActionState | null, FormData>(action, null);
   const [createActivity, setCreateActivity] = useState(true);
   const [inviteSpeaker, setInviteSpeaker] = useState(Boolean(authorEmail));
+  const [selectedActivityType, setSelectedActivityType] = useState(activityType);
+  const [roomId, setRoomId] = useState('');
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [requiresRegistration, setRequiresRegistration] = useState(false);
+  const [notes, setNotes] = useState('');
+
+  const isDirty =
+    !decidedStatus &&
+    !state?.ok &&
+    (startsAt.trim().length > 0 ||
+      endsAt.trim().length > 0 ||
+      capacity.trim().length > 0 ||
+      roomId !== '' ||
+      requiresRegistration ||
+      notes.trim().length > 0);
+
+  useUnsavedChanges(isDirty);
 
   if (state?.ok) {
     const inviteToken = typeof state.data?.inviteToken === 'string' ? state.data.inviteToken : null;
@@ -183,13 +202,13 @@ export function ProposalAcceptancePanel({
         </p>
 
         <div className="flex flex-wrap gap-3 text-xs">
-          <Link
+          <AppLink
             href={`/t/${tenantSlug}/administracao/eventos/${eventId}`}
             className="underline underline-offset-4"
             data-testid="acceptance-go-to-program"
           >
             Ver a programação do evento →
-          </Link>
+          </AppLink>
         </div>
       </div>
     );
@@ -240,7 +259,8 @@ export function ProposalAcceptancePanel({
               <Select
                 id="activityType"
                 name="activityType"
-                defaultValue={activityType}
+                value={selectedActivityType}
+                onChange={(event) => setSelectedActivityType(event.target.value)}
                 aria-label="Tipo da atividade"
               >
                 {activityTypeOptions.map((option) => (
@@ -253,7 +273,13 @@ export function ProposalAcceptancePanel({
 
             <div className="space-y-1.5">
               <Label htmlFor="roomId">Sala</Label>
-              <Select id="roomId" name="roomId" defaultValue="" aria-label="Sala">
+              <Select
+                id="roomId"
+                name="roomId"
+                value={roomId}
+                onChange={(event) => setRoomId(event.target.value)}
+                aria-label="Sala"
+              >
                 {roomOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -268,6 +294,8 @@ export function ProposalAcceptancePanel({
                 id="startsAt"
                 name="startsAt"
                 type="datetime-local"
+                value={startsAt}
+                onChange={(event) => setStartsAt(event.target.value)}
                 required
                 aria-label="Início"
                 data-testid="acceptance-starts-at"
@@ -280,6 +308,8 @@ export function ProposalAcceptancePanel({
                 id="endsAt"
                 name="endsAt"
                 type="datetime-local"
+                value={endsAt}
+                onChange={(event) => setEndsAt(event.target.value)}
                 required
                 aria-label="Término"
                 data-testid="acceptance-ends-at"
@@ -293,13 +323,20 @@ export function ProposalAcceptancePanel({
                 name="capacity"
                 type="number"
                 min={0}
+                value={capacity}
+                onChange={(event) => setCapacity(event.target.value)}
                 aria-label="Vagas"
                 placeholder="Sem limite"
               />
             </div>
 
             <label className="flex items-start gap-2.5 self-end text-sm">
-              <Checkbox name="requiresRegistration" className="mt-0.5" />
+              <Checkbox
+                name="requiresRegistration"
+                checked={requiresRegistration}
+                onChange={(event) => setRequiresRegistration(event.target.checked)}
+                className="mt-0.5"
+              />
               <span className="text-xs text-muted-foreground">
                 Exige inscrição própria (sem marcar, a atividade é aberta a quem está inscrito no
                 evento).
@@ -341,6 +378,8 @@ export function ProposalAcceptancePanel({
           name="notes"
           rows={3}
           maxLength={2000}
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
           aria-label="Justificativa / observações"
           placeholder={`Ex.: aprovado para a grade de ${eventTimeZone}, com a carga horária declarada.`}
         />

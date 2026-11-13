@@ -1,12 +1,12 @@
 'use client';
 
-import Link from 'next/link';
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, Save, X } from 'lucide-react';
 
 import type { AdminActionState } from '@/app/actions/admin-actions';
-import { Checkbox, Input, Select } from '@/components/ui';
+import { AppLink, Checkbox, Input, Select } from '@/components/ui';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * Moldura do campo do painel: rótulo envolvente + dica.
@@ -58,8 +58,9 @@ function AdminFieldShell({
  *  ciclo de envio, não do conteúdo.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
+function SubmitButton({ label, pendingOverride = false }: { label: string; pendingOverride?: boolean }) {
+  const { pending: formStatusPending } = useFormStatus();
+  const pending = formStatusPending || pendingOverride;
 
   return (
     <button
@@ -82,6 +83,7 @@ export function AdminForm({
   compact = false,
   backHref,
   backLabel,
+  warnUnsaved,
 }: {
   action: (prev: AdminActionState | null, formData: FormData) => Promise<AdminActionState>;
   submitLabel: string;
@@ -95,14 +97,37 @@ export function AdminForm({
    */
   backHref?: string;
   backLabel?: string;
+  /** Ativa proteção contra perda de alterações não salvas (padrão: ativo nas rotas dedicadas com `backHref`). */
+  warnUnsaved?: boolean;
 }) {
-  const [state, formAction] = useActionState<AdminActionState | null, FormData>(action, null);
+  const [dirty, setDirty] = useState(false);
+  const [isTransitionPending, startTransition] = useTransition();
+  // Passa `action` direto para `useActionState` preservar os campos `$ACTION_*` no HTML SSR
+  // (progressive enhancement sem JavaScript).
+  const [state, formAction, actionPending] = useActionState<AdminActionState | null, FormData>(
+    action,
+    null,
+  );
+  const [lastSavedState, setLastSavedState] = useState<AdminActionState | null>(null);
+  if (state?.ok && state !== lastSavedState) {
+    setLastSavedState(state);
+    setDirty(false);
+  }
   const [dismissedState, setDismissedState] = useState<AdminActionState | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const toastVisible = state !== null && state !== dismissedState;
 
+  useUnsavedChanges(Boolean(warnUnsaved ?? backHref) && dirty && !state?.ok);
+
   useEffect(() => {
     if (!state) return;
+
+    // Preserva todos os campos preenchidos em erro `{ ok: false }` (evita o reset nativo
+    // do React 19 via submit interceptado) e limpa/ressincroniza apenas no sucesso.
+    if (state.ok) {
+      formRef.current?.reset();
+    }
 
     feedbackRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
 
@@ -113,11 +138,27 @@ export function AdminForm({
     return () => clearTimeout(timer);
   }, [state]);
 
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => {
+      formAction(formData);
+    });
+  }
+
   return (
-    <form action={formAction} className={compact ? 'space-y-3' : 'space-y-4'} data-testid={testId}>
+    <form
+      ref={formRef}
+      action={formAction}
+      onSubmit={handleSubmit}
+      onInput={() => setDirty(true)}
+      onChange={() => setDirty(true)}
+      className={compact ? 'space-y-3' : 'space-y-4'}
+      data-testid={testId}
+    >
       {children}
 
-      <SubmitButton label={submitLabel} />
+      <SubmitButton label={submitLabel} pendingOverride={actionPending || isTransitionPending} />
 
       {state ? (
         <div
@@ -139,14 +180,14 @@ export function AdminForm({
             </p>
 
             {state.ok && backHref ? (
-              <Link
+              <AppLink
                 href={backHref}
                 data-testid={`${testId}-back-link`}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-low px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
               >
                 <ArrowLeft className="size-3.5" aria-hidden />
                 {backLabel ?? 'Ver na listagem'}
-              </Link>
+              </AppLink>
             ) : null}
           </div>
 
@@ -173,13 +214,13 @@ export function AdminForm({
           )}
           <span className="min-w-0 flex-1 text-xs font-medium">{state.message}</span>
           {state.ok && backHref ? (
-            <Link
+            <AppLink
               href={backHref}
               tabIndex={-1}
               className="shrink-0 rounded-md border border-border bg-surface-low px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
             >
               {backLabel ?? 'Ver na listagem'}
-            </Link>
+            </AppLink>
           ) : null}
           <button
             type="button"

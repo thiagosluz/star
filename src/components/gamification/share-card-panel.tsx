@@ -98,6 +98,8 @@ export function ShareCardPanel({
   const [created, createFormAction, creating] = useActionState(createAction, null);
   const [revoked, revokeFormAction, revoking] = useActionState(revokeAction, null);
 
+  const [validity, setValidity] = useState<string>(DEFAULT_SHARE_VALIDITY);
+  const [customDay, setCustomDay] = useState('');
   const [copied, setCopied] = useState(false);
 
   /**
@@ -226,7 +228,8 @@ export function ShareCardPanel({
               Prazo do link
               <select
                 name="validade"
-                defaultValue={DEFAULT_SHARE_VALIDITY}
+                value={validity}
+                onChange={(event) => setValidity(event.target.value)}
                 data-testid="share-validity"
                 className="block min-w-48 rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
               >
@@ -243,6 +246,8 @@ export function ShareCardPanel({
               <input
                 type="date"
                 name="dia"
+                value={customDay}
+                onChange={(event) => setCustomDay(event.target.value)}
                 data-testid="share-validity-day"
                 className="block rounded-md border border-border bg-background px-3 py-2 text-sm font-normal"
               />

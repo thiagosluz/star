@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect } from 'react';
 
 import { errorContent, type ErrorArea } from '@/domain/platform/error-pages';
+import { AppLink } from '@/components/ui/app-link';
 import { Button, buttonClasses } from '@/components/ui/button';
 
 /**
@@ -67,9 +67,9 @@ export function AreaError({
           <Button onClick={reset}>{content.retryLabel}</Button>
 
           {content.exits.map((exit) => (
-            <Link key={exit.href} href={exit.href} className={buttonClasses({ variant: 'outline' })}>
+            <AppLink key={exit.href} href={exit.href} className={buttonClasses({ variant: 'outline' })}>
               {exit.label}
-            </Link>
+            </AppLink>
           ))}
         </div>
       </div>

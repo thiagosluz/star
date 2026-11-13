@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { Send } from 'lucide-react';
 
@@ -9,6 +9,7 @@ import {
   MESSAGE_BODY_MAX,
   MESSAGE_SUBJECT_MAX,
 } from '@/domain/participants/participant-rules';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -46,7 +47,18 @@ export function MessageComposer({
   label: string;
   compact?: boolean;
 }) {
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
   const [state, formAction] = useActionState<ParticipantActionState | null, FormData>(action, null);
+  const [lastClearedState, setLastClearedState] = useState<ParticipantActionState | null>(null);
+  if (state?.ok && state !== lastClearedState) {
+    setLastClearedState(state);
+    setSubject('');
+    setBody('');
+  }
+
+  const isDirty = subject.trim().length > 0 || body.trim().length > 0;
+  useUnsavedChanges(isDirty);
 
   const failures = Array.isArray(state?.data?.failures) ? (state.data.failures as string[]) : [];
 
@@ -65,6 +77,8 @@ export function MessageComposer({
             name="subject"
             required
             maxLength={MESSAGE_SUBJECT_MAX}
+            value={subject}
+            onChange={(event) => setSubject(event.target.value)}
             placeholder="Ex.: Credenciamento abre às 8h"
             aria-label="Assunto do recado"
             data-testid="message-subject"
@@ -79,6 +93,8 @@ export function MessageComposer({
             required
             rows={compact ? 3 : 5}
             maxLength={MESSAGE_BODY_MAX}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
             placeholder="Escreva o recado. Ele vai por e-mail e fica na área do participante."
             aria-label="Mensagem"
             data-testid="message-body"

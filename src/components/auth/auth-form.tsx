@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/app/actions/auth-actions";
 
@@ -45,6 +45,8 @@ export function AuthForm({
     action,
     null,
   );
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
 
   const isSignUp = mode === "signup";
 
@@ -75,6 +77,8 @@ export function AuthForm({
             required
             minLength={3}
             maxLength={160}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
             className={inputClass}
           />
           <FieldError errors={state?.fieldErrors?.name} />
@@ -92,6 +96,8 @@ export function AuthForm({
           autoComplete="email"
           required
           maxLength={255}
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
           className={inputClass}
         />
         <FieldError errors={state?.fieldErrors?.email} />

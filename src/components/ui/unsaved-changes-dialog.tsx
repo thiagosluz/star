@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import {
   KOVENO_UNSAVED_LEAVE_REQUEST_EVENT,
+  allowNextPopstate,
   allowNextUnload,
   type UnsavedLeaveRequestDetail,
 } from '@/hooks/use-unsaved-changes';
@@ -44,8 +45,16 @@ export function UnsavedChangesDialog() {
 
   const handleConfirmLeave = () => {
     if (!pendingRequest) return;
-    const { href } = pendingRequest;
+    const { href, mode } = pendingRequest;
     setPendingRequest(null);
+
+    if (mode === 'history-back') {
+      startNavigationProgress();
+      allowNextPopstate();
+      allowNextUnload();
+      window.history.back();
+      return;
+    }
 
     try {
       const url = new URL(href, window.location.href);

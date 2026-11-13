@@ -1,10 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { ArrowRight, CheckCircle2, Copy, Loader2, Plus, RefreshCw, ShieldCheck, Unlink, UserPlus, X } from 'lucide-react';
 
-import { Alert, Button, ConfirmDialog, Field, Input, Select, fieldAria } from '@/components/ui';
+import { Alert, AppLink, Button, ConfirmDialog, Field, Input, Select, fieldAria } from '@/components/ui';
 import {
   PHOTO_AUTHORIZATION_CHANNELS,
   PHOTO_AUTHORIZATION_CHANNEL_LABELS,
@@ -71,14 +70,14 @@ function Feedback({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span>{state.message ?? (state.ok ? 'Pronto.' : 'Não foi possível concluir.')}</span>
           {state.ok && backHref ? (
-            <Link
+            <AppLink
               href={backHref}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-current/25 bg-background/80 px-3 py-1 text-xs font-semibold text-foreground shadow-xs transition-colors hover:bg-background"
               data-testid="speaker-form-back-link"
             >
               {backLabel}
               <ArrowRight className="size-3.5" aria-hidden />
-            </Link>
+            </AppLink>
           ) : null}
         </div>
         {state.details && state.details.length > 0 ? (
@@ -100,12 +99,12 @@ function Feedback({
           <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden />
           <span className="font-medium">{state.message ?? 'Operação concluída com sucesso.'}</span>
           {backHref ? (
-            <Link
+            <AppLink
               href={backHref}
               className="ml-1 shrink-0 text-xs font-semibold text-primary underline underline-offset-4"
             >
               {backLabel}
-            </Link>
+            </AppLink>
           ) : null}
           <button
             type="button"
@@ -529,7 +528,7 @@ export function SpeakerCreateForm({
 
           <Button type="submit" disabled={pending} data-testid="save-speaker">
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Plus className="size-4" aria-hidden />}
-            Salvar palestrante
+            {pending ? 'Salvando…' : 'Salvar palestrante'}
           </Button>
         </form>
       ) : null}
@@ -586,7 +585,7 @@ export function SpeakerEditForm({
         <Feedback state={guardMessage ? { ok: false, message: guardMessage } : state} />
         <Button type="submit" disabled={pending} data-testid={`save-speaker-${speaker.speakerProfileId}`}>
           {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-          Salvar alterações
+          {pending ? 'Salvando…' : 'Salvar alterações'}
         </Button>
       </form>
     </details>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 
 import { Button, ConfirmDialog } from '@/components/ui';
 import {
@@ -30,7 +30,7 @@ export function CancelRegistrationButton({
   eventSlug: string;
   registrationId: string;
 }) {
-  const [state, formAction] = useActionState<RegistrationActionState | null, FormData>(
+  const [state, formAction, pending] = useActionState<RegistrationActionState | null, FormData>(
     cancelRegistrationAction,
     null,
   );
@@ -58,11 +58,16 @@ export function CancelRegistrationButton({
           type="button"
           variant="destructive"
           size="sm"
+          disabled={pending}
           onClick={() => setConfirming(true)}
           data-testid="cancel-registration-open"
         >
-          <X className="size-3" aria-hidden />
-          Cancelar
+          {pending ? (
+            <Loader2 className="size-3 animate-spin" aria-hidden />
+          ) : (
+            <X className="size-3" aria-hidden />
+          )}
+          {pending ? 'Cancelando…' : 'Cancelar'}
         </Button>
 
         <ConfirmDialog

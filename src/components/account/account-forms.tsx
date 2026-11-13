@@ -118,7 +118,7 @@ export function AccountProfileForm({
 
       <Button type="submit" disabled={pending} data-testid="save-account-profile">
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-        Salvar nome
+        {pending ? 'Salvando…' : 'Salvar nome'}
       </Button>
     </form>
   );
@@ -194,7 +194,7 @@ export function AccountEmailForm({
 
       <Button type="submit" variant="outline" disabled={pending} data-testid="request-email-change">
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-        Trocar e-mail
+        {pending ? 'Enviando…' : 'Trocar e-mail'}
       </Button>
     </form>
   );

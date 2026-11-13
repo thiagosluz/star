@@ -84,13 +84,31 @@ export function ParticipantFilterBar({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hasFiltered, setHasFiltered] = useState(false);
+
+  const latestFiltersRef = useRef({
+    busca: initialBusca,
+    evento: initialEvento ?? '',
+    certificado: initialCertificado,
+    presente: initialPresente,
+  });
+
+  useEffect(() => {
+    latestFiltersRef.current = { busca, evento, certificado, presente };
+  }, [busca, evento, certificado, presente]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
 
   const applyFilters = useCallback(
     ({
-      nextBusca = busca,
-      nextEvento = evento,
-      nextCertificado = certificado,
-      nextPresente = presente,
+      nextBusca = latestFiltersRef.current.busca,
+      nextEvento = latestFiltersRef.current.evento,
+      nextCertificado = latestFiltersRef.current.certificado,
+      nextPresente = latestFiltersRef.current.presente,
     }: {
       nextBusca?: string;
       nextEvento?: string;
@@ -132,26 +150,38 @@ export function ParticipantFilterBar({
 
       if (targetUrl === currentUrl) return;
 
+      setHasFiltered(true);
       startNavigationProgress();
       startTransition(() => {
         router.replace(targetUrl, { scroll: false });
       });
     },
-    [busca, certificado, evento, presente, router, searchParams, tenantSlug],
+    [router, searchParams, tenantSlug],
   );
 
-  // Atalho de teclado: "/" para focar, "Escape" para limpar
+  // Atalho de teclado: "/" para focar, "Escape" para limpar ou desfocar
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (
-        e.key === '/' &&
-        !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)
-      ) {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const targetElement = e.target as HTMLElement | null;
+      const isInputOrEditable =
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetElement?.tagName ?? '') ||
+        Boolean(targetElement?.isContentEditable) ||
+        Boolean(activeElement?.isContentEditable);
+
+      if (e.key === '/' && !isInputOrEditable) {
         e.preventDefault();
         inputRef.current?.focus();
       } else if (e.key === 'Escape' && document.activeElement === inputRef.current) {
-        setBusca('');
-        applyFilters({ nextBusca: '' });
+        if (latestFiltersRef.current.busca.trim().length > 0) {
+          e.preventDefault();
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          setBusca('');
+          latestFiltersRef.current.busca = '';
+          applyFilters({ nextBusca: '' });
+        } else {
+          inputRef.current?.blur();
+        }
       }
     }
 
@@ -161,6 +191,7 @@ export function ParticipantFilterBar({
 
   function handleBuscaChange(val: string) {
     setBusca(val);
+    latestFiltersRef.current.busca = val;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       applyFilters({ nextBusca: val });
@@ -169,16 +200,22 @@ export function ParticipantFilterBar({
 
   function handleEventoChange(val: string) {
     setEvento(val);
+    latestFiltersRef.current.evento = val;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     applyFilters({ nextEvento: val });
   }
 
   function handleCertificadoChange(checked: boolean) {
     setCertificado(checked);
+    latestFiltersRef.current.certificado = checked;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     applyFilters({ nextCertificado: checked });
   }
 
   function handlePresenteChange(checked: boolean) {
     setPresente(checked);
+    latestFiltersRef.current.presente = checked;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     applyFilters({ nextPresente: checked });
   }
 
@@ -193,6 +230,13 @@ export function ParticipantFilterBar({
       className="flex flex-wrap items-end gap-3"
       data-testid="participant-filters"
     >
+      <span className="sr-only" aria-live="polite" data-testid="participant-filter-live">
+        {isPending
+          ? 'Atualizando lista de participantes...'
+          : hasFiltered
+            ? 'Lista de participantes atualizada.'
+            : ''}
+      </span>
       <label className="space-y-1 text-xs font-medium">
         Buscar
         <div className="relative">

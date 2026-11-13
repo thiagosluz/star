@@ -8,13 +8,60 @@ export interface UnsavedLeaveRequestDetail {
   href: string;
   message: string;
   title?: string;
+  mode?: 'navigate' | 'history-back';
 }
 
 // Permite concluir uma saída externa/documental depois que o usuário já confirmou no modal do sistema
 let bypassNextBeforeUnload = false;
+// Permite concluir o retorno do histórico após confirmação no diálogo em `popstate`
+let bypassNextPopstate = false;
+
+interface ActivePopstateGuard {
+  guardedHref: string;
+  guardedState: unknown;
+  message: string;
+}
+
+let activePopstateGuard: ActivePopstateGuard | null = null;
+let popstateInterceptorInstalled = false;
+
+/**
+ * Em `window` (`target === currentTarget`), o Chromium executa ouvintes de `popstate`
+ * na ordem de registro, ignorando `capture` quando outro ouvinte já está no alvo.
+ * Registrar este despachante único na avaliação do módulo — carregado pelo `RootLayout`
+ * via `<UnsavedChangesDialog />` antes do `useEffect` do AppRouter — garante que
+ * `stopImmediatePropagation()` sempre chegue antes do roteador do Next.js.
+ */
+function ensurePopstateInterceptor() {
+  if (typeof window === 'undefined' || popstateInterceptorInstalled) return;
+  popstateInterceptorInstalled = true;
+
+  window.addEventListener(
+    'popstate',
+    (e: PopStateEvent) => {
+      if (bypassNextPopstate) {
+        bypassNextPopstate = false;
+        return;
+      }
+      if (!activePopstateGuard) return;
+
+      const { guardedHref, guardedState, message } = activePopstateGuard;
+      e.stopImmediatePropagation();
+      window.history.pushState(guardedState, '', guardedHref);
+      requestUnsavedLeave({ href: guardedHref, mode: 'history-back', message });
+    },
+    true,
+  );
+}
+
+ensurePopstateInterceptor();
 
 export function allowNextUnload() {
   bypassNextBeforeUnload = true;
+}
+
+export function allowNextPopstate() {
+  bypassNextPopstate = true;
 }
 
 export function requestUnsavedLeave(detail: UnsavedLeaveRequestDetail) {
@@ -53,6 +100,14 @@ export function useUnsavedChanges(
   useEffect(() => {
     if (!isDirty) return;
 
+    ensurePopstateInterceptor();
+    const guardEntry: ActivePopstateGuard = {
+      guardedHref: window.location.href,
+      guardedState: window.history.state,
+      message,
+    };
+    activePopstateGuard = guardEntry;
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (bypassNextBeforeUnload) {
         bypassNextBeforeUnload = false;
@@ -87,13 +142,16 @@ export function useUnsavedChanges(
 
       e.preventDefault();
       e.stopPropagation();
-      requestUnsavedLeave({ href: anchor.href, message });
+      requestUnsavedLeave({ href: anchor.href, mode: 'navigate', message });
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('click', handleClick, true);
 
     return () => {
+      if (activePopstateGuard === guardEntry) {
+        activePopstateGuard = null;
+      }
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('click', handleClick, true);
     };

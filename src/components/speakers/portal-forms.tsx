@@ -23,6 +23,7 @@ import { formatBytes } from '@/domain/events/image-rules';
 import type { SpeakerActionState } from '@/app/actions/speaker-actions';
 import { uploadSpeakerMaterial, type SpeakerUploadAction } from '@/components/speakers/material-upload';
 import { SpeakerPhotoField } from '@/components/speakers/speaker-photo-field';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -85,7 +86,46 @@ export function SpeakerProfileForm({
   requestAvatarAction: SpeakerUploadAction;
   confirmAvatarAction: SpeakerUploadAction;
 }) {
-  const [state, formAction, pending] = useActionState(updateAction, null);
+  const initialSocialLinks: Record<string, string> = {};
+  for (const network of SOCIAL_NETWORKS) {
+    initialSocialLinks[network] = initial.socialLinks[network] ?? '';
+  }
+
+  const initialValues = {
+    name: initial.name,
+    email: initial.email ?? '',
+    institution: initial.institution ?? '',
+    company: initial.company ?? '',
+    roleTitle: initial.roleTitle ?? '',
+    bio: initial.bio ?? '',
+    socialLinks: initialSocialLinks,
+  };
+
+  const [fields, setFields] = useState(initialValues);
+  const [lastSaved, setLastSaved] = useState(initialValues);
+
+  const [state, formAction, pending] = useActionState<SpeakerActionState | null, FormData>(
+    updateAction,
+    null,
+  );
+  const [lastSyncedState, setLastSyncedState] = useState<SpeakerActionState | null>(null);
+  if (state?.ok && state !== lastSyncedState) {
+    setLastSyncedState(state);
+    setLastSaved(fields);
+  }
+
+  const isDirty =
+    fields.name !== lastSaved.name ||
+    fields.email !== lastSaved.email ||
+    fields.institution !== lastSaved.institution ||
+    fields.company !== lastSaved.company ||
+    fields.roleTitle !== lastSaved.roleTitle ||
+    fields.bio !== lastSaved.bio ||
+    SOCIAL_NETWORKS.some(
+      (network) => (fields.socialLinks[network] ?? '') !== (lastSaved.socialLinks[network] ?? ''),
+    );
+
+  useUnsavedChanges(isDirty);
 
   return (
     <form action={formAction} className="space-y-4" data-testid={`speaker-profile-form-${speakerProfileId}`}>
@@ -109,28 +149,62 @@ export function SpeakerProfileForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field name="name" label="Nome público" hint="É o nome que aparece na vitrine e no certificado.">
-          <Input {...fieldAria('name')} defaultValue={initial.name} required minLength={3} maxLength={160} />
+          <Input
+            {...fieldAria('name')}
+            value={fields.name}
+            onChange={(event) => setFields((prev) => ({ ...prev, name: event.target.value }))}
+            required
+            minLength={3}
+            maxLength={160}
+          />
         </Field>
 
         <Field name="email" label="E-mail de contato" hint="Usado pela organização; não aparece na página.">
-          <Input {...fieldAria('email')} type="email" defaultValue={initial.email ?? ''} maxLength={255} />
+          <Input
+            {...fieldAria('email')}
+            type="email"
+            value={fields.email}
+            onChange={(event) => setFields((prev) => ({ ...prev, email: event.target.value }))}
+            maxLength={255}
+          />
         </Field>
 
         <Field name="institution" label="Instituição">
-          <Input {...fieldAria('institution')} defaultValue={initial.institution ?? ''} maxLength={200} />
+          <Input
+            {...fieldAria('institution')}
+            value={fields.institution}
+            onChange={(event) => setFields((prev) => ({ ...prev, institution: event.target.value }))}
+            maxLength={200}
+          />
         </Field>
 
         <Field name="company" label="Empresa">
-          <Input {...fieldAria('company')} defaultValue={initial.company ?? ''} maxLength={200} />
+          <Input
+            {...fieldAria('company')}
+            value={fields.company}
+            onChange={(event) => setFields((prev) => ({ ...prev, company: event.target.value }))}
+            maxLength={200}
+          />
         </Field>
 
         <Field name="roleTitle" label="Como você quer ser apresentado" hint="Ex.: Keynote, Instrutor(a), Painelista.">
-          <Input {...fieldAria('roleTitle')} defaultValue={initial.roleTitle ?? ''} maxLength={120} />
+          <Input
+            {...fieldAria('roleTitle')}
+            value={fields.roleTitle}
+            onChange={(event) => setFields((prev) => ({ ...prev, roleTitle: event.target.value }))}
+            maxLength={120}
+          />
         </Field>
       </div>
 
       <Field name="bio" label="Biografia" hint="Aparece na vitrine do evento e na sua ficha. Até 4000 caracteres.">
-        <Textarea {...fieldAria('bio')} defaultValue={initial.bio ?? ''} rows={6} maxLength={4000} />
+        <Textarea
+          {...fieldAria('bio')}
+          value={fields.bio}
+          onChange={(event) => setFields((prev) => ({ ...prev, bio: event.target.value }))}
+          rows={6}
+          maxLength={4000}
+        />
       </Field>
 
       <fieldset className="space-y-3">
@@ -140,7 +214,13 @@ export function SpeakerProfileForm({
             <Field key={network} name={`social_${network}`} label={SOCIAL_NETWORK_LABELS[network]}>
               <Input
                 {...fieldAria(`social_${network}`)}
-                defaultValue={initial.socialLinks[network] ?? ''}
+                value={fields.socialLinks[network] ?? ''}
+                onChange={(event) =>
+                  setFields((prev) => ({
+                    ...prev,
+                    socialLinks: { ...prev.socialLinks, [network]: event.target.value },
+                  }))
+                }
                 placeholder={
                   network === 'website' ? 'https://seusite.com' : `https://${network}.com/...`
                 }
@@ -155,7 +235,7 @@ export function SpeakerProfileForm({
 
       <Button type="submit" disabled={pending} data-testid="save-speaker-profile">
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-        Salvar perfil
+        {pending ? 'Salvando…' : 'Salvar perfil'}
       </Button>
     </form>
   );
@@ -179,7 +259,31 @@ export function SpeakerNotesForm({
   initial: { syllabus: string | null; requirements: string | null; bibliography: string | null };
   action: SpeakerUploadAction;
 }) {
-  const [state, formAction, pending] = useActionState(action, null);
+  const initialNotes = {
+    syllabus: initial.syllabus ?? '',
+    requirements: initial.requirements ?? '',
+    bibliography: initial.bibliography ?? '',
+  };
+
+  const [notes, setNotes] = useState(initialNotes);
+  const [lastSaved, setLastSaved] = useState(initialNotes);
+
+  const [state, formAction, pending] = useActionState<SpeakerActionState | null, FormData>(
+    action,
+    null,
+  );
+  const [lastSyncedState, setLastSyncedState] = useState<SpeakerActionState | null>(null);
+  if (state?.ok && state !== lastSyncedState) {
+    setLastSyncedState(state);
+    setLastSaved(notes);
+  }
+
+  const isDirty =
+    notes.syllabus !== lastSaved.syllabus ||
+    notes.requirements !== lastSaved.requirements ||
+    notes.bibliography !== lastSaved.bibliography;
+
+  useUnsavedChanges(isDirty);
 
   return (
       <details className="rounded-lg border border-border bg-card p-4" data-testid={`speaker-notes-${linkId}`}>
@@ -197,13 +301,20 @@ export function SpeakerNotesForm({
             label="Conteúdo programático"
             hint="A ementa detalhada aparece na página pública assinada por você."
           >
-            <Textarea {...fieldAria('syllabus')} defaultValue={initial.syllabus ?? ''} rows={5} maxLength={6000} />
+            <Textarea
+              {...fieldAria('syllabus')}
+              value={notes.syllabus}
+              onChange={(event) => setNotes((prev) => ({ ...prev, syllabus: event.target.value }))}
+              rows={5}
+              maxLength={6000}
+            />
           </Field>
 
           <Field name="requirements" label="Pré-requisitos e ferramentas" hint="Ex.: notebook com Python instalado.">
             <Textarea
               {...fieldAria('requirements')}
-              defaultValue={initial.requirements ?? ''}
+              value={notes.requirements}
+              onChange={(event) => setNotes((prev) => ({ ...prev, requirements: event.target.value }))}
               rows={3}
               maxLength={6000}
             />
@@ -212,7 +323,8 @@ export function SpeakerNotesForm({
           <Field name="bibliography" label="Bibliografia recomendada">
             <Textarea
               {...fieldAria('bibliography')}
-              defaultValue={initial.bibliography ?? ''}
+              value={notes.bibliography}
+              onChange={(event) => setNotes((prev) => ({ ...prev, bibliography: event.target.value }))}
               rows={3}
               maxLength={6000}
             />
@@ -222,7 +334,7 @@ export function SpeakerNotesForm({
 
           <Button type="submit" variant="outline" disabled={pending} data-testid={`save-notes-${linkId}`}>
             {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-            Salvar conteúdo
+            {pending ? 'Salvando…' : 'Salvar conteúdo'}
           </Button>
         </form>
       </details>

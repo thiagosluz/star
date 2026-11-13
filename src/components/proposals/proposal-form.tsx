@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Send } from 'lucide-react';
@@ -8,7 +7,7 @@ import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Send } from 'lucide-rea
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 import type { CallActionState } from '@/app/actions/call-actions';
-import { Button, Input, Label, Textarea } from '@/components/ui';
+import { AppLink, Button, Input, Label, Textarea } from '@/components/ui';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   MAX_ABSTRACT_LENGTH,
@@ -134,14 +133,14 @@ export function ProposalForm({
         */}
         {state.redirectTo ? (
           <p>
-            <Link
+            <AppLink
               href={state.redirectTo}
               className="inline-flex items-center gap-1 text-sm underline underline-offset-4"
               data-testid="proposal-received-link"
             >
               Ver a proposta
               <ArrowRight className="size-3.5" aria-hidden />
-            </Link>
+            </AppLink>
           </p>
         ) : null}
       </div>
@@ -330,13 +329,13 @@ export function ProposalForm({
           */}
           {state.code === 'DRAFT_FILE_LIMIT_REACHED' ? (
             <p className="pt-1 text-xs">
-              <Link
+              <AppLink
                 href={tenantPath(tenantSlug, '/submissoes')}
                 className="font-medium underline underline-offset-4"
                 data-testid="proposal-draft-ceiling-link"
               >
                 Ver meus rascunhos
-              </Link>
+              </AppLink>
             </p>
           ) : null}
         </div>

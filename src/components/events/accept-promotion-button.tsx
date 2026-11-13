@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
-import { BadgeCheck } from 'lucide-react';
+import { BadgeCheck, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui';
 import {
@@ -42,7 +42,7 @@ export function AcceptPromotionButton({
   registrationId: string;
   deadlineLabel: string;
 }) {
-  const [state, formAction] = useActionState<RegistrationActionState | null, FormData>(
+  const [state, formAction, pending] = useActionState<RegistrationActionState | null, FormData>(
     acceptPromotionAction,
     null,
   );
@@ -62,9 +62,13 @@ export function AcceptPromotionButton({
         <input type="hidden" name="eventSlug" value={eventSlug} />
         <input type="hidden" name="registrationId" value={registrationId} />
 
-        <Button type="submit" size="sm" data-testid="accept-promotion">
-          <BadgeCheck className="size-3" aria-hidden />
-          Aceitar a vaga
+        <Button type="submit" size="sm" disabled={pending} data-testid="accept-promotion">
+          {pending ? (
+            <Loader2 className="size-3 animate-spin" aria-hidden />
+          ) : (
+            <BadgeCheck className="size-3" aria-hidden />
+          )}
+          {pending ? 'Aceitando…' : 'Aceitar a vaga'}
         </Button>
       </form>
 

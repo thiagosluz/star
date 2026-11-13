@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { CheckCircle2, Clock, Hourglass, UserPlus } from 'lucide-react';
 
@@ -43,6 +43,9 @@ export function RegistrationForm({
     registerForActivityAction,
     null,
   );
+  const [accessibilityNotes, setAccessibilityNotes] = useState('');
+  const [consentData, setConsentData] = useState(false);
+  const [consentImage, setConsentImage] = useState(false);
 
   // ── Já inscrito ────────────────────────────────────────────────────────────
   if (alreadyRegistered) {
@@ -141,6 +144,8 @@ export function RegistrationForm({
           name="accessibilityNotes"
           rows={2}
           maxLength={600}
+          value={accessibilityNotes}
+          onChange={(event) => setAccessibilityNotes(event.target.value)}
           className="w-full px-3 py-2 text-sm"
           style={{
             borderRadius: 'var(--ef-radius)',
@@ -155,7 +160,14 @@ export function RegistrationForm({
         <legend className="mb-1 text-sm font-medium">Consentimentos</legend>
 
         <label className="flex items-start gap-2.5 text-sm">
-          <input type="checkbox" name="consentData" className="mt-0.5" required />
+          <input
+            type="checkbox"
+            name="consentData"
+            checked={consentData}
+            onChange={(event) => setConsentData(event.target.checked)}
+            className="mt-0.5"
+            required
+          />
           <span>
             Autorizo o tratamento dos meus dados pessoais para fins de organização
             deste evento. <span className="ef-muted-on-card">(obrigatório)</span>
@@ -163,7 +175,13 @@ export function RegistrationForm({
         </label>
 
         <label className="flex items-start gap-2.5 text-sm">
-          <input type="checkbox" name="consentImage" className="mt-0.5" />
+          <input
+            type="checkbox"
+            name="consentImage"
+            checked={consentImage}
+            onChange={(event) => setConsentImage(event.target.checked)}
+            className="mt-0.5"
+          />
           <span>
             Autorizo o uso da minha imagem em registros e divulgação do evento.{' '}
             <span className="ef-muted-on-card">(opcional)</span>

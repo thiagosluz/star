@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Loader2, Trash2 } from 'lucide-react';
 
 import { Button, ConfirmDialog } from '@/components/ui';
 import type { ActionState } from '@/app/actions/review-actions';
@@ -41,7 +41,7 @@ export function DeleteDraftButton({
   variant?: 'destructive' | 'ghost';
   label?: string;
 }) {
-  const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
+  const [state, formAction, pending] = useActionState<ActionState | null, FormData>(action, null);
   const [confirming, setConfirming] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -56,11 +56,16 @@ export function DeleteDraftButton({
           type="button"
           variant={variant}
           size="sm"
+          disabled={pending}
           onClick={() => setConfirming(true)}
           data-testid={testId}
         >
-          <Trash2 className="size-3.5" aria-hidden />
-          {label}
+          {pending ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          ) : (
+            <Trash2 className="size-3.5" aria-hidden />
+          )}
+          {pending ? 'Excluindo…' : label}
         </Button>
 
         <ConfirmDialog

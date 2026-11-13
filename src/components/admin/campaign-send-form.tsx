@@ -58,7 +58,7 @@ function SubmitButton({
       data-testid={testId}
     >
       {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : icon}
-      {label}
+      {pending ? 'Processando…' : label}
     </Button>
   );
 }

@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 106** (**F56 a F106 entregues**)
-Testes ................. **4849** (Vitest: unit + integração, 284 arquivos) + **535** (Playwright E2E) + 1 skip
-ADRs ................... 438 (numeração GLOBAL e sequencial — a próxima é ADR-439)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 107** (**F56 a F107 entregues**)
+Testes ................. **4856** (Vitest: unit + integração, 285 arquivos) + **538** (Playwright E2E) + 1 skip
+ADRs ................... 441 (numeração GLOBAL e sequencial — a próxima é ADR-442)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 60 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor e identity_audit_logs — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -83,7 +83,7 @@ desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso 
 estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto, a
 primeira opção é **mover o próximo bloco para o histórico**, não condensar: o mais antigo ainda
 na tabela da §9 vai para [`docs/fases-historico.md`](docs/fases-historico.md), que guarda as
-fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104) e **87** (FASE 106),
+fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106) e **88** (FASE 107),
 movidas como estavam — o cabeçalho de lá registra cada movimento e o byte count —
 e a **§9 carrega a tabela corrente**
 (as fases recentes) + o ponteiro para o histórico. Condensar **apaga detalhe**; mover
@@ -113,7 +113,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4849 testes passando (284 arquivos)
+npm test              # esperado: 4856 testes passando (285 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -128,7 +128,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: **535 passando + 1 skip** (536 casos); medido na F106: +3 cenários novos (em f106);
+npm run test:e2e      # esperado: **538 passando + 1 skip** (539 casos); medido na F107: +3 cenários novos (em f107);
                       # nenhum vermelho
 ```
 
@@ -706,14 +706,13 @@ tests/{unit,integration,e2e}
 
 ## 9. Estado por fase e próximos passos
 
-> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103) e **86** (FASE 104) foram movidas
+> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106) e **88** (FASE 107) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**88 a 106**).
+> e no `README.md`. A tabela abaixo é a corrente (**89 a 107**).
 
 | Fase | Tema | Situação |
 |---|---|---|
-| 88 | **Leitura única no render (`I10`), `signOut` único na suíte (`I9`) e varredura dos `catch` silenciosos (`B10`)** — `readSponsorAccess` (`React.cache` com dois parâmetros primitivos `(tenantId, userId)` para atingir o `Map` por requisição do despachante `react-server`, mantendo `listSponsorAccess` pura) unifica a leitura de `sponsor_users` entre `TenantLayout`, `DashboardPage` e `SponsorAreaPage` (**2 → 1 consulta** por render, provado em `f75-contexto-uma-vez.test.ts`); os **5** blocos `catch` das contagens e leituras tolerantes (`certificateQueueStats`, `certificateDurationSample`, `emailQueueStats`, `resolveEntryDestinationForUser` e `isEmailChange`) ganharam log estruturado obrigatório (`logger.warn`/`console.error`) mantendo o retorno degradado (`null`/`false`); e o helper único `signOut(page, origin)` (`tests/e2e/helpers.ts`, enviando `data: {}` + `headers: { origin }` e afirmando `response.ok()`) substituiu as **101 chamadas** em **81 arquivos `.spec.ts`** que antes recebiam `415 Unsupported Media Type` sem limpar o cookie de sessão. **17 testes Vitest novos** (15 unit + 2 integração); dívidas **I10**, **B10** e **I9** quitadas (49 → **46**). ADR-391 … 393 | ✅ |
 | 89 | **Performance RSC no shell e contexto (`React.cache` + `Promise.all`), `?evento=` descartado com aviso (`E89`) e fronteira estrita do `.ef-theme` (`E90`)** — `readRequestContext = cache(...)` em `src/lib/auth/session.ts` deduplica sessão, vínculos e principal entre `TenantLayout`, `requirePagePermission` e as páginas filhas (**2 → 1** por render RSC, provado em `f75-contexto-uma-vez.test.ts`), e as **3 portas** do menu lateral rodam em `Promise.all`; `resolveEventQuerySelection` + `discardedEventSelectionNotice` (`src/domain/validation/query-filter-rules.ts`) anunciam com `<Alert tone="warning">` o descarte de `?evento=` malformado, repetido ou ausente de `events` nas **5 telas** (`/credenciamento`, `/credenciamento/crachas`, `/meu-cracha` e `/minha-agenda` com `fallback: 'first'`; `/participantes` com `fallback: 'all'`); e os **12 arquivos** fora do `.ef-theme` migraram de `.ef-*`/`event-theme.css` para tokens semânticos da plataforma, com `descadastro.png` regravada (23/23 a 0 px) e catraca de fonte. **25 testes Vitest novos** (20 unit + 5 integração) + **3 E2E**; dívidas **E89** e **E90** quitadas (46 → **44**). ADR-394 … 396 | ✅ |
 | 90 | **Separação do cadastro de evento (`/eventos/novo`) e cockpit limpo do acervo (`/eventos`)** — o formulário de 17 campos saiu da listagem e virou Server Component dedicado (`/administracao/eventos/novo`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/administracao/eventos` (`data-testid="btn-novo-evento"`); 44 dívidas mantidas. ADR-397 | ✅ |
 | 91 | **Separação do cadastro de atividade (`/programacao/nova`) e cockpit limpo da programação (`/programacao`)** — o formulário de criação de atividade saiu da listagem e virou Server Component dedicado (`/administracao/eventos/[eventId]/programacao/nova`), encapsulado no card padrão da plataforma (`rounded-xl border border-border bg-card p-6 shadow-sm`) com `h2` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/programacao` (`data-testid="btn-nova-atividade"`); 44 dívidas mantidas. ADR-398 | ✅ |
@@ -732,6 +731,7 @@ tests/{unit,integration,e2e}
 | 104 | **Refinamento de UX: Feedback de Rollback Otimista, Auto-scroll Operacional por Teclado, Empty States Acionáveis, Limpeza Rápida de Filtros e Expansão de Proteção de Rascunhos** — tratamento explícito de falhas em mutações otimistas com rollback perceptível e anúncio acessível (`aria-live="polite"` e `role="alert"`) em `FavoriteButton` e `ConfirmationItemsChecklist`, com preservação de `NEXT_REDIRECT` para redirecionamento anônimo legítimo (ADR-432); auto-scroll suave (`scrollIntoView`) e região viva de acessibilidade na navegação por teclado (`ArrowDown`/`ArrowUp`) no credenciamento (`CheckinQueue`) e diretório (`ParticipantDirectory`) sem salto visual (ADR-433); empty states acionáveis com restauração rápida de filtros em 1 clique no diretório e confirmações (ADR-434); guardião de rascunhos (`useUnsavedChanges`) expandido para `ProposalForm` e `SubmissionDraftForm` contra perda acidental; e botão de limpeza instantânea `(×)` com cancelamento de debounce em `ParticipantFilterBar`. **7 testes Vitest** novos + **3 cenários E2E**; E2E **530 passando + 1 skip** (531 casos). ADR-432 … 434 | ✅ |
 | 105 | **Polimento de UX, Acessibilidade Assistiva e Guardião de Rascunhos** — guardas de foco interativo e limites (`shouldIgnoreListKeyEvent` e `clampListIndex` em `src/hooks/keyboard-navigation.ts`) evitando sequestro de `Enter`/`Espaço` em links, botões, `summary` e `contentEditable` no `ParticipantDirectory` e `CheckinQueue` (ADR-435); silêncio inicial da região `aria-live="polite"` no `FavoriteButton` até a primeira interação na sessão (ADR-436); rastreamento completo de `keywords` em `SubmissionDraftForm` (`KeywordsInput` controlado opcional) com rótulo `"Salvando…"` durante `pending`; e prevenção de falsos positivos no `useUnsavedChanges` em cliques modificados (`Ctrl`/`Meta`/`Shift`/`Alt`) ou mesma URL. **8 testes Vitest** novos + **2 cenários E2E**; Vitest **4842** (283 arquivos); E2E **532 passando + 1 skip** (533 casos). ADR-435 … 436 | ✅ |
 | 106 | **Fechamento de UX em Formulários Acadêmicos e Filtros Operacionais** — estado controlado e `useUnsavedChanges` em `ReviewForm`, `DecisionForm` e `CreateSubmissionForm` (`KeywordsInput` controlado), impedindo o reset automático do React 19 em retornos `{ ok: false }`, e troca do último `window.confirm` por `<UnsavedChangesDialog />` (`ConfirmDialog` no `RootLayout`) com `cancelNavigationProgress()` (ADR-437); botão `(×)`, guarda `isContentEditable` no atalho `/`, cancelamento de debounce em `Escape`/unmount e CTA `"Limpar busca"` via `AppLink` no estado vazio de `CheckinQueue` (ADR-438); e silêncio inicial de `aria-live="polite"` até a primeira interação em `ComiteFilterBar` com `aria-label="Aplicar filtros"`, botão `(×)` e limpeza de timer. **7 testes Vitest** + **3 E2E**; Vitest **4849** (284 arquivos); E2E **535 passando + 1 skip** (536 casos). ADR-437 … 438 | ✅ |
+| 107 | **Fechamento de Preservação de Estado, `pending` em Diálogos, `AppLink` Canônico, `popstate` e Alinhamento de Filtros** — preservação de dados pós-erro `{ ok: false }` em `AdminForm` (`useActionState(action, null)` direto para manter `$ACTION_*` SSR sem JS + sync no render), `MessageComposer`, `SpeakerProfileForm`, `SpeakerNotesForm`, `ProposalAcceptancePanel`, `RegistrationForm`, `ShareCardPanel` e `AuthForm` (ADR-439); interceptador único de `popstate` (`ensurePopstateInterceptor()`) na carga do módulo `use-unsaved-changes.ts` antes dos efeitos do `AppRouter` + `<UnsavedChangesDialog />` em `history-back` (ADR-440); bloqueio `pending` em botões/diálogos críticos, migração final para `<AppLink>` em `ProposalForm` e `AreaError` com catraca no Vitest impedindo import direto de `next/link`, e alinhamento de `ParticipantFilterBar` (`aria-live` silencioso inicial, `isContentEditable` no `/`, `(×)` e `Escape`). **7 testes Vitest** + **3 E2E**; Vitest **4856** (285 arquivos); E2E **538 passando + 1 skip** (539 casos). ADR-439 … 441 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.

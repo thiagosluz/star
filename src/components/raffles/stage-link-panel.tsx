@@ -1,10 +1,9 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import Link from 'next/link';
 import { Copy, ExternalLink, Loader2, MonitorOff, MonitorPlay, ShieldCheck } from 'lucide-react';
 
-import { Alert, Button } from '@/components/ui';
+import { Alert, AppLink, Button } from '@/components/ui';
 import type { BigscreenActionState } from '@/app/actions/bigscreen-actions';
 
 /**
@@ -232,7 +231,7 @@ export function StageLinkPanel({
                 />
 
                 <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <Link
+                  <AppLink
                     href={raffle.stagePath}
                     target="_blank"
                     className="inline-flex items-center gap-1 underline underline-offset-4"
@@ -240,8 +239,8 @@ export function StageLinkPanel({
                   >
                     <ExternalLink className="size-3" aria-hidden />
                     Abrir o telão
-                  </Link>
-                  <Link
+                  </AppLink>
+                  <AppLink
                     href={raffle.auditPath}
                     target="_blank"
                     className="inline-flex items-center gap-1 underline underline-offset-4"
@@ -249,7 +248,7 @@ export function StageLinkPanel({
                   >
                     <ShieldCheck className="size-3" aria-hidden />
                     Abrir a auditoria
-                  </Link>
+                  </AppLink>
                 </div>
 
                 <p className="break-all code-data text-xs text-muted-foreground">
