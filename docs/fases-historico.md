@@ -1,4 +1,4 @@
-# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71, 72 a 74, 75 a 76, 77 a 78, 79 a 80, 81 a 82, 83, 84, 85, 86, 87, 88, 89 e 90 a 91 — o histórico que saiu do `AGENTS.md`
+# Fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59, 60, 61 a 62, 63 a 65, 66 a 67, 68 a 69, 70 a 71, 72 a 74, 75 a 76, 77 a 78, 79 a 80, 81 a 82, 83, 84, 85, 86, 87, 88, 89, 90 a 91, 92 a 93 e 94 a 95 — o histórico que saiu do `AGENTS.md`
 
 > **O que é este arquivo.** O registro das fases **1 a 25** — incluindo **11A** e **11B** —,
 > movido **como estava** do `AGENTS.md` na **FASE 79**: a tabela da §9 carregava todas as
@@ -55,14 +55,14 @@
 > a **mais antiga que restava** — **88** — desceu **como estava** e a tabela corrente passou a começar na **89**. Na **FASE 108** o fechamento do polimento de UX, React 19 & App Router levou o `AGENTS.md` a encostar no teto novamente;
 > a **mais antiga que restava** — **89** — desceu **como estava** e a tabela corrente passou a começar na **90**. Na **FASE 109** o fechamento de UX, React 19 & App Router levou o `AGENTS.md` acima do teto de 64.800 bytes;
 > as **duas mais antigas que restavam** — **90 e 91** — desceram **como estavam** e a tabela corrente passou a começar na **92**. Na **FASE 110** o pacote de privacidade, consentimento, autoatendimento de conta e observabilidade levou o `AGENTS.md` a **65.060 bytes** (acima do teto);
-> as **duas mais antigas que restavam** — **92 e 93** — desceram **como estavam** e a tabela corrente passou a começar na **94**.
+> as **duas mais antigas que restavam** — **92 e 93** — desceram **como estavam** e a tabela corrente passou a começar na **94**. Na **FASE 111** a publicação de anais, citações e indexação levou o `AGENTS.md` acima do teto; as **duas mais antigas que restavam** — **94 e 95** — desceram **como estavam** e a tabela corrente passou a começar na **96**.
 >
 > **Onde está o registro completo.** Cada fase tem o seu documento em `docs/fase-NN-*.md`
 > (ADRs, lições aprendidas, evidências e comandos), e o `README.md` traz o índice da
 > documentação.
 >
 > **Onde está a tabela corrente.** No [`AGENTS.md`](../AGENTS.md), §9: ela guarda as fases
-> recentes e o estado atual (hoje, da **94** à **110**). A tabela abaixo é histórica e **não
+> recentes e o estado atual (hoje, da **96** à **111**). A tabela abaixo é histórica e **não
 > cresce com fase nova** — ela cresce só por MOVIMENTO: quando o estado encosta no teto, a
 > fase mais antiga ainda na corrente desce para cá.
 >
@@ -166,3 +166,5 @@
 | 91 | **Separação do cadastro de atividade (`/programacao/nova`) e cockpit limpo da programação (`/programacao`)** — o formulário de criação de atividade saiu da listagem e virou Server Component dedicado (`/administracao/eventos/[eventId]/programacao/nova`), encapsulado no card padrão da plataforma (`rounded-xl border border-border bg-card p-6 shadow-sm`) com `h2` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/programacao` (`data-testid="btn-nova-atividade"`); 44 dívidas mantidas. ADR-398 | ✅ |
 | 92 | **Padronização em cards brancos e cadastro in-page de salas** — a tela de `/salas` foi estruturada em dois cards brancos destacados (`bg-card rounded-xl border border-border shadow-sm`): Card 1 (listagem de salas com badges de capacidade, edição expansível e exclusão com diálogo; empty state com container card) e Card 2 (formulário `create-room` in-page para setup rápido em lote sem fricção de navegação); retrocompatibilidade contratual total preservada. ADR-399 | ✅ |
 | 93 | **Separação do cadastro de chamada (`/chamadas/nova`) e cockpit limpo de chamadas (`/chamadas`)** — o formulário de 11 campos e o editor de rubrica saíram da listagem e viraram Server Component dedicado (`/administracao/eventos/[eventId]/chamadas/nova`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/chamadas` (`data-testid="btn-nova-chamada"`); central de chamadas em cards brancos (`bg-card rounded-xl border border-border shadow-sm p-6`) e empty state atualizado; 44 dívidas mantidas. ADR-400 | ✅ |
+| 94 | **Separação do cadastro de patrocinador (`/patrocinadores/novo`) e cockpit limpo de patrocinadores (`/patrocinadores`)** — o formulário de 12 campos e a cópia de edições anteriores saíram da listagem e viraram Server Component dedicado (`/administracao/eventos/[eventId]/patrocinadores/novo`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/patrocinadores` (`data-testid="btn-novo-patrocinador"`); cockpit com cotas e patrocinadores em cards brancos elevados (`bg-card rounded-xl border border-border shadow-sm p-6`) e empty state com CTA; 44 dívidas mantidas. ADR-401 | ✅ |
+| 95 | **Separação do cadastro de cartas colecionáveis (`/cartas/nova`) e cockpit limpo de cartas (`/cartas`)** — o formulário de 26 campos e a arte 3D holográfica saíram da listagem e viraram Server Component dedicado (`/administracao/cartas/nova`), com `PageHeader` semântico, volta nativa por breadcrumb e botão primário no slot `actions` de `/cartas` (`data-testid="btn-nova-carta"`); cockpit com cards brancos elevados (`bg-card rounded-xl border border-border shadow-sm p-5`), concessão manual em card limpo e empty state com CTA; 44 dívidas mantidas. ADR-402 | ✅ |

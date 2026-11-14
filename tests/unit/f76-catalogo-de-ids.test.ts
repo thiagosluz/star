@@ -117,6 +117,14 @@ const PAGINAS: readonly PaginaEsperada[] = [
     params: ['eventId'],
   },
   {
+    /**
+     * Painel de publicação de anais do evento (FASE 111). Valida `eventId`
+     * antes da permissão e da consulta.
+     */
+    arquivo: 'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/anais/page.tsx',
+    params: ['eventId'],
+  },
+  {
     arquivo: 'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/api/page.tsx',
     params: ['eventId'],
   },
@@ -660,22 +668,22 @@ describe('FASE 76 · o catálogo das páginas com id na URL', () => {
     ).toEqual([]);
   });
 
-  it('são 31 páginas e 32 params — o número medido, não o esperado', () => {
+  it('são 32 páginas e 33 params — o número medido, não o esperado', () => {
     /**
-     * 31 páginas, 32 chamadas: `demandas/[demandId]` tem `eventId` e `demandId`.
+     * 32 páginas, 33 chamadas: `demandas/[demandId]` tem `eventId` e `demandId`.
      * O segundo número é o que pega o caso "a página existe, mas só um dos dois
      * segmentos foi validado" — a igualdade por página já pega, e a contagem
      * torna a regressão visível de relance.
      */
-    expect(PAGINAS).toHaveLength(31);
-    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(32);
+    expect(PAGINAS).toHaveLength(32);
+    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(33);
     expect(PAGINAS_FORA_DA_REGRA).toHaveLength(4);
 
     const paramsEncontrados = PAGINAS_COM_ID.reduce(
       (total, pagina) => total + pagina.params.length,
       0,
     );
-    expect(paramsEncontrados).toBe(36); // 32 positivos + 4 das exceções
+    expect(paramsEncontrados).toBe(37); // 33 positivos + 4 das exceções
   });
 
   it('cada página chama `requireUuidParam` com o MESMO param do segmento', () => {

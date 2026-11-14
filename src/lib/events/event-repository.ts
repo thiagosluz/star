@@ -390,6 +390,8 @@ export interface PublicEventDetail extends PublicEventSummary {
    * mostrando os eixos temáticos SEM convidar a submeter.
    */
   usesCall: boolean;
+  /** True somente quando o volume de Anais do evento está publicado (FASE 111). */
+  hasPublishedProceedings: boolean;
   /**
    * Palestrantes do evento, para a vitrine (FASE 25).
    *
@@ -580,6 +582,7 @@ async function loadEventDetail(
         registrationOpensAt: true,
         registrationClosesAt: true,
         usesCall: true,
+        proceedingsVolume: { select: { status: true } },
         capacity: true,
         confirmedCount: true,
         theme: true,
@@ -1071,6 +1074,7 @@ async function loadEventDetail(
     /** O mesmo leitor tolerante da política acima — e a MESMA leitura que a action faz. */
     registrationFormFields: readRegistrationForm(event.settings).fields,
     usesCall: event.usesCall,
+    hasPublishedProceedings: event.proceedingsVolume?.status === 'PUBLISHED',
     page: page
       ? {
           id: page.id,

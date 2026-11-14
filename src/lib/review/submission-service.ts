@@ -47,6 +47,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   canChangeSubmissionTrack,
   canDeleteSubmission,
+  canUploadSubmissionFile,
   canWithdrawSubmission,
   evaluateSubmissionReadiness,
   fileReplacementCreatesVersion,
@@ -67,6 +68,7 @@ import {
   type ViewerRole,
 } from '@/domain/review/review-rules';
 import { logger } from '@/lib/observability/logger';
+import { PROCEEDINGS_PUBLICATION_TERM_VERSION } from '@/domain/proceedings/proceedings-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Erros
@@ -627,6 +629,20 @@ export async function requestUpload(
        */
       ensureSubmissionOwnedBy(submission, input.userId);
 
+      if (
+        !canUploadSubmissionFile({
+          status: submission.status as SubmissionStatus,
+          kind: input.kind,
+        })
+      ) {
+        throw new SubmissionError(
+          'NOT_EDITABLE',
+          submission.status === 'ACCEPTED'
+            ? 'Após o aceite, apenas a versão final (camera-ready) pode ser enviada.'
+            : 'Esta submissão não aceita novos arquivos no status atual.',
+        );
+      }
+
       // ── Versão do artefato ─────────────────────────────────────────────────
       // Em rascunho, substitui a versão existente. Depois do envio, incrementa.
       const previous = await tx.submissionFile.findFirst({
@@ -810,6 +826,20 @@ export async function confirmUpload(
        * não muda, mas a escrita é o que realmente importa).
        */
       ensureSubmissionOwnedBy(submission, input.userId);
+
+      if (
+        !canUploadSubmissionFile({
+          status: submission.status as SubmissionStatus,
+          kind: input.kind,
+        })
+      ) {
+        throw new SubmissionError(
+          'NOT_EDITABLE',
+          submission.status === 'ACCEPTED'
+            ? 'Após o aceite, apenas a versão final (camera-ready) pode ser enviada.'
+            : 'Esta submissão não aceita novos arquivos no status atual.',
+        );
+      }
 
       /**
        * ─── IDEMPOTÊNCIA DA CONFIRMAÇÃO ──────────────────────────────────────
@@ -1504,6 +1534,8 @@ export interface SubmissionDetail {
   finalScore: number | null;
   decisionAt: Date | null;
   decisionNotes: string | null;
+  proceedingsPermissionAcceptedAt: Date | null;
+  proceedingsPermissionVersion: string | null;
 }
 
 /**
@@ -1617,6 +1649,8 @@ export async function getSubmission(
         finalScore: true,
         decisionAt: true,
         decisionNotes: true,
+        proceedingsPermissionAcceptedAt: true,
+        proceedingsPermissionVersion: true,
         track: { select: { name: true, requiresBlindReview: true } },
         /**
          * A cegueira é da CHAMADA quando ela se pronuncia (FASE 33) — e da TRILHA
@@ -1707,6 +1741,8 @@ export async function getSubmission(
     finalScore: submission.finalScore ? Number(submission.finalScore) : null,
     decisionAt: submission.decisionAt,
     decisionNotes: submission.decisionNotes,
+    proceedingsPermissionAcceptedAt: submission.proceedingsPermissionAcceptedAt,
+    proceedingsPermissionVersion: submission.proceedingsPermissionVersion,
   };
 }
 
@@ -1901,3 +1937,81 @@ function toFailure<T>(operation: string, error: unknown): Result<T> & { ok: fals
 }
 
 export { MAX_FILE_SIZE_BYTES, requiresNewVersionForResubmission };
+
+/**
+ * Registra a autorização de publicação nos anais dada pelo autor após o aceite
+ * do trabalho (FASE 111).
+ */
+export async function recordProceedingsPermission(input: {
+  tenantId: string;
+  submissionId: string;
+  userId: string;
+  accepted: boolean;
+}): Promise<Result<{ acceptedAt: Date; version: string }>> {
+  try {
+    if (!input.accepted) {
+      throw new SubmissionError(
+        'INVALID_CONTENT',
+        'É necessário marcar o aceite do termo de publicação.',
+      );
+    }
+
+    return await withTenant(input.tenantId, async (tx) => {
+      const submission = await tx.submission.findFirst({
+        where: { id: input.submissionId, deletedAt: null },
+        select: {
+          id: true,
+          status: true,
+          submittedById: true,
+          proceedingsPermissionAcceptedAt: true,
+          proceedingsPermissionVersion: true,
+        },
+      });
+
+      if (!submission) {
+        throw new SubmissionError('NOT_FOUND', 'Submissão não encontrada.');
+      }
+
+      ensureSubmissionOwnedBy(submission, input.userId);
+
+      if (submission.status !== 'ACCEPTED') {
+        throw new SubmissionError(
+          'NOT_EDITABLE',
+          'A autorização para anais só fica disponível após o aceite do trabalho.',
+        );
+      }
+
+      const now = submission.proceedingsPermissionAcceptedAt ?? new Date();
+      const version = PROCEEDINGS_PUBLICATION_TERM_VERSION;
+
+      await tx.submission.update({
+        where: { id: submission.id },
+        data: {
+          proceedingsPermissionAcceptedAt: now,
+          proceedingsPermissionVersion: version,
+        },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          action: 'UPDATE',
+          entityType: 'Submission',
+          entityId: submission.id,
+          changes: {
+            proceedingsPermissionVersion: {
+              from: submission.proceedingsPermissionVersion,
+              to: version,
+            },
+          },
+        },
+        tx,
+      );
+
+      return { ok: true as const, acceptedAt: now, version };
+    });
+  } catch (error) {
+    return toFailure('recordProceedingsPermission', error);
+  }
+}

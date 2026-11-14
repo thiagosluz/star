@@ -1110,6 +1110,10 @@ model Tenant {
   communicationCampaigns    CommunicationCampaign[]
   communicationUnsubscribes CommunicationUnsubscribe[]
 
+  /// FASE 111 — anais publicados e registros de trabalhos indexados.
+  proceedingsVolumes ProceedingsVolume[]
+  proceedingsEntries ProceedingsEntry[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -1751,6 +1755,9 @@ model Event {
 
   /// FASE 67 — campanhas de comunicação segmentada deste evento.
   communicationCampaigns CommunicationCampaign[]
+
+  /// FASE 111 — volume de anais deste evento (publicação curada pela organização).
+  proceedingsVolume      ProceedingsVolume?
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -2946,6 +2953,10 @@ model Submission {
   /// crescer a cada tipo novo.
   proposalData Json @default("{}")
 
+  /// FASE 111 — ciência e autorização explícita do autor para publicação nos anais.
+  proceedingsPermissionAcceptedAt DateTime? @db.Timestamptz(6)
+  proceedingsPermissionVersion    String?   @db.VarChar(32)
+
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
@@ -2961,8 +2972,9 @@ model Submission {
   files          SubmissionFile[]
   assignments    ReviewAssignment[]
   reviews        Review[]
-  conflicts      ReviewConflict[]
-  xpTransactions XpTransaction[]
+  conflicts        ReviewConflict[]
+  xpTransactions   XpTransaction[]
+  proceedingsEntry ProceedingsEntry?
 
   @@unique([tenantId, protocol])
   @@index([tenantId, eventId, status])
@@ -4667,4 +4679,80 @@ model CookieConsent {
   @@index([createdAt])
   @@map("cookie_consents")
 }
+
+/// Estado do volume de Anais de um evento (FASE 111).
+///
+/// Publicar anais é ato explícito do organizador, não efeito automático de um
+/// trabalho ser aceito no comitê (mesmo princípio da FASE 73).
+enum ProceedingsStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Volume de Anais de um evento científico/acadêmico (FASE 111).
+model ProceedingsVolume {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @unique @db.Uuid
+
+  status ProceedingsStatus @default(DRAFT)
+
+  title         String  @db.VarChar(300)
+  subtitle      String? @db.VarChar(400)
+  volumeLabel   String? @db.VarChar(80)
+  editionYear   Int
+  editors       String? @db.VarChar(500)
+  isbn          String? @db.VarChar(32)
+  issn          String? @db.VarChar(32)
+  publisherName String? @db.VarChar(200)
+  preface       String? @db.Text
+
+  publishedAt   DateTime? @db.Timestamptz(6)
+  publishedById String?   @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event   Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  entries ProceedingsEntry[]
+
+  @@index([tenantId, status])
+  @@map("proceedings_volumes")
+}
+
+/// Trabalho incluído e curado dentro de um volume de Anais (FASE 111).
+model ProceedingsEntry {
+  id           String @id @default(uuid(7)) @db.Uuid
+  tenantId     String @db.Uuid
+  volumeId     String @db.Uuid
+  submissionId String @unique @db.Uuid
+
+  displayOrder Int     @default(1)
+  sectionName  String? @db.VarChar(200)
+  pageStart    Int?
+  pageEnd      Int?
+  /// DOI externo opcional informado pelo organizador (ex.: depósito via Zenodo/convênio próprio).
+  externalDoi  String? @db.VarChar(200)
+
+  /// Tipo do arquivo público (nunca `BLIND_PDF`). Nulo = apenas metadados e resumo.
+  publicFileKind       SubmissionFileKind?
+  includeInProceedings Boolean             @default(true)
+
+  /// Snapshot congelado no momento da publicação (título, resumo, autores, palavras-chave, seção).
+  snapshot Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  volume     ProceedingsVolume @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  submission Submission        @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([volumeId, submissionId])
+  @@index([tenantId, volumeId, displayOrder])
+  @@map("proceedings_entries")
+}
+
 

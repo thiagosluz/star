@@ -202,6 +202,12 @@ export const TENANT_SCOPED_TABLES = [
    */
   'communication_campaigns',
   'communication_unsubscribes',
+  /**
+   * FASE 111 — anais do evento e entradas curadas. Cada instituição governa a
+   * publicação dos próprios anais (rascunho não pode vazar para outro tenant).
+   */
+  'proceedings_volumes',
+  'proceedings_entries',
 ];
 
 /**

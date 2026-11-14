@@ -821,3 +821,18 @@ export function evaluateSubmissionReadiness(
 export function fileReplacementCreatesVersion(status: SubmissionStatus): boolean {
   return status !== 'DRAFT';
 }
+
+/**
+ * O autor pode enviar ou substituir este tipo de artefato no estado atual?
+ *
+ * Em rascunho ou correção solicitada, todos os tipos seguem abertos. Depois do
+ * aceite final (`ACCEPTED`), apenas a versão final (`CAMERA_READY`) pode ser
+ * enviada ou substituída — os arquivos avaliados permanecem congelados.
+ */
+export function canUploadSubmissionFile(input: {
+  status: SubmissionStatus;
+  kind: SubmissionFileKind;
+}): boolean {
+  if (isEditableByAuthor(input.status)) return true;
+  return input.status === 'ACCEPTED' && input.kind === 'CAMERA_READY';
+}

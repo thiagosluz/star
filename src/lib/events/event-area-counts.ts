@@ -52,7 +52,7 @@ export async function getEventAreaCounts(input: {
     return await withTenant(input.tenantId, async (tx) => {
       const escopo = { tenantId: input.tenantId, eventId: input.eventId };
 
-      const [calls, rooms, activities, teams, sponsors, credentials, certificates, openDemands, speakers, page, estadoDoEvento] =
+      const [calls, rooms, activities, teams, sponsors, credentials, certificates, proceedingsEntries, openDemands, speakers, page, estadoDoEvento] =
         await Promise.all([
           tx.callForProposals.count({ where: { ...escopo, deletedAt: null } }),
           tx.room.count({ where: escopo }),
@@ -61,6 +61,13 @@ export async function getEventAreaCounts(input: {
           tx.sponsor.count({ where: { ...escopo, isActive: true } }),
           tx.eventCredential.count({ where: { ...escopo, status: 'ACTIVE' } }),
           tx.certificate.count({ where: escopo }),
+          tx.proceedingsEntry.count({
+            where: {
+              tenantId: input.tenantId,
+              includeInProceedings: true,
+              volume: { tenantId: input.tenantId, eventId: input.eventId },
+            },
+          }),
           tx.demand.count({ where: { ...escopo, completedAt: null } }),
           /**
            * Palestrante é da ATIVIDADE, não do evento (FASE 25): quem dá a palestra é
@@ -125,6 +132,7 @@ export async function getEventAreaCounts(input: {
           sponsors,
           credentials,
           certificates,
+          proceedingsEntries,
           openDemands,
           speakers,
           /**

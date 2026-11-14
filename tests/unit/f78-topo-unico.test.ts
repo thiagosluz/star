@@ -246,8 +246,8 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * a FASE 110 acrescentou 3 telas públicas da plataforma (/privacidade, /termos e
      * /acessibilidade), todas usando `PageHeader` com `eyebrow={PLATFORM_NAV_GROUP}`.
      */
-    expect(PAGINAS.length).toBe(110);
-    expect(MIGRADAS.length).toBe(95);
+    expect(PAGINAS.length).toBe(113);
+    expect(MIGRADAS.length).toBe(98);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

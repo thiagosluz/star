@@ -273,6 +273,14 @@ export const EVENT_AREAS: readonly EventArea[] = [
     permission: PERMISSIONS.CERTIFICATE_ISSUE,
   },
   {
+    id: 'anais',
+    label: 'Anais publicados',
+    purpose: 'Curadoria de trabalhos aceitos, ficha do volume, citações e indexação.',
+    group: 'RESULTADO',
+    href: (context) => route(context, '/anais'),
+    permission: PERMISSIONS.EVENT_MANAGE,
+  },
+  {
     id: 'publico',
     label: 'Ver página pública',
     purpose: 'A vitrine como o público vê — abre em outra aba.',
@@ -370,6 +378,7 @@ export interface EventAreaCounts {
   openDemands: number | null;
   credentials: number | null;
   certificates: number | null;
+  proceedingsEntries: number | null;
   speakers: number | null;
   /**
    * Campos DECLARADOS no formulário de inscrição do evento (FASE 70).
@@ -459,6 +468,10 @@ export function eventAreaMetric(areaId: string, counts: EventAreaCounts): string
       return counts.certificates === null
         ? null
         : quantidade(counts.certificates, 'certificado', 'certificados', 'nenhum certificado');
+    case 'anais':
+      return counts.proceedingsEntries === null
+        ? null
+        : quantidade(counts.proceedingsEntries, 'trabalho nos anais', 'trabalhos nos anais', 'nenhum trabalho nos anais');
     case 'pagina':
       if (counts.pagePublished === null) return null;
 
@@ -492,6 +505,7 @@ export const EMPTY_EVENT_AREA_COUNTS: EventAreaCounts = {
   openDemands: null,
   credentials: null,
   certificates: null,
+  proceedingsEntries: null,
   speakers: null,
   formFields: null,
   pagePublished: null,

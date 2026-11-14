@@ -213,7 +213,13 @@ export function EventLanding({
 
         {/* ── Voltar para a listagem ─────────────────────────────────────── */}
         <nav className="px-6 pt-6">
-          <div className="mx-auto w-full max-w-5xl">
+          <div
+            className={
+              event.hasPublishedProceedings
+                ? 'mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3'
+                : 'mx-auto max-w-5xl'
+            }
+          >
             <Link
               href={tenantPath(tenantSlug, '/eventos')}
               /**
@@ -226,6 +232,15 @@ export function EventLanding({
             >
               ← Todos os eventos de {tenantName}
             </Link>
+            {event.hasPublishedProceedings ? (
+              <Link
+                href={tenantPath(tenantSlug, `/eventos/${event.slug}/anais`)}
+                data-testid="event-proceedings-link"
+                className="ef-badge text-xs font-medium underline-offset-4 hover:underline"
+              >
+                Anais publicados →
+              </Link>
+            ) : null}
           </div>
         </nav>
 

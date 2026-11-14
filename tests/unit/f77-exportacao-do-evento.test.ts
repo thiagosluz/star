@@ -212,8 +212,8 @@ describe('a raiz do evento não ganha a 6ª seção e o mapa não se move', () =
   const pagina = semComentarios(readFileSync(PAGINA_DO_EVENTO, 'utf8'));
   const painel = semComentarios(readFileSync(PAINEL_DO_EVENTO, 'utf8'));
 
-  it('o mapa continua com 17 cartões e o grupo "Operar" com 4', () => {
-    expect(EVENT_AREAS).toHaveLength(17);
+  it('o mapa continua com 18 cartões e o grupo "Operar" com 4', () => {
+    expect(EVENT_AREAS).toHaveLength(18);
     expect(groupEventAreas(EVENT_AREAS).find((grupo) => grupo.group === 'OPERAR')?.areas).toHaveLength(4);
   });
 

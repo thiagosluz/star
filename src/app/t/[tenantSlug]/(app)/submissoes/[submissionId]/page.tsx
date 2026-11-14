@@ -12,23 +12,27 @@ import {
 } from '@/lib/review/submission-service';
 import { getSubmissionAuthors } from '@/lib/review/author-service';
 import {
+  canDeleteSubmission,
+  canUploadSubmissionFile,
   evaluateSubmissionReadiness,
   isEditableByAuthor,
-  canDeleteSubmission,
   SUBMISSION_DRAFT_ARRIVAL_NOTICE,
   type SubmissionStatus,
 } from '@/domain/review/submission-rules';
+import { PROCEEDINGS_PUBLICATION_TERM_TEXT } from '@/domain/proceedings/proceedings-rules';
 import { canWithdrawSubmission } from '@/domain/review/submission-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
   confirmUploadAction,
   deleteDraftSubmissionAction,
+  recordProceedingsPermissionAction,
   withdrawSubmissionAction,
   requestUploadAction,
   saveSubmissionAuthorsAction,
   submitSubmissionAction,
   updateSubmissionDraftAction,
 } from '@/app/actions/review-actions';
+import { ProceedingsPermissionForm } from '@/components/proceedings/proceedings-permission-form';
 import { SubmissionUploader, type UploadKind } from '@/components/review/submission-uploader';
 import { SubmitSubmissionButton } from '@/components/review/submit-submission-button';
 import { AuthorEditor } from '@/components/review/author-editor';
@@ -449,12 +453,59 @@ export default async function SubmissionDetailPage({
                       }
                     : null
                 }
-                disabled={!editable}
+                disabled={
+                  !canUploadSubmissionFile({
+                    status: submission.status as SubmissionStatus,
+                    kind,
+                  })
+                }
               />
             );
           })}
         </div>
       </section>
+
+      {submission.status === 'ACCEPTED' ? (
+        <section className="space-y-4" data-testid="camera-ready-section">
+          <div className="space-y-1">
+            <h2 className="text-sm font-medium">
+              Versão final (camera-ready) e autorização de publicação nos anais
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Envie o PDF final identificado com o nome dos autores e registre o termo de publicação para compor o volume oficial do evento.
+            </p>
+          </div>
+
+          <ProceedingsPermissionForm
+            tenantSlug={tenantSlug}
+            submissionId={submissionId}
+            termText={PROCEEDINGS_PUBLICATION_TERM_TEXT}
+            acceptedAtIso={submission.proceedingsPermissionAcceptedAt?.toISOString() ?? null}
+            acceptedVersion={submission.proceedingsPermissionVersion}
+            action={recordProceedingsPermissionAction}
+          />
+
+          <SubmissionUploader
+            tenantSlug={tenantSlug}
+            submissionId={submissionId}
+            kind="CAMERA_READY"
+            requestUploadAction={requestUploadAction}
+            confirmUploadAction={confirmUploadAction}
+            existing={
+              currentByKind.get('CAMERA_READY')
+                ? {
+                    kind: 'CAMERA_READY',
+                    fileName: currentByKind.get('CAMERA_READY')!.fileName,
+                    sizeBytes: currentByKind.get('CAMERA_READY')!.sizeBytes,
+                    checksum: currentByKind.get('CAMERA_READY')!.checksum,
+                    version: currentByKind.get('CAMERA_READY')!.version,
+                  }
+                : null
+            }
+            disabled={false}
+          />
+        </section>
+      ) : null}
 
       {/* ── Critérios de avaliação (transparência) ────────────────────────── */}
       <section className="space-y-3">

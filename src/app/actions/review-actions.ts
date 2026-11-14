@@ -38,6 +38,7 @@ import {
   confirmUpload,
   createSubmission,
   deleteSubmission,
+  recordProceedingsPermission,
   withdrawSubmission,
   requestUpload,
   submitSubmission,
@@ -903,6 +904,63 @@ export async function recordDecisionAction(
       status: result.status,
       finalScore: result.finalScore,
       ...(reward && reward.xpAwarded > 0 ? { xpAwarded: reward.xpAwarded } : {}),
+    },
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Autorização de publicação nos anais (FASE 111)
+// ───────────────────────────────────────────────────────────────────────────────
+const proceedingsPermissionSchema = z.object({
+  tenantSlug: z.string().trim().min(1).max(63),
+  submissionId: z.string().uuid(),
+  accepted: z.literal('on'),
+});
+
+export async function recordProceedingsPermissionAction(
+  _prev: ActionState | null,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = proceedingsPermissionSchema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    submissionId: formData.get('submissionId'),
+    accepted: formData.get('accepted'),
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Marque o aceite do termo de publicação antes de continuar.',
+    };
+  }
+
+  const context = await guardAction<ActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.SUBMISSION_UPDATE_OWN,
+  });
+
+  if (!context.ok) return context.state;
+
+  const result = await recordProceedingsPermission({
+    tenantId: context.tenantId,
+    submissionId: parsed.data.submissionId,
+    userId: context.userId,
+    accepted: true,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message, details: result.details };
+  }
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, `/submissoes/${parsed.data.submissionId}`));
+
+  return {
+    ok: true,
+    message: 'Autorização para publicação nos anais registrada.',
+    data: {
+      acceptedAt: result.acceptedAt.toISOString(),
+      version: result.version,
     },
   };
 }
