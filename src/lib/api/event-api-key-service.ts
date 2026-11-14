@@ -63,6 +63,7 @@ import {
   openEventApiKey,
   sealEventApiKey,
 } from '@/lib/api/event-api-key-vault';
+import { logger } from '@/lib/observability/logger';
 
 /** Por que a leitura foi recusada. Só a trilha e o log veem o detalhe. */
 export type EventApiRefusalReason =
@@ -97,7 +98,7 @@ function settingsObject(settings: unknown): Record<string, unknown> {
 }
 
 function internalFailure(scope: string, error: unknown): { ok: false; code: 'INTERNAL'; message: string } {
-  console.error(`[api] falha ao ${scope} a chave do evento: ${errorMessage(error)}`);
+  logger.error(`[api] falha ao ${scope} a chave do evento: ${errorMessage(error)}`);
 
   return { ok: false, code: 'INTERNAL', message: 'Não foi possível concluir a operação com a chave da API.' };
 }
@@ -546,7 +547,7 @@ export async function verifyEventApiKey(input: {
         stored.problems.length > 0 ? 'CONFIGURACAO_INVALIDA' : 'SEM_CHAVE_CONFIGURADA';
 
       if (stored.problems.length > 0) {
-        console.error(`[api] chave da API inválida em settings do evento ${event.id}: ${stored.problems.join(' ')}`);
+        logger.error(`[api] chave da API inválida em settings do evento ${event.id}: ${stored.problems.join(' ')}`);
       }
 
       await auditRefusal({
@@ -594,7 +595,7 @@ export async function verifyEventApiKey(input: {
      * (o mesmo de chave inválida) e o log guarda a causa. Deixar passar seria
      * abrir a API porque o banco piscou.
      */
-    console.error(`[api] falha ao verificar a chave do evento: ${errorMessage(error)}`);
+    logger.error(`[api] falha ao verificar a chave do evento: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INVALID_KEY', reason: 'DIVERGENTE' };
   }

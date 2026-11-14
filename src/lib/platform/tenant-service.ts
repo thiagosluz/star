@@ -60,6 +60,7 @@ import {
   type TenantAdminRow,
   type TenantMemberRow,
 } from '@/lib/platform/global-repository';
+import { logger } from '@/lib/observability/logger';
 
 export type PlatformErrorCode =
   | 'INVALID_INPUT'
@@ -283,7 +284,7 @@ export async function provisionTenant(
       };
     }
 
-    console.error(`[platform] falha ao provisionar instituição: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao provisionar instituição: ${errorMessage(error)}`);
 
     return {
       ok: false,
@@ -343,7 +344,7 @@ export async function setTenantStatus(
           : { status: 'ACTIVE', suspendedAt: null, suspensionReason: null },
     });
   } catch (error) {
-    console.error(`[platform] falha ao mudar estado da instituição: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao mudar estado da instituição: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível alterar o estado da instituição.' };
   }
 
@@ -437,7 +438,7 @@ export async function updateTenantProfile(
       },
     });
   } catch (error) {
-    console.error(`[platform] falha ao atualizar perfil público: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao atualizar perfil público: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar o perfil público.' };
   }
 
@@ -538,7 +539,7 @@ export async function updateTenantPlan(
       },
     });
   } catch (error) {
-    console.error(`[platform] falha ao trocar plano: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao trocar plano: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar o plano agora.' };
   }
 
@@ -739,7 +740,7 @@ export async function addTenantMember(
       };
     }
 
-    console.error(`[platform] falha ao vincular membro: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao vincular membro: ${errorMessage(error)}`);
 
     return {
       ok: false,
@@ -817,7 +818,7 @@ export async function grantSuperAdmin(
       },
     });
   } catch (error) {
-    console.error(`[platform] falha ao conceder SUPERADMIN: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao conceder SUPERADMIN: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível conceder o papel de plataforma.' };
   }
 
@@ -881,7 +882,7 @@ export async function revokeSuperAdmin(
 
     return { ok: true, userId, revoked: result.count };
   } catch (error) {
-    console.error(`[platform] falha ao revogar SUPERADMIN: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao revogar SUPERADMIN: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível revogar o papel de plataforma.' };
   }
 }

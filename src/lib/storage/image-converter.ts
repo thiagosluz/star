@@ -41,6 +41,7 @@ import {
   type ImageTarget,
   type WebpEncodingMode,
 } from '@/domain/events/image-rules';
+import { logger } from '@/lib/observability/logger';
 
 export interface WebpEncodedImage {
   bytes: Buffer;
@@ -178,11 +179,9 @@ export async function encodeAssetAsWebp(input: {
      * convertido pela metade — o navegador de quem visita a página não teria
      * piedade do resultado. O log guarda o motivo real; a tela recebe o motivo útil.
      */
-    console.error(
-      `[imagem] recusa na conversão: ${
+    logger.error(`[imagem] recusa na conversão: ${
         error instanceof Error ? error.message : 'falha desconhecida'
-      }`,
-    );
+      }`);
 
     return {
       ok: false,

@@ -224,7 +224,7 @@ export const GLOBAL_TABLES_WITH_RLS = ['user', 'session', 'tenants'];
  * Sem isso, o padrão do banco deixaria o runtime ler ou escrever dados de plataforma.
  * `PLATFORM_ONLY_TABLES` é o que a verificação de contrato usa para exigir a revogação.
  */
-export const PLATFORM_ONLY_TABLES = ['job_runs', 'institution_leads'];
+export const PLATFORM_ONLY_TABLES = ['job_runs', 'institution_leads', 'cookie_consents'];
 
 /**
  * Tabelas de IDENTIDADE que o runtime não pode alcançar (FASE 47 · ampliada na 49).

@@ -62,6 +62,7 @@ import {
   type MaterialViewer,
   type MaterialVisibility,
 } from '@/domain/speakers/speaker-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type MaterialErrorCode =
   | 'NOT_FOUND'
@@ -232,7 +233,7 @@ export async function requestMaterialUpload(input: {
       maxBytes: validation.maxBytes,
     };
   } catch (error) {
-    console.error(`[materials] falha ao preparar upload: ${errorMessage(error)}`);
+    logger.error(`[materials] falha ao preparar upload: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível preparar o envio do material.' };
   }
 }
@@ -373,7 +374,7 @@ export async function confirmMaterialUpload(
 
     return { ok: true, materialId, objectKey: input.objectKey };
   } catch (error) {
-    console.error(`[materials] falha ao confirmar upload: ${errorMessage(error)}`);
+    logger.error(`[materials] falha ao confirmar upload: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível confirmar o material enviado.' };
   }
 }
@@ -490,7 +491,7 @@ export async function createMaterialLink(input: {
       return { ok: true as const, materialId, url: link.url };
     });
   } catch (error) {
-    console.error(`[materials] falha ao criar link: ${errorMessage(error)}`);
+    logger.error(`[materials] falha ao criar link: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar o material.' };
   }
 }
@@ -672,7 +673,7 @@ export async function resolveMaterialDownload(input: {
 
     return { ok: true, kind: 'LINK', url: material.url, fileName: null };
   } catch (error) {
-    console.error(`[materials] falha ao resolver download: ${errorMessage(error)}`);
+    logger.error(`[materials] falha ao resolver download: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', httpStatus: 403, message: 'Não foi possível preparar o download.' };
   }
 }
@@ -770,7 +771,7 @@ export async function updateMaterial(input: {
       return { ok: true as const, materialId: before.id };
     });
   } catch (error) {
-    console.error(`[materials] falha ao atualizar material: ${errorMessage(error)}`);
+    logger.error(`[materials] falha ao atualizar material: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível atualizar o material.' };
   }
 }
@@ -819,7 +820,7 @@ export async function deleteMaterial(input: {
       return { ok: true as const, materialId: material.id };
     });
   } catch (error) {
-    console.error(`[materials] falha ao remover material: ${errorMessage(error)}`);
+    logger.error(`[materials] falha ao remover material: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível remover o material.' };
   }
 }

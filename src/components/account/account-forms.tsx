@@ -23,6 +23,7 @@ import {
   formatBackupCode,
   passwordHint,
 } from '@/domain/account/account-rules';
+import { ACCOUNT_DELETION_CONFIRMATION_PHRASE } from '@/domain/identity/account-deletion-rules';
 import {
   IMAGE_INPUT_LABEL,
   MAX_IMAGE_BYTES,
@@ -871,4 +872,82 @@ function formatMoment(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Encerramento da própria conta (FASE 110)
+// ───────────────────────────────────────────────────────────────────────────────
+export function AccountDeletionForm({
+  hasPassword,
+  action,
+}: {
+  hasPassword: boolean;
+  action: Action;
+}) {
+  const [state, formAction, pending] = useActionState(action, null);
+  const router = useRouter();
+
+  if (state?.ok) {
+    return (
+      <div className="space-y-3" data-testid="account-deletion-done">
+        <Alert tone="success">
+          <span>{state.message}</span>
+        </Alert>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => router.push('/')}
+          data-testid="account-deletion-home"
+        >
+          Voltar para a página inicial
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form action={formAction} className="space-y-4" data-testid="account-deletion-form">
+      {hasPassword ? (
+        <Field name="account-delete-password" label="Sua senha atual">
+          <Input
+            id="account-delete-password"
+            name="currentPassword"
+            type="password"
+            required
+            autoComplete="current-password"
+            data-testid="account-delete-password"
+          />
+        </Field>
+      ) : null}
+
+      <Field
+        name="account-delete-phrase"
+        label={`Confirmação — digite "${ACCOUNT_DELETION_CONFIRMATION_PHRASE}"`}
+        hint="Esta operação revoga todas as suas sessões e vínculos de forma irreversível."
+      >
+        <Input
+          id="account-delete-phrase"
+          name="confirmationPhrase"
+          type="text"
+          required
+          placeholder={ACCOUNT_DELETION_CONFIRMATION_PHRASE}
+          data-testid="account-delete-phrase"
+        />
+      </Field>
+
+      <Feedback state={state} testId="account-deletion-feedback" />
+
+      <Button
+        type="submit"
+        variant="destructive"
+        size="sm"
+        disabled={pending}
+        data-testid="account-delete-submit"
+      >
+        {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Trash2 className="size-4" aria-hidden />}
+        {pending ? 'Encerrando conta…' : 'Encerrar minha conta definitivamente'}
+      </Button>
+    </form>
+  );
 }

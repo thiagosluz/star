@@ -12,6 +12,7 @@ import {
   Radio,
 } from 'lucide-react';
 
+import { PublicLegalLinks } from '@/components/privacy/public-legal-links';
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import { GetSearchForm } from '@/components/ui';
 import { KovenoMark } from '@/components/ui/brand-mark';
@@ -673,8 +674,9 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
       <footer className="mt-20 border-t border-border bg-card/30 py-8">
         <div className="mx-auto max-w-7xl px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
           <p>© {new Date().getFullYear()} Koveno. Plataforma SaaS multi-instituição de gestão de eventos.</p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-4">
             <Link href="/para-instituicoes" className="hover:text-foreground">Para Organizadores</Link>
+            <PublicLegalLinks />
             <ThemeChoice variant="public" />
           </div>
         </div>

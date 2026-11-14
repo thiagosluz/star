@@ -35,6 +35,7 @@ import {
   type SpeakerWorkloadResult,
 } from '@/domain/speakers/speaker-rules';
 import { attachSpeakerAccount } from '@/lib/speakers/speaker-service';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura do painel
@@ -689,7 +690,7 @@ export async function updateMySpeakerProfile(input: {
       return { ok: true as const, speakerProfileId: profile.id };
     });
   } catch (error) {
-    console.error(`[speakers] falha ao atualizar perfil próprio: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao atualizar perfil próprio: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar seu perfil.' };
   }
 }
@@ -773,7 +774,7 @@ export async function updateSpeakerNotes(input: {
       return { ok: true as const, linkId: link.id };
     });
   } catch (error) {
-    console.error(`[speakers] falha ao salvar ementa: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao salvar ementa: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar o conteúdo da atividade.' };
   }
 }
@@ -871,7 +872,7 @@ export async function claimSpeakerProfile(
       return { ok: true as const, speakerProfileId: profile.id, attachedActivities: activities };
     });
   } catch (error) {
-    console.error(`[speakers] falha ao reivindicar perfil: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao reivindicar perfil: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível aceitar o convite.' };
   }
 }

@@ -65,6 +65,7 @@ import {
   webpKeyFor,
   type ImageMimeType,
 } from '@/domain/events/image-rules';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * As duas finalidades desta tela.
@@ -218,7 +219,7 @@ export async function requestTenantPageAssetUpload(input: {
       maxBytes: validation.maxBytes,
     };
   } catch (error) {
-    console.error(`[f64] falha ao preparar o envio da imagem da página: ${errorMessage(error)}`);
+    logger.error(`[f64] falha ao preparar o envio da imagem da página: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'STORAGE',
@@ -330,11 +331,9 @@ export async function confirmTenantPageAssetUpload(
      * em vez de esconder.
      */
     await deleteObject(input.bucket, input.objectKey).catch((error: unknown) => {
-      console.error(
-        `[f64] imagem original da página não removida (${input.objectKey}): ${
+      logger.error(`[f64] imagem original da página não removida (${input.objectKey}): ${
           error instanceof Error ? error.message : 'falha desconhecida'
-        }`,
-      );
+        }`);
     });
 
     const url = publicObjectUrl(input.bucket, finalObjectKey);
@@ -369,7 +368,7 @@ export async function confirmTenantPageAssetUpload(
       sourceMime: realMime,
     };
   } catch (error) {
-    console.error(`[f64] falha ao confirmar a imagem da página: ${errorMessage(error)}`);
+    logger.error(`[f64] falha ao confirmar a imagem da página: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'STORAGE',

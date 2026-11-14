@@ -40,6 +40,7 @@ export const IDENTITY_AUDIT_EVENTS = [
   'OTHER_SESSIONS_REVOKED',
   'PROFILE_PHOTO_CHANGED',
   'PROFILE_PHOTO_REMOVED',
+  'ACCOUNT_DELETED',
 ] as const;
 
 export type IdentityAuditEvent = (typeof IDENTITY_AUDIT_EVENTS)[number];
@@ -60,6 +61,7 @@ export const IDENTITY_AUDIT_EVENT_LABELS: Readonly<Record<IdentityAuditEvent, st
   OTHER_SESSIONS_REVOKED: 'As outras sessões encerradas',
   PROFILE_PHOTO_CHANGED: 'Foto de perfil alterada',
   PROFILE_PHOTO_REMOVED: 'Foto de perfil removida',
+  ACCOUNT_DELETED: 'Conta encerrada pelo titular',
 };
 
 /**
@@ -87,6 +89,7 @@ export const IDENTITY_AUDIT_EVENT_TONES: Readonly<Record<IdentityAuditEvent, Ide
   OTHER_SESSIONS_REVOKED: 'WARN',
   PROFILE_PHOTO_CHANGED: 'INFO',
   PROFILE_PHOTO_REMOVED: 'INFO',
+  ACCOUNT_DELETED: 'CRITICAL',
 };
 
 export const IDENTITY_AUDIT_TONE_LABELS: Readonly<Record<IdentityAuditTone, string>> = {

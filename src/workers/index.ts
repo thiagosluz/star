@@ -47,15 +47,13 @@ import { logger } from '@/lib/observability/logger';
 import type { CertificateJobData } from '@/lib/certificates/queue';
 import type { EmailJobData } from '@/lib/communication/email-queue';
 
-const line = '─'.repeat(78);
-
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 4);
 
-console.log(`\n${line}\n  KOVENO WORKER\n${line}`);
-console.log(`  redis:       ${redisUrl}`);
-console.log(`  concurrency: ${concurrency}`);
-console.log(`  pid:         ${process.pid}\n`);
+logger.info('worker: inicializando', {
+  concurrency,
+  pid: process.pid,
+});
 
 const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: null, // exigido pelo BullMQ
@@ -69,15 +67,10 @@ async function start(): Promise<void> {
   try {
     await redis.connect();
     const pong = await redis.ping();
-    console.log(`  ✓ Redis respondeu: ${pong}`);
+    logger.info('worker: Redis respondeu', { pong });
   } catch (error) {
     // Falhar rápido e com mensagem clara é melhor que subir "saudável" e
     // descobrir o problema só quando o primeiro job for enfileirado.
-    console.error(
-      `  ✗ Não foi possível conectar ao Redis: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
     logger.error('worker: Redis inacessível no start', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -92,13 +85,8 @@ async function start(): Promise<void> {
   // O banco é validado aqui também: um worker sem banco não tem utilidade.
   try {
     await adminPrisma.$queryRaw`SELECT 1`;
-    console.log('  ✓ PostgreSQL respondeu');
+    logger.info('worker: PostgreSQL respondeu');
   } catch (error) {
-    console.error(
-      `  ✗ Não foi possível conectar ao PostgreSQL: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
     logger.error('worker: PostgreSQL inacessível no start', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -113,9 +101,6 @@ async function start(): Promise<void> {
      * worker avisa ALTO e continua vivo (a fila pode estar vazia), mas cada job
      * vai falhar com o motivo correto.
      */
-    console.error(
-      '  ⚠ CERTIFICATE_HMAC_SECRET ausente ou curto: a emissão de certificados vai falhar.',
-    );
     logger.warn('worker: CERTIFICATE_HMAC_SECRET ausente ou curto', {
       consequence: 'toda emissão de certificado vai falhar',
     });
@@ -131,7 +116,6 @@ async function start(): Promise<void> {
         throw new Error('Job inválido: tenantId e certificateId são obrigatórios.');
       }
 
-      console.log(`  → gerando certificado ${certificateId} (tentativa ${job.attemptsMade + 1})`);
       logger.info('worker: gerando certificado', {
         certificateId,
         tenantId,
@@ -146,7 +130,6 @@ async function start(): Promise<void> {
         throw new Error(`[${result.code}] ${result.message}`);
       }
 
-      console.log(`  ✓ certificado ${certificateId} emitido (${result.sizeBytes} bytes)`);
       logger.info('worker: certificado emitido', { certificateId, sizeBytes: result.sizeBytes });
 
       return { storageKey: result.storageKey, contentHash: result.contentHash };
@@ -158,7 +141,6 @@ async function start(): Promise<void> {
   );
 
   worker.on('failed', (job, error) => {
-    console.error(`  ✗ job ${job?.id ?? '?'} falhou: ${error.message}`);
     logger.error('worker: job de certificado falhou', {
       jobId: job?.id ?? null,
       certificateId: job?.data?.certificateId ?? null,
@@ -169,7 +151,6 @@ async function start(): Promise<void> {
   });
 
   worker.on('completed', (job) => {
-    console.log(`  ✓ job ${job.id} concluído`);
     logger.info('worker: job de certificado concluído', {
       jobId: job.id ?? null,
       certificateId: job.data?.certificateId ?? null,
@@ -178,7 +159,7 @@ async function start(): Promise<void> {
     });
   });
 
-  console.log(`\n  Worker pronto. Fila "${CERTIFICATE_QUEUE_NAME}" registrada.`);
+  logger.info('worker: fila de certificados registrada', { queue: CERTIFICATE_QUEUE_NAME });
 
   // ── Fila de e-mails (FASE 15) ──────────────────────────────────────────────
   const {
@@ -229,11 +210,15 @@ async function start(): Promise<void> {
         });
 
         if (outcome.status === 'SKIPPED') {
-          console.log(`  · ${key}: pulada (outra execução em andamento)`);
+          logger.info('worker: rotina pulada por execução simultânea', { key });
         } else if (outcome.status === 'FAILED') {
-          console.error(`  ✗ ${key}: falhou — ${outcome.error}`);
+          logger.error('worker: rotina falhou', { key, error: outcome.error });
         } else {
-          console.log(`  ✓ ${key}: ${outcome.items} ${JOB_CATALOG[key].itemsLabel}`);
+          logger.info('worker: rotina concluída', {
+            key,
+            items: outcome.items,
+            label: JOB_CATALOG[key].itemsLabel,
+          });
         }
 
         return outcome;
@@ -251,10 +236,12 @@ async function start(): Promise<void> {
         return runTracked('attendance-sweep', async () => {
           const sweep = await runAttendanceSweep();
 
-          console.log(
-            `    presenças: ${sweep.closed} sessão(ões) fechada(s) em ${sweep.tenants} instituição(ões), ` +
-              `${sweep.minutes} minuto(s) apurados, ${sweep.pending} ainda em andamento`,
-          );
+          logger.info('worker: varredura de presenças executada', {
+            closed: sweep.closed,
+            tenants: sweep.tenants,
+            minutes: sweep.minutes,
+            pending: sweep.pending,
+          });
 
           return sweep.closed;
         });
@@ -275,10 +262,11 @@ async function start(): Promise<void> {
           const reminders = await runConfirmationReminderScan();
           const expiry = await runConfirmationExpirySweep();
 
-          console.log(
-            `    confirmação de vaga: ${reminders.reminded} lembrete(s) enviado(s), ` +
-              `${expiry.released} vaga(s) liberada(s) por prazo e ${expiry.promoted} promoção(ões) da lista de espera`,
-          );
+          logger.info('worker: confirmação de vaga executada', {
+            reminded: reminders.reminded,
+            released: expiry.released,
+            promoted: expiry.promoted,
+          });
 
           return expiry.released + expiry.promoted;
         });
@@ -295,10 +283,12 @@ async function start(): Promise<void> {
         return runTracked('demand-due', async () => {
           const sweep = await runDemandDueSweep();
 
-          console.log(
-            `    demandas: ${sweep.dueSoon} aviso(s) de prazo próximo, ${sweep.overdue} de atraso, ` +
-              `${sweep.failures} falha(s), em ${sweep.tenants} instituição(ões)`,
-          );
+          logger.info('worker: varredura de demandas executada', {
+            dueSoon: sweep.dueSoon,
+            overdue: sweep.overdue,
+            failures: sweep.failures,
+            tenants: sweep.tenants,
+          });
 
           return sweep.dueSoon + sweep.overdue;
         });
@@ -308,10 +298,11 @@ async function start(): Promise<void> {
         return runTracked('review-deadlines', async () => {
           const scan = await runReviewDeadlineScan();
 
-          console.log(
-            `    prazos: ${scan.dueSoon} aviso(s) de prazo próximo, ${scan.overdue} vencido(s), ` +
-              `${scan.deduplicated} já avisado(s)`,
-          );
+          logger.info('worker: varredura de prazos de parecer executada', {
+            dueSoon: scan.dueSoon,
+            overdue: scan.overdue,
+            deduplicated: scan.deduplicated,
+          });
 
           return scan.dueSoon + scan.overdue;
         });
@@ -329,10 +320,12 @@ async function start(): Promise<void> {
         return runTracked('file-scan', async () => {
           const scan = await runFileScanSafely();
 
-          console.log(
-            `    inspeção: ${scan.scanned} arquivo(s) · ${scan.clean} limpo(s) · ` +
-              `${scan.infected} bloqueado(s) · ${scan.failed} sem veredito`,
-          );
+          logger.info('worker: inspeção de arquivos executada', {
+            scanned: scan.scanned,
+            clean: scan.clean,
+            infected: scan.infected,
+            failed: scan.failed,
+          });
 
           return scan.scanned;
         });
@@ -352,10 +345,10 @@ async function start(): Promise<void> {
 
           if (!outcome.ok) throw new Error(outcome.message);
 
-          console.log(
-            `    partições: ${outcome.result.created.length} criada(s), ` +
-              `${outcome.result.rescued} linha(s) resgatada(s) da DEFAULT`,
-          );
+          logger.info('worker: partições de auditoria verificadas', {
+            created: outcome.result.created.length,
+            rescued: outcome.result.rescued,
+          });
 
           return outcome.result.created.length;
         });
@@ -367,7 +360,11 @@ async function start(): Promise<void> {
         throw new Error('Job inválido: emailMessageId é obrigatório.');
       }
 
-      console.log(`  → entregando e-mail ${emailMessageId} (tentativa ${job.attemptsMade + 1})`);
+      logger.info('worker: entregando e-mail', {
+        emailMessageId,
+        tenantId: tenantId ?? undefined,
+        attempt: job.attemptsMade + 1,
+      });
 
       const result = await deliverEmail({ emailMessageId, tenantId });
 
@@ -396,7 +393,6 @@ async function start(): Promise<void> {
   );
 
   emailWorker.on('failed', (job, error) => {
-    console.error(`  ✗ e-mail ${job?.id ?? '?'} falhou: ${error.message}`);
     logger.error('worker: entrega de e-mail falhou', {
       jobId: job?.id ?? null,
       emailMessageId: job?.data?.emailMessageId ?? null,
@@ -426,19 +422,19 @@ async function start(): Promise<void> {
    */
   const { scheduled, failed } = await scheduleAutomationJobs();
 
-  console.log(
-    `  ✓ Fila "${EMAIL_QUEUE_NAME}" registrada (${scheduled.length} rotina(s) agendada(s): ${scheduled.join(', ')}${
-      failed.length > 0 ? ` · INDISPONÍVEIS: ${failed.join(', ')}` : ''
-    }).`,
-  );
-  console.log(`${line}\n`);
+  logger.info('worker: fila de e-mails e rotinas registradas', {
+    queue: EMAIL_QUEUE_NAME,
+    scheduledCount: scheduled.length,
+    scheduled,
+    failed,
+  });
 
   // ── Shutdown gracioso ──────────────────────────────────────────────────────
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
 
-    console.log(`\n  ${signal} recebido: encerrando com graciosidade...`);
+    logger.info('worker: sinal de encerramento recebido', { signal });
 
     try {
       // `close()` espera o job em andamento terminar: matar no meio deixaria um
@@ -452,7 +448,7 @@ async function start(): Promise<void> {
       // Nada a fazer no encerramento.
     }
 
-    console.log('  Worker encerrado.\n');
+    logger.info('worker: encerrado');
     process.exit(0);
   };
 
@@ -463,13 +459,15 @@ async function start(): Promise<void> {
     // Heartbeat: confirma que Redis segue acessível. Um worker que perdeu o
     // broker precisa se reiniciar, não ficar "vivo" sem consumir nada.
     void redis.ping().catch(() => {
-      console.error('  ✗ Redis inacessível no heartbeat. Encerrando para reinício.');
+      logger.error('worker: Redis inacessível no heartbeat; reiniciando');
       process.exit(1);
     });
   }, 30_000);
 }
 
 start().catch((error) => {
-  console.error(`  ✗ Falha ao iniciar o worker: ${error.message}`);
+  logger.error('worker: falha ao iniciar', {
+    error: error instanceof Error ? error.message : String(error),
+  });
   process.exit(1);
 });

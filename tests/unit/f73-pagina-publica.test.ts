@@ -368,8 +368,8 @@ describe('catraca do serviço público do resultado', () => {
   it('o `problems` vai para o LOG, nunca para a tela', () => {
     const servico = fonte(SERVICO);
 
-    expect(servico).toContain('console.warn(');
-    expect(servico).toContain('console.error(');
+    expect(servico).toContain('logger.warn(');
+    expect(servico).toContain('logger.error(');
     /** A assinatura devolve a view ou `null` — não há canal para o visitante ver aviso. */
     expect(servico).toContain('Promise<PublicCallResultView | null>');
   });

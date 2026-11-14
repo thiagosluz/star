@@ -22,6 +22,7 @@ import {
   type CardParticle,
 } from '@/domain/gamification/card-rules';
 import type { CardRarity, CardTrigger } from '@/domain/gamification/types';
+import { logger } from '@/lib/observability/logger';
 
 export type CardErrorCode = 'NOT_FOUND' | 'NOT_OWNED' | 'PIN_LIMIT' | 'INTERNAL';
 
@@ -210,7 +211,7 @@ export async function getAlbum(tenantId: string, userId: string): Promise<CardRe
       ).length,
     };
   } catch (error) {
-    console.error(`[gamification] falha ao carregar álbum: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao carregar álbum: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar o álbum.' };
   }
 }
@@ -273,7 +274,7 @@ export async function setCardPinned(input: {
       return { ok: true as const, pinnedCount };
     });
   } catch (error) {
-    console.error(`[gamification] falha ao fixar carta: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao fixar carta: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível alterar o destaque.' };
   }
 }

@@ -18,16 +18,26 @@
  */
 import { cookies } from 'next/headers';
 
+import {
+  COOKIE_CONSENT_COOKIE,
+  isPreferenceRejected,
+  parseCookieConsent,
+} from '@/domain/privacy/privacy-consent-rules';
 import { NAV_MODE_COOKIE, navModeFromValue, type NavMode } from '@/lib/shell/nav-mode';
 
 /**
  * O estado da barra desta requisição.
  *
  * Não lança quando o cookie não existe: ausência é o estado padrão (`full`), e a
- * decisão de qual é o padrão é da regra pura, não desta leitura.
+ * decisão de qual é o padrão é da regra pura, não desta leitura. Se o visitante
+ * recusou cookies de preferência (`ESSENTIAL_ONLY`), devolvemos sempre `full`.
  */
 export async function readNavMode(): Promise<NavMode> {
   const cookieStore = await cookies();
+  const consent = parseCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE)?.value);
+  if (isPreferenceRejected(consent)) {
+    return 'full';
+  }
 
   return navModeFromValue(cookieStore.get(NAV_MODE_COOKIE)?.value);
 }

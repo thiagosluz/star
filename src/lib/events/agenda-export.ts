@@ -66,6 +66,7 @@ import {
   type AgendaActivityStatus,
 } from '@/domain/agenda/agenda-rules';
 import { buildActivityIcs as buildActivityCalendar, buildScheduleIcs, type CalendarItem } from '@/lib/calendar/ics';
+import { logger } from '@/lib/observability/logger';
 
 /** Rótulo próprio: vazar a chave da carta não abre a agenda, e vice-versa. */
 const TOKEN_LABEL = 'eventflow:agenda-ics:';
@@ -435,10 +436,7 @@ export async function exportAgendaIcs(input: {
       fileName: icsFileName({ base: `Minha agenda - ${dados.event.title}` }),
     };
   } catch (error) {
-    console.error(
-      `[agenda] falha ao montar a grade para exportação (evento ${input.eventId}):`,
-      error instanceof Error ? error.message : error,
-    );
+    logger.error(`[agenda] falha ao montar a grade para exportação (evento ${input.eventId}):`, { error: error instanceof Error ? error.message : error });
 
     return {
       ok: false,
@@ -505,10 +503,7 @@ export async function exportActivityIcs(input: {
       fileName: icsFileName({ base: dados.item.title }),
     };
   } catch (error) {
-    console.error(
-      `[agenda] falha ao montar o .ics da atividade ${input.activityId}:`,
-      error instanceof Error ? error.message : error,
-    );
+    logger.error(`[agenda] falha ao montar o .ics da atividade ${input.activityId}:`, { error: error instanceof Error ? error.message : error });
 
     return {
       ok: false,

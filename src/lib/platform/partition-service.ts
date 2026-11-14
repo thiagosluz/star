@@ -27,6 +27,7 @@
  */
 import { adminPrisma } from '@/lib/db/admin-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
+import { logger } from '@/lib/observability/logger';
 
 /** Quantos meses à frente garantir, quando ninguém diz outra coisa. */
 export const DEFAULT_PARTITION_MONTHS_AHEAD = 2;
@@ -206,7 +207,7 @@ export async function ensureAuditPartitions(
       },
     };
   } catch (error) {
-    console.error(`[partitions] falha na manutenção: ${errorMessage(error)}`);
+    logger.error(`[partitions] falha na manutenção: ${errorMessage(error)}`);
 
     return {
       ok: false,

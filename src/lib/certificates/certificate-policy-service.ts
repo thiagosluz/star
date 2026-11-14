@@ -32,6 +32,7 @@ import {
   readCertificatePolicy,
   type CertificatePolicy,
 } from '@/domain/certificates/certificate-policy-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type CertificatePolicyErrorCode =
   | 'NOT_FOUND'
@@ -125,7 +126,7 @@ export async function saveCertificatePolicy(input: {
       return { ok: true as const, policy: read.policy };
     });
   } catch (error) {
-    console.error(`[certificates] falha ao gravar a política de presença: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao gravar a política de presença: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,

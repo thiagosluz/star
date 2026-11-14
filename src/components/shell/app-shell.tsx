@@ -7,6 +7,7 @@ import { NavCollapseToggle } from '@/components/shell/nav-collapse-toggle';
 import { RouteProgress } from '@/components/shell/route-progress';
 import { KovenoMark, PLATFORM_BRAND_NAME } from '@/components/ui/brand-mark';
 import { NavLink } from '@/components/ui/navigation';
+import { isVisitorPreferenceRejected } from '@/lib/privacy/cookie-consent-service';
 import { NAV_MODE_RAIL } from '@/lib/shell/nav-mode';
 import { readNavMode } from '@/lib/shell/nav-mode-server';
 import { cn } from '@/lib/utils/cn';
@@ -221,7 +222,10 @@ export async function AppShell({
    *  inverte são o cookie e a Server Action, e o botão apenas reflete o que o
    *  servidor entregou.
    */
-  const navMode = await readNavMode();
+  const [navMode, preferencesRejected] = await Promise.all([
+    readNavMode(),
+    isVisitorPreferenceRejected(),
+  ]);
   const recolhida = navMode === NAV_MODE_RAIL;
 
   return (
@@ -288,7 +292,7 @@ export async function AppShell({
             <p className="label-caps mt-0.5">{brand.tagline}</p>
           ) : null}
 
-          <NavCollapseToggle mode={navMode} />
+          <NavCollapseToggle mode={navMode} preferencesAllowed={!preferencesRejected} />
         </div>
 
         <div className="border-b border-border py-2">

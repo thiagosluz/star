@@ -34,6 +34,7 @@ import {
   type GrantedCard,
   type RewardOutcome,
 } from '@/lib/gamification/reward-engine';
+import { logger } from '@/lib/observability/logger';
 
 export type TaskErrorCode = 'NOT_FOUND' | 'NOT_CLAIMABLE' | 'INTERNAL';
 
@@ -238,7 +239,7 @@ export async function listMissions(
 
     return { ok: true as const, missions };
   } catch (error) {
-    console.error(`[gamification] falha ao listar missões: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao listar missões: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar as missões.' };
   }
 }
@@ -395,7 +396,7 @@ export async function claimMission(input: {
       alreadyClaimed: claimed === 0,
     };
   } catch (error) {
-    console.error(`[gamification] falha ao resgatar missão: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao resgatar missão: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível resgatar a missão.' };
   }
 }

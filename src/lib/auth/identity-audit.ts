@@ -19,6 +19,7 @@ import { headers } from 'next/headers';
 
 import { recordIdentityAudit } from '@/lib/platform/identity-audit-service';
 import type { IdentityAuditEvent } from '@/domain/identity/identity-audit-rules';
+import { logger } from '@/lib/observability/logger';
 
 export async function recordIdentityEvent(input: {
   /** A conta afetada. `null` quando o fato não chegou a uma conta (e-mail inexistente). */
@@ -45,6 +46,6 @@ export async function recordIdentityEvent(input: {
      * segurança NUNCA pode derrubar a operação que já deu certo — o erro vai para o
      * log e a troca de senha continua valendo.
      */
-    console.error(`[identity-audit] não foi possível ler a requisição: ${String(error)}`);
+    logger.error(`[identity-audit] não foi possível ler a requisição: ${String(error)}`);
   }
 }

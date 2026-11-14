@@ -175,6 +175,21 @@ export default async function MyRegistrationsPage({
                         />
                       </div>
                     ) : null}
+
+                    {registration.consentVersion || registration.consentText ? (
+                      <details
+                        className="mt-2 text-xs text-muted-foreground"
+                        data-testid="registration-consent-receipt"
+                      >
+                        <summary className="cursor-pointer underline underline-offset-4 hover:text-foreground">
+                          Consentimento registrado
+                          {registration.consentVersion ? ` (${registration.consentVersion})` : ''}
+                        </summary>
+                        <p className="mt-1 rounded border border-border bg-muted/40 p-2 leading-relaxed">
+                          {registration.consentText ?? 'Aceite registrado em banco.'}
+                        </p>
+                      </details>
+                    ) : null}
                   </>
                 ) : (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

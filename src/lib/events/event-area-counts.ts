@@ -31,6 +31,7 @@ import { readEventApiKeyState } from '@/domain/api/event-api-organizer-rules';
 import { readEventApiConfig } from '@/domain/api/event-api-key-rules';
 
 import type { EventAreaCounts } from '@/domain/events/event-areas';
+import { logger } from '@/lib/observability/logger';
 
 export type EventAreaCountsResult =
   | { ok: true; counts: EventAreaCounts }
@@ -144,7 +145,7 @@ export async function getEventAreaCounts(input: {
      * existe porque a falha é SILENCIOSA por desenho — sem ele, uma consulta quebrada
      * vira "os cartões nunca têm selo" e ninguém sabe por quê.
      */
-    console.error(`[areas] falha ao contar as áreas do evento: ${errorMessage(error)}`);
+    logger.error(`[areas] falha ao contar as áreas do evento: ${errorMessage(error)}`);
 
     return {
       ok: false,

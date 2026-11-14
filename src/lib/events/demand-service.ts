@@ -68,6 +68,7 @@ import {
   notifyDemandOverdue,
   type NoticeOutcome,
 } from '@/lib/events/demand-notices';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Contratos
@@ -435,7 +436,7 @@ export async function loadDemandBoard(input: {
       };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao ler o quadro: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao ler o quadro: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível carregar o quadro de demandas.');
   }
 }
@@ -630,7 +631,7 @@ export async function loadDemandDetail(input: {
       };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao ler a demanda: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao ler a demanda: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível carregar a demanda.');
   }
 }
@@ -807,7 +808,7 @@ export async function createDemand(
 
     return { ok: true, demandId: result.demandId, notices };
   } catch (error) {
-    console.error(`[demandas] falha ao criar demanda: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao criar demanda: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível criar a demanda.');
   }
 }
@@ -941,7 +942,7 @@ export async function updateDemand(input: UpdateDemandInput): Promise<{ ok: true
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao editar demanda: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao editar demanda: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível salvar a demanda.');
   }
 }
@@ -1092,7 +1093,7 @@ export async function moveDemand(
       return { ok: true as const, completed: target.isDone };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao mover demanda: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao mover demanda: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível mover a demanda.');
   }
 }
@@ -1254,7 +1255,7 @@ export async function setDemandAssignees(input: {
 
     return { ok: true, notices };
   } catch (error) {
-    console.error(`[demandas] falha ao atribuir demanda: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao atribuir demanda: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível salvar os responsáveis.');
   }
 }
@@ -1344,7 +1345,7 @@ export async function addDemandComment(input: {
 
     return { ok: true, commentId: result.commentId, notices };
   } catch (error) {
-    console.error(`[demandas] falha ao comentar: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao comentar: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível salvar o comentário.');
   }
 }
@@ -1395,7 +1396,7 @@ export async function deleteDemand(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao excluir demanda: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao excluir demanda: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível excluir a demanda.');
   }
 }
@@ -1456,7 +1457,7 @@ export async function createDemandColumn(input: {
       return { ok: true as const, columnId: column.id };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao criar coluna: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao criar coluna: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível criar a coluna.');
   }
 }
@@ -1533,7 +1534,7 @@ export async function updateDemandColumn(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao editar coluna: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao editar coluna: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível salvar a coluna.');
   }
 }
@@ -1589,7 +1590,7 @@ export async function deleteDemandColumn(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao excluir coluna: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao excluir coluna: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível excluir a coluna.');
   }
 }
@@ -1630,7 +1631,7 @@ export async function reorderDemandColumns(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao reordenar colunas: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao reordenar colunas: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível reordenar as colunas.');
   }
 }
@@ -1705,7 +1706,7 @@ export async function createEventTeam(input: {
       return { ok: true as const, teamId: team.id };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao criar equipe: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao criar equipe: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível criar a equipe.');
   }
 }
@@ -1786,7 +1787,7 @@ export async function setEventTeamMembers(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao salvar a equipe: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao salvar a equipe: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível salvar a equipe.');
   }
 }
@@ -1835,7 +1836,7 @@ export async function deleteEventTeam(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao excluir equipe: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao excluir equipe: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível excluir a equipe.');
   }
 }
@@ -1862,7 +1863,7 @@ export async function loadEventTeamOrder(input: {
       return { ok: true as const, teams: orderTeamsForDisplay(teams) };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao ler a ordem das equipes: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao ler a ordem das equipes: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível ler a ordem das equipes.');
   }
 }
@@ -1931,7 +1932,7 @@ export async function reorderEventTeams(input: {
       return { ok: true as const };
     });
   } catch (error) {
-    console.error(`[demandas] falha ao reordenar as equipes: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao reordenar as equipes: ${errorMessage(error)}`);
     return fail('INTERNAL', 'Não foi possível salvar a ordem das equipes.');
   }
 }
@@ -1954,7 +1955,7 @@ export async function leadingTeamIds(input: {
       return rows.map((row) => row.teamId);
     });
   } catch (error) {
-    console.error(`[demandas] falha ao ler a liderança: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao ler a liderança: ${errorMessage(error)}`);
     return [];
   }
 }
@@ -1970,7 +1971,7 @@ export async function loadColumnOrder(input: {
       return columns.map((column) => ({ id: column.id, name: column.name }));
     });
   } catch (error) {
-    console.error(`[demandas] falha ao ler as colunas: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao ler as colunas: ${errorMessage(error)}`);
     return [];
   }
 }
@@ -2108,7 +2109,7 @@ export async function runDemandDueSweep(
       }
     }
   } catch (error) {
-    console.error(`[demandas] falha na varredura de prazos: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha na varredura de prazos: ${errorMessage(error)}`);
   }
 
   return result;

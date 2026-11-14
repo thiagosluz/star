@@ -35,6 +35,7 @@ import {
   type ProfileReportCategory,
   type ProfileReportStatus,
 } from '@/domain/profile/profile-moderation-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type ProfileModerationErrorCode =
   | 'NOT_FOUND'
@@ -156,7 +157,7 @@ export async function listModerationQueue(
       summary,
     };
   } catch (error) {
-    console.error(`[moderacao] falha ao ler a fila de denúncias: ${errorMessage(error)}`);
+    logger.error(`[moderacao] falha ao ler a fila de denúncias: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'INTERNAL',
@@ -176,7 +177,7 @@ export async function countOpenReports(): Promise<number | null> {
   try {
     return await adminPrisma.profileReport.count({ where: { status: 'OPEN' } });
   } catch (error) {
-    console.error(`[moderacao] falha ao contar as denúncias abertas: ${errorMessage(error)}`);
+    logger.error(`[moderacao] falha ao contar as denúncias abertas: ${errorMessage(error)}`);
     return null;
   }
 }
@@ -288,7 +289,7 @@ export async function decideReport(
       };
     }
   } catch (error) {
-    console.error(`[moderacao] falha ao decidir a denúncia: ${errorMessage(error)}`);
+    logger.error(`[moderacao] falha ao decidir a denúncia: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'INTERNAL',

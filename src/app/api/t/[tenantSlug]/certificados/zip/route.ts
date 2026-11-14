@@ -9,6 +9,7 @@ import { planEventCertificateZip } from '@/lib/certificates/certificate-service'
 import { getObjectBuffer } from '@/lib/storage/s3-client';
 import { zipFileName, zipWebStream, type ZipEntry } from '@/lib/documents/zip-writer';
 import { recordAudit } from '@/lib/admin/audit';
+import { logger } from '@/lib/observability/logger';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -150,11 +151,9 @@ export async function GET(
 
         yield { name: entry.fileName, content };
       } catch (error) {
-        console.error(
-          `[certificates] certificado ${entry.certificateId} ficou fora do lote: ${
+        logger.error(`[certificates] certificado ${entry.certificateId} ficou fora do lote: ${
             error instanceof Error ? error.message : 'erro desconhecido'
-          }`,
-        );
+          }`);
       }
     }
   }

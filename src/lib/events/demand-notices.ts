@@ -33,6 +33,7 @@ import { errorMessage } from '@/lib/db/prisma-errors';
 import { deliverNotice, noticeFailure, type NoticeOutcome } from '@/lib/communication/notice-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { daysLate, dueDayLabel, localDayKey, priorityLabel } from '@/domain/events/demand-rules';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * O contrato do aviso vem do módulo compartilhado (`notice-service`) e é
@@ -170,7 +171,7 @@ export async function notifyDemandAssigned(input: {
       },
     });
   } catch (error) {
-    console.error(`[demandas] falha ao avisar atribuição: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao avisar atribuição: ${errorMessage(error)}`);
     return FAILED(errorMessage(error));
   }
 }
@@ -241,7 +242,7 @@ export async function notifyDemandMention(input: {
       },
     });
   } catch (error) {
-    console.error(`[demandas] falha ao avisar menção: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao avisar menção: ${errorMessage(error)}`);
     return FAILED(errorMessage(error));
   }
 }
@@ -286,7 +287,7 @@ export async function notifyDemandDueSoon(input: {
       },
     });
   } catch (error) {
-    console.error(`[demandas] falha ao avisar prazo próximo: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao avisar prazo próximo: ${errorMessage(error)}`);
     return FAILED(errorMessage(error));
   }
 }
@@ -329,7 +330,7 @@ export async function notifyDemandOverdue(input: {
       },
     });
   } catch (error) {
-    console.error(`[demandas] falha ao avisar atraso: ${errorMessage(error)}`);
+    logger.error(`[demandas] falha ao avisar atraso: ${errorMessage(error)}`);
     return FAILED(errorMessage(error));
   }
 }

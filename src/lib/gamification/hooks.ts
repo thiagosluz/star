@@ -22,12 +22,13 @@
 import { withTenant } from '@/lib/db/tenant-client';
 import { resolveRegistrationCreditKey } from '@/lib/gamification/xp-reversal';
 import { awardForEvent, rewardKeys, type RewardOutcome } from '@/lib/gamification/reward-engine';
+import { logger } from '@/lib/observability/logger';
 
 /** Resultado do gancho: `null` quando a recompensa não pôde ser aplicada. */
 export type HookOutcome = RewardOutcome | null;
 
 function logHookFailure(hook: string, message: string): void {
-  console.error(`[gamification] gancho "${hook}" falhou (não-fatal): ${message}`);
+  logger.error(`[gamification] gancho "${hook}" falhou (não-fatal): ${message}`);
 }
 
 /**

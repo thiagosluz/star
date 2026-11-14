@@ -53,6 +53,7 @@ import {
   type ProposalKind,
 } from '@/domain/proposals/call-rules';
 import type { ProposalResult } from '@/lib/proposals/proposal-service';
+import { logger } from '@/lib/observability/logger';
 
 /** Convite do palestrante válido por 14 dias — o mesmo prazo do cadastro manual. */
 const INVITE_VALID_DAYS = 14;
@@ -345,7 +346,7 @@ export async function acceptProposal(input: AcceptProposalInput): Promise<Propos
       warnings,
     };
   } catch (error) {
-    console.error(`[proposals] falha no aceite da proposta: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha no aceite da proposta: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível registrar o aceite.' };
   }
@@ -446,7 +447,7 @@ export async function getAcceptanceContext(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao carregar o contexto do aceite: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao carregar o contexto do aceite: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar a proposta.' };
   }

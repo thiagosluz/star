@@ -58,6 +58,7 @@ import {
   type ValidatedSegmentCondition,
   type SegmentRecipientIdentity,
 } from '@/domain/communication/segments';
+import { logger } from '@/lib/observability/logger';
 
 type SegmentWhere = Prisma.UserWhereInput;
 
@@ -843,7 +844,7 @@ export async function evaluateSegment(
       };
     });
   } catch (error) {
-    console.error(`[segments] falha ao avaliar o segmento: ${errorMessage(error)}`);
+    logger.error(`[segments] falha ao avaliar o segmento: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível avaliar o segmento.' };
   }

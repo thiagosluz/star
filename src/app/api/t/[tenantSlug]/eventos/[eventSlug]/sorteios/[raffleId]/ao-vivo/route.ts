@@ -48,6 +48,7 @@ import {
   type RaffleLiveState,
 } from '@/lib/raffles/raffle-public-view-service';
 import type { RaffleConfig } from '@/domain/raffles/raffle-rules';
+import { logger } from '@/lib/observability/logger';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -310,9 +311,7 @@ export async function GET(
 
           scheduleNext(current.pendingRound ? SAMPLE_INTERVAL_MS : IDLE_SAMPLE_INTERVAL_MS);
         } catch (error) {
-          console.error(
-            `[raffles] falha no ao vivo do palco: ${error instanceof Error ? error.message : error}`,
-          );
+          logger.error(`[raffles] falha no ao vivo do palco: ${error instanceof Error ? error.message : error}`);
           send(`event: error\ndata: ${JSON.stringify({ code: 'INTERNAL' })}\n\n`);
           // Falha de leitura não encerra o fluxo: o telão continua vivo e tenta de novo.
           scheduleNext(SAMPLE_INTERVAL_MS);

@@ -64,6 +64,7 @@ import {
   eventApiPreflightResponse,
   eventApiSuccessResponse,
 } from '@/lib/api/event-api-http';
+import { logger } from '@/lib/observability/logger';
 
 export interface EventApiRouteContext {
   params: Promise<{ tenantSlug: string; eventSlug: string }>;
@@ -249,7 +250,7 @@ export function createEventApiRouteHandlers(
        * de um campo fora da ordem canônica) vira 500 genérico. O log guarda a
        * causa; a resposta não vaza diagnóstico.
        */
-      console.error(`[api] falha na leitura pública de "${resource}": ${errorMessage(error)}`);
+      logger.error(`[api] falha na leitura pública de "${resource}": ${errorMessage(error)}`);
 
       return eventApiErrorResponse({
         request,

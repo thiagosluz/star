@@ -10,6 +10,7 @@ import { encodeThumbnailAsWebp } from '@/lib/storage/image-converter';
 import { getObjectBuffer, inspectObject, putObjectBuffer } from '@/lib/storage/s3-client';
 import { tenantApiError } from '@/lib/api/tenant-api-error';
 import { isUuid } from '@/domain/validation/id-rules';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -151,10 +152,7 @@ export async function GET(
       metadata: { derivedFrom: asset.objectKey },
     });
   } catch (error) {
-    console.error(
-      `[acervo] miniatura gerada, mas não guardada (${thumbnailKey}):`,
-      error instanceof Error ? error.message : error,
-    );
+    logger.error(`[acervo] miniatura gerada, mas não guardada (${thumbnailKey}):`, { error: error instanceof Error ? error.message : error });
   }
 
   return imageResponse(thumbnail.bytes);

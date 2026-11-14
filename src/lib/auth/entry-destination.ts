@@ -58,6 +58,7 @@ import {
   parseActiveTenant,
   type TenantMembership,
 } from '@/lib/auth/session';
+import { logger } from '@/lib/observability/logger';
 
 /** O que o formulário de entrada carregou. */
 export interface EntryDestinationOptions {
@@ -134,7 +135,7 @@ export async function resolveEntryDestinationForUser(
      * consulta que só melhora o destino. O log existe para não mascarar a falha
      * em silêncio (FASE 88 · B10).
      */
-    console.error(`[entrada] falha ao consultar o principal de plataforma: ${errorMessage(error)}`);
+    logger.error(`[entrada] falha ao consultar o principal de plataforma: ${errorMessage(error)}`);
     isPlatformOperator = false;
   }
 

@@ -90,6 +90,7 @@ import {
   loadRaffleWinnerIds,
   type RaffleResult,
 } from '@/lib/raffles/raffle-read-service';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura do universo
@@ -494,7 +495,7 @@ export async function createRaffle(input: CreateRaffleInput): Promise<
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao criar sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao criar sorteio: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -701,7 +702,7 @@ export async function prepareRound(input: {
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao preparar a rodada: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao preparar a rodada: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -841,7 +842,7 @@ export async function updateRoundAnnouncement(input: {
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao atualizar anúncio da rodada: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao atualizar anúncio da rodada: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -1043,9 +1044,7 @@ export async function drawRound(input: {
          * mas travar a apuração no palco por causa disso trocaria um risco remoto por
          * um defeito certo. A página de auditoria mostra o aviso.
          */
-        console.warn(
-          `[raffles] códigos de participante repetidos na lista do sorteio ${raffle.id}: ${duplicatedCodes.join(', ')}`,
-        );
+        logger.warn(`[raffles] códigos de participante repetidos na lista do sorteio ${raffle.id}: ${duplicatedCodes.join(', ')}`);
       }
 
       const storedPoolHash = poolHash(storedPool);
@@ -1278,7 +1277,7 @@ export async function drawRound(input: {
       };
     }
 
-    console.error(`[raffles] falha na apuração: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha na apuração: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -1439,7 +1438,7 @@ export async function markPrizeDelivered(input: {
       return { ok: true as const, ...delivery };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao registrar entrega: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao registrar entrega: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -1587,7 +1586,7 @@ export async function reversePrizeDelivery(input: {
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao desfazer entrega: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao desfazer entrega: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -1656,7 +1655,7 @@ export async function setRaffleVisibility(input: {
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao alterar visibilidade: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao alterar visibilidade: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -1724,7 +1723,7 @@ export async function setBigscreenVisibility(input: {
       return { ok: true as const, raffleId: raffle.id, bigscreenVisible: input.visible };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao alterar o telão do sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao alterar o telão do sorteio: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -1784,7 +1783,7 @@ export async function cancelRaffle(input: {
       return { ok: true as const, status: 'CANCELED' };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao cancelar sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao cancelar sorteio: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',

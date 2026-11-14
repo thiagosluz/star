@@ -124,6 +124,21 @@ function formatLabels(labels: MetricLabels, extra: MetricLabels = {}): string {
   return `{${entries.map(([key, value]) => `${key}="${String(value)}"`).join(',')}}`;
 }
 
+export function sumCounterValues(
+  name: string,
+  predicate?: (labels: MetricLabels) => boolean,
+): number {
+  let total = 0;
+
+  for (const entry of state.counters.values()) {
+    if (entry.name !== name) continue;
+    if (predicate && !predicate(entry.labels)) continue;
+    total += entry.value;
+  }
+
+  return total;
+}
+
 /** Exposição no formato do Prometheus (text/plain; version=0.0.4). */
 export function renderMetrics(): string {
   const lines: string[] = [];

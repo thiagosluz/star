@@ -1,9 +1,11 @@
 import { Monitor, Moon, Sun } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { setThemeModeAction } from '@/app/actions/theme-actions';
 import { buttonClasses } from '@/components/ui/button';
 import { FormStatusButton } from '@/components/ui/form-status-button';
+import { isVisitorPreferenceRejected } from '@/lib/privacy/cookie-consent-service';
 import {
   THEME_MODES,
   THEME_MODE_DESCRIPTIONS,
@@ -145,7 +147,11 @@ export async function ThemeChoice({
   variant?: ThemeChoiceVariant;
   className?: string;
 }) {
-  const atual = await readThemeMode();
+  const [atual, preferencesRejected] = await Promise.all([
+    readThemeMode(),
+    isVisitorPreferenceRejected(),
+  ]);
+  const preferencesAllowed = !preferencesRejected;
 
   const opcoes = THEME_MODES.map((modo) => {
     const selecionado = modo === atual;
@@ -233,6 +239,15 @@ export async function ThemeChoice({
         >
           {opcoes}
         </div>
+        {!preferencesAllowed && (
+          <Link
+            href="/privacidade#cookies"
+            data-testid="theme-preferences-disabled-notice"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Preferências de cookies desativadas
+          </Link>
+        )}
       </form>
     );
   }
@@ -252,6 +267,20 @@ export async function ThemeChoice({
         <div className={cn(variant === 'menu' ? 'space-y-1 p-2 pt-0' : 'flex flex-wrap gap-2')}>
           {opcoes}
         </div>
+        {!preferencesAllowed && (
+          <p
+            data-testid="theme-preferences-disabled-notice"
+            className={cn(
+              'text-xs text-muted-foreground',
+              variant === 'menu' ? 'px-3 pb-2' : 'mt-2',
+            )}
+          >
+            Cookies de preferência desativados — tema permanece no padrão do sistema.{' '}
+            <Link href="/privacidade#cookies" className="underline underline-offset-2 hover:text-foreground">
+              Alterar escolha
+            </Link>
+          </p>
+        )}
       </fieldset>
     </form>
   );

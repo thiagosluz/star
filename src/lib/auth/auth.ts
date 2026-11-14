@@ -38,6 +38,7 @@ import {
   VERIFICATION_TOKEN_HOURS,
   sendAccountEmail,
 } from '@/lib/communication/account-mail';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * O endereço que a biblioteca está confirmando é um NOVO e-mail? (FASE 47)
@@ -65,7 +66,7 @@ async function isEmailChange(userId: string, addressedEmail: string): Promise<bo
     return stored.email.toLowerCase() !== addressedEmail.toLowerCase();
   } catch (error) {
     // Falha de leitura não pode impedir a confirmação: cai no texto de sempre.
-    console.error(`[auth] falha ao conferir troca de e-mail: ${errorMessage(error)}`);
+    logger.error(`[auth] falha ao conferir troca de e-mail: ${errorMessage(error)}`);
     return false;
   }
 }

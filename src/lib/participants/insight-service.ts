@@ -40,6 +40,7 @@ import {
   type IntelligenceRange,
 } from '@/domain/participants/participant-rules';
 import type { ParticipantResult } from '@/lib/participants/participant-service';
+import { logger } from '@/lib/observability/logger';
 
 /** Teto de eventos na série: o relatório é para leitura, não para exportação em massa. */
 const INSIGHT_EVENT_LIMIT = 200;
@@ -279,7 +280,7 @@ export async function getInstitutionIntelligence(input: {
       };
     });
   } catch (error) {
-    console.error(`[participants] falha ao apurar a inteligência da instituição: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao apurar a inteligência da instituição: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível apurar os números da instituição.' };
   }

@@ -47,6 +47,7 @@ import {
   type SocialLinks,
   type SpeakerAvatarSource,
 } from '@/domain/speakers/speaker-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type SpeakerErrorCode =
   | 'NOT_FOUND'
@@ -429,7 +430,7 @@ export async function saveSpeakerProfile(
       };
     }
 
-    console.error(`[speakers] falha ao salvar perfil: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao salvar perfil: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível salvar o palestrante.' };
   }
 }
@@ -506,7 +507,7 @@ export async function regenerateSpeakerInvite(input: {
       return { ok: true as const, inviteToken: token, inviteExpiresAt: expiresAt.toISOString() };
     });
   } catch (error) {
-    console.error(`[speakers] falha ao gerar convite: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao gerar convite: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível gerar o convite.' };
   }
 }
@@ -638,7 +639,7 @@ export async function linkSpeakerToActivity(
       };
     }
 
-    console.error(`[speakers] falha ao vincular palestrante: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao vincular palestrante: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível vincular o palestrante.' };
   }
 }
@@ -699,7 +700,7 @@ export async function unlinkSpeakerFromActivity(input: {
       return { ok: true as const, linkId: link.id };
     });
   } catch (error) {
-    console.error(`[speakers] falha ao desvincular palestrante: ${errorMessage(error)}`);
+    logger.error(`[speakers] falha ao desvincular palestrante: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível desvincular o palestrante.' };
   }
 }

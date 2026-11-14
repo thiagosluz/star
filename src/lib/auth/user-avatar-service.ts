@@ -58,6 +58,7 @@ import {
   webpKeyFor,
   type ImageMimeType,
 } from '@/domain/events/image-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type AvatarErrorCode = 'INVALID_INPUT' | 'INTEGRITY' | 'STORAGE' | 'NOT_FOUND';
 
@@ -152,7 +153,7 @@ export async function requestUserAvatarUpload(input: {
       maxBytes: validation.maxBytes,
     };
   } catch (error) {
-    console.error(`[avatar] falha ao preparar envio: ${errorMessage(error)}`);
+    logger.error(`[avatar] falha ao preparar envio: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível preparar o envio da foto.' };
   }
 }
@@ -246,11 +247,9 @@ export async function confirmUserAvatarUpload(
     });
 
     await deleteObject(input.bucket, input.objectKey).catch((error: unknown) => {
-      console.error(
-        `[avatar] objeto enviado não removido (${input.objectKey}): ${
+      logger.error(`[avatar] objeto enviado não removido (${input.objectKey}): ${
           error instanceof Error ? error.message : 'falha desconhecida'
-        }`,
-      );
+        }`);
     });
 
     const previous = await adminPrisma.user.findUnique({
@@ -279,11 +278,9 @@ export async function confirmUserAvatarUpload(
 
     if (obsoleteKey && obsoleteKey !== finalObjectKey) {
       await deleteObject(input.bucket, obsoleteKey).catch((error: unknown) => {
-        console.error(
-          `[avatar] foto anterior não removida (${obsoleteKey}): ${
+        logger.error(`[avatar] foto anterior não removida (${obsoleteKey}): ${
             error instanceof Error ? error.message : 'falha desconhecida'
-          }`,
-        );
+          }`);
       });
     }
 
@@ -296,7 +293,7 @@ export async function confirmUserAvatarUpload(
       sourceMime: realMime,
     };
   } catch (error) {
-    console.error(`[avatar] falha ao confirmar envio: ${errorMessage(error)}`);
+    logger.error(`[avatar] falha ao confirmar envio: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível salvar a sua foto.' };
   }
 }
@@ -326,17 +323,15 @@ export async function removeUserAvatar(userId: string): Promise<AvatarResult<{ r
 
     if (obsoleteKey) {
       await deleteObject(bucket, obsoleteKey).catch((error: unknown) => {
-        console.error(
-          `[avatar] foto removida da conta, mas o objeto ficou (${obsoleteKey}): ${
+        logger.error(`[avatar] foto removida da conta, mas o objeto ficou (${obsoleteKey}): ${
             error instanceof Error ? error.message : 'falha desconhecida'
-          }`,
-        );
+          }`);
       });
     }
 
     return { ok: true, removed: current.image !== null };
   } catch (error) {
-    console.error(`[avatar] falha ao remover: ${errorMessage(error)}`);
+    logger.error(`[avatar] falha ao remover: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível remover a sua foto.' };
   }
 }

@@ -62,6 +62,7 @@ import {
 import { awardForEvent, grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { instantToZonedWallTime } from '@/domain/events/scheduling-rules';
 import type { CsvValue } from '@/domain/participants/participant-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type SponsorPortalErrorCode =
   | 'NOT_FOUND'
@@ -1932,10 +1933,8 @@ async function ensureSponsorRole(input: { tenantId: string; userId: string }): P
       });
     });
   } catch (error) {
-    console.error(
-      `[sponsor-portal] falha ao conceder o papel SPONSOR: ${errorMessage(error)} — ` +
-        'o vínculo permanece e a área do patrocinador continua acessível por ele.',
-    );
+    logger.error(`[sponsor-portal] falha ao conceder o papel SPONSOR: ${errorMessage(error)} — ` +
+        'o vínculo permanece e a área do patrocinador continua acessível por ele.');
   }
 }
 
@@ -1956,6 +1955,6 @@ function toFailure(
   error: unknown,
   message: string,
 ): { ok: false; code: SponsorPortalErrorCode; message: string } {
-  console.error(`[sponsor-portal] ${operation}: ${errorMessage(error)}`);
+  logger.error(`[sponsor-portal] ${operation}: ${errorMessage(error)}`);
   return { ok: false, code: 'INTERNAL', message };
 }

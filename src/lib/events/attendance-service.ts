@@ -36,6 +36,7 @@ import {
   rewardKeys,
   type RewardOutcome,
 } from '@/lib/gamification/reward-engine';
+import { logger } from '@/lib/observability/logger';
 
 /** Estados de inscrição relevantes para o credenciamento. */
 type RegistrationStatusValue = 'CONFIRMED' | 'ATTENDED';
@@ -173,7 +174,7 @@ export async function listCheckinQueue(
       }),
     };
   } catch (error) {
-    console.error(`[attendance] falha ao listar fila: ${errorMessage(error)}`);
+    logger.error(`[attendance] falha ao listar fila: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar a lista.' };
   }
 }
@@ -324,7 +325,7 @@ export async function checkIn(input: {
       reward: reward.ok ? reward : null,
     };
   } catch (error) {
-    console.error(`[attendance] falha no check-in: ${errorMessage(error)}`);
+    logger.error(`[attendance] falha no check-in: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível registrar a entrada.' };
   }
 }
@@ -391,7 +392,7 @@ export async function checkInByBadgeToken(input: {
 
     return { ...result, registrationId: registration.id };
   } catch (error) {
-    console.error(`[attendance] falha no check-in por crachá: ${errorMessage(error)}`);
+    logger.error(`[attendance] falha no check-in por crachá: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -589,7 +590,7 @@ export async function checkOut(input: {
         };
       }
     } catch (error) {
-      console.error(`[attendance] conquista de presença total falhou (não-fatal): ${errorMessage(error)}`);
+      logger.error(`[attendance] conquista de presença total falhou (não-fatal): ${errorMessage(error)}`);
     }
 
     return {
@@ -602,7 +603,7 @@ export async function checkOut(input: {
       fullAttendance,
     };
   } catch (error) {
-    console.error(`[attendance] falha no check-out: ${errorMessage(error)}`);
+    logger.error(`[attendance] falha no check-out: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível registrar a saída.' };
   }
 }

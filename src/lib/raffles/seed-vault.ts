@@ -55,6 +55,7 @@ import {
   seedKeyVersionLabel,
   type SeedKeyRing,
 } from '@/domain/raffles/seed-key-rules';
+import { logger } from '@/lib/observability/logger';
 
 const KEY_LABEL = 'eventflow:raffle-seed:';
 const ALGORITHM = 'aes-256-gcm';
@@ -135,9 +136,7 @@ function sealingKey(version: number): Buffer | null {
     if (!secret) {
       if (!warnedMissingSecret) {
         warnedMissingSecret = true;
-        console.warn(
-          '[raffles] BETTER_AUTH_SECRET ausente ou curto: o sorteio roda sem compromisso de semente (auditoria degradada).',
-        );
+        logger.warn('[raffles] BETTER_AUTH_SECRET ausente ou curto: o sorteio roda sem compromisso de semente (auditoria degradada).');
       }
 
       return null;
@@ -217,9 +216,7 @@ export function unsealSeed(
   const key = sealingKey(version);
 
   if (!key) {
-    console.warn(
-      `[raffles] chave do cofre (${seedKeyVersionLabel(version)}) indisponível: a semente selada não pode ser aberta.`,
-    );
+    logger.warn(`[raffles] chave do cofre (${seedKeyVersionLabel(version)}) indisponível: a semente selada não pode ser aberta.`);
     return null;
   }
 
@@ -239,7 +236,7 @@ export function unsealSeed(
   } catch {
     // Selo adulterado ou chave trocada: a apuração cai para o gerador do sistema em
     // vez de abortar com o público esperando no palco.
-    console.warn('[raffles] não foi possível abrir a semente selada; usando gerador do sistema.');
+    logger.warn('[raffles] não foi possível abrir a semente selada; usando gerador do sistema.');
     return null;
   }
 }

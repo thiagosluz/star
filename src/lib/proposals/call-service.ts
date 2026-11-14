@@ -61,6 +61,7 @@ import {
   NOT_SENT_SUBMISSION_STATUSES,
   isReceivedProposal,
 } from '@/domain/proposals/proposal-receipt-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type CallErrorCode =
   | 'NOT_FOUND'
@@ -444,7 +445,7 @@ export async function listCalls(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao listar chamadas: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao listar chamadas: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar as chamadas.' };
   }
@@ -499,7 +500,7 @@ export async function listPublicCalls(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao listar chamadas públicas: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao listar chamadas públicas: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar as chamadas.' };
   }
@@ -558,7 +559,7 @@ export async function getCallBySlug(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao carregar a chamada: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao carregar a chamada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar a chamada.' };
   }
@@ -846,7 +847,7 @@ export async function saveCall(
       };
     }
 
-    console.error(`[proposals] falha ao salvar a chamada: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao salvar a chamada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar a chamada.' };
   }
@@ -925,7 +926,7 @@ export async function setCallPublished(input: {
       return { ok: true as const, isPublished: input.isPublished };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao publicar a chamada: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao publicar a chamada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível publicar a chamada.' };
   }
@@ -1017,7 +1018,7 @@ export async function deleteCall(input: {
       return { ok: true as const, deleted: true as const };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao excluir a chamada: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao excluir a chamada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível excluir a chamada.' };
   }
@@ -1143,7 +1144,7 @@ export async function listCallProposals(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao listar as propostas: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao listar as propostas: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar as propostas.' };
   }

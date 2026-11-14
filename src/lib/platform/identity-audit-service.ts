@@ -33,6 +33,8 @@ import { randomUUID } from 'node:crypto';
 
 import { adminPrisma } from '@/lib/db/admin-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
+import { maskIpAddress } from '@/domain/privacy/ip-privacy-rules';
+import { logger } from '@/lib/observability/logger';
 import {
   IDENTITY_AUDIT_EVENTS,
   identityAuditTone,
@@ -107,12 +109,15 @@ export async function recordIdentityAudit(input: IdentityAuditInput): Promise<vo
         actorId: input.actorId ?? null,
         event: input.event,
         details,
-        ipAddress: input.ipAddress?.slice(0, 64) ?? null,
+        ipAddress: maskIpAddress(input.ipAddress),
         userAgent: input.userAgent?.slice(0, 500) ?? null,
       },
     });
   } catch (error) {
-    console.error(`[identity-audit] falha ao registrar ${input.event}: ${errorMessage(error)}`);
+    logger.error('identity_audit.record_failed', {
+      event: input.event,
+      error: errorMessage(error),
+    });
   }
 }
 
@@ -217,7 +222,7 @@ export async function listIdentityAudit(
       totalPages: Math.ceil(total / pageSize),
     };
   } catch (error) {
-    console.error(`[identity-audit] falha ao ler a trilha: ${errorMessage(error)}`);
+    logger.error(`[identity-audit] falha ao ler a trilha: ${errorMessage(error)}`);
     return { entries: [], total: 0, page, totalPages: 0 };
   }
 }
@@ -256,7 +261,7 @@ export async function identityAuditSummary(input: { days: number }): Promise<Rec
 
     return out;
   } catch (error) {
-    console.error(`[identity-audit] falha ao resumir a trilha: ${errorMessage(error)}`);
+    logger.error(`[identity-audit] falha ao resumir a trilha: ${errorMessage(error)}`);
     return {};
   }
 }

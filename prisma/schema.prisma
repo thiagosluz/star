@@ -2667,9 +2667,12 @@ model Registration {
   confirmedById          String?   @db.Uuid
 
   /// Consentimentos LGPD (imagem, dados, comunicações).
-  consentImage Boolean   @default(false)
-  consentData  Boolean   @default(false)
-  consentAt    DateTime? @db.Timestamptz(6)
+  consentImage   Boolean   @default(false)
+  consentData    Boolean   @default(false)
+  consentAt      DateTime? @db.Timestamptz(6)
+  /// FASE 110 — versão e texto exato aceitos no ato da inscrição.
+  consentVersion String?   @db.VarChar(32)
+  consentText    String?   @db.VarChar(800)
 
   /// Requisitos de acessibilidade / dieta informados na inscrição.
   accessibilityNotes String? @db.VarChar(600)
@@ -3642,6 +3645,7 @@ enum IdentityAuditEvent {
   OTHER_SESSIONS_REVOKED
   PROFILE_PHOTO_CHANGED
   PROFILE_PHOTO_REMOVED
+  ACCOUNT_DELETED
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -4638,5 +4642,29 @@ model InstitutionLead {
   @@index([status, createdAt])
   @@index([email])
   @@map("institution_leads")
+}
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  REGISTRO DE CONSENTIMENTO DE COOKIES (FASE 110) — tabela de PLATAFORMA
+///
+///  Sem `tenantId` e sem RLS porque pertence ao visitante na plataforma (muitas
+///  vezes sem sessão autenticada). Revogada da role `eventflow_app` (ADR-191).
+/// ═══════════════════════════════════════════════════════════════════════════════
+model CookieConsent {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  consentToken       String   @db.VarChar(64)
+  userId             String?  @db.Uuid
+  policyVersion      String   @db.VarChar(32)
+  essentialAllowed   Boolean  @default(true)
+  preferencesAllowed Boolean
+  source             String   @db.VarChar(40)
+  ipAddressMasked    String?  @db.VarChar(64)
+  userAgent          String?  @db.VarChar(500)
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([consentToken, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("cookie_consents")
 }
 

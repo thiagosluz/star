@@ -58,6 +58,7 @@ import {
   type TenantPublicPageRow,
 } from '@/lib/tenancy/tenant-public-page-repository';
 import { toAdminView, type AdminTenantPageView } from '@/lib/tenancy/tenant-public-page-view';
+import { logger } from '@/lib/observability/logger';
 
 export type TenantPageWriteResult<T> =
   | ({ ok: true } & T)
@@ -157,7 +158,7 @@ export async function saveTenantPublicPageDraft(
 
     return { ok: true, page: toAdminView(result.row) };
   } catch (error) {
-    console.error(`[f64] falha ao gravar a página da instituição: ${errorMessage(error)}`);
+    logger.error(`[f64] falha ao gravar a página da instituição: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'UNEXPECTED',
@@ -276,7 +277,7 @@ export async function publishTenantPublicPage(input: {
 
     return { ok: true, page: toAdminView(result.row) };
   } catch (error) {
-    console.error(`[f64] falha ao publicar a página da instituição: ${errorMessage(error)}`);
+    logger.error(`[f64] falha ao publicar a página da instituição: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'UNEXPECTED',
@@ -335,7 +336,7 @@ export async function unpublishTenantPublicPage(input: {
 
     return { ok: true, page: toAdminView(result.row) };
   } catch (error) {
-    console.error(`[f64] falha ao despublicar a página da instituição: ${errorMessage(error)}`);
+    logger.error(`[f64] falha ao despublicar a página da instituição: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'UNEXPECTED',

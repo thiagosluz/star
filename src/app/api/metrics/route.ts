@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server';
 
 import { certificateQueueStats } from '@/lib/certificates/queue';
+import { evaluateAndPublishOperationalAlerts } from '@/lib/observability/alerts';
 import { incCounter, renderMetrics, setGauge } from '@/lib/observability/metrics';
 
 export const dynamic = 'force-dynamic';
@@ -89,6 +90,7 @@ export async function GET(request: Request): Promise<Response> {
     incCounter('bullmq_queue_stats_failed_total');
   }
 
+  evaluateAndPublishOperationalAlerts(stats);
   incCounter('metrics_scrapes_total');
 
   return new NextResponse(renderMetrics(), {

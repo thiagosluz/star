@@ -66,6 +66,7 @@ import {
   type CredentialCategoryDefinition,
   type CredentialState,
 } from '@/domain/events/credential-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type CredentialErrorCode =
   | 'NOT_FOUND'
@@ -352,7 +353,7 @@ export async function listCredentialRoster(input: {
       };
     });
   } catch (error) {
-    console.error(`[credentials] falha ao listar participantes: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao listar participantes: ${errorMessage(error)}`);
 
     return {
       ok: false,
@@ -586,7 +587,7 @@ export async function issueCredentials(input: {
 
     return { ok: true as const, ...result };
   } catch (error) {
-    console.error(`[credentials] falha ao emitir crachás: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao emitir crachás: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível emitir os crachás.' };
   }
@@ -673,7 +674,7 @@ export async function revokeCredential(input: {
 
     return { ok: true as const, ...outcome };
   } catch (error) {
-    console.error(`[credentials] falha ao revogar crachá: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao revogar crachá: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível revogar o crachá.' };
   }
@@ -761,7 +762,7 @@ export async function setCredentialCategory(input: {
 
     return { ok: true as const, credentialId: outcome.credentialId, category: outcome.category };
   } catch (error) {
-    console.error(`[credentials] falha ao trocar a categoria do crachá: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao trocar a categoria do crachá: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar a categoria do crachá.' };
   }
@@ -790,7 +791,7 @@ export async function markCredentialsPrinted(input: {
 
     return { ok: true as const, printed };
   } catch (error) {
-    console.error(`[credentials] falha ao marcar impressão: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao marcar impressão: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível registrar a impressão.' };
   }
@@ -950,7 +951,7 @@ export async function readCredential(input: {
       return { ok: true as const, target };
     });
   } catch (error) {
-    console.error(`[credentials] falha ao ler crachá: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao ler crachá: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível ler o crachá.' };
   }
@@ -1500,7 +1501,7 @@ export async function recordCredentialPresence(input: {
       rewarded: false,
     };
   } catch (error) {
-    console.error(`[credentials] falha ao registrar presença: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao registrar presença: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível registrar a presença.' };
   }
@@ -1601,7 +1602,7 @@ export async function closeOpenSessions(input: {
 
     return { ok: true as const, ...summary };
   } catch (error) {
-    console.error(`[credentials] falha ao fechar presenças abertas: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao fechar presenças abertas: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível fechar as presenças abertas.' };
   }
@@ -1782,7 +1783,7 @@ export async function getOwnCredential(input: {
       theme: { primaryColor: resolveTheme(outcome.event.theme).theme.primaryColor ?? null },
     };
   } catch (error) {
-    console.error(`[credentials] falha ao carregar o crachá: ${errorMessage(error)}`);
+    logger.error(`[credentials] falha ao carregar o crachá: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar o seu crachá.' };
   }

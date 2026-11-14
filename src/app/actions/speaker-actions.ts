@@ -58,6 +58,7 @@ import {
 import { issueCertificate } from '@/lib/certificates/certificate-service';
 import { confirmAssetUpload, requestAssetUpload } from '@/lib/admin/asset-service';
 import { isUniqueViolation } from '@/lib/db/prisma-errors';
+import { logger } from '@/lib/observability/logger';
 
 export interface SpeakerActionState {
   ok: boolean;
@@ -117,11 +118,9 @@ function invalidInput(
    * investiga um envio recusado precisa saber QUAL campo chegou inválido, sem
    * reproduzir a sessão do usuário.
    */
-  console.error(
-    `[speakers] entrada recusada: ${fullMessage} — ${JSON.stringify(
+  logger.error(`[speakers] entrada recusada: ${fullMessage} — ${JSON.stringify(
       error.issues.map((issue) => ({ campo: issue.path.join('.'), erro: issue.message })),
-    )}`,
-  );
+    )}`);
 
   return {
     ok: false,
@@ -757,7 +756,7 @@ export async function claimSpeakerInviteAction(
     // Conflito de corrida (dois cliques no mesmo convite) não invalida o aceite: o
     // perfil já foi vinculado na transação anterior.
     if (!isUniqueViolation(error)) {
-      console.error('[speakers] falha ao criar vínculo no aceite do convite', error);
+      logger.error('[speakers] falha ao criar vínculo no aceite do convite', { error: error });
     }
   }
 

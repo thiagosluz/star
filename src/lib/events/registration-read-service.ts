@@ -96,6 +96,10 @@ export interface MyRegistration {
    * ou nota de acessibilidade. O CPF sozinho NÃO conta — ele fica.
    */
   hasErasableResponses: boolean;
+  /** FASE 110 — versão e texto exato aceitos no ato da inscrição. */
+  consentVersion: string | null;
+  consentText: string | null;
+  consentAt: Date | null;
   /**
    * ─── A VAGA OFERTADA PELA FILA (dívida E1) ──────────────────────────────────
    * Existe quando a pessoa foi CHAMADA da lista de espera e a decisão é DELA: a vaga
@@ -167,6 +171,9 @@ export async function listMyRegistrations(
          */
         formResponses: true,
         accessibilityNotes: true,
+        consentVersion: true,
+        consentText: true,
+        consentAt: true,
         activity: {
           select: {
             title: true,
@@ -235,6 +242,9 @@ export async function listMyRegistrations(
     hasErasableResponses:
       erasePersonalFormResponses(row.formResponses).removedKeys.length > 0 ||
       row.accessibilityNotes !== null,
+    consentVersion: row.consentVersion ?? null,
+    consentText: row.consentText ?? null,
+    consentAt: row.consentAt ?? null,
     /**
      * A confirmação só existe quando a atividade pede confirmação E há vaga retida
      * (ou confirmada) a mostrar. Numa atividade automática, ou na inscrição do
@@ -348,6 +358,9 @@ export async function findMyEventRegistration(
         waitlistPosition: true,
         formResponses: true,
         accessibilityNotes: true,
+        consentVersion: true,
+        consentText: true,
+        consentAt: true,
       },
     }),
   );

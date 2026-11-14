@@ -23,6 +23,11 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 
 import {
+  COOKIE_CONSENT_COOKIE,
+  isPreferenceRejected,
+  parseCookieConsent,
+} from '@/domain/privacy/privacy-consent-rules';
+import {
   NAV_MODE_COOKIE,
   NAV_MODE_MAX_AGE_SECONDS,
   navModeFromValue,
@@ -31,6 +36,15 @@ import {
 
 export async function toggleNavModeAction(): Promise<void> {
   const cookieStore = await cookies();
+  const consent = parseCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE)?.value);
+
+  // Escolha real de cookies (FASE 110): quem recusou Preferência não recebe `ef_nav`.
+  if (isPreferenceRejected(consent)) {
+    cookieStore.delete(NAV_MODE_COOKIE);
+    revalidatePath('/', 'layout');
+    return;
+  }
+
   const proximo = navModeToggle(
     navModeFromValue(cookieStore.get(NAV_MODE_COOKIE)?.value),
   );

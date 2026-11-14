@@ -66,6 +66,7 @@ import {
   type RubricCriterion,
   type ViewerRole,
 } from '@/domain/review/review-rules';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Erros
@@ -1338,10 +1339,7 @@ export async function deleteSubmission(
         await deleteObject(file.bucket, file.storageKey);
         removedFiles += 1;
       } catch (error) {
-        console.error(
-          `[submission] rascunho excluído, mas o objeto ${file.storageKey} não foi removido do bucket:`,
-          error instanceof Error ? error.message : error,
-        );
+        logger.error(`[submission] rascunho excluído, mas o objeto ${file.storageKey} não foi removido do bucket:`, { error: error instanceof Error ? error.message : error });
       }
     }
 
@@ -1893,10 +1891,7 @@ function toFailure<T>(operation: string, error: unknown): Result<T> & { ok: fals
     };
   }
 
-  console.error(
-    `[submission] falha inesperada em ${operation}:`,
-    error instanceof Error ? error.message : error,
-  );
+  logger.error(`[submission] falha inesperada em ${operation}:`, { error: error instanceof Error ? error.message : error });
 
   return {
     ok: false,

@@ -37,6 +37,7 @@ import {
   type PageSnapshot,
   type PageVersionReason,
 } from '@/domain/events/page-version-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type PageVersionErrorCode = 'NOT_FOUND' | 'INVALID_INPUT' | 'INTERNAL';
 
@@ -391,7 +392,7 @@ export async function restorePageVersion(input: {
       };
     });
   } catch (error) {
-    console.error(`[page-version] falha ao restaurar: ${errorMessage(error)}`);
+    logger.error(`[page-version] falha ao restaurar: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,

@@ -35,6 +35,7 @@ import {
 } from '@/domain/tenancy/membership-rules';
 import { recordAudit } from '@/lib/admin/audit';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
+import { logger } from '@/lib/observability/logger';
 
 export interface TeamMember {
   userId: string;
@@ -368,9 +369,7 @@ export async function updateMemberRoles(input: {
       unchanged: !changed,
     };
   } catch (error) {
-    console.error(
-      `[members] falha ao trocar papéis: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.error(`[members] falha ao trocar papéis: ${error instanceof Error ? error.message : String(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível salvar os papéis.' };
   }
 }
@@ -461,9 +460,7 @@ export async function removeMember(input: {
 
     return { ok: true, name: outcome.context.name, revokedRoles };
   } catch (error) {
-    console.error(
-      `[members] falha ao remover membro: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.error(`[members] falha ao remover membro: ${error instanceof Error ? error.message : String(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível remover o acesso.' };
   }
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google';
 
+import { CookieConsentBanner } from '@/components/privacy/cookie-consent-banner';
 import { NavigationProgressBar } from '@/components/ui';
 import { UnsavedChangesDialog } from '@/components/ui/unsaved-changes-dialog';
 import { themeMarkup } from '@/lib/theme/theme-mode';
@@ -101,6 +102,7 @@ export default async function RootLayout({
         <NavigationProgressBar />
         <UnsavedChangesDialog />
         {children}
+        <CookieConsentBanner />
       </body>
     </html>
   );

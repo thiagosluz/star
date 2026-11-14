@@ -65,6 +65,7 @@ import {
   type TaskTarget,
 } from '@/domain/gamification/task-rules';
 import { secureRandom } from '@/lib/gamification/random';
+import { logger } from '@/lib/observability/logger';
 
 /** Teto de segurança para um único lançamento (pega erro de unidade). */
 export const MAX_XP_PER_EVENT = 100_000;
@@ -399,7 +400,7 @@ export async function awardForEvent(input: RewardEventInput): Promise<RewardResu
       return { ok: false as const, code: error.code, message: error.message };
     }
 
-    console.error(`[gamification] falha ao creditar recompensa: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao creditar recompensa: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,
@@ -630,7 +631,7 @@ export async function grantCardForTrigger(input: {
 
     return granted;
   } catch (error) {
-    console.error(`[gamification] falha ao conceder carta: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao conceder carta: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,

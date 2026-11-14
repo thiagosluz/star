@@ -52,6 +52,7 @@ import { RAFFLE_SCOPES, type RaffleScope } from '@/domain/raffles/raffle-rules';
 import { getLiveEligibility, type LiveEligibility } from '@/lib/raffles/raffle-read-service';
 import { tenantApiError } from '@/lib/api/tenant-api-error';
 import { isUuid } from '@/domain/validation/id-rules';
+import { logger } from '@/lib/observability/logger';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -269,7 +270,7 @@ export async function GET(
           lastSignature = signature;
           send(`event: live\ndata: ${JSON.stringify(payload)}\n\n`);
         } catch (error) {
-          console.error(`[raffles] falha na prévia ao vivo: ${error instanceof Error ? error.message : error}`);
+          logger.error(`[raffles] falha na prévia ao vivo: ${error instanceof Error ? error.message : error}`);
           send(`event: error\ndata: ${JSON.stringify({ code: 'INTERNAL' })}\n\n`);
         }
       };

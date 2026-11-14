@@ -26,6 +26,7 @@ import {
   readEventApiKeyState,
   type EventApiKeyState,
 } from '@/domain/api/event-api-organizer-rules';
+import { logger } from '@/lib/observability/logger';
 
 export interface EventApiOrganizerEvent {
   id: string;
@@ -83,7 +84,7 @@ export async function getEventApiOrganizerState(input: {
       },
     };
   } catch (error) {
-    console.error(`[api] falha ao ler a configuração da API do evento: ${errorMessage(error)}`);
+    logger.error(`[api] falha ao ler a configuração da API do evento: ${errorMessage(error)}`);
 
     return {
       ok: false,

@@ -60,6 +60,7 @@ import {
   rubricShapeDiffLabel,
   type RubricCriterion,
 } from '@/domain/review/review-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type RubricFreezeFailure = { ok: false; code: 'RUBRIC_FROZEN'; message: string };
 
@@ -224,7 +225,7 @@ export async function rubricReviewCounts(input: {
     });
   } catch (error) {
     /** Contagem que falha não pode derrubar a tela: a lista abre sem o aviso. */
-    console.error(`[rubrica] falha ao contar pareceres: ${errorMessage(error)}`);
+    logger.error(`[rubrica] falha ao contar pareceres: ${errorMessage(error)}`);
   }
 
   return { byTrack, byCall };

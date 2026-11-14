@@ -32,6 +32,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import Redis from 'ioredis';
+import { logger } from '@/lib/observability/logger';
 
 /** Canal único do barramento. Um canal por assunto; nada de canal genérico. */
 export const TENANT_CACHE_CHANNEL = 'eventflow:tenant-cache';
@@ -82,10 +83,8 @@ function warnOnce(error: unknown): void {
   state.warned = true;
 
   const message = error instanceof Error ? error.message : String(error);
-  console.error(
-    `[tenant-cache] barramento indisponível (${message}). ` +
-      'A invalidação volta a ser local, com TTL de 30 s — nenhum acesso é afetado.',
-  );
+  logger.error(`[tenant-cache] barramento indisponível (${message}). ` +
+      'A invalidação volta a ser local, com TTL de 30 s — nenhum acesso é afetado.');
 }
 
 function createClient(): Redis {

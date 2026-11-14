@@ -61,6 +61,7 @@ import {
   type PublicProfilePayload,
   type PublicProfileSource,
 } from '@/domain/profile/public-profile-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type PublicProfileErrorCode =
   | 'NOT_FOUND'
@@ -201,7 +202,7 @@ export async function getPublicProfileSettings(input: {
       },
     };
   } catch (error) {
-    console.error(`[perfil] falha ao ler as configurações: ${errorMessage(error)}`);
+    logger.error(`[perfil] falha ao ler as configurações: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível carregar o seu perfil.' };
   }
 }
@@ -457,7 +458,7 @@ export async function savePublicProfile(
       };
     }
 
-    console.error(`[perfil] falha ao salvar: ${errorMessage(error)}`);
+    logger.error(`[perfil] falha ao salvar: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível salvar o seu perfil.' };
   }
 }
@@ -903,7 +904,7 @@ export async function getPublicProfile(input: {
       },
     };
   } catch (error) {
-    console.error(`[perfil] falha ao montar a página: ${errorMessage(error)}`);
+    logger.error(`[perfil] falha ao montar a página: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível abrir este perfil.' };
   }
 }

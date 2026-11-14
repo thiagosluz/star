@@ -42,6 +42,7 @@ import {
   type SponsorLogoScale,
   type SponsorTierKey,
 } from '@/domain/events/sponsor-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type SponsorErrorCode =
   | 'NOT_FOUND'
@@ -1216,7 +1217,7 @@ function toFailure<T>(
     }
   }
 
-  console.error(`[sponsor] falha em ${operation}: ${errorMessage(error)}`);
+  logger.error(`[sponsor] falha em ${operation}: ${errorMessage(error)}`);
   return { ok: false as const, code: 'INTERNAL' as const, message: fallbackMessage };
 }
 

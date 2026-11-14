@@ -44,6 +44,7 @@ import {
   toAuthorFormValues,
   type NormalizedAuthor,
 } from '@/domain/review/author-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type AuthorErrorCode =
   | 'NOT_FOUND'
@@ -302,7 +303,7 @@ export async function saveSubmissionAuthors(input: {
       return { ok: true as const, count: authors.length, changed: true };
     });
   } catch (error) {
-    console.error(`[authors] falha ao salvar autoria: ${errorMessage(error)}`);
+    logger.error(`[authors] falha ao salvar autoria: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível salvar a lista de autores.' };
   }
 }

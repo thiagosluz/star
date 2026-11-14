@@ -17,6 +17,7 @@ import {
 import type { TaskProgressStatus, XpSourceKind } from '@/domain/gamification/types';
 import { leaderboardIdentity } from '@/domain/gamification/leaderboard-rules';
 import { awardForEvent, rewardKeys, type RewardOutcome } from '@/lib/gamification/reward-engine';
+import { logger } from '@/lib/observability/logger';
 
 export type XpErrorCode = 'NOT_FOUND' | 'INTERNAL';
 
@@ -114,7 +115,7 @@ export async function getXpProfile(
       },
     };
   } catch (error) {
-    console.error(`[gamification] falha ao ler perfil de XP: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao ler perfil de XP: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar seu perfil.' };
   }
 }
@@ -173,7 +174,7 @@ export async function listXpHistory(
       })),
     };
   } catch (error) {
-    console.error(`[gamification] falha ao ler extrato: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao ler extrato: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar o extrato.' };
   }
 }
@@ -282,7 +283,7 @@ export async function getLeaderboard(
       }),
     };
   } catch (error) {
-    console.error(`[gamification] falha ao ler ranking: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao ler ranking: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar o ranking.' };
   }
 }

@@ -59,6 +59,7 @@ import { assertRubricShapeFree } from '@/lib/review/rubric-guard';
 import { parseTaskTarget } from '@/domain/gamification/task-rules';
 import { parseOnlineRoomUrl } from '@/domain/events/online-room-rules';
 import { isEventCategory, type EventCategoryKey } from '@/domain/events/event-category-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type AdminErrorCode =
   | 'NOT_FOUND'
@@ -389,7 +390,7 @@ export async function saveEvent(input: EventInput): Promise<AdminResult<{ eventI
       };
     }
 
-    console.error(`[admin] falha ao salvar evento: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao salvar evento: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar o evento.' };
   }
 }
@@ -956,7 +957,7 @@ export async function saveRoom(input: {
       };
     }
 
-    console.error(`[admin] falha ao salvar sala: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao salvar sala: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a sala.' };
   }
 }
@@ -1022,7 +1023,7 @@ export async function deleteRoom(input: {
       return { ok: true as const, name: room.name, activities: 0 };
     });
   } catch (error) {
-    console.error(`[admin] falha ao excluir sala: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao excluir sala: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível excluir a sala.' };
   }
 }
@@ -1439,7 +1440,7 @@ export async function saveActivity(input: ActivityInput): Promise<
       };
     }
 
-    console.error(`[admin] falha ao salvar atividade: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao salvar atividade: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a atividade.' };
   }
 }
@@ -1537,7 +1538,7 @@ export async function deleteActivity(input: {
       };
     });
   } catch (error) {
-    console.error(`[admin] falha ao excluir atividade: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao excluir atividade: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível excluir a atividade.' };
   }
 }
@@ -1717,7 +1718,7 @@ export async function saveTrack(input: TrackInput): Promise<AdminResult<{ trackI
       };
     }
 
-    console.error(`[admin] falha ao salvar trilha: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao salvar trilha: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a trilha.' };
   }
 }

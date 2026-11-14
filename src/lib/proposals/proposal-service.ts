@@ -50,6 +50,7 @@ import {
   type ProposalKind,
 } from '@/domain/proposals/call-rules';
 import { NOT_SENT_SUBMISSION_STATUSES } from '@/domain/proposals/proposal-receipt-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type ProposalErrorCode =
   | 'NOT_FOUND'
@@ -490,7 +491,7 @@ export async function submitProposal(
       confirmationQueued: confirmation.ok,
     };
   } catch (error) {
-    console.error(`[proposals] falha ao enviar a proposta: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao enviar a proposta: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível enviar a proposta.' };
   }

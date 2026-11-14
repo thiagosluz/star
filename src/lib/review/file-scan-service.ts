@@ -30,6 +30,7 @@ import { systemClient, withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { isScanningEnabled, scanStoredObject } from '@/lib/storage/scan-service';
+import { logger } from '@/lib/observability/logger';
 
 export interface FileScanResult {
   tenants: number;
@@ -155,7 +156,7 @@ async function inspect(
       updateScanned(tx, input, 'PENDING', `Inspeção indisponível: ${scan.message}`.slice(0, 300)),
     );
 
-    console.error(`[scan] ${input.entity} ${input.entityId}: ${scan.message}`);
+    logger.error(`[scan] ${input.entity} ${input.entityId}: ${scan.message}`);
 
     return 'FAILED';
   }
@@ -224,7 +225,7 @@ export async function runFileScanSafely(input: { limit?: number } = {}): Promise
   try {
     return await runFileScan(input);
   } catch (error) {
-    console.error(`[scan] falha na varredura de arquivos: ${errorMessage(error)}`);
+    logger.error(`[scan] falha na varredura de arquivos: ${errorMessage(error)}`);
 
     return { tenants: 0, scanned: 0, clean: 0, infected: 0, failed: 0 };
   }

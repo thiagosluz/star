@@ -60,6 +60,7 @@ import {
   notifyRegistrationReleased,
   notifyWaitlistPromoted,
 } from '@/lib/events/registration-notices';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Confirmar (equipe)
@@ -239,7 +240,7 @@ export async function confirmRegistration(input: ConfirmInput): Promise<ConfirmO
       emailQueued: notice.emailQueued,
     };
   } catch (error) {
-    console.error(`[confirmacao] falha ao confirmar a vaga: ${errorMessage(error)}`);
+    logger.error(`[confirmacao] falha ao confirmar a vaga: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível confirmar a vaga.' };
   }
@@ -397,9 +398,7 @@ export async function resolveConfirmationItem(input: ResolveItemInput): Promise<
       autoConfirmed = confirmation.ok;
 
       if (!confirmation.ok && confirmation.code !== 'ALREADY_CONFIRMED') {
-        console.error(
-          `[confirmacao] checklist completo, mas a vaga não confirmou (${registrationId}): ${confirmation.message}`,
-        );
+        logger.error(`[confirmacao] checklist completo, mas a vaga não confirmou (${registrationId}): ${confirmation.message}`);
       }
     }
 
@@ -414,7 +413,7 @@ export async function resolveConfirmationItem(input: ResolveItemInput): Promise<
       missingMessage: resolved.autoCheck.ok ? null : resolved.autoCheck.message,
     };
   } catch (error) {
-    console.error(`[confirmacao] falha ao resolver o item: ${errorMessage(error)}`);
+    logger.error(`[confirmacao] falha ao resolver o item: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível registrar o item.' };
   }
@@ -969,7 +968,7 @@ export async function runConfirmationExpirySweep(
 
     return result;
   } catch (error) {
-    console.error(`[confirmacao] falha na varredura de prazos: ${errorMessage(error)}`);
+    logger.error(`[confirmacao] falha na varredura de prazos: ${errorMessage(error)}`);
 
     return result;
   }
@@ -1120,7 +1119,7 @@ export async function runConfirmationReminderScan(
 
     return result;
   } catch (error) {
-    console.error(`[confirmacao] falha na varredura de lembretes: ${errorMessage(error)}`);
+    logger.error(`[confirmacao] falha na varredura de lembretes: ${errorMessage(error)}`);
 
     return result;
   }

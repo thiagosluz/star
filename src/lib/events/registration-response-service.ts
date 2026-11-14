@@ -40,6 +40,7 @@ import { recordAudit } from '@/lib/admin/audit';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { registrationIsLive, type RegistrationStatus } from '@/domain/events/registration-rules';
 import { erasePersonalFormResponses } from '@/domain/events/registration-form-spec-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type EraseMyFormResponsesErrorCode =
   | 'EVENT_NOT_FOUND'
@@ -218,9 +219,7 @@ export async function eraseMyFormResponses(input: {
       return { ok: false, code: error.code, message: error.message };
     }
 
-    console.error(
-      `[inscricoes] falha ao apagar as respostas do formulário: ${errorMessage(error)}`,
-    );
+    logger.error(`[inscricoes] falha ao apagar as respostas do formulário: ${errorMessage(error)}`);
 
     return {
       ok: false,

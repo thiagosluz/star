@@ -25,6 +25,8 @@ import { randomUUID } from 'node:crypto';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
+import { maskIpAddress } from '@/domain/privacy/ip-privacy-rules';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * Ação auditada — espelha o enum `AuditAction` do schema.
@@ -93,7 +95,7 @@ export async function recordAudit(input: AuditInput, tx?: TxClient): Promise<voi
     entityType: input.entityType.slice(0, 80),
     entityId: input.entityId ?? null,
     changes: sanitizeChanges(input.changes ?? {}) as unknown as object,
-    ipAddress: input.ipAddress?.slice(0, 64) ?? null,
+    ipAddress: maskIpAddress(input.ipAddress),
     userAgent: input.userAgent?.slice(0, 500) ?? null,
   };
 
@@ -110,7 +112,11 @@ export async function recordAudit(input: AuditInput, tx?: TxClient): Promise<voi
 
     await withTenant(input.tenantId, (inner) => inner.auditLog.create({ data }));
   } catch (error) {
-    console.error(`[audit] falha ao registrar ${input.action} ${input.entityType}: ${errorMessage(error)}`);
+    logger.error('audit.record_failed', {
+      action: input.action,
+      entityType: input.entityType,
+      error: errorMessage(error),
+    });
   }
 }
 
@@ -198,7 +204,7 @@ export async function listAuditLog(
       createdAt: row.createdAt,
     }));
   } catch (error) {
-    console.error(`[audit] falha ao listar trilha: ${errorMessage(error)}`);
+    logger.error(`[audit] falha ao listar trilha: ${errorMessage(error)}`);
     return [];
   }
 }

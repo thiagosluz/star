@@ -36,6 +36,7 @@ import {
   resolveAttendanceExportSize,
 } from '@/domain/exports/attendance-export-rules';
 import { CSV_MAX_ROWS, type CsvValue } from '@/domain/participants/participant-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type AttendanceExportErrorCode = 'NOT_FOUND' | 'INVALID_INPUT' | 'INTERNAL';
 
@@ -95,7 +96,7 @@ async function resolveScope(
       return { ok: true as const, eventId: event.id, activityId, timezone: event.timezone };
     });
   } catch (error) {
-    console.error(`[exports] falha ao resolver o recorte das presenças: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao resolver o recorte das presenças: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível preparar a exportação.' };
   }
@@ -128,7 +129,7 @@ export async function countAttendanceExportRows(input: {
 
     return { ok: true, ...resolveAttendanceExportSize(total) };
   } catch (error) {
-    console.error(`[exports] falha ao contar presenças: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao contar presenças: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível contar as presenças.' };
   }
@@ -194,7 +195,7 @@ export async function collectAttendanceExportRows(input: {
       ),
     };
   } catch (error) {
-    console.error(`[exports] falha ao montar as presenças: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao montar as presenças: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível exportar as presenças.' };
   }

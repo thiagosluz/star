@@ -39,6 +39,11 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 
 import {
+  COOKIE_CONSENT_COOKIE,
+  isPreferenceRejected,
+  parseCookieConsent,
+} from '@/domain/privacy/privacy-consent-rules';
+import {
   THEME_COOKIE,
   THEME_COOKIE_MAX_AGE_SECONDS,
   themeModeFromValue,
@@ -56,6 +61,14 @@ export async function setThemeModeAction(formData: FormData): Promise<void> {
   const escolhido = themeModeFromValue(formData.get('tema'));
 
   const cookieStore = await cookies();
+  const consent = parseCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE)?.value);
+
+  // Escolha real de cookies (FASE 110): quem recusou Preferência não recebe `ef_tema`.
+  if (isPreferenceRejected(consent)) {
+    cookieStore.delete(THEME_COOKIE);
+    revalidatePath('/', 'layout');
+    return;
+  }
 
   cookieStore.set(THEME_COOKIE, escolhido, {
     /**

@@ -26,6 +26,7 @@ import type { CatalogScope } from '@/domain/gamification/catalog-rules';
 import type { CardRarity, CardTrigger, TaskKind, XpSourceKind } from '@/domain/gamification/types';
 import type { AdminResult } from '@/lib/admin/catalog-service';
 import { CATALOG_ENTITY_TYPE, readCatalogArchiveTrail } from '@/lib/admin/catalog-archive-service';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cartas
@@ -140,7 +141,7 @@ export async function saveCardTemplate(input: CardTemplateInput): Promise<AdminR
       return { ok: false as const, code: 'SLUG_TAKEN', message: 'Já existe uma carta com este identificador.' };
     }
 
-    console.error(`[admin] falha ao salvar carta: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao salvar carta: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a carta.' };
   }
 }
@@ -234,7 +235,7 @@ export async function deleteCardTemplate(input: {
       return { ok: true as const, ownedBy };
     });
   } catch (error) {
-    console.error(`[admin] falha ao excluir carta: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao excluir carta: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível excluir a carta.' };
   }
 }
@@ -299,7 +300,7 @@ export async function deleteMission(input: {
       return { ok: true as const, completions, claims };
     });
   } catch (error) {
-    console.error(`[admin] falha ao excluir missão: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao excluir missão: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível excluir a missão.' };
   }
 }
@@ -616,7 +617,7 @@ export async function saveMission(input: MissionInput): Promise<AdminResult<{ ta
       return { ok: false as const, code: 'SLUG_TAKEN', message: 'Já existe uma missão com este identificador.' };
     }
 
-    console.error(`[admin] falha ao salvar missão: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao salvar missão: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível salvar a missão.' };
   }
 }
@@ -920,7 +921,7 @@ export async function retryCertificateGeneration(input: {
 
     return { ok: true as const, queued: true, generated: false };
   } catch (error) {
-    console.error(`[admin] falha ao reprocessar certificado: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao reprocessar certificado: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível reprocessar o certificado.' };
   }
 }

@@ -98,6 +98,7 @@ export type CertificateResult<T> =
 
 import { publicBaseUrl } from '@/lib/public-url';
 import { cpfFromFormResponses } from '@/domain/events/registration-form-rules';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Configuração de exibição
@@ -700,7 +701,7 @@ export async function previewEventCertificates(input: {
       return { ok: true as const, preview: { scope: people.length, people } };
     });
   } catch (error) {
-    console.error(`[certificates] falha ao simular a emissão em lote: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao simular a emissão em lote: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,
@@ -1044,7 +1045,7 @@ export async function requestCertificate(
       };
     }
 
-    console.error(`[certificates] falha ao solicitar certificado: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao solicitar certificado: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível solicitar o certificado.' };
   }
 }
@@ -1385,7 +1386,7 @@ export async function generateCertificate(input: {
       }),
     ).catch(() => undefined);
 
-    console.error(`[certificates] falha ao gerar certificado: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao gerar certificado: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Falha ao gerar o arquivo do certificado.' };
   }
 }
@@ -1499,7 +1500,7 @@ export async function requestEventCertificates(input: {
       discarded,
     };
   } catch (error) {
-    console.error(`[certificates] falha na emissão em lote: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha na emissão em lote: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível emitir os certificados.' };
   }
 }
@@ -1539,7 +1540,7 @@ export async function issueCertificate(
       actorId: input.actorId ?? null,
     });
   } catch (error) {
-    console.error(`[certificates] não foi possível enfileirar: ${errorMessage(error)}`);
+    logger.error(`[certificates] não foi possível enfileirar: ${errorMessage(error)}`);
   }
 
   if (enqueued) {
@@ -1639,7 +1640,7 @@ export async function listCertificates(input: {
       })),
     };
   } catch (error) {
-    console.error(`[certificates] falha ao listar certificados: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao listar certificados: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar os certificados.' };
   }
 }
@@ -1753,7 +1754,7 @@ export async function planEventCertificateZip(input: {
 
     return { ok: true as const, ...plan };
   } catch (error) {
-    console.error(`[certificates] falha ao montar o lote: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao montar o lote: ${errorMessage(error)}`);
 
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível preparar o lote.' };
   }
@@ -1817,7 +1818,7 @@ export async function getCertificateDownloadUrl(input: {
 
     return { ok: true as const, url, fileName };
   } catch (error) {
-    console.error(`[certificates] falha ao gerar URL de download: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao gerar URL de download: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível preparar o download.' };
   }
 }
@@ -1851,7 +1852,7 @@ export async function revokeCertificate(input: {
       return { ok: true as const, revokedAt };
     });
   } catch (error) {
-    console.error(`[certificates] falha ao revogar: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha ao revogar: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível revogar o certificado.' };
   }
 }
@@ -2177,7 +2178,7 @@ export async function getPublicCertificate(rawCode: string): Promise<
       },
     };
   } catch (error) {
-    console.error(`[certificates] falha na validação pública: ${errorMessage(error)}`);
+    logger.error(`[certificates] falha na validação pública: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível validar o certificado.' };
   }
 }

@@ -61,6 +61,7 @@ import {
   countAttendanceExportRows,
 } from '@/lib/exports/attendance-export-service';
 import { collectSponsorContactRows } from '@/lib/sponsors/sponsor-portal-service';
+import { logger } from '@/lib/observability/logger';
 
 export type ExportErrorCode = 'NOT_FOUND' | 'EXPIRED' | 'REVOKED' | 'INVALID_INPUT' | 'INTERNAL';
 
@@ -217,7 +218,7 @@ export async function createDataExport(input: {
       truncated: counted.truncated,
     };
   } catch (error) {
-    console.error(`[exports] falha ao criar exportação: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao criar exportação: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível preparar a exportação.' };
   }
 }
@@ -457,7 +458,7 @@ export async function buildDataExportFile(input: {
       expiresAt: record.expiresAt,
     };
   } catch (error) {
-    console.error(`[exports] falha ao gerar arquivo: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao gerar arquivo: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível gerar o arquivo.' };
   }
 }
@@ -559,7 +560,7 @@ async function attachDownloaders(
 
     return records.map((record) => ({ ...record, downloaders: byExport.get(record.id) ?? [] }));
   } catch (error) {
-    console.error(`[exports] falha ao ler quem baixou: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao ler quem baixou: ${errorMessage(error)}`);
     return records.map((record) => ({ ...record, downloaders: [] }));
   }
 }
@@ -617,7 +618,7 @@ export async function listRecentDataExports(input: {
 
     return attachDownloaders(input.tenantId, records, now);
   } catch (error) {
-    console.error(`[exports] falha ao listar exportações: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao listar exportações: ${errorMessage(error)}`);
     return [];
   }
 }
@@ -712,7 +713,7 @@ export async function revokeDataExport(input: {
 
     return { ok: true, revokedAt };
   } catch (error) {
-    console.error(`[exports] falha ao revogar exportação: ${errorMessage(error)}`);
+    logger.error(`[exports] falha ao revogar exportação: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível revogar a exportação.' };
   }
 }

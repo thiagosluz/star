@@ -27,16 +27,26 @@
  */
 import { cookies } from 'next/headers';
 
+import {
+  COOKIE_CONSENT_COOKIE,
+  isPreferenceRejected,
+  parseCookieConsent,
+} from '@/domain/privacy/privacy-consent-rules';
 import { THEME_COOKIE, themeModeFromValue, type ThemeMode } from '@/lib/theme/theme-mode';
 
 /**
  * O tema desta requisição.
  *
  * Não lança quando o cookie não existe: ausência é o estado padrão (`sistema`), e a
- * decisão de qual é o padrão é da regra pura, não desta leitura.
+ * decisão de qual é o padrão é da regra pura, não desta leitura. Se o visitante
+ * recusou cookies de preferência (`ESSENTIAL_ONLY`), devolvemos sempre `sistema`.
  */
 export async function readThemeMode(): Promise<ThemeMode> {
   const cookieStore = await cookies();
+  const consent = parseCookieConsent(cookieStore.get(COOKIE_CONSENT_COOKIE)?.value);
+  if (isPreferenceRejected(consent)) {
+    return 'sistema';
+  }
 
   return themeModeFromValue(cookieStore.get(THEME_COOKIE)?.value);
 }

@@ -88,6 +88,7 @@ import {
   type PublicCallResultView,
 } from '@/domain/proposals/call-result-rules';
 import type { SubmissionStatus } from '@/domain/review/submission-rules';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Tipos do serviço
@@ -170,9 +171,7 @@ export interface CallResultApplied {
 function reportReadProblems(input: { origem: string; callId: string; problems: readonly string[] }): void {
   if (input.problems.length === 0) return;
 
-  console.warn(
-    `[proposals] ${input.origem} da chamada ${input.callId}: ${input.problems.join(' | ')}`,
-  );
+  logger.warn(`[proposals] ${input.origem} da chamada ${input.callId}: ${input.problems.join(' | ')}`);
 }
 
 function isProposalKind(value: string): value is ProposalKind {
@@ -373,7 +372,7 @@ export async function getCallResultPanel(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao carregar o resultado da chamada: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao carregar o resultado da chamada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar o resultado da chamada.' };
   }
@@ -514,7 +513,7 @@ export async function applyCallResultAction(input: {
       };
     });
   } catch (error) {
-    console.error(`[proposals] falha ao aplicar o resultado da chamada: ${errorMessage(error)}`);
+    logger.error(`[proposals] falha ao aplicar o resultado da chamada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível gravar o resultado da chamada.' };
   }

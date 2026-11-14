@@ -35,6 +35,7 @@
 import { recordAudit } from '@/lib/admin/audit';
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { evaluateMemberRemoval } from '@/domain/tenancy/membership-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type DemoteResult =
   | { ok: true; name: string; revokedRoles: readonly string[] }
@@ -147,9 +148,7 @@ export async function demoteMemberToParticipant(input: {
 
     return { ok: true, name: outcome.target.name, revokedRoles };
   } catch (error) {
-    console.error(
-      `[members] falha ao rebaixar membro: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    logger.error(`[members] falha ao rebaixar membro: ${error instanceof Error ? error.message : String(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível converter o acesso.' };
   }

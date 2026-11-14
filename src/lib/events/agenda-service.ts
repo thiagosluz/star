@@ -63,6 +63,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { isPubliclyVisible } from '@/domain/events/event-rules';
 import { buildMyAgenda, type MyAgenda } from '@/domain/agenda/agenda-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type FavoriteErrorCode = 'INVALID_INPUT' | 'ACTIVITY_NOT_AVAILABLE' | 'INTERNAL';
 
@@ -197,7 +198,7 @@ export async function favoriteActivity(input: {
       return { ok: true as const, created: inserted.count === 1 };
     });
   } catch (error) {
-    console.error(`[agenda] falha ao favoritar ${activityId}: ${errorMessage(error)}`);
+    logger.error(`[agenda] falha ao favoritar ${activityId}: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'INTERNAL',
@@ -235,7 +236,7 @@ export async function unfavoriteActivity(input: {
       return { ok: true as const, removed: deleted.count === 1 };
     });
   } catch (error) {
-    console.error(`[agenda] falha ao desfavoritar ${activityId}: ${errorMessage(error)}`);
+    logger.error(`[agenda] falha ao desfavoritar ${activityId}: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'INTERNAL',

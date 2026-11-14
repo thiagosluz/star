@@ -38,6 +38,7 @@ import {
   type ProfileReportCategory,
   type ProfileReportStatus,
 } from '@/domain/profile/profile-moderation-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type ProfileReportErrorCode =
   | 'NOT_FOUND'
@@ -199,7 +200,7 @@ export async function reportPublicProfile(
 
     return { ok: true, reportId: outcome.reportId };
   } catch (error) {
-    console.error(`[perfil] falha ao registrar denúncia: ${errorMessage(error)}`);
+    logger.error(`[perfil] falha ao registrar denúncia: ${errorMessage(error)}`);
     return {
       ok: false,
       code: 'INTERNAL',
@@ -253,7 +254,7 @@ export async function listOwnFiledReports(input: {
       createdAt: row.createdAt,
     }));
   } catch (error) {
-    console.error(`[perfil] falha ao listar as denúncias feitas: ${errorMessage(error)}`);
+    logger.error(`[perfil] falha ao listar as denúncias feitas: ${errorMessage(error)}`);
     return [];
   }
 }

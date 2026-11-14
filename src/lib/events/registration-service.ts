@@ -63,6 +63,7 @@ import {
   type EventStatus,
 } from '@/domain/events/event-rules';
 import { acceptsAutoEnrollment } from '@/domain/events/activity-rules';
+import { buildRegistrationConsentSnapshot } from '@/domain/events/registration-consent-rules';
 import {
   confirmationDeadlineLabel,
   confirmationDueAt,
@@ -96,6 +97,7 @@ import {
   isUniqueViolation,
   violatedIndexName,
 } from '@/lib/db/prisma-errors';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Erros de aplicação
@@ -285,9 +287,7 @@ export async function registerForActivity(
         });
 
         if (!notice.ok) {
-          console.error(
-            `[inscricoes] aviso de confirmação não saiu: ${notice.message ?? 'motivo desconhecido'}`,
-          );
+          logger.error(`[inscricoes] aviso de confirmação não saiu: ${notice.message ?? 'motivo desconhecido'}`);
         }
       }
 
@@ -882,6 +882,11 @@ async function tryReserveSeat(
     }
   | { status: 'REJECTED'; reason: RegistrationErrorCode; message: string }
 > {
+  const consentSnapshot = buildRegistrationConsentSnapshot({
+    consentData: input.consentData ?? false,
+    consentImage: input.consentImage ?? false,
+  });
+
   const baseData = {
     tenantId: input.tenantId,
     eventId,
@@ -890,6 +895,8 @@ async function tryReserveSeat(
     consentImage: input.consentImage ?? false,
     consentData: input.consentData ?? false,
     consentAt: new Date(),
+    consentVersion: consentSnapshot.consentVersion,
+    consentText: consentSnapshot.consentText,
     accessibilityNotes: input.accessibilityNotes ?? null,
     formResponses: (input.formResponses ?? {}) as object,
   };
@@ -1187,6 +1194,10 @@ async function enqueueEventRegistration(
       });
 
       const position = (currentMax._max.waitlistPosition ?? 0) + 1;
+      const consentSnapshot = buildRegistrationConsentSnapshot({
+        consentData: input.consentData,
+        consentImage: input.consentImage,
+      });
 
       const queued = await tx.registration.create({
         data: {
@@ -1200,6 +1211,8 @@ async function enqueueEventRegistration(
           consentImage: input.consentImage,
           consentData: input.consentData,
           consentAt: new Date(),
+          consentVersion: consentSnapshot.consentVersion,
+          consentText: consentSnapshot.consentText,
           accessibilityNotes: input.accessibilityNotes,
           formResponses: input.formResponses,
         },
@@ -1500,6 +1513,11 @@ async function admitToEventRegistration(
   let registration: { id: string };
 
   try {
+    const consentSnapshot = buildRegistrationConsentSnapshot({
+      consentData: input.consentData,
+      consentImage: input.consentImage,
+    });
+
     registration = await tx.registration.create({
       data: {
         tenantId,
@@ -1516,6 +1534,8 @@ async function admitToEventRegistration(
         consentImage: input.consentImage,
         consentData: input.consentData,
         consentAt: new Date(),
+        consentVersion: consentSnapshot.consentVersion,
+        consentText: consentSnapshot.consentText,
         accessibilityNotes: input.accessibilityNotes,
         formResponses: input.formResponses,
       },
@@ -1931,6 +1951,10 @@ async function enrollEventRegistrationInOpenActivities(
 
   const alreadyEnrolled = new Set(existing.map((row) => row.activityId));
   const titles: string[] = [];
+  const consentSnapshot = buildRegistrationConsentSnapshot({
+    consentData: input.consentData,
+    consentImage: input.consentImage,
+  });
 
   for (const activity of targets) {
     if (alreadyEnrolled.has(activity.id)) continue;
@@ -1946,6 +1970,8 @@ async function enrollEventRegistrationInOpenActivities(
         consentImage: input.consentImage,
         consentData: input.consentData,
         consentAt: new Date(),
+        consentVersion: consentSnapshot.consentVersion,
+        consentText: consentSnapshot.consentText,
         accessibilityNotes: input.accessibilityNotes,
       },
     });
@@ -2053,6 +2079,10 @@ export async function updateEventRegistrationData(
           : {};
 
       const merged = { ...existing, ...(input.formResponses ?? {}) };
+      const consentSnapshot = buildRegistrationConsentSnapshot({
+        consentData: input.consentData,
+        consentImage: input.consentImage,
+      });
 
       await tx.registration.update({
         where: { id: registration.id },
@@ -2060,6 +2090,8 @@ export async function updateEventRegistrationData(
           consentImage: input.consentImage,
           consentData: input.consentData,
           consentAt: new Date(),
+          consentVersion: consentSnapshot.consentVersion,
+          consentText: consentSnapshot.consentText,
           accessibilityNotes: input.accessibilityNotes,
           formResponses: merged as object,
         },
@@ -2155,6 +2187,8 @@ export async function syncOpenActivityEnrollments(input: {
         userId: true,
         consentImage: true,
         consentData: true,
+        consentVersion: true,
+        consentText: true,
         accessibilityNotes: true,
       },
     });
@@ -2176,6 +2210,10 @@ export async function syncOpenActivityEnrollments(input: {
 
     for (const registration of eventRegistrations) {
       if (enrolled.has(registration.userId)) continue;
+      const fallbackSnapshot = buildRegistrationConsentSnapshot({
+        consentData: registration.consentData,
+        consentImage: registration.consentImage,
+      });
 
       await tx.registration.create({
         data: {
@@ -2188,6 +2226,8 @@ export async function syncOpenActivityEnrollments(input: {
           consentImage: registration.consentImage,
           consentData: registration.consentData,
           consentAt: new Date(),
+          consentVersion: registration.consentVersion ?? fallbackSnapshot.consentVersion,
+          consentText: registration.consentText ?? fallbackSnapshot.consentText,
           accessibilityNotes: registration.accessibilityNotes,
         },
       });
@@ -2486,7 +2526,7 @@ export async function cancelRegistration(input: CancelInput): Promise<CancelOutc
         });
 
         if (!notice.ok) {
-          console.error(`[inscricoes] aviso de promoção não saiu: ${notice.message ?? 'motivo desconhecido'}`);
+          logger.error(`[inscricoes] aviso de promoção não saiu: ${notice.message ?? 'motivo desconhecido'}`);
         }
 
         /**
@@ -2824,10 +2864,7 @@ function classifyUniqueConflict(
 }
 
 function logUnexpected(operation: string, error: unknown): void {
-  console.error(
-    `[registration] falha inesperada em ${operation}:`,
-    error instanceof Error ? error.message : error,
-  );
+  logger.error(`[registration] falha inesperada em ${operation}:`, { error: error instanceof Error ? error.message : error });
 }
 
 /**

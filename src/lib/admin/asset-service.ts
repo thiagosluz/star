@@ -54,6 +54,7 @@ import {
   type ImageMimeType,
 } from '@/domain/events/image-rules';
 import type { TxClient } from '@/lib/db/tenant-client';
+import { logger } from '@/lib/observability/logger';
 
 export type AssetErrorCode =
   | 'NOT_FOUND'
@@ -210,7 +211,7 @@ export async function requestAssetUpload(input: {
       maxBytes: validation.maxBytes,
     };
   } catch (error) {
-    console.error(`[asset] falha ao preparar upload: ${errorMessage(error)}`);
+    logger.error(`[asset] falha ao preparar upload: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível preparar o envio da imagem.' };
   }
 }
@@ -347,11 +348,9 @@ export async function confirmAssetUpload(
     // Best-effort: o objeto enviado não é mais referenciado por nada. Se a remoção
     // falhar, sobra lixo pago no bucket — e o log diz isso, em vez de esconder.
     await deleteObject(input.bucket, input.objectKey).catch((error: unknown) => {
-      console.error(
-        `[asset] objeto original não removido (${input.objectKey}): ${
+      logger.error(`[asset] objeto original não removido (${input.objectKey}): ${
           error instanceof Error ? error.message : 'falha desconhecida'
-        }`,
-      );
+        }`);
     });
 
     const finalUrl = publicObjectUrl(input.bucket, finalObjectKey);
@@ -477,7 +476,7 @@ export async function confirmAssetUpload(
       sourceMime: realMime,
     };
   } catch (error) {
-    console.error(`[asset] falha ao confirmar upload: ${errorMessage(error)}`);
+    logger.error(`[asset] falha ao confirmar upload: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível confirmar a imagem enviada.' };
   }
 }

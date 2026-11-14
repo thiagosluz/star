@@ -43,6 +43,7 @@ import {
 } from '@/domain/events/landing-page';
 import { PAGE_VERSION_REASONS } from '@/domain/events/page-version-rules';
 import { appendVersion } from '@/lib/admin/page-version-service';
+import { logger } from '@/lib/observability/logger';
 
 export type LandingErrorCode =
   | 'NOT_FOUND'
@@ -916,7 +917,7 @@ function toFailure<T>(
     };
   }
 
-  console.error(`[landing] falha em ${operation}: ${errorMessage(error)}`);
+  logger.error(`[landing] falha em ${operation}: ${errorMessage(error)}`);
   return { ok: false as const, code: 'INTERNAL' as const, message: fallbackMessage };
 }
 

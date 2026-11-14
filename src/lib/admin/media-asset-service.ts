@@ -35,6 +35,7 @@ import { recordAudit } from '@/lib/admin/audit';
 import { BUCKETS, deleteObject } from '@/lib/storage/s3-client';
 import { ASSET_TARGET_LABELS, imageFormatLabel, type AssetTarget } from '@/domain/events/image-rules';
 import { MEDIA_LIBRARY_LIMIT, MEDIA_NO_SOURCE_EVENT } from '@/domain/events/media-filter-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type MediaErrorCode = 'NOT_FOUND' | 'IN_USE' | 'STORAGE' | 'INTERNAL';
 
@@ -567,7 +568,7 @@ export async function deleteMediaAsset(input: {
       return { ok: true as const, assetId: asset.id, deletedObjectKey: asset.objectKey };
     });
   } catch (error) {
-    console.error(`[media] falha ao excluir imagem: ${errorMessage(error)}`);
+    logger.error(`[media] falha ao excluir imagem: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível excluir a imagem.' };
   }
 }

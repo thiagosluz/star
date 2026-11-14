@@ -27,6 +27,7 @@
 import { systemClient, withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { sessionCloseOf } from '@/domain/events/attendance-rules';
+import { logger } from '@/lib/observability/logger';
 
 export interface AttendanceSweepResult {
   tenants: number;
@@ -115,7 +116,7 @@ export async function runAttendanceSweep(input: { now?: Date } = {}): Promise<At
 
     return result;
   } catch (error) {
-    console.error(`[attendance] falha na varredura de presenças: ${errorMessage(error)}`);
+    logger.error(`[attendance] falha na varredura de presenças: ${errorMessage(error)}`);
 
     return result;
   }

@@ -31,16 +31,26 @@ import { NAV_MODE_RAIL, type NavMode } from '@/lib/shell/nav-mode';
  *  quem usa o ponteiro.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-export function NavCollapseToggle({ mode }: { mode: NavMode }) {
+export function NavCollapseToggle({
+  mode,
+  preferencesAllowed = true,
+}: {
+  mode: NavMode;
+  preferencesAllowed?: boolean;
+}) {
   const recolhida = mode === NAV_MODE_RAIL;
   const rotulo = recolhida ? 'Expandir menu' : 'Recolher menu';
+  const titulo = preferencesAllowed
+    ? rotulo
+    : 'Barra lateral fixa: cookies de preferência desativados (/privacidade)';
 
   return (
     <form action={toggleNavModeAction} className="shrink-0">
       <FormStatusButton
-        title={rotulo}
+        title={titulo}
         aria-expanded={!recolhida}
         data-testid="nav-collapse-toggle"
+        data-preferences-allowed={preferencesAllowed ? 'true' : 'false'}
         showSpinner
         pendingContent={<span className="sr-only">{rotulo}</span>}
         className="inline-flex size-9 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-surface-low hover:text-foreground disabled:opacity-60"

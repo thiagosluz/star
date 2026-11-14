@@ -48,6 +48,7 @@ import { CERTIFICATE_KINDS, type CertificateKind } from '@/domain/certificates/c
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { BUCKETS, deleteObject, getObjectBuffer, putObjectBuffer } from '@/lib/storage/s3-client';
 import { ensureStorageRoom } from '@/lib/storage/storage-quota';
+import { logger } from '@/lib/observability/logger';
 
 export type TemplateErrorCode =
   | 'INVALID_INPUT'
@@ -445,7 +446,7 @@ export async function saveCertificateTemplate(input: {
       };
     }
 
-    console.error(`[certificate-templates] falha ao salvar: ${describe(error)}`);
+    logger.error(`[certificate-templates] falha ao salvar: ${describe(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,
@@ -551,7 +552,7 @@ export async function setTemplateBackground(input: {
       notice: backgroundFitNotice(background, layout.page),
     };
   } catch (error) {
-    console.error(`[certificate-templates] falha ao subir a arte: ${describe(error)}`);
+    logger.error(`[certificate-templates] falha ao subir a arte: ${describe(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível guardar a arte de fundo.' };
   }
 }
@@ -591,7 +592,7 @@ export async function clearTemplateBackground(input: {
    * emissão nessa janela falharia por causa da ordem, não do conteúdo.
    */
   await deleteObject(BUCKETS.certificates(), objectKey).catch((error: unknown) => {
-    console.error(`[certificate-templates] arte órfã no bucket: ${describe(error)}`);
+    logger.error(`[certificate-templates] arte órfã no bucket: ${describe(error)}`);
   });
 
   return { ok: true };
@@ -629,7 +630,7 @@ export async function deleteCertificateTemplate(input: {
 
     return { ok: true as const };
   }).catch((error: unknown) => {
-    console.error(`[certificate-templates] falha ao excluir: ${describe(error)}`);
+    logger.error(`[certificate-templates] falha ao excluir: ${describe(error)}`);
     return { ok: false as const, code: 'INTERNAL' as const, message: 'Não foi possível excluir o modelo.' };
   });
 }

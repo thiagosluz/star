@@ -1689,6 +1689,7 @@ async function preparar(
   await page.context().addCookies([
     { name: 'ef_tema', value: opcoes.tema, url: BASE },
     { name: 'ef_nav', value: opcoes.nav ?? 'full', url: BASE },
+    { name: 'ef_consentimento', value: '2026.11-v1|ALL|f62-fixture', url: BASE },
   ]);
 }
 
@@ -1899,7 +1900,10 @@ async function abrirDiretorio(page: Page): Promise<void> {
  *  ninguém perceber.
  */
 async function abrirRaizPublica(page: Page, tema: 'claro' | 'escuro'): Promise<void> {
-  await page.context().addCookies([{ name: 'ef_tema', value: tema, url: BASE }]);
+  await page.context().addCookies([
+    { name: 'ef_tema', value: tema, url: BASE },
+    { name: 'ef_consentimento', value: '2026.11-v1|ALL|f62-fixture', url: BASE },
+  ]);
 
   await page.goto('/');
 
@@ -2181,7 +2185,10 @@ test.describe('rodapé público da plataforma', () => {
  * perceber.
  */
 async function abrirPaginaDaInstituicao(page: Page, tema: 'claro' | 'escuro'): Promise<void> {
-  await page.context().addCookies([{ name: 'ef_tema', value: tema, url: BASE }]);
+  await page.context().addCookies([
+    { name: 'ef_tema', value: tema, url: BASE },
+    { name: 'ef_consentimento', value: '2026.11-v1|ALL|f62-fixture', url: BASE },
+  ]);
 
   await page.goto(`/t/${tenantSlug}`);
 
@@ -2746,7 +2753,10 @@ test.describe('página de inscrição do evento com os campos declarados', () =>
      * vínculos o painel pede a escolha de contexto antes de servir a tela.
      */
     await signInAs(page, emailDaInscricao);
-    await page.context().addCookies([{ name: 'ef_tema', value: 'claro', url: BASE }]);
+    await page.context().addCookies([
+      { name: 'ef_tema', value: 'claro', url: BASE },
+      { name: 'ef_consentimento', value: '2026.11-v1|ALL|f62-fixture', url: BASE },
+    ]);
 
     await abrirInscricaoComCampos(page);
 

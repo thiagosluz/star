@@ -56,6 +56,7 @@ import {
   type SubmissionStatus,
 } from '@/domain/review/submission-rules';
 import { notifyProposalDecided } from '@/lib/review/proposal-notices';
+import { logger } from '@/lib/observability/logger';
 
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1228,9 +1229,7 @@ export async function recordDecision(
       });
 
       if (!notice.ok) {
-        console.error(
-          `[review] decisão registrada, mas o proponente não foi avisado (${input.submissionId}): ${notice.message}`,
-        );
+        logger.error(`[review] decisão registrada, mas o proponente não foi avisado (${input.submissionId}): ${notice.message}`);
       }
     }
 
@@ -1345,10 +1344,7 @@ function toFailure<T>(operation: string, error: unknown): ReviewResult<T> & { ok
     };
   }
 
-  console.error(
-    `[review] falha inesperada em ${operation}:`,
-    error instanceof Error ? error.message : error,
-  );
+  logger.error(`[review] falha inesperada em ${operation}:`, { error: error instanceof Error ? error.message : error });
 
   return {
     ok: false,

@@ -16,6 +16,7 @@ import {
   UserRound,
 } from 'lucide-react';
 
+import { PublicLegalLinks } from '@/components/privacy/public-legal-links';
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import { GetSearchForm } from '@/components/ui';
 import { KovenoMark } from '@/components/ui/brand-mark';
@@ -612,9 +613,12 @@ export default async function PlatformHomePage() {
           </div>
 
           <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-            <p>
-              Cada instituição acessa pelo próprio subdomínio (<span className="code-data">instituicao.{ROOT_DOMAIN}</span>) ou por <span className="code-data">/t/&lt;slug&gt;</span>.
-            </p>
+            <div className="space-y-2">
+              <p>
+                Cada instituição acessa pelo próprio subdomínio (<span className="code-data">instituicao.{ROOT_DOMAIN}</span>) ou por <span className="code-data">/t/&lt;slug&gt;</span>.
+              </p>
+              <PublicLegalLinks />
+            </div>
 
             {/* Seletor de Tema Público (FASE 63) */}
             <ThemeChoice variant="public" />

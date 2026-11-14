@@ -50,6 +50,7 @@ import {
   isLeadStatus,
   type LeadStatusKey,
 } from '@/domain/platform/lead-rules';
+import { logger } from '@/lib/observability/logger';
 
 export interface PlatformActionState {
   ok: boolean;
@@ -594,7 +595,7 @@ export async function submitInstitutionLeadAction(
       message: 'Recebemos seu contato com sucesso! Nossa equipe entrará em contato em breve.',
     };
   } catch (error) {
-    console.error('[platform] falha ao registrar lead:', error);
+    logger.error('[platform] falha ao registrar lead:', { error: error });
     return {
       ...failure(
         'INTERNAL',

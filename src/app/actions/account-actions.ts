@@ -29,6 +29,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import QRCode from 'qrcode';
@@ -36,8 +37,9 @@ import QRCode from 'qrcode';
 import { auth } from '@/lib/auth/auth';
 import { recordIdentityEvent } from '@/lib/auth/identity-audit';
 import { maskEmail } from '@/domain/participants/participant-rules';
-import { getAuthenticatedUser } from '@/lib/auth/session';
+import { ACTIVE_TENANT_COOKIE, getAuthenticatedUser } from '@/lib/auth/session';
 import {
+  deleteOwnAccount,
   getAccountOverview,
   type AccountOverview,
 } from '@/lib/auth/account-service';
@@ -797,4 +799,62 @@ export async function removeAccountAvatarAction(): Promise<AccountActionState> {
 
   revalidatePath('/conta');
   return { ok: true, message: 'Foto removida da sua conta.' };
+}
+
+export async function deleteOwnAccountAction(
+  _prev: AccountActionState | null,
+  formData: FormData,
+): Promise<AccountActionState> {
+  const user = await getAuthenticatedUser();
+  if (!user) return NOT_AUTHENTICATED;
+
+  const confirmationPhrase = String(formData.get('confirmationPhrase') ?? '');
+  const currentPassword = String(formData.get('currentPassword') ?? '');
+  const requestHeaders = await headers();
+
+  // Grava o evento antes da exclusão dos cookies e enquanto `headers()` está ativo;
+  // se a operação falhar, não registramos.
+  const result = await deleteOwnAccount({
+    userId: user.id,
+    confirmationPhrase,
+    currentPassword,
+    verifyPassword: async (password) => {
+      try {
+        await auth.api.verifyPassword({
+          body: { password },
+          headers: requestHeaders,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: result.code,
+      message: result.message,
+      details: result.soleOwnerTenants?.map((t) => `${t.tenantName} (/t/${t.tenantSlug})`),
+    };
+  }
+
+  await recordIdentityEvent({
+    userId: user.id,
+    event: 'ACCOUNT_DELETED',
+    details: { selfService: true },
+  });
+
+  const cookieStore = await cookies();
+  cookieStore.delete(ACTIVE_TENANT_COOKIE);
+  cookieStore.delete('better-auth.session_token');
+  cookieStore.delete('__Secure-better-auth.session_token');
+
+  revalidatePath('/', 'layout');
+  return {
+    ok: true,
+    code: 'ACCOUNT_DELETED',
+    message: 'Sua conta foi encerrada e seus dados pessoais foram removidos ou anonimizados.',
+  };
 }

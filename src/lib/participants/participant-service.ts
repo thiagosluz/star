@@ -58,6 +58,7 @@ import {
   type ParticipantOrigin,
   type ParticipantPage,
 } from '@/domain/participants/participant-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type ParticipantErrorCode = 'NOT_FOUND' | 'INVALID_INPUT' | 'INTERNAL';
 
@@ -539,7 +540,7 @@ export async function listParticipants(
       };
     });
   } catch (error) {
-    console.error(`[participants] falha ao listar participantes: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao listar participantes: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar os participantes.' };
   }
@@ -757,7 +758,7 @@ export async function collectParticipantExportRows(input: {
       };
     });
   } catch (error) {
-    console.error(`[participants] falha ao montar a exportação: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao montar a exportação: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível exportar a lista.' };
   }
 }
@@ -1218,7 +1219,7 @@ export async function getParticipantProfile(input: {
       };
     });
   } catch (error) {
-    console.error(`[participants] falha ao carregar a ficha: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao carregar a ficha: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar a ficha do participante.' };
   }

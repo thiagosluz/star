@@ -464,7 +464,8 @@ describe('trilha de identidade', () => {
     const entry = entries[0]!;
     expect(entry.event).toBe('PASSWORD_CHANGED');
     expect(entry.tone).toBe('CRITICAL');
-    expect(entry.ipAddress).toBe('203.0.113.10');
+    // FASE 110: IPv4 persistido na trilha de auditoria é mascarado para /24.
+    expect(entry.ipAddress).toBe('203.0.113.0');
     expect(entry.subjectName).toBe('Ana Exportadora');
 
     const serialized = JSON.stringify(entry.details);

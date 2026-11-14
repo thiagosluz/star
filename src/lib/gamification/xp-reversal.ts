@@ -38,6 +38,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { resolveXpProgress } from '@/domain/gamification/xp-rules';
 import { rewardKeys, type RewardOutcome, type RewardResult } from '@/lib/gamification/reward-engine';
+import { logger } from '@/lib/observability/logger';
 
 /** Marca o lançamento que devolve o crédito: `<chave do crédito>:reversal`. */
 export function reversalKeyOf(creditKey: string): string {
@@ -102,7 +103,7 @@ export async function resolveRegistrationCreditKey(input: {
      * recusado por idempotência (a pessoa deixa de ganhar XP que talvez merecesse) — e
      * nunca paga duas vezes pela mesma vaga.
      */
-    console.error(`[xp] falha ao resolver a chave do crédito: ${errorMessage(error)}`);
+    logger.error(`[xp] falha ao resolver a chave do crédito: ${errorMessage(error)}`);
     return base;
   }
 }
@@ -193,7 +194,7 @@ export async function revertRegistrationReward(input: {
       return { ok: true as const, nothingToRevert: false, xpReverted: reverted, totalXp: totalAfter };
     });
   } catch (error) {
-    console.error(`[xp] falha ao estornar a inscrição: ${errorMessage(error)}`);
+    logger.error(`[xp] falha ao estornar a inscrição: ${errorMessage(error)}`);
     return null;
   }
 }

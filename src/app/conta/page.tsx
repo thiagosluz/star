@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Smartphone,
   SunMoon,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 
@@ -27,6 +28,7 @@ import {
   changeAccountPasswordAction,
   confirmAccountAvatarUploadAction,
   confirmTwoFactorAction,
+  deleteOwnAccountAction,
   disableTwoFactorAction,
   removeAccountAvatarAction,
   regenerateBackupCodesAction,
@@ -40,6 +42,7 @@ import {
 } from '@/app/actions/account-actions';
 import {
   AccountAvatarField,
+  AccountDeletionForm,
   AccountEmailForm,
   AccountPasswordForm,
   AccountProfileForm,
@@ -475,6 +478,34 @@ export default async function AccountPage({
             Enxergou algo que não reconhece? Troque a senha agora — a troca encerra as outras
             sessões — e desligue o segundo fator só depois de conferir os dispositivos acima.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* ── Encerramento da própria conta (FASE 110 — LGPD) ────────────────── */}
+      <Card id="encerrar-conta" data-testid="account-deletion-section">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-destructive">
+            <Trash2 className="size-4" aria-hidden />
+            Encerrar minha conta
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Você pode apagar sua conta sem depender da instituição. Ao confirmar, todas as suas
+            sessões, senha, segundo fator, foto, vínculos e respostas pessoais de formulários são
+            removidos, e inscrições em eventos futuros são canceladas para liberar vagas.
+            Certificados já emitidos preservam sua validade pública de forma anonimizada. Consulte
+            os detalhes em{' '}
+            <Link href="/privacidade" className="underline underline-offset-4 hover:text-foreground">
+              Privacidade
+            </Link>
+            .
+          </p>
+
+          <AccountDeletionForm
+            hasPassword={account.hasPassword}
+            action={deleteOwnAccountAction}
+          />
         </CardContent>
       </Card>
 

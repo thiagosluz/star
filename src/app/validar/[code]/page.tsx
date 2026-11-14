@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AlertTriangle, BadgeCheck, Ban, FileText, QrCode, ShieldCheck, XCircle } from 'lucide-react';
 
+import { PublicLegalLinks } from '@/components/privacy/public-legal-links';
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import { PageHeader } from '@/components/ui';
 import { PLATFORM_NAV_GROUP } from '@/components/shell/tenant-nav';
@@ -24,7 +25,8 @@ export const dynamic = 'force-dynamic';
  */
 function RodapeDeAparencia() {
   return (
-    <footer className="border-t border-border pt-6">
+    <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6 text-muted-foreground">
+      <PublicLegalLinks />
       <ThemeChoice variant="public" />
     </footer>
   );

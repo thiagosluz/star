@@ -23,11 +23,22 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { adminPrisma } from '@/lib/db/admin-client';
+import { withTenant } from '@/lib/db/tenant-client';
+import { maskIpAddress } from '@/domain/privacy/ip-privacy-rules';
 import {
   describeSession,
   orderSessionsForDisplay,
   type AccountSession,
 } from '@/domain/account/account-rules';
+import {
+  buildAnonymizedAccountPayload,
+  evaluateAccountDeletionEligibility,
+  type SoleOwnerTenantRef,
+} from '@/domain/identity/account-deletion-rules';
+import { erasePersonalFormResponses } from '@/domain/events/registration-form-spec-rules';
+import { removeUserAvatar } from '@/lib/auth/user-avatar-service';
+import { cancelRegistration } from '@/lib/events/registration-service';
+import { invalidateTenantCache } from '@/lib/tenancy/tenant-resolver';
 
 export interface AccountOverview {
   userId: string;
@@ -124,7 +135,7 @@ export async function readAccountSessions(input: {
   const sessions: AccountSession[] = rows.map((row) => ({
     token: row.token,
     ...describeSession(row.userAgent),
-    ipAddress: row.ipAddress,
+    ipAddress: maskIpAddress(row.ipAddress),
     createdAt: row.createdAt.toISOString(),
     lastUsedAt: row.updatedAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
@@ -132,4 +143,209 @@ export async function readAccountSessions(input: {
   }));
 
   return orderSessionsForDisplay(sessions);
+}
+
+export type DeleteOwnAccountResult =
+  | { ok: true; soleOwnerTenants?: undefined }
+  | {
+      ok: false;
+      code:
+        | 'NOT_FOUND'
+        | 'CONFIRMATION_MISMATCH'
+        | 'PASSWORD_REQUIRED'
+        | 'INVALID_PASSWORD'
+        | 'SOLE_OWNER_OF_TENANT';
+      message: string;
+      soleOwnerTenants?: readonly SoleOwnerTenantRef[];
+    };
+
+/**
+ * Encerra a própria conta do titular (FASE 110 — direito à eliminação/LGPD).
+ *
+ * Mantém integridade multi-tenant e documental:
+ *  1. Recusa se a pessoa for a única `OWNER` ativa de uma instituição não removida.
+ *  2. Cancela inscrições vivas futuras (liberando vagas para a fila).
+ *  3. Apaga respostas pessoais de formulários, sessões, credenciais, 2FA, favoritos e vínculos.
+ *  4. Anonimiza `users` de forma irreversível para não quebrar certificados públicos já emitidos.
+ */
+export async function deleteOwnAccount(input: {
+  userId: string;
+  confirmationPhrase: string;
+  currentPassword?: string;
+  verifyPassword?: (password: string) => Promise<boolean>;
+}): Promise<DeleteOwnAccountResult> {
+  const [user, credential, ownerAssignments] = await Promise.all([
+    adminPrisma.user.findUnique({
+      where: { id: input.userId },
+      select: { id: true, deletedAt: true },
+    }),
+    adminPrisma.account.findFirst({
+      where: { userId: input.userId, providerId: 'credential' },
+      select: { password: true },
+    }),
+    adminPrisma.roleAssignment.findMany({
+      where: {
+        userId: input.userId,
+        role: 'OWNER',
+        revokedAt: null,
+        tenantId: { not: null },
+        tenant: { deletedAt: null },
+      },
+      select: {
+        tenantId: true,
+        tenant: { select: { id: true, name: true, slug: true } },
+      },
+    }),
+  ]);
+
+  if (!user || user.deletedAt) {
+    return { ok: false, code: 'NOT_FOUND', message: 'Conta não encontrada ou já encerrada.' };
+  }
+
+  const soleOwnerTenants: SoleOwnerTenantRef[] = [];
+  for (const assignment of ownerAssignments) {
+    if (!assignment.tenantId || !assignment.tenant) continue;
+    const otherActiveOwners = await adminPrisma.roleAssignment.count({
+      where: {
+        tenantId: assignment.tenantId,
+        role: 'OWNER',
+        revokedAt: null,
+        userId: { not: input.userId },
+        user: {
+          deletedAt: null,
+          memberships: {
+            some: {
+              tenantId: assignment.tenantId,
+              status: 'ACTIVE',
+              deletedAt: null,
+            },
+          },
+        },
+      },
+    });
+    if (otherActiveOwners === 0) {
+      soleOwnerTenants.push({
+        tenantId: assignment.tenant.id,
+        tenantName: assignment.tenant.name,
+        tenantSlug: assignment.tenant.slug,
+      });
+    }
+  }
+
+  const hasPassword = credential?.password != null;
+  const eligibility = evaluateAccountDeletionEligibility({
+    confirmationPhrase: input.confirmationPhrase,
+    hasPassword,
+    currentPassword: input.currentPassword ?? '',
+    soleOwnerTenants,
+  });
+
+  if (!eligibility.ok) {
+    return {
+      ok: false,
+      code: eligibility.code,
+      message: eligibility.message,
+      soleOwnerTenants: eligibility.soleOwnerTenants,
+    };
+  }
+
+  if (hasPassword && input.verifyPassword) {
+    const valid = await input.verifyPassword(input.currentPassword ?? '');
+    if (!valid) {
+      return {
+        ok: false,
+        code: 'INVALID_PASSWORD',
+        message: 'A senha atual está incorreta.',
+      };
+    }
+  }
+
+  // Libera vagas de inscrições vivas em eventos futuros usando o serviço canônico de cada tenant.
+  const now = new Date();
+  const futureRegistrations = await adminPrisma.registration.findMany({
+    where: {
+      userId: input.userId,
+      deletedAt: null,
+      status: { in: ['PENDING', 'CONFIRMED', 'WAITLISTED'] },
+      event: { endsAt: { gt: now }, deletedAt: null },
+    },
+    select: { id: true, tenantId: true },
+  });
+
+  for (const reg of futureRegistrations) {
+    await cancelRegistration({
+      tenantId: reg.tenantId,
+      registrationId: reg.id,
+      userId: input.userId,
+      reason: 'Conta encerrada pelo titular',
+    }).catch(() => {});
+  }
+
+  // Limpa respostas pessoais em inscrições restantes (mantendo apenas eventuais certificados íntegros).
+  const remainingRegistrations = await adminPrisma.registration.findMany({
+    where: { userId: input.userId, deletedAt: null },
+    select: { id: true, tenantId: true, formResponses: true },
+  });
+
+  const regsByTenant = new Map<string, typeof remainingRegistrations>();
+  for (const reg of remainingRegistrations) {
+    const list = regsByTenant.get(reg.tenantId) ?? [];
+    list.push(reg);
+    regsByTenant.set(reg.tenantId, list);
+  }
+
+  for (const [tenantId, regs] of regsByTenant) {
+    await withTenant(tenantId, async (tx) => {
+      for (const reg of regs) {
+        const cleaned = erasePersonalFormResponses(reg.formResponses);
+        await tx.registration.update({
+          where: { id: reg.id },
+          data: {
+            accessibilityNotes: null,
+            dietaryNotes: null,
+            formResponses: cleaned.kept as object,
+          },
+        });
+      }
+      await tx.activityFavorite.deleteMany({ where: { userId: input.userId } });
+    });
+  }
+
+  // Remove foto armazenada fora do banco (melhor esforço).
+  await removeUserAvatar(input.userId).catch(() => {});
+
+  const anonymized = buildAnonymizedAccountPayload(input.userId);
+  const memberships = await adminPrisma.userTenantProfile.findMany({
+    where: { userId: input.userId },
+    select: { tenantId: true },
+  });
+
+  await adminPrisma.$transaction([
+    adminPrisma.roleAssignment.updateMany({
+      where: { userId: input.userId, revokedAt: null },
+      data: { revokedAt: now, reason: 'Conta encerrada pelo titular' },
+    }),
+    adminPrisma.userTenantProfile.updateMany({
+      where: { userId: input.userId, deletedAt: null },
+      data: { status: 'REMOVED', deletedAt: now },
+    }),
+    adminPrisma.session.deleteMany({ where: { userId: input.userId } }),
+    adminPrisma.account.deleteMany({ where: { userId: input.userId } }),
+    adminPrisma.twoFactor.deleteMany({ where: { userId: input.userId } }),
+    adminPrisma.user.update({
+      where: { id: input.userId },
+      data: {
+        ...anonymized,
+        banned: true,
+        banReason: 'Conta encerrada pelo titular',
+        deletedAt: now,
+      },
+    }),
+  ]);
+
+  for (const membership of memberships) {
+    invalidateTenantCache(membership.tenantId);
+  }
+
+  return { ok: true };
 }

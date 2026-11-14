@@ -48,6 +48,7 @@ import {
   roundStateOf,
   type RoundState,
 } from '@/domain/raffles/round-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type RaffleErrorCode =
   | 'NOT_FOUND'
@@ -257,7 +258,7 @@ export async function previewEligibility(input: {
       },
     };
   } catch (error) {
-    console.error(`[raffles] falha na prévia de elegibilidade: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha na prévia de elegibilidade: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',
@@ -556,7 +557,7 @@ export async function listRaffles(
       totalPages: data.pagination.totalPages,
     };
   } catch (error) {
-    console.error(`[raffles] falha ao listar sorteios: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao listar sorteios: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL',

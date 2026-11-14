@@ -15,6 +15,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 
+import { PublicLegalLinks } from '@/components/privacy/public-legal-links';
 import { ThemeChoice } from '@/components/theme/theme-choice';
 import { KovenoMark } from '@/components/ui/brand-mark';
 import { InstitutionLeadForm } from '@/components/platform/lead-form';
@@ -358,9 +359,12 @@ export default function ParaInstituicoesPage() {
           </div>
 
           <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
-            <p>
-              Ambiente em nuvem com conformidade, auditoria e isolamento por inquilino (<span className="code-data">instituicao.{ROOT_DOMAIN}</span>).
-            </p>
+            <div className="space-y-2">
+              <p>
+                Ambiente em nuvem com conformidade, auditoria e isolamento por inquilino (<span className="code-data">instituicao.{ROOT_DOMAIN}</span>).
+              </p>
+              <PublicLegalLinks />
+            </div>
 
             <ThemeChoice variant="public" />
           </div>

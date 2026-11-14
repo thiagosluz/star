@@ -65,6 +65,7 @@ import {
   type CallResultSubmissionSource,
   type PublicCallResultView,
 } from '@/domain/proposals/call-result-rules';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * O enum do banco em tipo do domínio.
@@ -104,7 +105,7 @@ function toAuthorSource(row: {
 function report(origem: string, callId: string, problems: readonly string[]): void {
   if (problems.length === 0) return;
 
-  console.warn(`[proposals] ${origem} da chamada ${callId}: ${problems.join(' | ')}`);
+  logger.warn(`[proposals] ${origem} da chamada ${callId}: ${problems.join(' | ')}`);
 }
 
 /**
@@ -199,9 +200,7 @@ export async function getPublicCallResult(input: {
      * Fail-closed: sem leitura legível, a seção não existe. O log guarda o motivo —
      * o operador descobre o defeito sem abrir o banco, e o visitante não vê erro.
      */
-    console.error(
-      `[proposals] falha ao ler o resultado público da chamada ${input.callId}: ${errorMessage(error)}`,
-    );
+    logger.error(`[proposals] falha ao ler o resultado público da chamada ${input.callId}: ${errorMessage(error)}`);
 
     return null;
   }

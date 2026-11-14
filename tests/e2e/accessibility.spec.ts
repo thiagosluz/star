@@ -1416,7 +1416,7 @@ test.describe('telas públicas', () => {
 
   test('a tela de login não tem violação crítica', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.locator('form')).toBeVisible();
+    await expect(page.locator('main form')).toBeVisible();
 
     await expectNoCriticalViolations(page, 'login (/login)');
   });

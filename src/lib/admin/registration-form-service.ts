@@ -42,6 +42,7 @@ import {
   describeRegistrationForm,
   type RegistrationFormOperation,
 } from '@/lib/admin/registration-form-editing';
+import { logger } from '@/lib/observability/logger';
 
 export type RegistrationFormErrorCode =
   | 'NOT_FOUND'
@@ -158,9 +159,7 @@ export async function applyRegistrationFormOperationOnEvent(input: {
       return { ok: true as const, fields: applied.fields.length, message: applied.message };
     });
   } catch (error) {
-    console.error(
-      `[admin] falha ao salvar o formulário de inscrição do evento: ${errorMessage(error)}`,
-    );
+    logger.error(`[admin] falha ao salvar o formulário de inscrição do evento: ${errorMessage(error)}`);
 
     return {
       ok: false,

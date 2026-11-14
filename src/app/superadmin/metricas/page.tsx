@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { requirePlatformPermission } from '@/lib/platform/guard';
+import { readOperationalAlertReport } from '@/lib/observability/alerts';
 import { getPlatformMetrics, listPlatformAudit } from '@/lib/platform/global-repository';
 import { countOpenReports } from '@/lib/platform/profile-moderation';
 import { Badge, Card, EmptyState, PageHeader, SectionHeading, StatCard } from '@/components/ui';
@@ -37,10 +38,11 @@ import { PLATFORM_CRUMB, PLATFORM_NAV_GROUP } from '@/components/shell/tenant-na
 export default async function PlatformOverviewPage() {
   await requirePlatformPermission();
 
-  const [metrics, audit, openReports] = await Promise.all([
+  const [metrics, audit, openReports, alertReport] = await Promise.all([
     getPlatformMetrics(),
     listPlatformAudit({ limit: 10 }),
     countOpenReports(),
+    readOperationalAlertReport(),
   ]);
 
   return (
@@ -128,6 +130,48 @@ export default async function PlatformOverviewPage() {
           data-testid="metric-xp"
           data-value={metrics.xpTransactions}
         />
+      </section>
+
+      <section
+        className="space-y-4 rounded-xl border border-border bg-card p-5"
+        data-testid="platform-operational-alerts"
+        data-firing={String(alertReport.firingCount)}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-display text-title text-foreground">Alertas operacionais</h2>
+            <p className="text-xs text-muted-foreground">
+              Mesmas regras expostas em <code>/api/metrics</code> (<code>eventflow_alert_firing</code>).
+            </p>
+          </div>
+          <Badge tone={alertReport.firingCount > 0 ? 'danger' : 'success'} size="sm">
+            {alertReport.firingCount === 0
+              ? 'Operação normal'
+              : `${alertReport.firingCount} alerta(s) ativo(s)`}
+          </Badge>
+        </div>
+
+        <ul className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {alertReport.alerts.map((alert) => (
+            <li
+              key={alert.name}
+              data-testid={`operational-alert-${alert.name}`}
+              data-firing={alert.firing ? 'true' : 'false'}
+              className="rounded-lg border border-border bg-background/60 p-3.5 text-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-medium text-foreground">{alert.name}</span>
+                <Badge tone={alert.firing ? (alert.severity === 'critical' ? 'danger' : 'warning') : 'neutral'} size="sm">
+                  {alert.firing ? 'Ativo' : 'OK'}
+                </Badge>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">{alert.summary}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                Regra: {alert.thresholdDescription} (atual: {alert.observedValue})
+              </p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/**

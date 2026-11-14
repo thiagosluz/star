@@ -35,6 +35,7 @@ import type { EventCategoryKey } from '@/domain/events/event-category-rules';
 import type { EventModalityValue } from '@/domain/events/event-modality-rules';
 import type { LeadStatusKey, ValidatedLeadInput } from '@/domain/platform/lead-rules';
 import type { PlatformMetricsSummary } from '@/domain/platform/platform-metrics-rules';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Instituições
@@ -637,7 +638,7 @@ export async function listPlatformAudit(
       createdAt: row.createdAt,
     }));
   } catch (error) {
-    console.error(`[platform] falha ao listar auditoria: ${errorMessage(error)}`);
+    logger.error(`[platform] falha ao listar auditoria: ${errorMessage(error)}`);
     return [];
   }
 }

@@ -192,7 +192,7 @@ test.describe('a porta de entrada', () => {
     await entrarPeloFormulario(page, email, '/conta');
 
     await expect(page).toHaveURL(/\/conta$/, { timeout: 30_000 });
-    await expect(page.getByRole('heading', { name: /minha conta/i })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^minha conta$/i })).toBeVisible();
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

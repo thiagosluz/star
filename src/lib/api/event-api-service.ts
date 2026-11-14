@@ -48,6 +48,7 @@ import {
   type ApiPalestrante,
   type ApiPatrocinador,
 } from '@/lib/api/event-api-projection';
+import { logger } from '@/lib/observability/logger';
 
 /** O mínimo da instituição que a resposta do evento carrega (identidade pública). */
 export type EventApiTenant = Pick<TenantContext, 'tenantId' | 'slug' | 'name'>;
@@ -150,7 +151,7 @@ export async function loadEventApiProjections(input: {
      * proibido (e o caminho dele), que é informação de diagnóstico, não de API. O
      * log guarda a causa; o cliente recebe a resposta genérica.
      */
-    console.error(`[api] falha ao projetar o evento público: ${errorMessage(error)}`);
+    logger.error(`[api] falha ao projetar o evento público: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível ler o evento.' };
   }

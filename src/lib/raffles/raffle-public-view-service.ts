@@ -41,6 +41,7 @@ import {
   reproduceDraw,
   type RafflePoolEntry,
 } from '@/domain/raffles/pool-rules';
+import { logger } from '@/lib/observability/logger';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura pública (item G5)
@@ -290,7 +291,7 @@ export async function listPublicRaffleResults(
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao carregar resultados públicos: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao carregar resultados públicos: ${errorMessage(error)}`);
     return [];
   }
 }
@@ -395,7 +396,7 @@ export async function getPublicRaffleResult(
       alternates: rounds.flatMap((round) => round.alternates),
     };
   } catch (error) {
-    console.error(`[raffles] falha ao carregar resultado público do sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao carregar resultado público do sorteio: ${errorMessage(error)}`);
     return null;
   }
 }
@@ -544,7 +545,7 @@ export async function getRaffleLiveState(input: {
       };
     });
   } catch (error) {
-    console.error(`[raffles] falha ao carregar o estado ao vivo do sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao carregar o estado ao vivo do sorteio: ${errorMessage(error)}`);
     return null;
   }
 }
@@ -905,7 +906,7 @@ export async function getRaffleStageView(input: {
       previousRounds: previous.map(roundView),
     };
   } catch (error) {
-    console.error(`[raffles] falha ao carregar o palco do sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao carregar o palco do sorteio: ${errorMessage(error)}`);
     return null;
   }
 }
@@ -1323,7 +1324,7 @@ export async function getRaffleAudit(input: {
       poolCount: last?.poolCount ?? 0,
     };
   } catch (error) {
-    console.error(`[raffles] falha ao montar a auditoria do sorteio: ${errorMessage(error)}`);
+    logger.error(`[raffles] falha ao montar a auditoria do sorteio: ${errorMessage(error)}`);
     return null;
   }
 }

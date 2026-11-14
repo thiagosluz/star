@@ -30,6 +30,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { queueEmail } from '@/lib/communication/email-service';
 import type { EmailPayloads, EmailTemplateKey } from '@/domain/communication/email-templates';
+import { logger } from '@/lib/observability/logger';
 
 export interface NoticeOutcome {
   ok: boolean;
@@ -105,7 +106,7 @@ export async function deliverNotice<K extends EmailTemplateKey>(input: {
 
     return { ok: true, emailQueued: queued.ok, message: queued.ok ? null : queued.message };
   } catch (error) {
-    console.error(`[aviso] falha ao avisar (${input.dedupeKey}): ${errorMessage(error)}`);
+    logger.error(`[aviso] falha ao avisar (${input.dedupeKey}): ${errorMessage(error)}`);
 
     return noticeFailure(errorMessage(error));
   }

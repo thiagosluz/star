@@ -117,7 +117,7 @@ DO $$
 DECLARE
   tabela text;
 BEGIN
-  FOREACH tabela IN ARRAY ARRAY['job_runs', 'two_factor', 'identity_audit_logs', 'institution_leads']
+  FOREACH tabela IN ARRAY ARRAY['job_runs', 'two_factor', 'identity_audit_logs', 'institution_leads', 'cookie_consents']
   LOOP
     IF to_regclass('public.' || tabela) IS NOT NULL THEN
       EXECUTE format('REVOKE ALL ON TABLE public.%I FROM eventflow_app', tabela);

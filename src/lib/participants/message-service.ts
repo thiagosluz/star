@@ -52,6 +52,7 @@ import {
   threadRootFor,
 } from '@/domain/communication/message-thread-rules';
 import type { ParticipantResult } from '@/lib/participants/participant-service';
+import { logger } from '@/lib/observability/logger';
 
 /** A união que define quem é participante da instituição (mesma do diretório). */
 const RECIPIENT_UNION_SQL = `
@@ -270,7 +271,7 @@ export async function sendParticipantMessage(input: {
       recipients,
     };
   } catch (error) {
-    console.error(`[participants] falha ao enviar recado: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao enviar recado: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível enviar o recado.' };
   }
@@ -377,7 +378,7 @@ export async function listOwnMessages(input: {
       };
     });
   } catch (error) {
-    console.error(`[participants] falha ao carregar a caixa de entrada: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao carregar a caixa de entrada: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar as suas mensagens.' };
   }
@@ -405,7 +406,7 @@ export async function markMessageRead(input: {
       return { ok: true as const, marked: result.count > 0 };
     });
   } catch (error) {
-    console.error(`[participants] falha ao marcar a mensagem como lida: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao marcar a mensagem como lida: ${errorMessage(error)}`);
 
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível marcar a mensagem como lida.' };
   }
@@ -518,7 +519,7 @@ export async function replyToParticipantMessage(input: {
       return { ok: true as const, replyId: reply.id, sentAt: reply.sentAt };
     });
   } catch (error) {
-    console.error(`[participants] falha ao responder o recado: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao responder o recado: ${errorMessage(error)}`);
 
     return {
       ok: false,
@@ -572,7 +573,7 @@ export async function listParticipantConversations(input: {
       };
     });
   } catch (error) {
-    console.error(`[participants] falha ao carregar as conversas: ${errorMessage(error)}`);
+    logger.error(`[participants] falha ao carregar as conversas: ${errorMessage(error)}`);
 
     return {
       ok: false,

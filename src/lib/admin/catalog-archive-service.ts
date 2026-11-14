@@ -43,6 +43,7 @@ import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import type { AdminResult } from '@/lib/admin/catalog-service';
+import { logger } from '@/lib/observability/logger';
 
 /**
  * Os `entityType` da trilha, em UM lugar só.
@@ -232,7 +233,7 @@ export async function restoreCardTemplate(input: {
       return { ok: true as const, name: card.name, archivedAt, archivedByName };
     });
   } catch (error) {
-    console.error(`[admin] falha ao restaurar carta: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao restaurar carta: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível restaurar a carta.' };
   }
 }
@@ -331,7 +332,7 @@ export async function restoreMission(input: {
       return { ok: true as const, name: mission.name, archivedAt, archivedByName };
     });
   } catch (error) {
-    console.error(`[admin] falha ao restaurar missão: ${errorMessage(error)}`);
+    logger.error(`[admin] falha ao restaurar missão: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível restaurar a missão.' };
   }
 }

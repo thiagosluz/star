@@ -70,6 +70,7 @@ import {
   visibleProfileFields,
 } from '@/domain/profile/public-profile-rules';
 import { createShareToken, hashShareToken, openShareToken, sealShareToken } from './card-share-token';
+import { logger } from '@/lib/observability/logger';
 
 export type CardShareErrorCode =
   | 'NOT_OWNED'
@@ -367,7 +368,7 @@ export async function getCardShareState(input: {
       },
     };
   } catch (error) {
-    console.error(`[gamification] falha ao ler o link da carta: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao ler o link da carta: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível ler o link desta carta.' };
   }
 }
@@ -515,7 +516,7 @@ export async function ensureCardShareLink(input: {
 
     return fresh;
   } catch (error) {
-    console.error(`[gamification] falha ao criar o link da carta: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao criar o link da carta: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível criar o link desta carta.' };
   }
 }
@@ -576,7 +577,7 @@ export async function revokeCardShareLink(input: {
 
     return { ok: true, revokedAt };
   } catch (error) {
-    console.error(`[gamification] falha ao revogar o link da carta: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao revogar o link da carta: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível revogar o link.' };
   }
 }
@@ -609,7 +610,7 @@ async function registerCardShareView(input: { tenantId: string; linkId: string }
       }),
     );
   } catch (error) {
-    console.error(`[gamification] falha ao contar a abertura do link: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao contar a abertura do link: ${errorMessage(error)}`);
   }
 }
 
@@ -771,7 +772,7 @@ export async function readSharedCard(input: {
 
     return { ok: true, card };
   } catch (error) {
-    console.error(`[gamification] falha ao ler a carta compartilhada: ${errorMessage(error)}`);
+    logger.error(`[gamification] falha ao ler a carta compartilhada: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível abrir este link.' };
   }
 }

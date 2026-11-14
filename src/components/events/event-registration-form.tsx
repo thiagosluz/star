@@ -8,6 +8,11 @@ import {
   registerForEventAction,
   type RegistrationActionState,
 } from '@/app/actions/registration-actions';
+import {
+  REGISTRATION_CONSENT_VERSION,
+  REGISTRATION_DATA_CONSENT_TEXT,
+  REGISTRATION_IMAGE_CONSENT_TEXT,
+} from '@/domain/events/registration-consent-rules';
 import type { RegistrationFormField } from '@/domain/events/registration-form-spec-rules';
 import { RegistrationDeclaredFields } from '@/components/events/registration-declared-fields';
 
@@ -178,7 +183,12 @@ export function EventRegistrationForm({
       </div>
 
       <fieldset className="space-y-2.5">
-        <legend className="mb-1 text-sm font-medium">Consentimentos</legend>
+        <legend className="mb-1 text-sm font-medium">
+          Consentimentos{' '}
+          <span className="ef-muted-on-card text-xs font-normal">
+            (termo {REGISTRATION_CONSENT_VERSION})
+          </span>
+        </legend>
 
         <label className="flex items-start gap-2.5 text-sm">
           <input
@@ -189,8 +199,8 @@ export function EventRegistrationForm({
             required
           />
           <span>
-            Autorizo o tratamento dos meus dados pessoais para fins de organização deste
-            evento. <span className="ef-muted-on-card">(obrigatório)</span>
+            {REGISTRATION_DATA_CONSENT_TEXT}{' '}
+            <span className="ef-muted-on-card">(obrigatório)</span>
           </span>
         </label>
 
@@ -202,7 +212,7 @@ export function EventRegistrationForm({
             className="mt-0.5"
           />
           <span>
-            Autorizo o uso da minha imagem em registros e divulgação do evento.{' '}
+            {REGISTRATION_IMAGE_CONSENT_TEXT}{' '}
             <span className="ef-muted-on-card">(opcional)</span>
           </span>
         </label>

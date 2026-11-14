@@ -43,6 +43,7 @@ import {
   type ReviewerRanking,
   type ReviewerScore,
 } from '@/domain/review/review-rules';
+import { logger } from '@/lib/observability/logger';
 
 export type AchievementResult<T> =
   | ({ ok: true } & T)
@@ -191,7 +192,7 @@ export async function grantFullAttendanceCard(input: {
 
     return { ok: true as const, granted: granted.ok && granted.cards.length > 0, alreadyHad: false, reason: null, cardName, ...base };
   } catch (error) {
-    console.error(`[achievements] falha na conquista de presença total: ${errorMessage(error)}`);
+    logger.error(`[achievements] falha na conquista de presença total: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,
@@ -360,7 +361,7 @@ export async function getReviewerRanking(input: {
       cardNames: cards.map((card) => card.name),
     };
   } catch (error) {
-    console.error(`[achievements] falha ao montar o ranking de revisores: ${errorMessage(error)}`);
+    logger.error(`[achievements] falha ao montar o ranking de revisores: ${errorMessage(error)}`);
     return {
       ok: false as const,
       code: 'INTERNAL' as const,
