@@ -5,7 +5,6 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
-import { getRequestContext } from '@/lib/auth/session';
 import { getReviewerRanking } from '@/lib/gamification/achievement-service';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
@@ -44,13 +43,12 @@ export default async function ReviewerRecognitionPage({
   const eventId = requireUuidParam(resolvedParams, 'eventId');
   const { tenantSlug } = resolvedParams;
 
-  const { tenantId } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.CARD_GRANT,
   });
 
-  const context = await getRequestContext();
-  const canAward = can(context?.principal ?? null, PERMISSIONS.CARD_GRANT, { scope: 'TENANT' });
+  const canAward = can(principal, PERMISSIONS.CARD_GRANT, { scope: 'TENANT' });
 
   const reviewerRanking = await getReviewerRanking({ tenantId, eventId });
 

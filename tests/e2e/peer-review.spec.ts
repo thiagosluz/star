@@ -393,10 +393,13 @@ test.describe('submissão de trabalho', () => {
 
     await page.getByRole('button', { name: /criar rascunho/i }).click();
 
-    // A trava é do SERVIDOR: a tela mostra o motivo e NADA foi criado.
+    // A trava é do SERVIDOR: a tela mostra o motivo no topo E no toast flutuante, e NADA foi criado.
     await expect(page.getByTestId('submission-error')).toContainText(
       /3 palavras-chave distintas/i,
       { timeout: 20_000 },
+    );
+    await expect(page.getByTestId('submission-error-toast')).toContainText(
+      /3 palavras-chave distintas/i,
     );
 
     /**

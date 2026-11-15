@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import { THEME_COLOR_PRESETS, toColorPickerHex } from '@/domain/events/landing-page';
 import { Input, Label, Select } from '@/components/ui';
 import { TENANT_PALETTE_ROLES } from '@/domain/tenancy/tenant-page-theme-rules';
 
@@ -81,21 +82,44 @@ export function TenantThemeFields({ theme }: { theme: TenantThemeFormValues }) {
       */}
       <input type="hidden" name="theme" value={tenantThemeFieldsValue(values)} />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TENANT_PALETTE_ROLES.map((field) => {
           const value = String(values[field.key] ?? '');
           const valid = HEX_OR_OKLCH.test(value.trim());
+          const presets = THEME_COLOR_PRESETS[field.key];
 
           return (
             <div key={field.key} className="space-y-1.5">
-              <Label htmlFor={field.key}>{field.label}</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor={field.key}>{field.label}</Label>
+                {value.trim() !== '' ? (
+                  <button
+                    type="button"
+                    aria-label="Restaurar padrão do sistema"
+                    data-testid={`tenant-theme-clear-${field.key}`}
+                    onClick={() => set(field.key, '')}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Padrão
+                  </button>
+                ) : null}
+              </div>
               <div className="flex items-center gap-2">
-                <span
-                  aria-hidden
+                <label
                   data-testid={`tenant-theme-swatch-${field.key}`}
-                  className="size-9 shrink-0 rounded-sm border border-border"
+                  title="Clique para abrir o seletor visual de cor"
+                  className="relative flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-sm border border-border transition hover:ring-2 hover:ring-ring/40"
                   style={{ backgroundColor: valid ? value.trim() : undefined }}
-                />
+                >
+                  <input
+                    type="color"
+                    aria-label="Abrir seletor visual de cor"
+                    data-testid={`tenant-theme-picker-${field.key}`}
+                    value={toColorPickerHex(value, field.key)}
+                    onChange={(event) => set(field.key, event.target.value)}
+                    className="absolute inset-0 size-full cursor-pointer opacity-0"
+                  />
+                </label>
                 <Input
                   id={field.key}
                   name={field.key}
@@ -104,6 +128,29 @@ export function TenantThemeFields({ theme }: { theme: TenantThemeFormValues }) {
                   placeholder="#0f6f8c"
                   className="h-9"
                 />
+              </div>
+              <div
+                className="flex flex-wrap items-center gap-1.5 pt-0.5"
+                data-testid={`tenant-theme-presets-${field.key}`}
+              >
+                {presets.map((preset) => {
+                  const isSelected = value.trim().toLowerCase() === preset.value.toLowerCase();
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      title={`${preset.label} (${preset.value})`}
+                      aria-label={`Sugestão ${preset.label}`}
+                      aria-pressed={isSelected}
+                      data-testid={`tenant-theme-preset-${field.key}-${preset.id}`}
+                      onClick={() => set(field.key, preset.value)}
+                      className={`size-5 rounded-full border transition hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring ${
+                        isSelected ? 'border-foreground ring-2 ring-ring/50' : 'border-border'
+                      }`}
+                      style={{ backgroundColor: preset.value }}
+                    />
+                  );
+                })}
               </div>
               <p className="text-xs text-muted-foreground">
                 {value.trim() === ''

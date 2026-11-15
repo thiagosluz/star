@@ -93,7 +93,7 @@ export interface DashboardSubject {
 }
 
 /**
- * Os nove blocos, na ordem de precedência — e a ordem É o contrato.
+ * Os dez blocos, na ordem de precedência — e a ordem É o contrato.
  *
  * Os identificadores são estáveis: a fatia 2 os usa como `data-testid`, e o
  * histórico do produto se refere a eles pelo nome.
@@ -103,6 +103,7 @@ export type DashboardBlockId =
   | 'gestao'
   | 'participacao'
   | 'submissoes'
+  | 'comite'
   | 'pareceres'
   | 'palestrante'
   | 'patrocinador'
@@ -146,7 +147,8 @@ export interface DashboardBlockMeta {
  *    gestao        → /administracao/eventos  (event:update — OWNER, ADMIN, ORGANIZER)
  *    participacao  → /minhas-inscricoes      (registration:read:own)
  *    submissoes    → /submissoes             (submission:read:own)
- *    pareceres     → /revisoes               (review:submit:own ou submission:read:any)
+ *    comite        → /comite                 (submission:read:any sem papel de gestão — CHAIR)
+ *    pareceres     → /revisoes               (review:submit:own)
  *    palestrante   → /palestrante            (abre também para convite pendente)
  *    patrocinador  → /patrocinador           (abre também para convite pendente)
  *    equipe        → /credenciamento         (registration:checkin)
@@ -155,9 +157,11 @@ export interface DashboardBlockMeta {
  *  `tenant:member:invite`, que o ORGANIZER não tem — o cartão levaria de volta ao
  *  painel. `/administracao/eventos` é comum aos três papéis de gestão.
  *
- *  `/comite` NÃO serve ao bloco de pareceres: exige `submission:read:any` e
- *  redirecionaria o REVISOR, que é o dono natural do bloco. `/revisoes` abre para
- *  qualquer vínculo e mostra a lista (honesta, mesmo vazia) das revisões.
+ *  `/comite` e `/revisoes` têm blocos SEPARADOS (FASE 112): a coordenação
+ *  científica (`CHAIR`, que detém `submission:read:any` e não `review:submit:own`)
+ *  trabalha no cockpit do comitê (`/comite`), enquanto o avaliador (`REVIEWER`,
+ *  com `review:submit:own`) trabalha na fila individual (`/revisoes`). Quem acumula
+ *  os dois papéis (`CHAIR` + `REVIEWER`) vê os dois blocos.
  */
 export const DASHBOARD_BLOCK_META: Readonly<Record<DashboardBlockId, DashboardBlockMeta>> =
   Object.freeze({
@@ -180,6 +184,11 @@ export const DASHBOARD_BLOCK_META: Readonly<Record<DashboardBlockId, DashboardBl
       path: '/submissoes',
       title: 'Minhas submissões',
       description: 'Seus trabalhos, rascunhos e o andamento de cada um.',
+    },
+    comite: {
+      path: '/comite',
+      title: 'Comitê científico',
+      description: 'Trabalhos recebidos, distribuição de revisores e decisões das chamadas.',
     },
     pareceres: {
       path: '/revisoes',
@@ -275,10 +284,23 @@ const BLOCK_RULES: readonly {
     applies: (subject) => holdsPermission(subject.roles, PERMISSIONS.SUBMISSION_READ_OWN),
   },
   {
+    /**
+     * Comitê científico (`/comite`, FASE 112): atende a coordenação científica
+     * (`CHAIR`), que detém `submission:read:any` mas não o bloco executivo de
+     * `gestao`. Quem já é gestor (`OWNER`/`ADMIN`/`ORGANIZER`) tem a porta
+     * principal em `gestao` e mantém os cinco blocos sem deslocar `equipe`.
+     */
+    id: 'comite',
+    applies: (subject) =>
+      holdsPermission(subject.roles, PERMISSIONS.SUBMISSION_READ_ANY) &&
+      !subject.roles.some(isManagementRole),
+  },
+  {
     id: 'pareceres',
     applies: (subject) =>
       holdsPermission(subject.roles, PERMISSIONS.REVIEW_SUBMIT_OWN) ||
-      holdsPermission(subject.roles, PERMISSIONS.SUBMISSION_READ_ANY),
+      (holdsPermission(subject.roles, PERMISSIONS.SUBMISSION_READ_ANY) &&
+        subject.roles.some(isManagementRole)),
   },
   {
     id: 'palestrante',

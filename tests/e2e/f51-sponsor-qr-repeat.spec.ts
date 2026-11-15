@@ -114,7 +114,7 @@ async function clickUntil(
 
     if ((await botao.count()) > 0) await botao.click();
 
-    await effect();
+    await expect(effect).toPass({ timeout: 3_000 });
   }).toPass({ timeout: 60_000 });
 }
 

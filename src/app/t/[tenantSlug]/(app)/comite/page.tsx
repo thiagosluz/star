@@ -2,12 +2,14 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   Clock,
   Inbox,
   Users,
 } from 'lucide-react';
 
+import { can } from '@/domain/rbac/authorization';
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { listSubmissionsForChair } from '@/lib/review/review-service';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
@@ -60,7 +62,7 @@ export default async function ChairConsolePage({ params, searchParams }: ComiteP
   const { tenantSlug } = await params;
   const { evento, status: statusParam, busca } = await searchParams;
 
-  const { tenantId, tenantName } = await requirePagePermission({
+  const { tenantId, tenantName, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.SUBMISSION_READ_ANY,
   });
@@ -73,6 +75,13 @@ export default async function ChairConsolePage({ params, searchParams }: ComiteP
     });
   });
 
+  const canDecide = can(principal, PERMISSIONS.SUBMISSION_DECIDE, { scope: 'TENANT' });
+  const proceedingsEvents = canDecide
+    ? evento
+      ? events.filter((ev) => ev.id === evento)
+      : events.slice(0, 3)
+    : [];
+
   const hasActiveFilters = Boolean(evento || statusParam || busca);
   const filterKey = `${evento ?? ''}-${statusParam ?? ''}-${busca ?? ''}`;
 
@@ -82,6 +91,26 @@ export default async function ChairConsolePage({ params, searchParams }: ComiteP
         title="Comitê científico"
         eyebrow={TENANT_NAV_GROUPS.comite}
         description={`Fila de avaliação e decisões em ${tenantName}.`}
+        actions={
+          proceedingsEvents.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="chair-proceedings-links"
+            >
+              {proceedingsEvents.map((ev) => (
+                <Link
+                  key={ev.id}
+                  href={tenantPath(tenantSlug, `/administracao/eventos/${ev.id}/anais`)}
+                  data-testid={`chair-proceedings-link-${ev.id}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent"
+                >
+                  <BookOpen className="size-3.5 text-brand" aria-hidden />
+                  <span>{proceedingsEvents.length === 1 ? 'Anais publicados' : `Anais — ${ev.title}`}</span>
+                </Link>
+              ))}
+            </div>
+          ) : undefined
+        }
       />
 
       {/* 

@@ -3,7 +3,6 @@ import { Ban, CalendarPlus, ShieldCheck, Star, UserPlus } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
-import { getRequestContext } from '@/lib/auth/session';
 import { can } from '@/domain/rbac/authorization';
 import { buildAssignmentBoard, getSubmissionReviewPanel } from '@/lib/review/review-service';
 import { AFFINITY_BAND_LABELS } from '@/domain/review/affinity';
@@ -45,7 +44,7 @@ export default async function ChairSubmissionPage({
   const submissionId = requireUuidParam(resolvedParams, 'submissionId');
   const { tenantSlug } = resolvedParams;
 
-  const { tenantId } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.SUBMISSION_ASSIGN_REVIEWER,
     fallbackPath: '/comite',
@@ -77,11 +76,10 @@ export default async function ChairSubmissionPage({
    * ── O protocolo de aceite (FASE 33) ─────────────────────────────────────────
    * A leitura do contexto é SEPARADA do painel do comitê porque só a proposta de
    * chamada tem o que ele mostra (tipo da atividade, carga horária declarada,
-   * proponente, evento e fuso). A permissão é conferida aqui — como no painel do
-   * evento — para a tela não oferecer um botão que a action recusaria.
+   * proponente, evento e fuso). O `principal` vem da guarda da página (sem 2ª
+   * resolução de `getRequestContext()` — FASE 112).
    */
-  const context = await getRequestContext();
-  const canDecide = can(context?.principal ?? null, PERMISSIONS.SUBMISSION_DECIDE, {
+  const canDecide = can(principal, PERMISSIONS.SUBMISSION_DECIDE, {
     scope: 'TENANT',
   });
 

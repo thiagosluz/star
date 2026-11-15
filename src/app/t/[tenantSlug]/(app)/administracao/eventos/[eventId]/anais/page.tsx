@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 
+import { can } from '@/domain/rbac/authorization';
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -27,17 +28,36 @@ export default async function EventProceedingsAdminPage({
   const tenantSlug = resolved.tenantSlug;
   const eventId = requireUuidParam(resolved, 'eventId');
 
-  const { context } = await requirePagePermission({
+  const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
-    permission: PERMISSIONS.EVENT_MANAGE,
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   });
 
-  const tenantId = context.activeTenant!.tenantId;
   const overview = await getAdminProceedingsOverview(tenantId, eventId);
 
   if (!overview) {
     notFound();
   }
+
+  const canUpdateEvent = can(principal, PERMISSIONS.EVENT_UPDATE, { scope: 'TENANT' });
+  const breadcrumbs = canUpdateEvent
+    ? [
+        { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+        { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
+        {
+          label: overview.event.title,
+          href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`),
+        },
+        { label: 'Anais' },
+      ]
+    : [
+        { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
+        {
+          label: 'Comitê científico',
+          href: tenantPath(tenantSlug, `/comite?evento=${eventId}`),
+        },
+        { label: 'Anais' },
+      ];
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 p-6">
@@ -45,12 +65,7 @@ export default async function EventProceedingsAdminPage({
         title={`Anais — ${overview.event.title}`}
         eyebrow={TENANT_NAV_GROUPS.operacao}
         description="Monte a ficha do volume, organize os trabalhos aceitos e publique os anais com citações automáticas e indexação acadêmica gratuita."
-        breadcrumbs={[
-          { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
-          { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
-          { label: overview.event.title, href: tenantPath(tenantSlug, `/administracao/eventos/${eventId}`) },
-          { label: 'Anais' },
-        ]}
+        breadcrumbs={breadcrumbs}
       />
 
       <ProceedingsAdminPanel

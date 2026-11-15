@@ -394,28 +394,20 @@ test.describe('o painel por perfil', () => {
     await expect(page.getByTestId('dashboard-context')).toBeVisible();
   });
 
-  test('5. CHAIR: o parecer leva a /revisoes — o comitê não tem bloco próprio', async ({
+  test('5. CHAIR: o bloco do comitê leva direto a /comite (FASE 112)', async ({
     page,
   }) => {
     await signInAs(page, emailDoChair);
     await page.goto(`/t/${tenantSlug}/dashboard`);
 
-    const pareceres = page.getByTestId('dashboard-block-pareceres');
-    await expect(pareceres).toBeVisible();
-    await expect(pareceres).toHaveAttribute('href', `/t/${tenantSlug}/revisoes`);
+    const comite = page.getByTestId('dashboard-block-comite');
+    await expect(comite).toBeVisible();
+    await expect(comite).toHaveAttribute('href', `/t/${tenantSlug}/comite`);
+    await expect(page.getByTestId('dashboard-block-pareceres')).toHaveCount(0);
 
-    /**
-     * A cadeira vê a gestão científica no COMITÊ (`/comite`, que exige
-     * `submission:read:any`) e o bloco da regra aponta para `/revisoes`, que abre
-     * para qualquer vínculo. A regra tem UM `path` por bloco, então a alternativa
-     * (duas rotas no mesmo cartão) foi recusada — e o estado vazio de `/revisoes`
-     * é o que a cadeira encontra. Aqui ele é medido, não suposto.
-     */
-    await pareceres.click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenantSlug}/revisoes$`));
-    await expect(
-      page.getByText('Você não tem pareceres atribuídos no momento.'),
-    ).toBeVisible();
+    await comite.click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenantSlug}/comite$`));
+    await expect(page.getByTestId('chair-summary')).toBeVisible();
   });
 
   test('6. convite pendente em outra casa: o bloco leva a /conta, não à rota sem código', async ({

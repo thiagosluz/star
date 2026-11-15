@@ -29,6 +29,7 @@ export interface ProceedingsActionState {
 function revalidateProceedingsPaths(tenantSlug: string, eventId: string) {
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/anais`));
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}`));
+  revalidatePath(tenantPath(tenantSlug, '/comite'));
   revalidatePath(tenantPath(tenantSlug, '/eventos'));
 }
 
@@ -75,7 +76,7 @@ export async function saveProceedingsVolumeAction(
   const data = parsed.data;
   const context = await guardAction<ProceedingsActionState>({
     tenantSlug: data.tenantSlug,
-    permission: PERMISSIONS.EVENT_MANAGE,
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   });
   if (!context.ok) return context.state;
 
@@ -122,7 +123,7 @@ export async function importAcceptedToProceedingsAction(
   const data = parsed.data;
   const context = await guardAction<ProceedingsActionState>({
     tenantSlug: data.tenantSlug,
-    permission: PERMISSIONS.EVENT_MANAGE,
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   });
   if (!context.ok) return context.state;
 
@@ -191,7 +192,7 @@ export async function updateProceedingsEntryAction(
   const data = parsed.data;
   const context = await guardAction<ProceedingsActionState>({
     tenantSlug: data.tenantSlug,
-    permission: PERMISSIONS.EVENT_MANAGE,
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   });
   if (!context.ok) return context.state;
 
@@ -238,7 +239,7 @@ export async function publishProceedingsAction(
   const data = parsed.data;
   const context = await guardAction<ProceedingsActionState>({
     tenantSlug: data.tenantSlug,
-    permission: PERMISSIONS.EVENT_MANAGE,
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   });
   if (!context.ok) return context.state;
 
@@ -274,7 +275,7 @@ export async function unpublishProceedingsAction(
   const data = parsed.data;
   const context = await guardAction<ProceedingsActionState>({
     tenantSlug: data.tenantSlug,
-    permission: PERMISSIONS.EVENT_MANAGE,
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   });
   if (!context.ok) return context.state;
 

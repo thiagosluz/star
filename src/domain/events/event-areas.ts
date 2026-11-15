@@ -278,7 +278,11 @@ export const EVENT_AREAS: readonly EventArea[] = [
     purpose: 'Curadoria de trabalhos aceitos, ficha do volume, citações e indexação.',
     group: 'RESULTADO',
     href: (context) => route(context, '/anais'),
-    permission: PERMISSIONS.EVENT_MANAGE,
+    /**
+     * Curar e publicar anais é o desfecho da deliberação científica: exige
+     * `submission:decide` (concedida a OWNER, ADMIN, ORGANIZER e CHAIR — FASE 112).
+     */
+    permission: PERMISSIONS.SUBMISSION_DECIDE,
   },
   {
     id: 'publico',

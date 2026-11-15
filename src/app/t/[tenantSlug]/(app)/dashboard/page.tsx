@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
+  BookOpenCheck,
   CalendarCog,
   ClipboardCheck,
   Clock,
@@ -30,7 +31,7 @@ import {
   listMyRegistrations,
   type MyRegistration,
 } from '@/lib/events/registration-read-service';
-import { listReviewerTasks } from '@/lib/review/review-service';
+import { listReviewerTasks, listSubmissionsForChair } from '@/lib/review/review-service';
 import { listMySubmissions } from '@/lib/review/submission-service';
 import { readSponsorAccess } from '@/lib/sponsors/sponsor-portal-service';
 import { DashboardContextLink } from '@/components/shell/dashboard-context';
@@ -104,6 +105,7 @@ const BLOCK_ICONS: Readonly<Record<DashboardBlockId, LucideIcon>> = {
   gestao: CalendarCog,
   participacao: Ticket,
   submissoes: FileText,
+  comite: BookOpenCheck,
   pareceres: ClipboardCheck,
   palestrante: Mic,
   patrocinador: Handshake,
@@ -231,14 +233,16 @@ export default async function DashboardPage({
    *  filtra `deletedAt`, e ter uma fonte só impede o painel e a administração de
    *  discordarem sobre o mesmo número.
    */
-  const [overview, certificateResult, submissions, reviewerTasks] = await Promise.all([
-    visible('gestao') ? getAdminOverview(tenantId) : Promise.resolve(null),
-    visible('participacao')
-      ? listCertificates({ tenantId, userId: context.user.id, limit: 200 })
-      : Promise.resolve(null),
-    visible('submissoes') ? listMySubmissions(tenantId, context.user.id) : Promise.resolve(null),
-    visible('pareceres') ? listReviewerTasks(tenantId, context.user.id) : Promise.resolve(null),
-  ]);
+  const [overview, certificateResult, submissions, chairSubmissions, reviewerTasks] =
+    await Promise.all([
+      visible('gestao') ? getAdminOverview(tenantId) : Promise.resolve(null),
+      visible('participacao')
+        ? listCertificates({ tenantId, userId: context.user.id, limit: 200 })
+        : Promise.resolve(null),
+      visible('submissoes') ? listMySubmissions(tenantId, context.user.id) : Promise.resolve(null),
+      visible('comite') ? listSubmissionsForChair(tenantId) : Promise.resolve(null),
+      visible('pareceres') ? listReviewerTasks(tenantId, context.user.id) : Promise.resolve(null),
+    ]);
 
   const deadlineRegistrations = registrations.filter(hasPendingDeadline);
   const pendingReviews = reviewerTasks?.filter((task) => !task.hasReview).length ?? 0;
@@ -287,6 +291,20 @@ export default async function DashboardPage({
 
   if (visible('submissoes') && submissions) {
     facts.set('submissoes', plural(submissions.total, 'submissão', 'submissões'));
+  }
+
+  if (visible('comite') && chairSubmissions) {
+    const readyCount = chairSubmissions.filter(
+      (submission) => submission.reviewCount >= submission.requiredReviews,
+    ).length;
+    facts.set(
+      'comite',
+      `${plural(chairSubmissions.length, 'trabalho na fila', 'trabalhos na fila')}${
+        readyCount > 0
+          ? ` · ${plural(readyCount, 'pronto para decisão', 'prontos para decisão')}`
+          : ''
+      }`,
+    );
   }
 
   if (visible('pareceres')) {

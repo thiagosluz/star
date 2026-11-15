@@ -2,6 +2,11 @@
 
 import { useState } from 'react';
 
+import {
+  THEME_COLOR_PRESETS,
+  toColorPickerHex,
+  type ThemeColorFieldKey,
+} from '@/domain/events/landing-page';
 import { Input, Label, Select } from '@/components/ui';
 
 /**
@@ -47,7 +52,7 @@ interface ThemeValues {
   animation: string;
 }
 
-const COLOR_FIELDS: { name: keyof ThemeValues; label: string; hint: string }[] = [
+const COLOR_FIELDS: { name: ThemeColorFieldKey; label: string; hint: string }[] = [
   { name: 'primaryColor', label: 'Cor principal', hint: 'Botões e destaques' },
   { name: 'secondaryColor', label: 'Cor secundária', hint: 'Detalhes e apoio' },
   { name: 'accentColor', label: 'Cor de destaque', hint: 'Selos e ênfase' },
@@ -68,21 +73,44 @@ export function LandingThemeFields({ theme }: { theme: ThemeValues }) {
         Aparência da página pública
       </legend>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {COLOR_FIELDS.map((field) => {
           const value = String(values[field.name] ?? '');
           const valid = HEX_OR_OKLCH.test(value.trim());
+          const presets = THEME_COLOR_PRESETS[field.name];
 
           return (
             <div key={field.name} className="space-y-1.5">
-              <Label htmlFor={field.name}>{field.label}</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor={field.name}>{field.label}</Label>
+                {value.trim() !== '' ? (
+                  <button
+                    type="button"
+                    aria-label="Restaurar padrão do sistema"
+                    data-testid={`theme-clear-${field.name}`}
+                    onClick={() => set(field.name, '')}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Padrão
+                  </button>
+                ) : null}
+              </div>
               <div className="flex items-center gap-2">
-                <span
-                  aria-hidden
+                <label
                   data-testid={`theme-swatch-${field.name}`}
-                  className="size-9 shrink-0 rounded-sm border border-border"
+                  title="Clique para abrir o seletor visual de cor"
+                  className="relative flex size-9 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-sm border border-border transition hover:ring-2 hover:ring-ring/40"
                   style={{ backgroundColor: valid ? value.trim() : undefined }}
-                />
+                >
+                  <input
+                    type="color"
+                    aria-label="Abrir seletor visual de cor"
+                    data-testid={`theme-picker-${field.name}`}
+                    value={toColorPickerHex(value, field.name)}
+                    onChange={(event) => set(field.name, event.target.value)}
+                    className="absolute inset-0 size-full cursor-pointer opacity-0"
+                  />
+                </label>
                 <Input
                   id={field.name}
                   name={field.name}
@@ -92,9 +120,32 @@ export function LandingThemeFields({ theme }: { theme: ThemeValues }) {
                   className="h-9"
                 />
               </div>
+              <div
+                className="flex flex-wrap items-center gap-1.5 pt-0.5"
+                data-testid={`theme-presets-${field.name}`}
+              >
+                {presets.map((preset) => {
+                  const isSelected = value.trim().toLowerCase() === preset.value.toLowerCase();
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      title={`${preset.label} (${preset.value})`}
+                      aria-label={`Sugestão ${preset.label}`}
+                      aria-pressed={isSelected}
+                      data-testid={`theme-preset-${field.name}-${preset.id}`}
+                      onClick={() => set(field.name, preset.value)}
+                      className={`size-5 rounded-full border transition hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring ${
+                        isSelected ? 'border-foreground ring-2 ring-ring/50' : 'border-border'
+                      }`}
+                      style={{ backgroundColor: preset.value }}
+                    />
+                  );
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
                 {value.trim() === ''
-                  ? `${field.hint} · vazio usa o padrão do sistema`
+                  ? `${field.hint} · escolha uma cor ou digite o código`
                   : valid
                     ? field.hint
                     : 'Valor inválido: use #rrggbb ou oklch(…)'}

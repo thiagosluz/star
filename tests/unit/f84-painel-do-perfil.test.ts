@@ -138,7 +138,7 @@ const MATRIZ: readonly {
   {
     papel: 'CHAIR',
     sobre: { roles: ['CHAIR'] },
-    esperado: ['participacao', 'submissoes', 'pareceres'],
+    esperado: ['participacao', 'submissoes', 'comite'],
   },
   {
     papel: 'SPEAKER (com perfil)',
@@ -206,6 +206,15 @@ describe('a matriz perfil × blocos', () => {
 
   it('REVIEWER + STAFF: o revisor da portaria', () => {
     expect(blocksOf({ roles: ['REVIEWER', 'STAFF'] })).toEqual(['pareceres', 'equipe']);
+  });
+
+  it('CHAIR + REVIEWER: quem coordena e também dá parecer vê comitê e pareceres', () => {
+    expect(blocksOf({ roles: ['CHAIR', 'REVIEWER'] })).toEqual([
+      'participacao',
+      'submissoes',
+      'comite',
+      'pareceres',
+    ]);
   });
 
   it('STAR: o bloco não nasce de papel — só de perfil/vínculo', () => {
@@ -327,7 +336,7 @@ describe('o catálogo de blocos', () => {
   const IDS = Object.keys(DASHBOARD_BLOCK_META) as DashboardBlockId[];
 
   it('todo bloco tem título e descrição (a página não inventa texto)', () => {
-    expect(IDS).toHaveLength(9);
+    expect(IDS).toHaveLength(10);
 
     for (const id of IDS) {
       const meta = DASHBOARD_BLOCK_META[id];
@@ -341,13 +350,14 @@ describe('o catálogo de blocos', () => {
     expect(dashboardBlockHref('gestao', SLUG)).toBe('/t/ufba-demo/administracao/eventos');
     expect(dashboardBlockHref('participacao', SLUG)).toBe('/t/ufba-demo/minhas-inscricoes');
     expect(dashboardBlockHref('submissoes', SLUG)).toBe('/t/ufba-demo/submissoes');
+    expect(dashboardBlockHref('comite', SLUG)).toBe('/t/ufba-demo/comite');
     expect(dashboardBlockHref('pareceres', SLUG)).toBe('/t/ufba-demo/revisoes');
     expect(dashboardBlockHref('palestrante', SLUG)).toBe('/t/ufba-demo/palestrante');
     expect(dashboardBlockHref('patrocinador', SLUG)).toBe('/t/ufba-demo/patrocinador');
     expect(dashboardBlockHref('equipe', SLUG)).toBe('/t/ufba-demo/credenciamento');
   });
 
-  it('oito dos nove destinos são DENTRO da instituição', () => {
+  it('nove dos dez destinos são DENTRO da instituição', () => {
     for (const id of IDS) {
       if (id === 'convite') continue;
       expect(dashboardBlockHref(id, SLUG), id).toMatch(/^\/t\/ufba-demo\//);

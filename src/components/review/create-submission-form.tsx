@@ -1,8 +1,8 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { AlertCircle, Send } from 'lucide-react';
+import { AlertCircle, Send, X } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
 import { KeywordsInput } from '@/components/review/keywords-input';
@@ -58,6 +58,21 @@ export function CreateSubmissionForm({
   action: (prev: ActionState | null, formData: FormData) => Promise<ActionState>;
 }) {
   const [state, formAction] = useActionState<ActionState | null, FormData>(action, null);
+  const [dismissedState, setDismissedState] = useState<ActionState | null>(null);
+  const errorRef = useRef<HTMLDivElement | null>(null);
+  const toastVisible = Boolean(state && !state.ok && state !== dismissedState);
+
+  useEffect(() => {
+    if (!state || state.ok) return;
+
+    errorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+
+    const timer = setTimeout(() => {
+      setDismissedState(state);
+    }, 6_000);
+
+    return () => clearTimeout(timer);
+  }, [state]);
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +125,7 @@ export function CreateSubmissionForm({
 
       {state && !state.ok ? (
         <div
+          ref={errorRef}
           role="alert"
           className="space-y-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           data-testid="submission-error"
@@ -246,6 +262,36 @@ export function CreateSubmissionForm({
       </div>
 
       <SubmitButton />
+
+      {toastVisible && state && !state.ok ? (
+        <div
+          aria-hidden="true"
+          data-testid="submission-error-toast"
+          className="fixed right-4 bottom-4 z-50 flex max-w-md items-center gap-3 rounded-xl border border-destructive/40 bg-card px-4 py-3 text-sm text-foreground shadow-lg"
+        >
+          <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-xs font-medium text-destructive">{state.message}</p>
+            {state.details?.length ? (
+              <ul className="ml-4 list-disc text-xs text-muted-foreground">
+                {state.details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setDismissedState(state)}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Fechar aviso"
+            data-testid="submission-error-toast-close"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 }

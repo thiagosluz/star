@@ -202,6 +202,95 @@ export const EVENT_THEME_PALETTE: Record<'light' | 'dark', EventThemePalette> = 
   },
 };
 
+export interface ThemeColorPreset {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export type ThemeColorFieldKey =
+  | 'primaryColor'
+  | 'secondaryColor'
+  | 'accentColor'
+  | 'backgroundColor'
+  | 'textColor';
+
+export const THEME_COLOR_PRESETS: Record<ThemeColorFieldKey, readonly ThemeColorPreset[]> = {
+  primaryColor: [
+    { id: 'blue', label: 'Azul', value: '#1d4ed8' },
+    { id: 'indigo', label: 'Índigo', value: '#4f46e5' },
+    { id: 'cyan', label: 'Ciano', value: '#00668a' },
+    { id: 'emerald', label: 'Esmeralda', value: '#047857' },
+    { id: 'amber', label: 'Âmbar', value: '#b45309' },
+    { id: 'crimson', label: 'Carmim', value: '#be123c' },
+    { id: 'violet', label: 'Violeta', value: '#6d28d9' },
+    { id: 'graphite', label: 'Grafite', value: '#181c24' },
+  ],
+  secondaryColor: [
+    { id: 'lavender', label: 'Lavanda suave', value: '#f1f3ff' },
+    { id: 'sky', label: 'Céu suave', value: '#e0f2fe' },
+    { id: 'mint', label: 'Menta suave', value: '#ecfdf5' },
+    { id: 'amber-soft', label: 'Âmbar suave', value: '#fef3c7' },
+    { id: 'rose-soft', label: 'Rosa suave', value: '#ffe4e6' },
+    { id: 'slate-soft', label: 'Cinza suave', value: '#f1f5f9' },
+    { id: 'indigo', label: 'Índigo', value: '#4f46e5' },
+    { id: 'cyan', label: 'Ciano', value: '#00668a' },
+  ],
+  accentColor: [
+    { id: 'sky', label: 'Azul celeste', value: '#40c2fd' },
+    { id: 'indigo', label: 'Índigo', value: '#4f46e5' },
+    { id: 'emerald', label: 'Esmeralda', value: '#10b981' },
+    { id: 'amber', label: 'Âmbar', value: '#f59e0b' },
+    { id: 'crimson', label: 'Carmim', value: '#e11d48' },
+    { id: 'violet', label: 'Violeta', value: '#7c3aed' },
+    { id: 'cyan', label: 'Ciano', value: '#06b6d4' },
+    { id: 'blue', label: 'Azul', value: '#2563eb' },
+  ],
+  backgroundColor: [
+    { id: 'ice', label: 'Gelo', value: '#f9f9ff' },
+    { id: 'white', label: 'Branco', value: '#ffffff' },
+    { id: 'lavender', label: 'Lavanda clara', value: '#f1f3ff' },
+    { id: 'sand', label: 'Areia clara', value: '#faf8f5' },
+    { id: 'mint', label: 'Menta clara', value: '#f0fdf4' },
+    { id: 'slate-dark', label: 'Noite', value: '#0f172a' },
+    { id: 'charcoal', label: 'Carvão', value: '#181c24' },
+  ],
+  textColor: [
+    { id: 'graphite', label: 'Grafite', value: '#181c24' },
+    { id: 'slate', label: 'Ardósia', value: '#0f172a' },
+    { id: 'charcoal', label: 'Cinza escuro', value: '#334155' },
+    { id: 'navy', label: 'Azul marinho', value: '#1e3a8a' },
+    { id: 'white', label: 'Branco', value: '#ffffff' },
+    { id: 'ice', label: 'Gelo claro', value: '#f8fafc' },
+  ],
+};
+
+const PICKER_FALLBACK_HEX: Record<ThemeColorFieldKey, string> = {
+  primaryColor: EVENT_THEME_PALETTE.light.primary,
+  secondaryColor: EVENT_THEME_PALETTE.light.secondary,
+  accentColor: EVENT_THEME_PALETTE.light.accent,
+  backgroundColor: EVENT_THEME_PALETTE.light.background,
+  textColor: EVENT_THEME_PALETTE.light.text,
+};
+
+/**
+ * Converte o valor atual do campo de cor para um hexadecimal `#rrggbb` de 6 dígitos
+ * aceito pelo `<input type="color">` nativo sem sujar o console do navegador.
+ */
+export function toColorPickerHex(raw: string, field: ThemeColorFieldKey): string {
+  const trimmed = raw.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    const r = trimmed[1];
+    const g = trimmed[2];
+    const b = trimmed[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return PICKER_FALLBACK_HEX[field];
+}
+
 /**
  * O modo que o mapa aplica — a ÚNICA autoridade sobre claro/escuro na página.
  *
