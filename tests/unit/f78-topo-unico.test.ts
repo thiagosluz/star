@@ -244,10 +244,12 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * /administracao/missoes/[missionId]/editar e
      * /administracao/eventos/[eventId]/palestrantes/novo), todas migradas com `PageHeader`;
      * a FASE 110 acrescentou 3 telas públicas da plataforma (/privacidade, /termos e
-     * /acessibilidade), todas usando `PageHeader` com `eyebrow={PLATFORM_NAV_GROUP}`.
+     * /acessibilidade), todas usando `PageHeader` com `eyebrow={PLATFORM_NAV_GROUP}`;
+     * a FASE 113 acrescentou 2 telas (/credenciamento/telao/[pointId] com
+     * `eyebrow={TENANT_NAV_GROUPS.operacao}` e /(public)/presenca/[token] com `PageHeader`).
      */
-    expect(PAGINAS.length).toBe(113);
-    expect(MIGRADAS.length).toBe(98);
+    expect(PAGINAS.length).toBe(115);
+    expect(MIGRADAS.length).toBe(100);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

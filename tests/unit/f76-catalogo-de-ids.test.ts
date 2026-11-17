@@ -259,6 +259,13 @@ const PAGINAS: readonly PaginaEsperada[] = [
     params: ['submissionId'],
   },
   {
+    /**
+     * Modo telão do ponto de autocredenciamento (FASE 113). Valida `pointId` antes da permissão e da consulta.
+     */
+    arquivo: 'src/app/t/[tenantSlug]/(app)/credenciamento/telao/[pointId]/page.tsx',
+    params: ['pointId'],
+  },
+  {
     arquivo: 'src/app/t/[tenantSlug]/(app)/participantes/[userId]/page.tsx',
     params: ['userId'],
   },
@@ -334,6 +341,11 @@ const ROTAS: readonly RotaEsperada[] = [
     paramsDaQuery: ['evento'],
   },
   {
+    arquivo: 'src/app/api/t/[tenantSlug]/credenciamento/cartaz/route.ts',
+    paramsDoCaminho: [],
+    paramsDaQuery: ['pointId'],
+  },
+  {
     arquivo: 'src/app/api/t/[tenantSlug]/credenciamento/crachas/folha/route.ts',
     paramsDoCaminho: [],
     paramsDaQuery: ['eventId'],
@@ -342,6 +354,11 @@ const ROTAS: readonly RotaEsperada[] = [
     arquivo: 'src/app/api/t/[tenantSlug]/credenciamento/crachas/impressao/route.ts',
     paramsDoCaminho: [],
     paramsDaQuery: ['eventId'],
+  },
+  {
+    arquivo: 'src/app/api/t/[tenantSlug]/credenciamento/telao/[pointId]/route.ts',
+    paramsDoCaminho: ['pointId'],
+    paramsDaQuery: [],
   },
   {
     arquivo: 'src/app/api/t/[tenantSlug]/exportacoes/[exportId]/arquivo/route.ts',
@@ -675,15 +692,15 @@ describe('FASE 76 · o catálogo das páginas com id na URL', () => {
      * segmentos foi validado" — a igualdade por página já pega, e a contagem
      * torna a regressão visível de relance.
      */
-    expect(PAGINAS).toHaveLength(32);
-    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(33);
+    expect(PAGINAS).toHaveLength(33);
+    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(34);
     expect(PAGINAS_FORA_DA_REGRA).toHaveLength(4);
 
     const paramsEncontrados = PAGINAS_COM_ID.reduce(
       (total, pagina) => total + pagina.params.length,
       0,
     );
-    expect(paramsEncontrados).toBe(37); // 33 positivos + 4 das exceções
+    expect(paramsEncontrados).toBe(38); // 34 positivos + 4 das exceções
   });
 
   it('cada página chama `requireUuidParam` com o MESMO param do segmento', () => {
@@ -766,10 +783,10 @@ describe('FASE 76 · o catálogo das rotas de API com id', () => {
     ).toEqual([]);
   });
 
-  it('são 9 rotas — 5 params de caminho e 6 de query (11 no total)', () => {
-    expect(ROTAS).toHaveLength(9);
-    expect(ROTAS.reduce((total, rota) => total + rota.paramsDoCaminho.length, 0)).toBe(5);
-    expect(ROTAS.reduce((total, rota) => total + rota.paramsDaQuery.length, 0)).toBe(6);
+  it('são 11 rotas — 6 params de caminho e 7 de query (13 no total)', () => {
+    expect(ROTAS).toHaveLength(11);
+    expect(ROTAS.reduce((total, rota) => total + rota.paramsDoCaminho.length, 0)).toBe(6);
+    expect(ROTAS.reduce((total, rota) => total + rota.paramsDaQuery.length, 0)).toBe(7);
     expect(ROTAS_FORA_DA_REGRA).toHaveLength(1);
   });
 

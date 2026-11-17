@@ -16,11 +16,11 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 112** (**F56 a F112 entregues**)
-Testes ................. **4906** (Vitest: unit + integração, 292 arquivos) + **557** (Playwright E2E) + 1 skip
-ADRs ................... 459 (numeração GLOBAL e sequencial — a próxima é ADR-460)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 113** (**F56 a F113 entregues**)
+Testes ................. **4920** (Vitest: unit + integração, 294 arquivos) + **561** (Playwright E2E) + 1 skip
+ADRs ................... 462 (numeração GLOBAL e sequencial — a próxima é ADR-463)
 Permissões ............. 66 (11 papéis, 4 escopos)
-Tabelas de tenant ...... 62 sob RLS + FORCE (+ as partições mensais de audit_logs)
+Tabelas de tenant ...... 63 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor, identity_audit_logs e cookie_consents — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
 Qualidade .............. ESLint 0 · tsc 0 · next build OK
 ```
@@ -83,7 +83,7 @@ desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso 
 estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto, a
 primeira opção é **mover o próximo bloco para o histórico**, não condensar: o mais antigo ainda
 na tabela da §9 vai para [`docs/fases-historico.md`](docs/fases-historico.md), que guarda as
-fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110) e **94 a 95** (FASE 111),
+fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111) e **96 a 97** (FASE 113),
 movidas como estavam — o cabeçalho de lá registra cada movimento e o byte count —
 e a **§9 carrega a tabela corrente**
 (as fases recentes) + o ponteiro para o histórico. Condensar **apaga detalhe**; mover
@@ -113,7 +113,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4906 testes passando (292 arquivos)
+npm test              # esperado: 4920 testes passando (294 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -128,7 +128,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: **557 passando + 1 skip** (558 casos); medido na F112: +3 cenários novos (em f112);
+npm run test:e2e      # esperado: **561 passando + 1 skip** (562 casos); medido na F113: +4 cenários novos (em f113);
                       # nenhum vermelho
 ```
 
@@ -706,15 +706,12 @@ tests/{unit,integration,e2e}
 
 ## 9. Estado por fase e próximos passos
 
-> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110) e **94 a 95** (FASE 111) foram movidas
+> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111) e **96 a 97** (FASE 113) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**96 a 112**).
+> e no `README.md`. A tabela abaixo é a corrente (**98 a 113**).
 
 | Fase | Tema | Situação |
-|---|---|---|
-| 96 | **Pool explícito (`PrismaPg`), transação única por render, edição dedicada de carta (`/cartas/[cardId]/editar`), busca na concessão, hidratação determinística e fronteira cliente/servidor** — `resolveRuntimePoolConfig` e `resolveAdminPoolConfig` dimensionam o pool; `listCardTemplates`/`getCardTemplateForEdit`/`listAdminEvents` aceitam `tx?: TxClient` e consolidam `/administracao/cartas` em **1 transação `withTenant`** (eram 4); a edição de 26 campos virou rota dedicada (`/administracao/cartas/[cardId]/editar`, 404 uniforme) e a concessão manual ganhou busca GET `?participante=` + aviso de truncamento; `ProposalAcceptancePanel` formata `decidedAt` no `eventTimeZone` e `ActiveSessionsList` usa `<time suppressHydrationWarning>`; `ambientTenantId` removido; catraca AST `'use client'` e `revalidateTenantArea`. ADR-403 … 408 | ✅ |
-| 97 | **Unificação de Missões e Palestrantes em cockpit limpo + transação única, `RouteProgress` no `AppShell` e confirmação pós-criação (`backHref` + Toast)** — `/administracao/missoes` (com `/missoes/nova` e `/missoes/[missionId]/editar`, 404 uniforme e `eventId` preservado) e `/administracao/eventos/[eventId]/palestrantes` (com `/palestrantes/novo` e `getAdminEvent` componível com `tx`) rodam em **1 transação `withTenant`**; `RouteProgress` + `RouteLoadingSkeleton` no `AppShell` (`tenant` e `platform`) entregam feedback instantâneo em `<Link>` sem envolver o SSR num `<Suspense>` que converteria 404/307 em HTTP 200 ou esconderia a página sem JS (`<div hidden id="S:0">`, armadilha 107); e as **9** rotas dedicadas conectam `backHref`/`backLabel` com `scrollIntoView` + Toast flutuante. ADR-409 … 411 | ✅ |
 | 98 | **Destravar `/submissoes` (visão do autor), cockpit de avaliação do comitê científico (`/comite`) e concorrência de consultas (`/revisoes` e `/administracao/equipe`)** — `/submissoes` unificada em **1 transação `withTenant`** com catálogo direto e links clicáveis para chamadas de propostas ativas (`#chamadas-abertas`); `listSubmissionsForChair` enriquecida com `eventId`, `eventTitle`, `eventSlug`, `callTitle`, e suporte a filtros por evento, situação/quórum e busca textual; cockpit `/comite` em **1 transação `withTenant`** com barra de filtros e cards de métricas agregadas; `listReviewerTasks` consolidada em **1 transação `withTenant`** com cards de métricas em `/revisoes`; e paralelização via `Promise.all` em `/administracao/equipe`. ADR-412 … 414 | ✅ |
 | 99 | **Excelência de UX, reatividade e foco operacional (`NavigationProgressBar`, filtros `useTransition`, `useOptimistic`, suspense granular e atalhos)** — `NavigationProgressBar` no layout raiz entrega feedback visual suave em navegações internas; `/comite` ganha `ComiteFilterBar` com debounce (300ms) e `useTransition` (scroll estável), além de `<Suspense>` local com `SubmissionsListSkeleton`; credenciamento em `/credenciamento` adota `useOptimistic` do React 19 para feedback instantâneo no balcão e autofocus no leitor de crachá; atalho `/` foca busca e `Esc` limpa; e empty states de `/revisoes` e `/certificados` passam a orientar os próximos passos com CTAs diretos. ADR-415 … 419 | ✅ |
 | 100 | **Correções críticas de reatividade, suspense cirúrgico e comportamento operacional** — `/comite` desacopla a entrega do shell (PageHeader + ComiteFilterBar imediatos) e delega o carregamento a `ComiteResults` sob Suspense real com SubmissionsListSkeleton (ADR-420); CheckinQueue unifica useActionState com useOptimistic garantindo feedback de erro persistente (role="alert") no balcão (ADR-421); NavigationProgressBar escuta no borbulhamento respeitando defaultPrevented, suporta navegação programática (startNavigationProgress) e motion-reduce; e ComiteFilterBar adota latestFiltersRef contra stale closures, limpeza real com Escape, trava de atalho em contentEditable e anúncio acessível via aria-live. ADR-420 … 422 | ✅ |
@@ -730,6 +727,7 @@ tests/{unit,integration,e2e}
 | 110 | **Privacidade, Consentimento Real, Autoatendimento de Conta e Observabilidade** — `/privacidade` (inventário `2026.11-v1`), `/termos` e `/acessibilidade` sob `<PageHeader>` nos rodapés + tabela de plataforma `cookie_consents` (`PLATFORM_ONLY_TABLES`, revogada em `00-roles.sql`) + banner `<aside>` não-modal No-JS onde `ESSENTIAL_ONLY` apaga e bloqueia `ef_tema`/`ef_nav` (ADR-449); snapshot `consentVersion`/`consentText` em `registrations` visível em `minhas-inscricoes` + `maskIpAddress` (`/24` e `/48`) em trilhas, cookies e `/conta` (ADR-450); exclusão/anonimização própria em `/conta` (`deleteOwnAccount`, guarda de último `OWNER`, cancelamento de vagas futuras) (ADR-451); alertas em `/api/metrics` e `/superadmin/metricas` (**B9**) + migração de 238 `console.*` para `logger` com catraca AST (**B6**, ADR-452). **10 Vitest** + **4 integr.** + **5 E2E**; Vitest **4885** (289 arquivos); E2E **549 passando + 1 skip** (550 casos); 42 dívidas abertas. ADR-449 … 452 | ✅ |
 | 111 | **Publicação de Anais, Citações e Indexação (Custo Zero)** — modelos `proceedings_volumes` e `proceedings_entries` sob RLS + FORCE com snapshot editorial imutável (`snapshotAuthors`/`snapshotAbstract`/`snapshotKeywords`, ADR-453); fluxo pós-aceite em `submissoes/[id]` para envio de `CAMERA_READY` (`canUploadSubmissionFile`) e termo versionado (`proceedingsPermissionAcceptedAt`/`Version`), com exclusão estrita de `BLIND_PDF` (`canUseFileKindInProceedings`, ADR-454); painel do evento (`/administracao/eventos/[id]/anais`), vitrine pública (`/anais` e `/anais/[protocol]`), caixa/download de citações (ABNT, APA, `.bib`, `.ris`), streaming inline seguro de PDF (`/anais/[protocol]/arquivo` sob `canServeFile` para `citation_pdf_url`, ADR-455), metatags Highwire Press + Dublin Core + JSON-LD `ScholarlyArticle`, `sitemap.xml`/`robots.txt` e OAI-PMH 2.0 (`/api/oai` via `systemClient` + `withTenant` e por evento, ADR-456). **8 Vitest** + **2 integr.** + **5 E2E**; Vitest **4895** (291 arquivos); E2E **554 passando + 1 skip** (555 casos); 42 dívidas mantidas. ADR-453 … 456 | ✅ |
 | 112 | **O Bloco do Comitê Científico (`CHAIR`) no Painel e Fechamento do Fluxo Editorial** — bloco `'comite'` (`/comite`) separado de `'pareceres'` (`/revisoes`) em `dashboard-blocks.ts`, com fato dinâmico real da fila (`listSubmissionsForChair`) em `DashboardPage` e suporte ao perfil acumulado `CHAIR + REVIEWER` sem alterar os 5 blocos de `OWNER`/`ADMIN` (ADR-457); curadoria e publicação de Anais (`/administracao/eventos/[id]/anais`, `EVENT_AREAS` e 5 Server Actions em `proceedings-actions.ts`) abertas para `PERMISSIONS.SUBMISSION_DECIDE`, com atalho direto no topo de `/comite` (`chair-proceedings-links`) e trilha de retorno ao comitê (ADR-458); e eliminação de 2ª chamada a `getRequestContext()` após `requirePagePermission` em `/comite/[submissionId]` e `/reconhecimento` (ADR-459). **11 Vitest** + **3 E2E**; Vitest **4906** (292 arquivos); E2E **557 passando + 1 skip** (558 casos); 42 dívidas mantidas. ADR-457 … 459 | ✅ |
+| 113 | **Autocredenciamento e Autocheck-in por QR Code com Segurança Antifraude** — tabela `self_checkin_points` sob RLS + índices parciais para pontos ativos (`ADR-460`); regras puras (`self-checkin-rules.ts`), TOTP HMAC-SHA256 60s e PIN (`self-checkin-totp.ts`), extensão de `checkIn` (`SELF_DECLARED`, `ADR-462`), geofencing Haversine + `maxAccuracyMeters`, anti-ubiquidade (`CONCURRENT_ACTIVITY_OPEN`), cooldown de saída e IP LGPD (`self-checkin-service.ts`, `self-checkin-actions.ts`); cartaz A4 PDF/SVG/PNG (`/api/t/[tenantSlug]/credenciamento/cartaz`), Telão dinâmico (`/credenciamento/telao/[pointId]` + `/api/...`), portal móvel (`/presenca/[token]`) e painel em `/credenciamento` (`ADR-461`). **14 Vitest** + **4 E2E**; Vitest **4920** (294 arquivos); E2E **561 passando + 1 skip**. ADR-460 … 462 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
@@ -743,7 +741,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 107 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-112-bloco-do-comite-e-fluxo-chair.md`; antes, F111, F110, F97, ..., F68; a
+   fase entregue** (`docs/fase-113-autocredenciamento-e-antifraude.md`; antes, F112, F111, F110, F97, ..., F68; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

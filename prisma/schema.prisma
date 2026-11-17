@@ -284,6 +284,43 @@ model EventCredential {
   @@map("event_credentials")
 }
 
+/// Ponto de autocredenciamento e autocheck-in por QR Code (FASE 113).
+///
+/// Representa a PORTARIA do evento (`activityId = null`) ou uma ATIVIDADE
+/// específica (`activityId != null`). Carrega um token opaco revogável (`PA-XXXX-XXXX`)
+/// impresso no cartaz ou exibido no telão, além das travas de sala (PIN fixo e/ou
+/// código rotativo TOTP de 60s). A política de geofence/anti-ubiquidade mora no
+/// evento (`Event.latitude`/`Event.longitude` + `Event.settings.selfCheckin`).
+model SelfCheckinPoint {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @db.Uuid
+  eventId    String  @db.Uuid
+  activityId String? @db.Uuid
+
+  /// Token opaco no formato `PA-XXXX-XXXX` impresso no cartaz e na URL pública.
+  token       String    @unique @db.VarChar(32)
+  isActive    Boolean   @default(true)
+  pinRequired Boolean   @default(false)
+  pinCode     String?   @db.VarChar(8)
+  totpEnabled Boolean   @default(false)
+  totpSecret  String?   @db.VarChar(64)
+
+  createdById String?   @db.Uuid
+  revokedAt   DateTime? @db.Timestamptz(6)
+  revokedById String?   @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, eventId, revokedAt])
+  @@index([tenantId, activityId, revokedAt])
+  @@map("self_checkin_points")
+}
+
 /// Sentido do recado (FASE 56 · dívida E45): a instituição fala e a pessoa RESPONDE.
 ///
 /// Sem esta coluna, "quem enviou" era dedutível apenas por `sentById` nulo ou não — e o
@@ -1056,6 +1093,8 @@ model Tenant {
   raffleWinners        RaffleWinner[]
   /// Crachás emitidos para este evento — FASE 31.
   eventCredentials     EventCredential[]
+  /// Pontos de autocredenciamento por QR Code — FASE 113.
+  selfCheckinPoints    SelfCheckinPoint[]
   /// Recados enviados no contexto deste evento — FASE 32.
   participantMessages  ParticipantMessage[]
   /// Denúncias de perfil público nascidas nesta casa — FASE 56 (E62).
@@ -1742,6 +1781,8 @@ model Event {
   mediaAssets          MediaAsset[]
   /// Crachás emitidos para este evento — FASE 31.
   eventCredentials     EventCredential[]
+  /// Pontos de autocredenciamento por QR Code — FASE 113.
+  selfCheckinPoints    SelfCheckinPoint[]
   /// Recados ligados a este evento (opcional no recado) — FASE 32.
   participantMessages  ParticipantMessage[]
   /// Chamadas de propostas do evento — FASE 33.
@@ -1917,7 +1958,9 @@ model Activity {
   xpTransactions   XpTransaction[]
   raffles          Raffle[]
   /// Materiais de apoio publicados pelos palestrantes desta atividade — FASE 25.
-  speakerMaterials SpeakerMaterial[]
+  speakerMaterials  SpeakerMaterial[]
+  /// Pontos de autocredenciamento por QR Code — FASE 113.
+  selfCheckinPoints SelfCheckinPoint[]
 
   @@unique([eventId, slug])
   @@index([tenantId, eventId, status])

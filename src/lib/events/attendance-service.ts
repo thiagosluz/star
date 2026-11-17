@@ -208,6 +208,10 @@ export async function checkIn(input: {
   ipAddress?: string | null;
   userAgent?: string | null;
   qrNonce?: string | null;
+  source?: 'MANUAL_STAFF' | 'QR_CODE_CHECKIN' | 'SELF_DECLARED';
+  latitude?: number | null;
+  longitude?: number | null;
+  notes?: string | null;
 }): Promise<AttendanceResult<CheckinOutcome>> {
   try {
     const now = input.now ?? new Date();
@@ -275,12 +279,15 @@ export async function checkIn(input: {
           registrationId: located.id,
           userId: located.userId,
           status: 'PRESENT',
-          source: 'MANUAL_STAFF',
+          source: input.source ?? 'MANUAL_STAFF',
           checkedInAt: now,
-          validatedById: input.staffUserId,
+          validatedById: input.source === 'SELF_DECLARED' ? null : input.staffUserId,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
           ipAddress: input.ipAddress ?? null,
           userAgent: input.userAgent?.slice(0, 500) ?? null,
           qrNonce: input.qrNonce ?? null,
+          notes: input.notes?.slice(0, 500) ?? null,
         },
         select: { id: true },
       });

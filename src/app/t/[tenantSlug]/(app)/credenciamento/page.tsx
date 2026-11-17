@@ -12,8 +12,15 @@ import {
 } from '@/components/credentials/checkin-filter-bar';
 import { CheckinQueue } from '@/components/gamification/checkin-queue';
 import { MonitorConsole, type MonitorActivity } from '@/components/credentials/monitor-console';
+import { SelfCheckinManager } from '@/components/credentials/self-checkin-manager';
 import { checkInAction, checkOutAction } from '@/app/actions/attendance-actions';
 import { closeSessionsAction, recordPresenceAction } from '@/app/actions/credential-actions';
+import {
+  regenerateSelfCheckinPointAction,
+  saveSelfCheckinPolicyAction,
+  upsertSelfCheckinPointAction,
+} from '@/app/actions/self-checkin-actions';
+import { getSelfCheckinConsoleData } from '@/lib/events/self-checkin-service';
 import { resolveEventQuerySelection } from '@/domain/validation/query-filter-rules';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { Alert, PageHeader } from '@/components/ui';
@@ -103,7 +110,7 @@ export default async function CheckinPage({
   });
   const { selectedEventId, selectedEvent } = eventSelection;
 
-  const [queue, activities, clock] = await Promise.all([
+  const [queue, activities, selfCheckinData, clock] = await Promise.all([
     selectedEventId
       ? listCheckinQueue(tenantId, selectedEventId, { query: q, limit: 60 })
       : Promise.resolve(null),
@@ -124,6 +131,9 @@ export default async function CheckinPage({
         }),
       )
       : Promise.resolve([]),
+    selectedEventId
+      ? getSelfCheckinConsoleData(tenantId, selectedEventId)
+      : Promise.resolve(null),
     /**
      * O "agora" vem do BANCO, e não de `Date.now()`: o React Compiler recusa função
      * impura no corpo do componente, e o relógio do banco é o MESMO que carimba as
@@ -211,6 +221,25 @@ export default async function CheckinPage({
               activities={monitorActivities}
               action={recordPresenceAction}
               closeAction={closeSessionsAction}
+            />
+          ) : null}
+
+          {selectedEventId && selfCheckinData ? (
+            <SelfCheckinManager
+              tenantSlug={tenantSlug}
+              data={selfCheckinData}
+              canManageSecurity={
+                Boolean(
+                  can(principal, PERMISSIONS.ATTENDANCE_MANAGE, { scope: 'TENANT' }) ||
+                    can(principal, PERMISSIONS.ATTENDANCE_MANAGE, {
+                      scope: 'EVENT',
+                      eventId: selectedEventId,
+                    }),
+                )
+              }
+              savePolicyAction={saveSelfCheckinPolicyAction}
+              upsertPointAction={upsertSelfCheckinPointAction}
+              regeneratePointAction={regenerateSelfCheckinPointAction}
             />
           ) : null}
 

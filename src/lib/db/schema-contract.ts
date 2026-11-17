@@ -208,6 +208,11 @@ export const TENANT_SCOPED_TABLES = [
    */
   'proceedings_volumes',
   'proceedings_entries',
+  /**
+   * FASE 113 — pontos de autocredenciamento por QR Code (portaria e atividades).
+   * Contém o segredo de TOTP e o PIN de sala, exigindo isolamento rigoroso por tenant.
+   */
+  'self_checkin_points',
 ];
 
 /**
