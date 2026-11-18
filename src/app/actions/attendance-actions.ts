@@ -28,7 +28,26 @@ export interface AttendanceActionState {
 const schema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
   registrationId: z.string().uuid(),
+  contextKind: z.enum(['EVENT', 'ACTIVITY']).optional(),
+  targetActivityId: z.string().uuid().optional(),
 });
+
+function parseAttendanceForm(formData: FormData) {
+  const rawContextKind = formData.get('contextKind');
+  const rawTargetActivityId = formData.get('targetActivityId');
+  return schema.safeParse({
+    tenantSlug: formData.get('tenantSlug'),
+    registrationId: formData.get('registrationId'),
+    contextKind:
+      typeof rawContextKind === 'string' && rawContextKind.trim().length > 0
+        ? rawContextKind.trim()
+        : undefined,
+    targetActivityId:
+      typeof rawTargetActivityId === 'string' && rawTargetActivityId.trim().length > 0
+        ? rawTargetActivityId.trim()
+        : undefined,
+  });
+}
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -47,10 +66,7 @@ export async function checkInAction(
   _prev: AttendanceActionState | null,
   formData: FormData,
 ): Promise<AttendanceActionState> {
-  const parsed = schema.safeParse({
-    tenantSlug: formData.get('tenantSlug'),
-    registrationId: formData.get('registrationId'),
-  });
+  const parsed = parseAttendanceForm(formData);
 
   if (!parsed.success) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para credenciamento.' };
@@ -70,6 +86,8 @@ export async function checkInAction(
     staffUserId: auth.userId,
     ipAddress: headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
     userAgent: headerList.get('user-agent'),
+    contextKind: parsed.data.contextKind,
+    targetActivityId: parsed.data.targetActivityId ?? null,
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/credenciamento'));
@@ -83,15 +101,19 @@ export async function checkInAction(
   }
 
   const xp = result.reward?.xpAwarded ?? 0;
+  const baseMessage = xp > 0 ? `Entrada registrada. +${xp} XP para o participante.` : 'Entrada registrada.';
+  const warningSuffix = result.warning ? ` (${result.warning})` : '';
 
   return {
     ok: true,
-    message: xp > 0 ? `Entrada registrada. +${xp} XP para o participante.` : 'Entrada registrada.',
+    message: `${baseMessage}${warningSuffix}`,
     data: {
       attendanceId: result.attendanceId,
       xpAwarded: xp,
       cards: result.reward?.cards ?? [],
       missions: result.reward?.missions ?? [],
+      warning: result.warning ?? null,
+      contextTitle: result.contextTitle ?? null,
     },
   };
 }
@@ -100,10 +122,7 @@ export async function checkOutAction(
   _prev: AttendanceActionState | null,
   formData: FormData,
 ): Promise<AttendanceActionState> {
-  const parsed = schema.safeParse({
-    tenantSlug: formData.get('tenantSlug'),
-    registrationId: formData.get('registrationId'),
-  });
+  const parsed = parseAttendanceForm(formData);
 
   if (!parsed.success) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para a saída.' };
@@ -119,6 +138,8 @@ export async function checkOutAction(
     tenantId: auth.tenantId,
     registrationId: parsed.data.registrationId,
     staffUserId: auth.userId,
+    contextKind: parsed.data.contextKind,
+    targetActivityId: parsed.data.targetActivityId ?? null,
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/credenciamento'));

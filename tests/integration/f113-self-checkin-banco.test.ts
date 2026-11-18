@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adminPrisma } from '../../src/lib/db/admin-client';
 import { withTenant } from '../../src/lib/db/tenant-client';
 import {
+  deleteSelfCheckinPoint,
   getPublicSelfCheckinPoint,
   getSelfCheckinConsoleData,
   regenerateSelfCheckinPoint,
@@ -432,5 +433,48 @@ describe('FASE 113 — Autocredenciamento com Geofence, PIN, TOTP, Anti-Ubiquida
       now: tOut,
     });
     expect(act2In.ok).toBe(true);
+  });
+
+  it('exclui QR Code ativo devolvendo o ponto ao estado inicial, revogando o link e permitindo gerar novamente', async () => {
+    const before = await getSelfCheckinConsoleData(tenantAId, eventId);
+    const activePoint = before?.activities.find((a) => a.activityId === activity2Id)?.point;
+    expect(activePoint).toBeTruthy();
+    if (!activePoint) return;
+
+    const deleted = await deleteSelfCheckinPoint({
+      tenantId: tenantAId,
+      pointId: activePoint.id,
+      actorId: staffId,
+    });
+    expect(deleted.ok).toBe(true);
+    if (!deleted.ok) return;
+    expect(deleted.token).toBe(activePoint.token);
+
+    // Painel volta ao estado inicial (point === null) mantendo as presenças já registradas.
+    const after = await getSelfCheckinConsoleData(tenantAId, eventId);
+    const clearedRow = after?.activities.find((a) => a.activityId === activity2Id);
+    expect(clearedRow?.point).toBeNull();
+    expect(clearedRow?.selfDeclaredCount).toBeGreaterThanOrEqual(1);
+
+    // Link antigo passa a recusar leitura como revogado.
+    const pubOld = await getPublicSelfCheckinPoint({
+      tenantId: tenantAId,
+      token: activePoint.token,
+      userId,
+    });
+    expect(pubOld?.revokedAt).not.toBeNull();
+
+    // Índice parcial liberado: permite gerar um novo QR Code limpo para a mesma atividade.
+    const recreated = await upsertSelfCheckinPoint({
+      tenantId: tenantAId,
+      eventId,
+      activityId: activity2Id,
+      actorId: staffId,
+      isActive: true,
+    });
+    expect(recreated.ok).toBe(true);
+    if (recreated.ok) {
+      expect(recreated.point.token).not.toBe(activePoint.token);
+    }
   });
 });

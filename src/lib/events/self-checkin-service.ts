@@ -257,12 +257,67 @@ function mapPointSummary(
   };
 }
 
+export interface SelfCheckinPreloadedActivity {
+  id: string;
+  title: string;
+  startsAt: Date;
+  endsAt: Date;
+  modality: string;
+  checkInEnabled: boolean;
+  requiresRegistration: boolean;
+  room: { name: string } | null;
+}
+
+export interface SelfCheckinStatusSummary {
+  enabled: boolean;
+  activePointsCount: number;
+  hasCoordinates: boolean;
+}
+
+/**
+ * Resumo leve do autocredenciamento para exibição em abas e cartões sem listar todas as atividades.
+ */
+export async function getSelfCheckinStatusSummary(
+  tenantId: string,
+  eventId: string,
+  existingTx?: TxClient,
+): Promise<SelfCheckinStatusSummary> {
+  const run = async (tx: TxClient) => {
+    const [event, activePointsCount] = await Promise.all([
+      tx.event.findFirst({
+        where: { id: eventId, tenantId, deletedAt: null },
+        select: { latitude: true, longitude: true, settings: true },
+      }),
+      tx.selfCheckinPoint.count({
+        where: { tenantId, eventId, revokedAt: null, isActive: true },
+      }),
+    ]);
+
+    if (!event) {
+      return { enabled: false, activePointsCount: 0, hasCoordinates: false };
+    }
+
+    const policy = parseSelfCheckinPolicy(event.settings);
+    return {
+      enabled: policy.enabled,
+      activePointsCount,
+      hasCoordinates: extractEventCoords(event) !== null,
+    };
+  };
+
+  return existingTx ? run(existingTx) : withTenant(tenantId, run);
+}
+
 export async function getSelfCheckinConsoleData(
   tenantId: string,
   eventId: string,
   now: Date = new Date(),
+  options?: {
+    tx?: TxClient;
+    activities?: readonly SelfCheckinPreloadedActivity[];
+  },
 ): Promise<SelfCheckinConsoleData | null> {
-  return withTenant(tenantId, async (tx) => {
+  const run = async (tx: TxClient): Promise<SelfCheckinConsoleData | null> => {
     const event = await tx.event.findFirst({
       where: { id: eventId, tenantId, deletedAt: null },
       select: {
@@ -297,21 +352,23 @@ export async function getSelfCheckinConsoleData(
           createdAt: true,
         },
       }),
-      tx.activity.findMany({
-        where: { tenantId, eventId, deletedAt: null, status: { not: 'CANCELED' } },
-        orderBy: { startsAt: 'asc' },
-        take: 200,
-        select: {
-          id: true,
-          title: true,
-          startsAt: true,
-          endsAt: true,
-          modality: true,
-          checkInEnabled: true,
-          requiresRegistration: true,
-          room: { select: { name: true } },
-        },
-      }),
+      options?.activities
+        ? Promise.resolve(options.activities)
+        : tx.activity.findMany({
+            where: { tenantId, eventId, deletedAt: null, status: { not: 'CANCELED' } },
+            orderBy: { startsAt: 'asc' },
+            take: 200,
+            select: {
+              id: true,
+              title: true,
+              startsAt: true,
+              endsAt: true,
+              modality: true,
+              checkInEnabled: true,
+              requiresRegistration: true,
+              room: { select: { name: true } },
+            },
+          }),
       tx.attendance.groupBy({
         by: ['activityId'],
         where: { tenantId, eventId, source: 'SELF_DECLARED' },
@@ -360,7 +417,9 @@ export async function getSelfCheckinConsoleData(
         };
       }),
     };
-  });
+  };
+
+  return options?.tx ? run(options.tx) : withTenant(tenantId, run);
 }
 
 export async function saveEventSelfCheckinPolicy(input: {
@@ -735,6 +794,78 @@ export async function regenerateSelfCheckinPoint(input: {
   } catch (error) {
     logger.error(`[self-checkin] falha ao regenerar QR: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível regenerar o QR Code.' };
+  }
+}
+
+/**
+ * Revoga e limpa o ponto de autocredenciamento ativo para que a portaria ou atividade volte
+ * ao estado inicial ("QR não gerado"), preservando presenças já registradas e trilha auditável.
+ */
+export async function deleteSelfCheckinPoint(input: {
+  tenantId: string;
+  pointId: string;
+  actorId: string;
+}): Promise<
+  SelfCheckinResult<{
+    pointId: string;
+    token: string;
+    eventId: string;
+    activityId: string | null;
+  }>
+> {
+  try {
+    const now = new Date();
+    const outcome = await withTenant(input.tenantId, async (tx) => {
+      const current = await tx.selfCheckinPoint.findFirst({
+        where: { id: input.pointId, tenantId: input.tenantId, revokedAt: null },
+        select: {
+          id: true,
+          eventId: true,
+          activityId: true,
+          token: true,
+        },
+      });
+
+      if (!current) return null;
+
+      await tx.selfCheckinPoint.update({
+        where: { id: current.id },
+        data: { revokedAt: now, revokedById: input.actorId, isActive: false },
+      });
+
+      await recordAudit(
+        {
+          tenantId: input.tenantId,
+          userId: input.actorId,
+          action: 'DELETE',
+          entityType: 'selfCheckinPoint',
+          entityId: current.id,
+          changes: {
+            eventId: { from: current.eventId, to: null },
+            activityId: { from: current.activityId, to: null },
+            token: { from: current.token, to: null },
+          },
+        },
+        tx,
+      );
+
+      return current;
+    });
+
+    if (!outcome) {
+      return { ok: false, code: 'NOT_FOUND', message: 'Ponto de autocredenciamento não encontrado.' };
+    }
+
+    return {
+      ok: true,
+      pointId: outcome.id,
+      token: outcome.token,
+      eventId: outcome.eventId,
+      activityId: outcome.activityId,
+    };
+  } catch (error) {
+    logger.error(`[self-checkin] falha ao excluir QR: ${errorMessage(error)}`);
+    return { ok: false, code: 'INTERNAL', message: 'Não foi possível excluir o QR Code.' };
   }
 }
 

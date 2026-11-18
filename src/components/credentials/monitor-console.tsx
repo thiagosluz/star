@@ -22,6 +22,7 @@ import { QrCameraReader } from '@/components/credentials/qr-camera-reader';
 import { describeAttendanceContext } from '@/domain/events/credential-rules';
 import { cameraDeviceStorageKey } from '@/domain/events/camera-device-rules';
 import { useOfflineQueue } from '@/components/credentials/use-offline-queue';
+import { ConfirmSubmitButton } from '@/components/ui/dialog';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MODO MONITOR — o balcão do credenciamento (FASE 31 · OFFLINE-FIRST NA FASE 35)
@@ -37,6 +38,8 @@ import { useOfflineQueue } from '@/components/credentials/use-offline-queue';
  *       (fila persistida em IndexedDB com sincronização idempotente).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+export const CHECKIN_CONTEXT_EVENT = 'ef:checkin-context';
+
 export interface MonitorActivity {
   id: string;
   title: string;
@@ -146,6 +149,9 @@ export function MonitorConsole({
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const modeInputRef = useRef<HTMLInputElement | null>(null);
+  const closeFormRef = useRef<HTMLFormElement | null>(null);
+  const scanInFlightRef = useRef(false);
 
   /**
    * O painel de resultado prioriza o feedback local mais recente (leitura offline imediata)
@@ -167,6 +173,25 @@ export function MonitorConsole({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent(CHECKIN_CONTEXT_EVENT, {
+        detail: {
+          kind: contextKind,
+          activityId: contextKind === 'ACTIVITY' ? activityId || null : null,
+        },
+      }),
+    );
+  }, [contextKind, activityId]);
+
+  useEffect(() => {
+    if (modeInputRef.current) {
+      modeInputRef.current.value = mode;
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    scanInFlightRef.current = false;
     if (state) {
       inputRef.current?.focus();
     }
@@ -201,6 +226,7 @@ export function MonitorConsole({
   };
 
   const submitCode = (value: string) => {
+    if (scanInFlightRef.current) return;
     setCode(value);
 
     // Se estiver sem rede no navegador, salva direto na fila local sem travar o balcão
@@ -209,8 +235,12 @@ export function MonitorConsole({
       return;
     }
 
+    scanInFlightRef.current = true;
     setLocalFeedback(null);
     requestAnimationFrame(() => {
+      if (modeInputRef.current) {
+        modeInputRef.current.value = mode;
+      }
       formRef.current?.requestSubmit();
     });
   };
@@ -218,12 +248,37 @@ export function MonitorConsole({
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     if (!isOnline) {
       e.preventDefault();
+      scanInFlightRef.current = false;
       if (code.trim()) {
         void recordLocally(code, mode);
       }
       return;
     }
     setLocalFeedback(null);
+  };
+
+  /**
+   * Envia uma saída pontual SEM alterar o modo principal (`IN` / `TOGGLE`) salvo no `localStorage`,
+   * evitando que uma saída avulsa inverta o comportamento das próximas leituras da fila.
+   */
+  const handleOneShotCheckout = () => {
+    if (!code.trim()) {
+      inputRef.current?.focus();
+      return;
+    }
+    if (!isOnline) {
+      void recordLocally(code, 'OUT');
+      return;
+    }
+    setLocalFeedback(null);
+    if (modeInputRef.current) {
+      modeInputRef.current.value = 'OUT';
+    }
+    formRef.current?.requestSubmit();
+    if (modeInputRef.current) {
+      modeInputRef.current.value = mode;
+    }
+    inputRef.current?.focus();
   };
 
   const contextLabel = describeAttendanceContext({
@@ -414,10 +469,10 @@ export function MonitorConsole({
         <input type="hidden" name="eventId" value={eventId} />
         <input type="hidden" name="contextKind" value={contextKind} />
         {contextKind === 'ACTIVITY' ? <input type="hidden" name="activityId" value={activityId} /> : null}
-        <input type="hidden" name="mode" value={mode} />
+        <input ref={modeInputRef} type="hidden" name="mode" defaultValue={mode} />
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1 text-xs font-medium">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="min-w-0 flex-1 space-y-1 text-xs font-medium">
             Código do crachá
             <input
               ref={inputRef}
@@ -430,96 +485,103 @@ export function MonitorConsole({
               placeholder="CR-XXXX-XXXX"
               aria-label="Código do crachá"
               data-testid="monitor-code"
-              className="block min-w-64 rounded-md border border-border bg-background px-3 py-2 code-data text-base"
+              className="block w-full min-w-52 rounded-md border border-border bg-background px-3 py-2 code-data text-base"
             />
           </label>
 
           <SubmitButton label="Registrar" />
-        </div>
 
-        <ScanGate onRead={submitCode} storageKey={cameraDeviceStorageKey(eventId)} />
-
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <span className="text-muted-foreground">Atalho rápido para fechar sessão:</span>
           <button
             type="button"
-            onClick={() => {
-              handleModeChange('OUT');
-              requestAnimationFrame(() => formRef.current?.requestSubmit());
-            }}
+            onClick={handleOneShotCheckout}
             data-testid="monitor-checkout"
-            className="rounded-md border border-border px-3 py-1.5 hover:bg-muted"
+            title="Registra uma saída pontual para este código sem trocar o modo ativo"
+            className="rounded-md border border-border bg-background px-3 py-2.5 text-xs font-medium transition hover:bg-muted"
           >
             Registrar saída imediata
           </button>
         </div>
+
+        {/* ── Resultado imediatamente acima da câmera para visibilidade constante ── */}
+        {feedback ? (
+          <div
+            role={feedback.ok ? 'status' : 'alert'}
+            data-testid="monitor-feedback"
+            data-action={outcomeAction ?? (feedback.ok ? 'OK' : 'ERRO')}
+            className={`space-y-1 rounded-xl border p-4 ${
+              feedback.ok ? 'border-success/40 bg-success-soft' : 'border-destructive/40 bg-destructive-soft'
+            }`}
+          >
+            <p className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+              {feedback.ok ? (
+                outcomeAction === 'CHECKED_OUT' ? (
+                  <CheckCircle2 className="size-6 text-success-strong" aria-hidden />
+                ) : (
+                  <UserCheck className="size-6 text-success-strong" aria-hidden />
+                )
+              ) : (
+                <XCircle className="size-6 text-destructive" aria-hidden />
+              )}
+              {outcomeName ?? feedback.message}
+            </p>
+
+            {feedback.ok && outcomeCategory ? (
+              <p className="text-xs text-muted-foreground" data-testid="monitor-category">
+                Categoria do crachá: <span className="font-medium text-foreground">{outcomeCategory}</span>
+              </p>
+            ) : null}
+
+            <p className="text-sm">{feedback.ok && outcomeName ? feedback.message : feedback.ok ? '' : feedback.message}</p>
+
+            {outcomeMinutes !== null ? (
+              <p className="text-sm text-muted-foreground">
+                {outcomeMinutes} minuto(s) nesta sessão · total fechado no contexto:{' '}
+                {String(feedback.data?.closedMinutes ?? 0)} min
+              </p>
+            ) : null}
+
+            {feedback.details.length > 0 ? (
+              <ul className="space-y-0.5 text-xs text-warning-strong" data-testid="monitor-warnings">
+                {feedback.details.map((detail) => (
+                  <li key={detail} className="flex items-start gap-1.5">
+                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    {detail}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <p className="text-xs text-muted-foreground">{eventTitle}</p>
+          </div>
+        ) : null}
+
+        <ScanGate onRead={submitCode} storageKey={cameraDeviceStorageKey(eventId)} />
       </form>
 
-      {/* ── Resultado ────────────────────────────────────────────────────────── */}
-      {feedback ? (
-        <div
-          role={feedback.ok ? 'status' : 'alert'}
-          data-testid="monitor-feedback"
-          data-action={outcomeAction ?? (feedback.ok ? 'OK' : 'ERRO')}
-          className={`space-y-1 rounded-xl border p-4 ${
-            feedback.ok ? 'border-success/40 bg-success-soft' : 'border-destructive/40 bg-destructive-soft'
-          }`}
-        >
-          <p className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-            {feedback.ok ? (
-              outcomeAction === 'CHECKED_OUT' ? (
-                <CheckCircle2 className="size-6 text-success-strong" aria-hidden />
-              ) : (
-                <UserCheck className="size-6 text-success-strong" aria-hidden />
-              )
-            ) : (
-              <XCircle className="size-6 text-destructive" aria-hidden />
-            )}
-            {outcomeName ?? feedback.message}
-          </p>
-
-          {feedback.ok && outcomeCategory ? (
-            <p className="text-xs text-muted-foreground" data-testid="monitor-category">
-              Categoria do crachá: <span className="font-medium text-foreground">{outcomeCategory}</span>
-            </p>
-          ) : null}
-
-          <p className="text-sm">{feedback.ok && outcomeName ? feedback.message : feedback.ok ? '' : feedback.message}</p>
-
-          {outcomeMinutes !== null ? (
-            <p className="text-sm text-muted-foreground">
-              {outcomeMinutes} minuto(s) nesta sessão · total fechado no contexto:{' '}
-              {String(feedback.data?.closedMinutes ?? 0)} min
-            </p>
-          ) : null}
-
-          {feedback.details.length > 0 ? (
-            <ul className="space-y-0.5 text-xs text-warning-strong" data-testid="monitor-warnings">
-              {feedback.details.map((detail) => (
-                <li key={detail} className="flex items-start gap-1.5">
-                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  {detail}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          <p className="text-xs text-muted-foreground">{eventTitle}</p>
-        </div>
-      ) : null}
-
-      {/* ── Fechamento das presenças abertas ─────────────────────────────────── */}
-      <form action={closeFormAction} className="flex flex-wrap items-center gap-2">
+      {/* ── Fechamento em lote das presenças abertas (com confirmação) ─────── */}
+      <form ref={closeFormRef} action={closeFormAction} className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
         <input type="hidden" name="tenantSlug" value={tenantSlug} />
         <input type="hidden" name="eventId" value={eventId} />
         {contextKind === 'ACTIVITY' ? <input type="hidden" name="activityId" value={activityId} /> : null}
-        <button
-          type="submit"
-          data-testid="monitor-close-sessions"
-          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
-        >
-          Fechar as presenças abertas deste contexto
-        </button>
+        <ConfirmSubmitButton
+          formRef={closeFormRef}
+          label="Fechar as presenças abertas deste contexto"
+          title="Fechar todas as presenças abertas?"
+          description={`Todos os participantes ainda com sessão aberta em "${contextLabel}" receberão o horário de encerramento do contexto.`}
+          confirmLabel="Confirmar fechamento"
+          tone="danger"
+          variant="outline"
+          size="sm"
+          testId="monitor-close-sessions"
+        />
+        <noscript>
+          <button
+            type="submit"
+            className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted"
+          >
+            Fechar as presenças abertas deste contexto
+          </button>
+        </noscript>
         <span className="text-xs text-muted-foreground">
           Quem esqueceu de sair recebe a saída no fim da atividade — o número é o mesmo sempre.
         </span>

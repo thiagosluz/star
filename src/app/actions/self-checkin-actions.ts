@@ -22,6 +22,7 @@ import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
+  deleteSelfCheckinPoint,
   regenerateSelfCheckinPoint,
   saveEventSelfCheckinPolicy,
   submitSelfCheckin,
@@ -210,6 +211,54 @@ export async function regenerateSelfCheckinPointAction(
     ok: true,
     message: `Novo QR gerado (${result.point.token}). Os cartazes anteriores foram revogados.`,
     data: { pointId: result.point.id, token: result.point.token },
+  };
+}
+
+export async function deleteSelfCheckinPointAction(
+  _prev: SelfCheckinActionState | null,
+  formData: FormData,
+): Promise<SelfCheckinActionState> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      eventId: z.string().uuid(),
+      pointId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      eventId: formData.get('eventId'),
+      pointId: formData.get('pointId'),
+    });
+
+  if (!parsed.success) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Ponto inválido para exclusão.' };
+  }
+
+  const auth = await guardAction({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.ATTENDANCE_MANAGE,
+    allowedScopes: ['TENANT', 'EVENT'],
+    eventId: parsed.data.eventId,
+  });
+
+  if (!auth.ok) return auth.state;
+
+  const result = await deleteSelfCheckinPoint({
+    tenantId: auth.tenantId,
+    pointId: parsed.data.pointId,
+    actorId: auth.userId,
+  });
+
+  revalidatePath(tenantPath(parsed.data.tenantSlug, '/credenciamento'));
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  return {
+    ok: true,
+    message: `QR Code excluído (${result.token}). O ponto voltou ao estado inicial.`,
+    data: { pointId: result.pointId, token: result.token },
   };
 }
 

@@ -1,17 +1,22 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import {
+  Check,
   CheckCircle2,
+  ChevronDown,
   Compass,
+  Copy,
   ExternalLink,
   Lock,
   MonitorPlay,
   Printer,
   QrCode,
   RefreshCw,
+  Search,
   ShieldCheck,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 
@@ -23,6 +28,7 @@ import type {
 } from '@/lib/events/self-checkin-service';
 import { Alert, AppLink, Badge, Button, ConfirmDialog, Input, Label } from '@/components/ui';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { describeSelfCheckinPolicySummary } from '@/domain/events/checkin-console-rules';
 import {
   MAX_CHECKOUT_COOLDOWN_MINUTES,
   MAX_GEO_ACCURACY_METERS,
@@ -31,6 +37,26 @@ import {
   MIN_GEO_ACCURACY_METERS,
   MIN_GEO_RADIUS_METERS,
 } from '@/domain/events/self-checkin-rules';
+
+function formatActivityStart(date: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone,
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    }).format(date);
+  }
+}
 
 type ActionFn = (
   prev: SelfCheckinActionState | null,
@@ -59,44 +85,75 @@ function SubmitButton({
 function PointRow({
   tenantSlug,
   eventId,
+  eventTimeZone,
   activity,
   point,
   selfDeclaredCount,
   canManageSecurity,
   upsertAction,
   regenerateAction,
+  deleteAction,
 }: {
   tenantSlug: string;
   eventId: string;
+  eventTimeZone: string;
   activity: SelfCheckinActivityRow | null;
   point: SelfCheckinPointSummary | null;
   selfDeclaredCount: number;
   canManageSecurity: boolean;
   upsertAction: ActionFn;
   regenerateAction: ActionFn;
+  deleteAction: ActionFn;
 }) {
+  const [lastActionKind, setLastActionKind] = useState<'upsert' | 'regen' | 'delete'>('upsert');
   const [state, upsertFormAction] = useActionState<SelfCheckinActionState | null, FormData>(
-    upsertAction,
+    async (prev, formData) => {
+      setLastActionKind('upsert');
+      return upsertAction(prev, formData);
+    },
     null,
   );
   const [regenState, regenFormAction] = useActionState<SelfCheckinActionState | null, FormData>(
-    regenerateAction,
+    async (prev, formData) => {
+      setLastActionKind('regen');
+      return regenerateAction(prev, formData);
+    },
+    null,
+  );
+  const [deleteState, deleteFormAction] = useActionState<SelfCheckinActionState | null, FormData>(
+    async (prev, formData) => {
+      setLastActionKind('delete');
+      return deleteAction(prev, formData);
+    },
     null,
   );
   const [regenOpen, setRegenOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const deleteFormRef = useRef<HTMLFormElement | null>(null);
 
   const rowKey = activity ? activity.activityId : 'portaria';
   const title = activity ? activity.title : 'Portaria e entrada geral';
-  const subtitle = activity
-    ? `${activity.roomName ? `${activity.roomName} · ` : ''}${new Date(activity.startsAt).toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`
-    : 'Registra a chegada do participante ao local do evento';
+  const formattedStart = activity ? formatActivityStart(activity.startsAt, eventTimeZone) : null;
 
-  const feedback = regenState ?? state;
+  const feedback =
+    lastActionKind === 'delete'
+      ? (deleteState ?? regenState ?? state)
+      : lastActionKind === 'regen'
+        ? (regenState ?? state ?? deleteState)
+        : (state ?? regenState ?? deleteState);
+
+  async function handleCopyLink(token: string) {
+    const path = tenantPath(tenantSlug, `/presenca/${token}`);
+    const url = typeof window !== 'undefined' ? `${window.location.origin}${path}` : path;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   return (
     <div
@@ -120,8 +177,11 @@ function PointRow({
               </span>
             ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {subtitle} · {selfDeclaredCount} registro(s) via autocheck-in
+          <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+            {activity
+              ? `${activity.roomName ? `${activity.roomName} · ` : ''}${formattedStart ?? ''}`
+              : 'Registra a chegada do participante ao local'}{' '}
+            · {selfDeclaredCount} registro(s) via autocheck-in
           </p>
         </div>
 
@@ -151,6 +211,19 @@ function PointRow({
                 Cartaz PDF
               </a>
 
+              {point.pinRequired ? (
+                <a
+                  href={`/api/t/${tenantSlug}/credenciamento/cartaz?pointId=${point.id}&incluirPin=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`self-checkin-print-pin-${rowKey}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                >
+                  <Printer className="size-3.5" aria-hidden />
+                  Cartaz com PIN
+                </a>
+              ) : null}
+
               <AppLink
                 href={tenantPath(tenantSlug, `/credenciamento/telao/${point.id}`)}
                 data-testid={`self-checkin-telao-${rowKey}`}
@@ -159,6 +232,16 @@ function PointRow({
                 <MonitorPlay className="size-3.5" aria-hidden />
                 Modo telão
               </AppLink>
+
+              <button
+                type="button"
+                onClick={() => void handleCopyLink(point.token)}
+                data-testid={`self-checkin-copy-${rowKey}`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+              >
+                {copied ? <Check className="size-3.5 text-success-strong" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+                {copied ? 'Copiado!' : 'Copiar link'}
+              </button>
 
               <AppLink
                 href={tenantPath(tenantSlug, `/presenca/${point.token}`)}
@@ -274,6 +357,43 @@ function PointRow({
                 <input type="hidden" name="eventId" value={eventId} />
                 <input type="hidden" name="pointId" value={point.id} />
               </form>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                data-testid={`self-checkin-delete-open-${rowKey}`}
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+                Excluir QR
+              </Button>
+
+              <ConfirmDialog
+                open={deleteOpen}
+                onCancel={() => setDeleteOpen(false)}
+                title="Excluir QR Code deste ponto?"
+                description="O código atual será revogado imediatamente, os cartazes já impressos deixarão de funcionar e o ponto voltará ao estado inicial de QR não gerado."
+                confirmLabel="Sim, excluir QR Code"
+                tone="danger"
+                testId={`self-checkin-delete-${rowKey}`}
+                onConfirm={() => {
+                  deleteFormRef.current?.requestSubmit();
+                  setDeleteOpen(false);
+                }}
+              />
+              <form ref={deleteFormRef} action={deleteFormAction} className="inline-flex items-center">
+                <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                <input type="hidden" name="eventId" value={eventId} />
+                <input type="hidden" name="pointId" value={point.id} />
+                <noscript>
+                  <Button type="submit" variant="ghost" size="sm" className="text-destructive">
+                    <Trash2 className="size-3.5" aria-hidden />
+                    Excluir QR
+                  </Button>
+                </noscript>
+              </form>
             </>
           ) : null}
         </div>
@@ -302,17 +422,21 @@ function PointRow({
 export function SelfCheckinManager({
   tenantSlug,
   data,
+  eventTimeZone = 'America/Sao_Paulo',
   canManageSecurity,
   savePolicyAction,
   upsertPointAction,
   regeneratePointAction,
+  deletePointAction,
 }: {
   tenantSlug: string;
   data: SelfCheckinConsoleData;
+  eventTimeZone?: string;
   canManageSecurity: boolean;
   savePolicyAction: ActionFn;
   upsertPointAction: ActionFn;
   regeneratePointAction: ActionFn;
+  deletePointAction: ActionFn;
 }) {
   const [policyState, policyFormAction] = useActionState<SelfCheckinActionState | null, FormData>(
     savePolicyAction,
@@ -340,6 +464,31 @@ export function SelfCheckinManager({
   );
   const [allowUnregistered, setAllowUnregistered] = useState(data.policy.allowUnregistered);
   const [geoCaptureStatus, setGeoCaptureStatus] = useState<string | null>(null);
+  const [activitySearch, setActivitySearch] = useState('');
+  const [onlyWithQr, setOnlyWithQr] = useState(false);
+
+  const hasSavedCoordinates = data.latitude !== null && data.longitude !== null;
+  const shouldDefaultOpenPolicy = !data.policy.enabled || !hasSavedCoordinates;
+  const [policyOpen, setPolicyOpen] = useState(shouldDefaultOpenPolicy);
+  const policySummary = describeSelfCheckinPolicySummary({
+    enabled,
+    hasEventCoordinates: Boolean(latitude.trim() && longitude.trim()),
+    requireGeo,
+    geoRadiusMeters: Number(geoRadiusMeters) || data.policy.geoRadiusMeters,
+    blockConcurrentActivity,
+    requireEventArrivalBeforeActivity,
+  });
+
+  const normalizedFilter = activitySearch.trim().toLowerCase();
+  const filteredActivities = data.activities.filter((act) => {
+    if (onlyWithQr && !act.point) return false;
+    if (!normalizedFilter) return true;
+    const haystack = `${act.title} ${act.roomName ?? ''}`.toLowerCase();
+    return haystack.includes(normalizedFilter);
+  });
+  const showPortaria =
+    (!onlyWithQr || Boolean(data.portariaPoint)) &&
+    (!normalizedFilter || 'portaria entrada geral'.includes(normalizedFilter));
 
   function captureCurrentLocation() {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -391,18 +540,37 @@ export function SelfCheckinManager({
       </header>
 
       {canManageSecurity ? (
-        <form
-          action={policyFormAction}
-          className="space-y-4 rounded-lg border border-border bg-card p-4"
-          data-testid="self-checkin-policy-form"
-        >
-          <input type="hidden" name="tenantSlug" value={tenantSlug} />
-          <input type="hidden" name="eventId" value={data.eventId} />
+        <div className="space-y-3">
+          <details
+            open={policyOpen}
+            onToggle={(e) => setPolicyOpen(e.currentTarget.open)}
+            className="group rounded-lg border border-border bg-card"
+            data-testid="self-checkin-policy-details"
+          >
+          <summary
+            data-testid="self-checkin-policy-toggle"
+            className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-foreground marker:hidden"
+          >
+            <span className="flex items-center gap-2">
+              <ShieldCheck className="size-4 text-primary" aria-hidden />
+              Política antifraude e geolocalização
+            </span>
+            <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+              <span data-testid="self-checkin-policy-summary">{policySummary}</span>
+              <ChevronDown
+                className="size-4 shrink-0 transition-transform group-open:rotate-180"
+                aria-hidden
+              />
+            </span>
+          </summary>
 
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <ShieldCheck className="size-4 text-primary" aria-hidden />
-            Política antifraude e geolocalização do evento
-          </div>
+          <form
+            action={policyFormAction}
+            className="space-y-4 border-t border-border/60 p-4"
+            data-testid="self-checkin-policy-form"
+          >
+            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+            <input type="hidden" name="eventId" value={data.eventId} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex items-start gap-2 text-xs text-foreground">
@@ -585,48 +753,90 @@ export function SelfCheckinManager({
             />
           </div>
 
-          {geoCaptureStatus ? (
-            <p className="text-xs text-muted-foreground" data-testid="self-checkin-geo-capture-status">
-              {geoCaptureStatus}
-            </p>
-          ) : null}
+            {geoCaptureStatus ? (
+              <p className="text-xs text-muted-foreground" data-testid="self-checkin-geo-capture-status">
+                {geoCaptureStatus}
+              </p>
+            ) : null}
+          </form>
+        </details>
 
-          {policyState ? (
-            <Alert
-              tone={policyState.ok ? 'success' : 'danger'}
-              data-testid="self-checkin-policy-feedback"
-            >
-              {policyState.message}
-            </Alert>
-          ) : null}
-        </form>
+        {policyState ? (
+          <Alert
+            tone={policyState.ok ? 'success' : 'danger'}
+            data-testid="self-checkin-policy-feedback"
+          >
+            {policyState.message}
+          </Alert>
+        ) : null}
+      </div>
       ) : null}
 
       <div className="space-y-3">
-        <PointRow
-          tenantSlug={tenantSlug}
-          eventId={data.eventId}
-          activity={null}
-          point={data.portariaPoint}
-          selfDeclaredCount={data.portariaSelfDeclaredCount}
-          canManageSecurity={canManageSecurity}
-          upsertAction={upsertPointAction}
-          regenerateAction={regeneratePointAction}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card px-3 py-2.5">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              value={activitySearch}
+              onChange={(e) => setActivitySearch(e.target.value)}
+              placeholder="Filtrar por sala ou nome da atividade…"
+              aria-label="Filtrar pontos de QR"
+              data-testid="self-checkin-activity-filter"
+              className="pl-8 text-xs"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={onlyWithQr}
+              onChange={(e) => setOnlyWithQr(e.target.checked)}
+              data-testid="self-checkin-only-generated"
+              className="size-3.5 rounded border-border"
+            />
+            Somente com QR gerado
+          </label>
+        </div>
 
-        {data.activities.map((activity) => (
+        {showPortaria ? (
+          <PointRow
+            tenantSlug={tenantSlug}
+            eventId={data.eventId}
+            eventTimeZone={eventTimeZone}
+            activity={null}
+            point={data.portariaPoint}
+            selfDeclaredCount={data.portariaSelfDeclaredCount}
+            canManageSecurity={canManageSecurity}
+            upsertAction={upsertPointAction}
+            regenerateAction={regeneratePointAction}
+            deleteAction={deletePointAction}
+          />
+        ) : null}
+
+        {filteredActivities.map((activity) => (
           <PointRow
             key={activity.activityId}
             tenantSlug={tenantSlug}
             eventId={data.eventId}
+            eventTimeZone={eventTimeZone}
             activity={activity}
             point={activity.point}
             selfDeclaredCount={activity.selfDeclaredCount}
             canManageSecurity={canManageSecurity}
             upsertAction={upsertPointAction}
             regenerateAction={regeneratePointAction}
+            deleteAction={deletePointAction}
           />
         ))}
+
+        {!showPortaria && filteredActivities.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border bg-card p-4 text-center text-xs text-muted-foreground">
+            Nenhum ponto corresponde ao filtro aplicado.
+          </p>
+        ) : null}
       </div>
     </section>
   );

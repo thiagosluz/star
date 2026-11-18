@@ -160,6 +160,7 @@ test.describe.serial('FASE 113 — Autocredenciamento e Autocheck-in com Geofenc
   }) => {
     await signInAs(page, staffEmail);
     await page.goto(`/t/${tenantSlug}/credenciamento?evento=${eventId}`);
+    await page.getByTestId('checkin-tab-autocredenciamento').click();
     await expect(page.getByTestId('self-checkin-manager')).toBeVisible();
 
     // Configura política antifraude com GPS ativo e cooldown 0 para testar entrada e saída.
