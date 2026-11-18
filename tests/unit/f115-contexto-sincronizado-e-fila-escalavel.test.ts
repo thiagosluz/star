@@ -8,6 +8,7 @@ import {
   describeManualQueueTarget,
   describeParticipantContextEnrollment,
 } from '@/domain/events/checkin-console-rules';
+import { cn } from '@/lib/utils/cn';
 
 const ROOT = process.cwd();
 
@@ -118,12 +119,22 @@ describe('FASE 115 — Catracas estruturais de sincronização Monitor <-> Fila 
 
   it('CheckinQueue escuta CHECKIN_CONTEXT_EVENT, exibe banner de destino, envia contextKind/targetActivityId e contém scroll max-h-[520px]', () => {
     const src = readSrc('src/components/gamification/checkin-queue.tsx');
+    const badgeSrc = readSrc('src/components/ui/badge.tsx');
 
     expect(src).toContain('data-testid="queue-context-banner"');
     expect(src).toContain('name="contextKind"');
     expect(src).toContain('name="targetActivityId"');
     expect(src).toContain('max-h-[520px]');
     expect(src).toContain('overflow-y-auto');
+    expect(badgeSrc).toContain('min-h-5');
+    expect(badgeSrc).toContain('min-h-6');
+    expect(
+      cn(
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 text-label-caps uppercase',
+        'bg-warning-soft text-warning-strong',
+        'min-h-5 py-0.5',
+      ),
+    ).toContain('text-label-caps');
   });
 
   it('CheckinQueueSection solicita deduplicateByUser: true e repassa activities para CheckinQueue', () => {

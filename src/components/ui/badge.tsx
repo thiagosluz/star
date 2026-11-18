@@ -56,8 +56,8 @@ const badgeVariants = cva(
         event: 'bg-theme-primary text-primary-foreground',
       },
       size: {
-        sm: 'h-5',
-        md: 'h-6',
+        sm: 'min-h-5 py-0.5',
+        md: 'min-h-6 py-0.5',
       },
     },
     defaultVariants: { tone: 'neutral', size: 'md' },

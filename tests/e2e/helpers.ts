@@ -283,9 +283,19 @@ export async function createEvent(options: {
   tenantId: string;
   slug: string;
   title: string;
-  status?: 'DRAFT' | 'PUBLISHED' | 'REGISTRATION_OPEN' | 'REGISTRATION_CLOSED';
+  status?:
+    | 'DRAFT'
+    | 'PUBLISHED'
+    | 'REGISTRATION_OPEN'
+    | 'REGISTRATION_CLOSED'
+    | 'IN_PROGRESS'
+    | 'FINISHED'
+    | 'CANCELED'
+    | 'ARCHIVED';
   capacity?: number | null;
   startsAtOffsetDays?: number;
+  startsAt?: Date;
+  endsAt?: Date;
   summary?: string;
   /**
    * O evento RECEBE trabalhos? (FASE 68)
@@ -304,7 +314,9 @@ export async function createEvent(options: {
    */
   onlineUrl?: string | null;
 }) {
-  const startsAt = new Date(Date.now() + (options.startsAtOffsetDays ?? 30) * 86_400_000);
+  const startsAt =
+    options.startsAt ?? new Date(Date.now() + (options.startsAtOffsetDays ?? 30) * 86_400_000);
+  const endsAt = options.endsAt ?? new Date(startsAt.getTime() + 3 * 86_400_000);
 
   return e2eDb.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${options.tenantId}, true)`;
@@ -319,7 +331,7 @@ export async function createEvent(options: {
         status: options.status ?? 'REGISTRATION_OPEN',
         modality: 'IN_PERSON',
         startsAt,
-        endsAt: new Date(startsAt.getTime() + 3 * 86_400_000),
+        endsAt,
         timezone: 'America/Bahia',
         city: 'Salvador',
         state: 'BA',

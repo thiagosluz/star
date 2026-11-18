@@ -153,7 +153,7 @@ function QueueRow({
   return (
     <li
       onClick={onSelect}
-      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 transition-colors ${
+      className={`space-y-2 rounded-lg border p-3 transition-colors ${
         isActive
           ? 'border-primary bg-card ring-2 ring-primary ring-offset-2 ring-offset-background'
           : 'border-border bg-card'
@@ -162,58 +162,71 @@ function QueueRow({
       data-inside={optimisticInside ? 'true' : 'false'}
       data-active-row={isActive ? 'true' : 'false'}
     >
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <p className="truncate text-sm font-medium">{entry.userName}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {entry.userEmail}
+            {activeContext.kind === 'EVENT'
+              ? ` · ${enrollment.label}`
+              : activeActivity
+                ? ` · Alvo: ${activeActivity.title}`
+                : entry.activityTitle
+                  ? ` · ${entry.activityTitle}`
+                  : ' · evento'}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <form action={formAction}>
+            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+            <input type="hidden" name="registrationId" value={targetRegistrationId} />
+            <input type="hidden" name="mode" value={optimisticInside ? 'out' : 'in'} />
+            {hasContextSync ? (
+              <>
+                <input type="hidden" name="contextKind" value={activeContext.kind} />
+                {activeContext.kind === 'ACTIVITY' && activeContext.activityId ? (
+                  <input type="hidden" name="targetActivityId" value={activeContext.activityId} />
+                ) : null}
+              </>
+            ) : null}
+            <ActionButton
+              mode={optimisticInside ? 'out' : 'in'}
+              isPending={isPending}
+              inLabel={activeContext.kind === 'ACTIVITY' ? 'Credenciar na atividade' : 'Credenciar'}
+            />
+          </form>
+        </div>
+      </div>
+
+      {(hasContextSync && activeContext.kind === 'ACTIVITY') ||
+      (optimisticInside && !isInsideInContext) ||
+      (checkedInAtInContext && optimisticInside) ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
           {hasContextSync && activeContext.kind === 'ACTIVITY' ? (
-            <Badge tone={enrollment.tone} data-testid={`queue-enrollment-${entry.registrationId}`}>
+            <Badge
+              tone={enrollment.tone}
+              size="sm"
+              className="max-w-full whitespace-normal leading-tight"
+              data-testid={`queue-enrollment-${entry.registrationId}`}
+            >
               {enrollment.label}
             </Badge>
           ) : null}
-        </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {entry.userEmail}
-          {activeContext.kind === 'EVENT'
-            ? ` · ${enrollment.label}`
-            : activeActivity
-              ? ` · Alvo: ${activeActivity.title}`
-              : entry.activityTitle
-                ? ` · ${entry.activityTitle}`
-                : ' · evento'}
-        </p>
-        {optimisticInside && !isInsideInContext ? (
-          <p className="flex items-center gap-1 text-xs text-primary animate-pulse motion-reduce:animate-none">
-            <ShieldCheck className="size-3" aria-hidden />
-            Credenciando agora…
-          </p>
-        ) : checkedInAtInContext && optimisticInside ? (
-          <p className="flex items-center gap-1 text-xs text-success-strong">
-            <ShieldCheck className="size-3" aria-hidden />
-            Entrada registrada às {checkedInAtInContext}
-          </p>
-        ) : null}
-      </div>
 
-      <div className="flex items-center gap-2">
-        <form action={formAction}>
-          <input type="hidden" name="tenantSlug" value={tenantSlug} />
-          <input type="hidden" name="registrationId" value={targetRegistrationId} />
-          <input type="hidden" name="mode" value={optimisticInside ? 'out' : 'in'} />
-          {hasContextSync ? (
-            <>
-              <input type="hidden" name="contextKind" value={activeContext.kind} />
-              {activeContext.kind === 'ACTIVITY' && activeContext.activityId ? (
-                <input type="hidden" name="targetActivityId" value={activeContext.activityId} />
-              ) : null}
-            </>
+          {optimisticInside && !isInsideInContext ? (
+            <p className="flex items-center gap-1 text-xs text-primary animate-pulse motion-reduce:animate-none">
+              <ShieldCheck className="size-3" aria-hidden />
+              Credenciando agora…
+            </p>
+          ) : checkedInAtInContext && optimisticInside ? (
+            <p className="flex items-center gap-1 text-xs text-success-strong">
+              <ShieldCheck className="size-3" aria-hidden />
+              Entrada registrada às {checkedInAtInContext}
+            </p>
           ) : null}
-          <ActionButton
-            mode={optimisticInside ? 'out' : 'in'}
-            isPending={isPending}
-            inLabel={activeContext.kind === 'ACTIVITY' ? 'Credenciar na atividade' : 'Credenciar'}
-          />
-        </form>
-      </div>
+        </div>
+      ) : null}
 
       {state ? (
         <p

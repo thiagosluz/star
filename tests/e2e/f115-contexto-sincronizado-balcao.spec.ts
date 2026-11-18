@@ -205,9 +205,17 @@ test.describe.serial('FASE 115 — Sincronização Portaria × Atividade e Fila 
     // 5. Troca no Modo Monitor para "Minicurso: Programação em Rust": Bruno aparece como "Inscrito nesta atividade" e ainda fora da 2ª sessão!
     await page.getByTestId('monitor-activity').selectOption(rustId);
     await expect(banner).toContainText('Atividade: Minicurso: Programação em Rust para iniciantes');
-    await expect(page.getByTestId(`queue-enrollment-${brunoRegId}`)).toContainText(
-      'Inscrito nesta atividade',
-    );
+    const brunoBadge = page.getByTestId(`queue-enrollment-${brunoRegId}`);
+    await expect(brunoBadge).toContainText('Inscrito nesta atividade');
+    const badgeMetrics = await brunoBadge.evaluate((el) => {
+      const style = window.getComputedStyle(el);
+      return {
+        fontSize: style.fontSize,
+        overflowsVertically: el.scrollHeight > el.clientHeight + 1,
+      };
+    });
+    expect(badgeMetrics.fontSize).toBe('11px');
+    expect(badgeMetrics.overflowsVertically).toBe(false);
     await expect(brunoRow).toHaveAttribute('data-inside', 'false');
 
     // 6. Volta para Cerimônia de abertura e registra a saída do Bruno pela fila manual.
