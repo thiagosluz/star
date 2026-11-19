@@ -32,7 +32,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { deliverNotice, noticeFailure, type NoticeOutcome } from '@/lib/communication/notice-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { daysLate, dueDayLabel, localDayKey, priorityLabel } from '@/domain/events/demand-rules';
+import { daysLate, dueDayLabel, priorityLabel } from '@/domain/events/demand-rules';
 import { logger } from '@/lib/observability/logger';
 
 /**
@@ -333,9 +333,4 @@ export async function notifyDemandOverdue(input: {
     logger.error(`[demandas] falha ao avisar atraso: ${errorMessage(error)}`);
     return FAILED(errorMessage(error));
   }
-}
-
-/** O dia local do evento — a chave dos avisos de prazo. */
-export function noticeDayKey(now: Date, timeZone: string): string {
-  return localDayKey(now, timeZone);
 }

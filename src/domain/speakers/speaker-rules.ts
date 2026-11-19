@@ -263,14 +263,6 @@ export function isSpeakerOfActivity(input: {
   });
 }
 
-/** Ids dos perfis que esta pessoa reivindicou. */
-export function claimedProfileIdsFor(input: {
-  profiles: readonly { id: string; userId: string | null }[];
-  userId: string;
-}): string[] {
-  return input.profiles.filter((profile) => profile.userId === input.userId).map((p) => p.id);
-}
-
 /** Atividades em que a pessoa é ministrante (ids, sem repetição). */
 export function activitiesOfSpeaker(input: {
   links: readonly SpeakerLinkRef[];
@@ -387,23 +379,6 @@ export function computeSpeakerWorkload(
   }
 
   return { totalMinutes, entries: detail, countedActivities, excludedActivities };
-}
-
-/** Resumo legível da carga por atividade — usado na tela do portal. */
-export function formatWorkloadBreakdown(result: SpeakerWorkloadResult): string[] {
-  return result.entries.map((entry) =>
-    entry.counted
-      ? `${entry.activityTitle}: ${formatMinutes(entry.minutes)}`
-      : `${entry.activityTitle}: não contabilizada (${entry.reason?.toLowerCase()})`,
-  );
-}
-
-function formatMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest} min`;
-  if (rest === 0) return `${hours} h`;
-  return `${hours} h ${String(rest).padStart(2, '0')} min`;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

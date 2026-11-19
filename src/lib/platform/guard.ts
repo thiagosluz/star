@@ -56,37 +56,3 @@ export async function requirePlatformPermission(
 
   return { userId: context.user.id, name: context.user.name, email: context.user.email };
 }
-
-/**
- * Versão para Server Actions que NÃO redireciona para a página 404.
- *
- * Existe porque nem toda ação nasce de um `<form action={...}>` de página: as que
- * são chamadas por `useTransition` (`const result = await act(...)`) esperam um
- * valor de retorno. Lançar `notFound()` ali transformaria a negação em uma
- * exceção no meio do cliente. O retorno é o MESMO genérico para qualquer motivo
- * de recusa — "não encontrado" — para não distinguir "não existe" de "não pode".
- */
-export async function checkPlatformPermission(
-  permission: string = PERMISSIONS.PLATFORM_MANAGE,
-): Promise<{ ok: true; operator: PlatformOperator } | { ok: false; code: 'NOT_FOUND'; message: string }> {
-  const context = await getPlatformContext();
-
-  if (!context) {
-    return { ok: false, code: 'NOT_FOUND', message: 'Não encontrado.' };
-  }
-
-  const allowed = can(
-    context.principal,
-    permission as (typeof PERMISSIONS)[keyof typeof PERMISSIONS],
-    { scope: 'PLATFORM' },
-  );
-
-  if (!allowed) {
-    return { ok: false, code: 'NOT_FOUND', message: 'Não encontrado.' };
-  }
-
-  return {
-    ok: true,
-    operator: { userId: context.user.id, name: context.user.name, email: context.user.email },
-  };
-}

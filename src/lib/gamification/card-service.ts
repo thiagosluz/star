@@ -279,16 +279,6 @@ export async function setCardPinned(input: {
   }
 }
 
-/** Cartas fixadas de um participante — usado no perfil público (FASE 7). */
-export async function getPinnedCards(
-  tenantId: string,
-  userId: string,
-): Promise<CardResult<{ cards: CardView[] }>> {
-  const album = await getAlbum(tenantId, userId);
-  if (!album.ok) return album;
-  return { ok: true as const, cards: album.pinned };
-}
-
 /**
  * UMA carta do álbum, pela slug — a página da carta (FASE 48).
  *

@@ -19,7 +19,6 @@ import { activityTypeLabel } from '@/domain/events/activity-rules';
 import { tracksAnnouncement } from '@/domain/events/call-optional-rules';
 import {
   BLOCK_LABELS,
-  SANDBOXED_BLOCK_TYPES,
   type PageBlockType,
 } from '@/domain/events/landing-page';
 import type {
@@ -203,7 +202,7 @@ function ActivitiesBlock({
   );
 }
 
-export function ActivityCard({
+function ActivityCard({
   activity,
   tenantSlug,
   eventId = '',
@@ -1436,9 +1435,4 @@ export function BlockRenderer({
     default:
       return null;
   }
-}
-
-/** Aviso explícito, usado pelos testes para garantir que HTML não é interpretado. */
-export function isSandboxedBlock(type: PageBlockType): boolean {
-  return SANDBOXED_BLOCK_TYPES.has(type);
 }

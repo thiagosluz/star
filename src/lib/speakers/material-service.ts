@@ -53,7 +53,6 @@ import {
   canonicalMaterialExtension,
   MATERIAL_KINDS,
   MATERIAL_VISIBILITIES,
-  MATERIAL_MIME_TYPES,
   MAX_MATERIAL_BYTES,
   validateExternalMaterialUrl,
   validateMaterialUpload,
@@ -823,11 +822,6 @@ export async function deleteMaterial(input: {
     logger.error(`[materials] falha ao remover material: ${errorMessage(error)}`);
     return { ok: false, code: 'INTERNAL', message: 'Não foi possível remover o material.' };
   }
-}
-
-/** Aceita apenas tipos declarados (a assinatura real é conferida no servidor). */
-export function isMaterialMimeType(value: string): value is MaterialMimeType {
-  return (MATERIAL_MIME_TYPES as readonly string[]).includes(value.trim().toLowerCase());
 }
 
 /**

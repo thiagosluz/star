@@ -92,11 +92,6 @@ export function currentSeedKeyVersion(): number | null {
   return legacySecret() ? LEGACY_SEED_KEY_VERSION : null;
 }
 
-/** O cofre está configurado? (o mesmo teste que a assinatura de certificado faz) */
-export function isSeedVaultConfigured(): boolean {
-  return currentSeedKeyVersion() !== null;
-}
-
 /**
  * Situação do cofre, para a tela de operação dizer o que esperar.
  *

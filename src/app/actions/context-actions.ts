@@ -140,13 +140,3 @@ export async function switchTenantAction(
 
   redirect(tenantPath(target.tenantSlug, innerPath));
 }
-
-/**
- * Define o contexto ativo a partir do slug, sem formulário.
- * Usado no fluxo de "entrar na instituição" a partir do seletor.
- */
-export async function enterTenantAction(tenantSlug: string): Promise<SwitchContextState> {
-  const formData = new FormData();
-  formData.set('tenantSlug', tenantSlug);
-  return switchTenantAction(null, formData);
-}

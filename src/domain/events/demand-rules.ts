@@ -366,12 +366,6 @@ export function demandSituation(
   return 'OPEN';
 }
 
-export function isDemandSituation(value: unknown): value is DemandSituation {
-  return (
-    typeof value === 'string' &&
-    (Object.keys(DEMAND_SITUATION_LABELS) as string[]).includes(value)
-  );
-}
 
 /**
  * Dias inteiros de atraso, no calendário do evento. Zero quando não há atraso.

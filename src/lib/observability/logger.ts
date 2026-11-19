@@ -121,13 +121,3 @@ export const logger = {
   warn: (event: string, fields?: LogFields) => write('warn', event, fields),
   error: (event: string, fields?: LogFields) => write('error', event, fields),
 };
-
-/** Logger com contexto fixo — evita repetir `tenantId` em cada linha do fluxo. */
-export function withLogContext(base: LogFields) {
-  return {
-    debug: (event: string, fields?: LogFields) => logger.debug(event, { ...base, ...fields }),
-    info: (event: string, fields?: LogFields) => logger.info(event, { ...base, ...fields }),
-    warn: (event: string, fields?: LogFields) => logger.warn(event, { ...base, ...fields }),
-    error: (event: string, fields?: LogFields) => logger.error(event, { ...base, ...fields }),
-  };
-}

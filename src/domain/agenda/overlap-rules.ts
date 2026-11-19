@@ -138,41 +138,6 @@ export interface OverlapPair<T> {
   second: T;
 }
 
-/**
- * Todos os PARES que se sobrepõem, na ordem em que os itens chegaram.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE A VARREDURA É QUADRÁTICA (E NÃO UMA LINHA DE VARREDURA)
- * ─────────────────────────────────────────────────────────────────────────────
- *  O algoritmo "ordene por início e compare cada item com o ANTERIOR" é mais
- *  rápido, mas PERDE pares: um minicurso de 14:00 às 18:00 seguido de três
- *  palestras de 15:00, 16:00 e 17:00 só aparece colidindo com a PRIMEIRA — as
- *  outras duas ficam escondidas atrás dela, e a grade mentiria.
- *
- *  A agenda de um dia tem dezenas de itens; o custo O(n²) é irrelevante perto de
- *  errar o aviso. A comparação é entre TODOS os pares, e o resultado sai na ordem
- *  dos itens de entrada (o chamador ordena antes, e o par herda a ordem dele).
- */
-export function findOverlapPairs<T>(
-  items: readonly T[],
-  intervalOf: (item: T) => AgendaInterval,
-): OverlapPair<T>[] {
-  const pairs: OverlapPair<T>[] = [];
-
-  for (let i = 0; i < items.length; i += 1) {
-    for (let j = i + 1; j < items.length; j += 1) {
-      const first = items[i] as T;
-      const second = items[j] as T;
-
-      if (intervalsOverlap(intervalOf(first), intervalOf(second))) {
-        pairs.push({ first, second });
-      }
-    }
-  }
-
-  return pairs;
-}
-
 // ───────────────────────────────────────────────────────────────────────────────
 //  A MARGEM DE DESLOCAMENTO ENTRE SALAS (E86 · FASE 69 · fatia 1)
 // ───────────────────────────────────────────────────────────────────────────────

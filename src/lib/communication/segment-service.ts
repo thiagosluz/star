@@ -50,7 +50,6 @@ import {
   composeSegment,
   isSegmentConditionId,
   segmentCondition,
-  segmentConditionPhrase,
   segmentRecipientIdentity,
   type SegmentConditionId,
   type SegmentDefinition,
@@ -869,15 +868,6 @@ export async function loadSegmentRecipients(input: {
       select: { id: true, name: true, email: true },
     }),
   ).then((rows) => rows.map((row) => ({ userId: row.id, name: row.name, email: row.email })));
-}
-
-/** A frase de UMA condição, com o rótulo resolvido — usado pela tela e pelos testes. */
-export function describeSegmentCondition(
-  id: SegmentConditionId,
-  params: SegmentParams = {},
-  labels: Readonly<Record<string, string>> = {},
-): string {
-  return segmentConditionPhrase(id, params, labels);
 }
 
 /** Toda condição do catálogo tem construtor? (a catraca, em tempo de execução) */

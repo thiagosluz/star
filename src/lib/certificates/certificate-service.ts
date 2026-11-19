@@ -2224,20 +2224,6 @@ async function withValidationCode<T>(
   });
 }
 
-/** Utilitário exposto para a tela de conferência: carga horária detalhada. */
-export function summarizeWorkload(entries: readonly WorkloadBreakdownEntry[]): {
-  counted: number;
-  total: number;
-} {
-  return entries.reduce(
-    (accumulator, entry) => ({
-      counted: accumulator.counted + (entry.counted ? 1 : 0),
-      total: accumulator.total + entry.countedMinutes,
-    }),
-    { counted: 0, total: 0 },
-  );
-}
-
 /**
  * URL assinada do PDF a partir do CÓDIGO de validação.
  *

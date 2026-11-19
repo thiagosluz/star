@@ -60,7 +60,6 @@ import {
   saveCardTemplate,
   saveMission,
 } from '@/lib/admin/gamification-admin-service';
-import { checkInByBadgeToken } from '@/lib/events/attendance-service';
 import { revokeCertificate } from '@/lib/certificates/certificate-service';
 import { confirmRegistration } from '@/lib/events/confirmation-service';
 import { resolveConfirmationItem } from '@/lib/events/confirmation-service';
@@ -1038,52 +1037,6 @@ export async function revokeCertificateAdminAction(
   return result.ok
     ? { ok: true, message: 'Certificado revogado.' }
     : { ok: false, code: result.code, message: result.message };
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Credenciamento por crachá (leitor de QR Code)
-// ───────────────────────────────────────────────────────────────────────────────
-export async function checkInByBadgeAction(
-  _prev: AdminActionState | null,
-  formData: FormData,
-): Promise<AdminActionState> {
-  const tenantSlug = String(formData.get('tenantSlug') ?? '').trim();
-  const auth = await guardAction<AdminActionState>({
-    tenantSlug,
-    permission: PERMISSIONS.REGISTRATION_CHECKIN,
-  });
-  if (!auth.ok) return auth.state;
-
-  const badgeToken = nullable(formData.get('badgeToken'));
-  if (!badgeToken) {
-    return { ok: false, code: 'INVALID_INPUT', message: 'Informe o código do crachá.' };
-  }
-
-  const result = await checkInByBadgeToken({
-    tenantId: auth.tenantId,
-    badgeToken,
-    staffUserId: auth.userId,
-  });
-
-  revalidateTenantArea(tenantSlug, TENANT_CACHE_AREAS.credenciamento);
-
-  if (!result.ok) return { ok: false, code: result.code, message: result.message };
-
-  if (result.alreadyCheckedIn) {
-    return { ok: true, message: 'Este crachá já havia sido credenciado.' };
-  }
-
-  const xp = result.reward?.xpAwarded ?? 0;
-
-  return {
-    ok: true,
-    message: xp > 0 ? `Entrada registrada pelo crachá. +${xp} XP.` : 'Entrada registrada pelo crachá.',
-    data: {
-      registrationId: result.registrationId,
-      xpAwarded: xp,
-      cards: result.reward?.cards ?? [],
-    },
-  };
 }
 
 /**

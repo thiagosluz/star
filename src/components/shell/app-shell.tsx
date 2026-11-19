@@ -64,7 +64,7 @@ export interface ShellContext {
   testId?: string;
 }
 
-export function ShellNav({
+function ShellNav({
   groups,
   collapsed = false,
 }: {

@@ -36,15 +36,6 @@ export function raffleAuditPath(input: {
   );
 }
 
-/** Caminho do resultado publicado (a página da FASE 22). */
-export function raffleResultPath(input: {
-  tenantSlug: string;
-  eventSlug: string;
-  raffleId: string;
-}): string {
-  return tenantPath(input.tenantSlug, `/eventos/${input.eventSlug}/sorteios/${input.raffleId}`);
-}
-
 /**
  * Endereço ABSOLUTO do telão — o que vai no QR Code e no que se cola no grupo.
  *

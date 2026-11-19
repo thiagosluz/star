@@ -175,15 +175,6 @@ export type Result<T> =
  */
 const PROTOCOL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-export function generateProtocol(year: number, entropy: () => number = Math.random): string {
-  let suffix = '';
-  for (let index = 0; suffix.length < 4; index += 1) {
-    const value = entropy();
-    if (!Number.isFinite(value) || value < 0 || value >= 1) continue;
-    suffix += PROTOCOL_ALPHABET[Math.floor(value * PROTOCOL_ALPHABET.length)];
-  }
-  return `${year}-${suffix}`;
-}
 
 /** Protocolo a partir de bytes aleatórios criptograficamente seguros. */
 export function secureProtocol(year: number): string {

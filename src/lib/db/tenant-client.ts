@@ -229,11 +229,6 @@ export async function withTenant<T>(
   );
 }
 
-/** Tenant do contexto corrente (útil para logs e auditoria). */
-export function currentTenantId(): string | undefined {
-  return contextStore.getStore()?.tenantId;
-}
-
 /**
  * Cliente com privilégio administrativo, para operações legítimas que
  * atravessam tenants (jobs de plataforma, relatórios globais).

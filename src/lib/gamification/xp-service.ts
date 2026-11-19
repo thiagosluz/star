@@ -14,7 +14,7 @@ import {
   resolveXpProgress,
   type XpProgress,
 } from '@/domain/gamification/xp-rules';
-import type { TaskProgressStatus, XpSourceKind } from '@/domain/gamification/types';
+import type { XpSourceKind } from '@/domain/gamification/types';
 import { leaderboardIdentity } from '@/domain/gamification/leaderboard-rules';
 import { awardForEvent, rewardKeys, type RewardOutcome } from '@/lib/gamification/reward-engine';
 import { logger } from '@/lib/observability/logger';
@@ -321,32 +321,4 @@ export async function adjustXp(input: {
   }
 
   return { ok: true as const, outcome: result };
-}
-
-/** Contagem de missões por status — usada no resumo do painel. */
-export async function countTasksByStatus(
-  tenantId: string,
-  userId: string,
-): Promise<Record<TaskProgressStatus, number>> {
-  const rows = await withTenant(tenantId, (tx) =>
-    tx.userTaskProgress.groupBy({
-      by: ['status'],
-      where: { tenantId, userId },
-      _count: { _all: true },
-    }),
-  );
-
-  const counts: Record<TaskProgressStatus, number> = {
-    NOT_STARTED: 0,
-    IN_PROGRESS: 0,
-    COMPLETED: 0,
-    CLAIMED: 0,
-    EXPIRED: 0,
-  };
-
-  for (const row of rows) {
-    counts[row.status] = row._count._all;
-  }
-
-  return counts;
 }

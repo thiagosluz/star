@@ -768,35 +768,6 @@ export async function setCredentialCategory(input: {
   }
 }
 
-/** Marca que os crachás foram impressos (a folha pode ser reimpressa depois). */
-export async function markCredentialsPrinted(input: {
-  tenantId: string;
-  credentialIds: readonly string[];
-  actorId: string;
-  now?: Date;
-}): Promise<CredentialResult<{ printed: number }>> {
-  if (input.credentialIds.length === 0) {
-    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione ao menos um crachá.' };
-  }
-
-  try {
-    const printed = await withTenant(input.tenantId, async (tx) => {
-      const updated = await tx.eventCredential.updateMany({
-        where: { tenantId: input.tenantId, id: { in: [...input.credentialIds] } },
-        data: { printedAt: input.now ?? new Date(), printedById: input.actorId },
-      });
-
-      return updated.count;
-    });
-
-    return { ok: true as const, printed };
-  } catch (error) {
-    logger.error(`[credentials] falha ao marcar impressão: ${errorMessage(error)}`);
-
-    return { ok: false, code: 'INTERNAL', message: 'Não foi possível registrar a impressão.' };
-  }
-}
-
 // ───────────────────────────────────────────────────────────────────────────────
 //  Leitura no balcão (o monitor)
 // ───────────────────────────────────────────────────────────────────────────────

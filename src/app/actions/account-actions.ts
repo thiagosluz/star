@@ -40,11 +40,7 @@ import { auth } from '@/lib/auth/auth';
 import { recordIdentityEvent } from '@/lib/auth/identity-audit';
 import { maskEmail } from '@/domain/participants/participant-rules';
 import { ACTIVE_TENANT_COOKIE, getAuthenticatedUser } from '@/lib/auth/session';
-import {
-  deleteOwnAccount,
-  getAccountOverview,
-  type AccountOverview,
-} from '@/lib/auth/account-service';
+import { deleteOwnAccount } from '@/lib/auth/account-service';
 import {
   confirmUserAvatarUpload,
   removeUserAvatar,
@@ -145,14 +141,6 @@ function authMessage(error: unknown): { message: string; code?: string } {
   }
 
   return { message: 'Não foi possível concluir a operação. Tente novamente.' };
-}
-
-/** Estado da conta para a tela (a página usa; as actions devolvem pedaços). */
-export async function loadAccount(): Promise<AccountOverview | null> {
-  const user = await getAuthenticatedUser();
-  if (!user) return null;
-
-  return getAccountOverview(user.id);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

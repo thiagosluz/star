@@ -47,7 +47,6 @@ import {
   issueCertificate,
   requestEventCertificates,
   revokeCertificate,
-  getCertificateDownloadUrl,
 } from '@/lib/certificates/certificate-service';
 
 export interface CertificateActionState extends ActionGuardState {
@@ -373,47 +372,6 @@ export async function saveCertificatePolicyAction(
       minMinutes: result.policy.minMinutes,
     },
   };
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Download autenticado (o público é a rota por código)
-// ───────────────────────────────────────────────────────────────────────────────
-export async function requestCertificateDownloadAction(
-  _prev: CertificateActionState | null,
-  formData: FormData,
-): Promise<CertificateActionState> {
-  const parsed = z
-    .object({
-      tenantSlug: z.string().trim().min(1).max(63),
-      certificateId: z.string().uuid(),
-    })
-    .safeParse({
-      tenantSlug: formData.get('tenantSlug'),
-      certificateId: formData.get('certificateId'),
-    });
-
-  if (!parsed.success) {
-    return { ok: false, code: 'INVALID_INPUT', message: 'Dados inválidos para o download.' };
-  }
-
-  const auth = await guardAction<CertificateActionState>({
-    tenantSlug: parsed.data.tenantSlug,
-    permission: PERMISSIONS.CERTIFICATE_READ_OWN,
-  });
-
-  if (!auth.ok) return auth.state;
-
-  const result = await getCertificateDownloadUrl({
-    tenantId: auth.tenantId,
-    certificateId: parsed.data.certificateId,
-    userId: auth.userId,
-  });
-
-  if (!result.ok) {
-    return { ok: false, code: result.code, message: result.message };
-  }
-
-  return { ok: true, message: 'Download pronto.', data: { url: result.url, fileName: result.fileName } };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -746,7 +704,7 @@ export async function clearTemplateBackgroundAction(
   return { ok: true, message: 'Arte removida. O modelo volta ao fundo branco.' };
 }
 
-export async function deleteCertificateTemplateAction(
+async function deleteCertificateTemplateAction(
   _prev: CertificateTemplateActionState | null,
   formData: FormData,
 ): Promise<CertificateTemplateActionState> {

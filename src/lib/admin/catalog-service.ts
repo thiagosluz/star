@@ -56,7 +56,6 @@ import {
 } from '@/domain/events/event-rules';
 import { parseRubric, type RubricCriterion } from '@/domain/review/review-rules';
 import { assertRubricShapeFree } from '@/lib/review/rubric-guard';
-import { parseTaskTarget } from '@/domain/gamification/task-rules';
 import { parseOnlineRoomUrl } from '@/domain/events/online-room-rules';
 import { isEventCategory, type EventCategoryKey } from '@/domain/events/event-category-rules';
 import { logger } from '@/lib/observability/logger';
@@ -1798,9 +1797,4 @@ export async function getAdminOverview(tenantId: string): Promise<AdminOverview>
       participants,
     };
   });
-}
-
-/** Valida uma missão antes de gravar (metas são JSON livre). */
-export function validateMissionTarget(raw: unknown): { errors: string[] } {
-  return { errors: parseTaskTarget(raw).errors };
 }

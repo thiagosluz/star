@@ -284,8 +284,3 @@ export async function lookupTenant(
 
   return result;
 }
-
-/** O tenant está em estado que permite uso? */
-export function isOperational(tenant: ResolvedTenant): boolean {
-  return tenant.status === 'ACTIVE';
-}

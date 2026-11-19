@@ -35,7 +35,6 @@ import {
   defaultLayout,
   findPreset,
   normalizeLayout,
-  pageFormat,
   parsePageFormat,
   selectEffectiveTemplate,
   validateCertificateBackground,
@@ -817,9 +816,4 @@ function isUniqueViolation(error: unknown): boolean {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Medida da página do modelo, para a tela mostrar o tamanho real do documento. */
-export function templatePageSize(layout: CertificateLayout): { widthMm: number; heightMm: number } {
-  return pageFormat(layout.page);
 }

@@ -233,11 +233,3 @@ export async function certificateDurationSample(): Promise<CertificateDurationSa
     return null;
   }
 }
-
-/** Encerra a conexão da fila (shutdown gracioso e testes). */
-export async function closeCertificateQueue(): Promise<void> {
-  if (!queue) return;
-
-  await queue.close();
-  queue = null;
-}

@@ -159,7 +159,7 @@ describe('FASE 88 · B10 — falhas toleradas em contagens e leituras registram 
 
     expect(certQueue).toContain("logger.warn('não foi possível ler as contagens da fila de certificados'");
     expect(certQueue).toContain("logger.warn('não foi possível ler a amostra de duração dos certificados'");
-    expect(emailQueue).toContain("logger.warn('não foi possível ler as contagens da fila de e-mails'");
+    expect(emailQueue).toContain("logger.warn('fila de e-mails indisponível; entrega inline'");
     expect(emailQueue).not.toMatch(/\bcatch\s*\{/);
   });
 });

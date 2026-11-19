@@ -204,78 +204,6 @@ export async function enqueueEmailDelivery(data: EmailJobData): Promise<boolean>
 }
 
 /**
- * Registra (uma vez) o job repetível que varre prazos de parecer.
- *
- * `upsertJobScheduler` com id FIXO substitui o agendamento em vez de acumular
- * cópias a cada start do worker — subir dez vezes não cria dez varreduras. É a API
- * do BullMQ 6: o `repeat` por job saiu do `add` e passou a ser um agendador nomeado.
- */
-export async function scheduleReviewDeadlineScan(): Promise<boolean> {
-  try {
-    await getQueue().upsertJobScheduler(
-      'review-deadlines',
-      { pattern: REVIEW_DEADLINES_PATTERN },
-      { name: REVIEW_DEADLINES_JOB, data: { emailMessageId: '', tenantId: null } },
-    );
-
-    return true;
-  } catch (error) {
-    logger.warn('não foi possível agendar a varredura de prazos de parecer', {
-      error: error instanceof Error ? error.message : 'erro desconhecido',
-    });
-    return false;
-  }
-}
-
-/**
- * Registra (uma vez) o job repetível que fecha as presenças abertas.
- *
- * Mesmo padrão do agendamento de prazos: id FIXO, então reiniciar o worker reagenda
- * em vez de acumular varreduras.
- */
-export async function scheduleAttendanceSweep(): Promise<boolean> {
-  try {
-    await getQueue().upsertJobScheduler(
-      'attendance-sweep',
-      { pattern: ATTENDANCE_SWEEP_PATTERN },
-      { name: ATTENDANCE_SWEEP_JOB, data: { emailMessageId: '', tenantId: null } },
-    );
-
-    return true;
-  } catch (error) {
-    logger.warn('não foi possível agendar o fechamento de presenças', {
-      error: error instanceof Error ? error.message : 'erro desconhecido',
-    });
-
-    return false;
-  }
-}
-
-/**
- * Registra (uma vez) o job repetível da confirmação de vaga (FASE 34).
- *
- * Mesmo padrão dos outros dois: id FIXO, então reiniciar o worker reagenda em vez de
- * acumular varreduras — e subir dez workers não cria dez passadas.
- */
-export async function scheduleConfirmationSweep(): Promise<boolean> {
-  try {
-    await getQueue().upsertJobScheduler(
-      'registration-confirmation-sweep',
-      { pattern: CONFIRMATION_SWEEP_PATTERN },
-      { name: CONFIRMATION_SWEEP_JOB, data: { emailMessageId: '', tenantId: null } },
-    );
-
-    return true;
-  } catch (error) {
-    logger.warn('não foi possível agendar a varredura de confirmação de vaga', {
-      error: error instanceof Error ? error.message : 'erro desconhecido',
-    });
-
-    return false;
-  }
-}
-
-/**
  * Registra (uma vez) os jobs repetíveis das rotinas automáticas.
  *
  * O id do agendador é FIXO por rotina (`upsertJobScheduler`): subir dez workers não
@@ -346,33 +274,6 @@ export async function enqueueJobRun(input: {
     });
 
     return false;
-  }
-}
-
-/** Números da fila (diagnóstico, métricas e painel). */export async function emailQueueStats(): Promise<{
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  workers: number;
-} | null> {
-  try {
-    const instance = getQueue();
-    const counts = await instance.getJobCounts('waiting', 'active', 'completed', 'failed');
-    const workers = await instance.getWorkersCount();
-
-    return {
-      waiting: counts.waiting ?? 0,
-      active: counts.active ?? 0,
-      completed: counts.completed ?? 0,
-      failed: counts.failed ?? 0,
-      workers,
-    };
-  } catch (error) {
-    logger.warn('não foi possível ler as contagens da fila de e-mails', {
-      error: error instanceof Error ? error.message : 'erro desconhecido',
-    });
-    return null;
   }
 }
 

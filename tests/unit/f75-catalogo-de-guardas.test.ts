@@ -153,7 +153,7 @@ const MIGRADAS: readonly { arquivo: string; permissoes: readonly string[] }[] = 
   { arquivo: 'catalog-archive-actions.ts', permissoes: ['card-template:manage', 'task:manage'] },
   { arquivo: 'certificate-actions.ts', permissoes: ['certificate:issue', 'certificate:revoke', 'certificate:read:own', 'event:manage'] },
   { arquivo: 'communication-actions.ts', permissoes: ['tenant:member:invite', 'communication:read', 'participant:message'] },
-  { arquivo: 'gamification-actions.ts', permissoes: ['xp:read:own', 'card:read:own', 'xp:adjust', 'card:grant'] },
+  { arquivo: 'gamification-actions.ts', permissoes: ['xp:read:own', 'card:read:own', 'card:grant'] },
   { arquivo: 'landing-actions.ts', permissoes: ['page:manage', 'sponsor:manage', 'speaker:manage'] },
   { arquivo: 'member-actions.ts', permissoes: ['tenant:role:assign', 'tenant:member:remove'] },
   { arquivo: 'raffle-actions.ts', permissoes: ['event:manage'] },

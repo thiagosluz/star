@@ -20,7 +20,6 @@ import { tenantPath } from '@/domain/tenancy/resolution';
 import { claimMission } from '@/lib/gamification/task-service';
 import { setCardPinned } from '@/lib/gamification/card-service';
 import { revokeCardShareLink } from '@/lib/gamification/card-share-service';
-import { adjustXp } from '@/lib/gamification/xp-service';
 import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { awardTopReviewers } from '@/lib/gamification/achievement-service';
 import { MAX_REVIEWER_AWARDS } from '@/domain/raffles/stage-rules';
@@ -187,66 +186,6 @@ export async function revokeCardShareAction(
 // ───────────────────────────────────────────────────────────────────────────────
 //  Ajuste manual de XP (organização)
 // ───────────────────────────────────────────────────────────────────────────────
-const adjustSchema = z.object({
-  tenantSlug: z.string().trim().min(1).max(63),
-  userId: z.string().uuid(),
-  amount: z.coerce
-    .number()
-    .int('O ajuste deve ser um número inteiro de XP.')
-    .refine((value) => value !== 0, 'O ajuste não pode ser zero.')
-    .refine((value) => Math.abs(value) <= 100_000, 'Ajuste acima do limite permitido.'),
-  reason: z.string().trim().min(8, 'Descreva o motivo do ajuste (mínimo 8 caracteres).').max(300),
-});
-
-/**
- * Ajuste manual de XP.
- *
- * Exige `xp:adjust` e motivo textual: um ajuste sem justificativa é
- * indistinguível de erro ou abuso quando alguém auditar o extrato depois.
- */
-export async function adjustXpAction(
-  _prev: GamificationActionState | null,
-  formData: FormData,
-): Promise<GamificationActionState> {
-  const parsed = adjustSchema.safeParse({
-    tenantSlug: formData.get('tenantSlug'),
-    userId: formData.get('userId'),
-    amount: formData.get('amount'),
-    reason: formData.get('reason'),
-  });
-
-  if (!parsed.success) {
-    return {
-      ok: false,
-      code: 'INVALID_INPUT',
-      message: parsed.error.issues[0]?.message ?? 'Dados inválidos para o ajuste.',
-    };
-  }
-
-  const auth = await guardAction<GamificationActionState>({ tenantSlug: parsed.data.tenantSlug, permission: PERMISSIONS.XP_ADJUST });
-  if (!auth.ok) return auth.state;
-
-  const result = await adjustXp({
-    tenantId: auth.tenantId,
-    userId: parsed.data.userId,
-    amount: parsed.data.amount,
-    reason: parsed.data.reason,
-    actorId: auth.userId,
-  });
-
-  if (!result.ok) {
-    return { ok: false, code: result.code, message: result.message };
-  }
-
-  revalidatePath(tenantPath(parsed.data.tenantSlug, '/conquistas'));
-
-  return {
-    ok: true,
-    message: `Ajuste registrado: ${parsed.data.amount > 0 ? '+' : ''}${parsed.data.amount} XP.`,
-    data: { totalXp: result.outcome.totalXp, levelAfter: result.outcome.levelAfter },
-  };
-}
-
 // ───────────────────────────────────────────────────────────────────────────────
 //  Concessão manual de carta (organização)
 // ───────────────────────────────────────────────────────────────────────────────

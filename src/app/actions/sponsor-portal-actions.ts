@@ -23,11 +23,9 @@ import { z } from 'zod';
 
 import { getAuthenticatedUser } from '@/lib/auth/session';
 import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
-import { formNullableText as nullable } from '@/lib/http/form-data';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { sponsorQrInputSchema } from '@/domain/events/sponsor-experience-rules';
 import {
   acceptSponsorInvite,
   deleteSponsorQrCode,
@@ -35,7 +33,6 @@ import {
   linkSponsorUserByEmail,
   removeSponsorUser,
   revokeSponsorConsent,
-  saveSponsorQrCode,
   scanSponsorQr,
   setSponsorQrCodeActive,
 } from '@/lib/sponsors/sponsor-portal-service';
@@ -125,88 +122,6 @@ function revalidateSponsorArea(tenantSlug: string, eventId?: string | null): voi
 // ═══════════════════════════════════════════════════════════════════════════════
 //  QR do patrocinador (organização)
 // ═══════════════════════════════════════════════════════════════════════════════
-const qrFormSchema = z.object({
-  tenantSlug: z.string().trim().min(1).max(63),
-  eventId: z.string().uuid(),
-  sponsorId: z.string().uuid(),
-  qrId: z.string().uuid().optional(),
-  label: z.string().trim().min(3).max(120),
-  xpAmount: z.coerce.number().int().min(0).max(500).default(0),
-  cardTemplateId: z.string().uuid().optional(),
-  consentDays: z.coerce.number().int().min(1).max(365).default(90),
-});
-
-export async function saveSponsorQrAction(
-  _prev: SponsorPortalActionState | null,
-  formData: FormData,
-): Promise<SponsorPortalActionState> {
-  const parsed = qrFormSchema.safeParse({
-    tenantSlug: formData.get('tenantSlug'),
-    eventId: formData.get('eventId'),
-    sponsorId: formData.get('sponsorId'),
-    qrId: nullable(formData.get('qrId')) ?? undefined,
-    label: formData.get('label'),
-    xpAmount: formData.get('xpAmount') || 0,
-    cardTemplateId: nullable(formData.get('cardTemplateId')) ?? undefined,
-    consentDays: formData.get('consentDays') || 90,
-  });
-
-  if (!parsed.success) {
-    return {
-      ok: false,
-      code: 'INVALID_INPUT',
-      message: 'Verifique os dados do QR.',
-      details: parsed.error.issues.map((issue) => issue.message),
-    };
-  }
-
-  const data = parsed.data;
-
-  /** A mesma validação do domínio que os testes usam — não há duas réguas. */
-  const domainCheck = sponsorQrInputSchema.safeParse({
-    label: data.label,
-    xpAmount: data.xpAmount,
-    cardTemplateId: data.cardTemplateId,
-    consentDays: data.consentDays,
-  });
-
-  if (!domainCheck.success) {
-    return {
-      ok: false,
-      code: 'INVALID_INPUT',
-      message: 'QR inválido.',
-      details: domainCheck.error.issues.map((issue) => issue.message),
-    };
-  }
-
-  const context = await guardAction({ tenantSlug: data.tenantSlug, permission: PERMISSIONS.SPONSOR_MANAGE });
-  if (!context.ok) return context.state;
-
-  const result = await saveSponsorQrCode({
-    tenantId: context.tenantId,
-    actorId: context.userId,
-    sponsorId: data.sponsorId,
-    eventId: data.eventId,
-    ...(data.qrId ? { qrId: data.qrId } : {}),
-    label: data.label,
-    xpAmount: data.xpAmount,
-    cardTemplateId: data.cardTemplateId ?? null,
-    consentDays: data.consentDays,
-  });
-
-  if (!result.ok) return { ok: false, code: result.code, message: result.message };
-
-  revalidateSponsorArea(data.tenantSlug, data.eventId);
-
-  return {
-    ok: true,
-    message: result.created
-      ? `QR criado. O código é ${result.code} — imprima no estande.`
-      : 'QR atualizado.',
-    data: { qrId: result.qrId, code: result.code },
-  };
-}
-
 export async function setSponsorQrActiveAction(
   _prev: SponsorPortalActionState | null,
   formData: FormData,

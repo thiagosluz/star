@@ -121,7 +121,7 @@ function Feedback({
 }
 
 /** Código de convite + botão de copiar (o que o organizador precisa fazer com ele). */
-export function InviteTokenBox({ token, expiresAt }: { token: string; expiresAt: string | null }) {
+function InviteTokenBox({ token, expiresAt }: { token: string; expiresAt: string | null }) {
   return (
     <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3" data-testid="invite-token-box">
       <p className="text-xs font-medium">

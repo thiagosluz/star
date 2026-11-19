@@ -994,8 +994,5 @@ export function publicProfilePath(tenantSlug: string, username: string): string 
   return tenantPath(tenantSlug, `/u/${username}`);
 }
 
-export function publicProfileUrl(tenantSlug: string, username: string): string {
-  return `${publicBaseUrl()}${publicProfilePath(tenantSlug, username)}`;
-}
 
 export { DEFAULT_PROFILE_AUDIENCES, MAX_INTERESTS };

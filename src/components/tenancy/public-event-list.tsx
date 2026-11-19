@@ -75,7 +75,7 @@ export function eventListHref(tenantSlug: string, target: number): string {
 }
 
 /** Um cartão de evento da lista. */
-export function PublicEventCard({
+function PublicEventCard({
   event,
   tenantSlug,
 }: {

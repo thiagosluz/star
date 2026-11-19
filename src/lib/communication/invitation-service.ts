@@ -723,8 +723,3 @@ export async function acceptInvitation(input: {
     return failure('acceptInvitation', error);
   }
 }
-
-/** Link absoluto de um convite a partir do slug (usado pela tela de equipe). */
-export function invitationUrlFor(tenantSlug: string, token: string): string {
-  return inviteLink(tenantSlug, token);
-}

@@ -24,7 +24,6 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { connect, type Socket } from 'node:net';
-import { Readable } from 'node:stream';
 
 import { getObjectStream } from '@/lib/storage/s3-client';
 import {
@@ -206,49 +205,4 @@ function streamToClamd(socket: Socket, body: NodeJS.ReadableStream): Promise<str
 
     body.on('error', reject);
   });
-}
-
-/**
- * Inspeciona um conteúdo já em memória.
- *
- * Existe para os testes (o arquivo de teste padrão do ClamAV, o EICAR, é uma
- * string) e para qualquer caminho futuro em que o conteúdo já esteja carregado —
- * o caminho de produção usa `scanStoredObject`, que não carrega nada.
- */
-export async function scanBuffer(
-  content: Buffer,
-  options: { host?: string; port?: number; env?: NodeJS.ProcessEnv } = {},
-): Promise<ScanOutcome> {
-  const config = scanConfig(options.env);
-  const host = options.host ?? config.host;
-  const port = options.port ?? config.port;
-
-  if (!host) {
-    return { ok: false, code: 'NOT_CONFIGURED', message: config.reason ?? 'Inspeção sem endereço.' };
-  }
-
-  let socket: Socket | null = null;
-
-  try {
-    socket = await openClamd(host, port);
-    const verdict = await streamToClamd(socket, bufferToStream(content));
-    const parsed = interpretClamResponse(verdict);
-
-    if (parsed.status === 'CLEAN') return { ok: true, status: 'CLEAN' };
-    if (parsed.status === 'INFECTED') return { ok: true, status: 'INFECTED', signature: parsed.signature };
-
-    return { ok: false, code: 'UNKNOWN_RESPONSE', message: parsed.raw };
-  } catch (error) {
-    return {
-      ok: false,
-      code: 'UNAVAILABLE',
-      message: error instanceof Error ? error.message : 'Falha ao falar com o clamd.',
-    };
-  } finally {
-    socket?.destroy();
-  }
-}
-
-function bufferToStream(buffer: Buffer): NodeJS.ReadableStream {
-  return Readable.from([buffer]);
 }

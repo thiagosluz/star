@@ -116,16 +116,6 @@ export function seedKeyVersionLabel(version: number | null | undefined): string 
     : `versão ${version}`;
 }
 
-/**
- * A chave da versão pedida existe?
- *
- * Usado pela apuração para dizer, ANTES do palco, que uma semente não poderá ser
- * aberta — em vez de descobrir isso com o público esperando.
- */
-export function keyRingHasVersion(ring: SeedKeyRing, version: number): boolean {
-  return version === LEGACY_SEED_KEY_VERSION || ring.keys.has(version);
-}
-
 function truncate(value: string): string {
   return value.length > 40 ? `${value.slice(0, 40)}…` : value;
 }

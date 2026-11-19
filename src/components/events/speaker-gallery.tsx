@@ -124,7 +124,7 @@ export function SpeakerAvatar({
  * clicar na ficha, não para ser lida inteira. O texto completo fica na página do
  * palestrante, que é onde o visitante decide se quer assistir à atividade dele.
  */
-export function SpeakerCard({
+function SpeakerCard({
   speaker,
   tenantSlug,
   eventSlug,

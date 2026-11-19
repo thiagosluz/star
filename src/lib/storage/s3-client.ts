@@ -39,7 +39,6 @@ import {
   DeleteObjectCommand,
   PutObjectCommand,
   GetObjectCommand,
-  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -533,21 +532,6 @@ export async function getObjectBuffer(bucket: string, objectKey: string): Promis
   return Buffer.concat(chunks);
 }
 
-/** Lista objetos sob um prefixo (usado por diagnóstico e limpeza). */export async function listObjects(
-  bucket: string,
-  prefix: string,
-  maxKeys = 50,
-): Promise<{ key: string; sizeBytes: number }[]> {
-  const result = await s3.send(
-    new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, MaxKeys: maxKeys }),
-  );
-
-  return (result.Contents ?? []).map((item) => ({
-    key: item.Key ?? '',
-    sizeBytes: item.Size ?? 0,
-  }));
-}
-
 /** Monta a URL pública de leitura de um objeto em bucket público de mídia. */
 export function buildPublicAssetUrl(bucket: string, objectKey: string): string {
   const base = (
@@ -558,17 +542,4 @@ export function buildPublicAssetUrl(bucket: string, objectKey: string): string {
   ).replace(/\/+$/, '');
 
   return `${base}/${bucket}/${objectKey}`;
-}
-
-/** Verifica se o storage está acessível. Usado pelo healthcheck. */
-export async function pingStorage(): Promise<{ ok: boolean; message: string }> {
-  try {
-    await s3.send(new ListObjectsV2Command({ Bucket: BUCKETS.submissions(), MaxKeys: 1 }));
-    return { ok: true, message: 'Storage acessível.' };
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : 'Falha ao acessar o storage.',
-    };
-  }
 }
