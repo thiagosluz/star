@@ -21,6 +21,8 @@
  *  viajar nele.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { cache } from 'react';
+
 import {
   getPublicEvent,
   type PublicEventDetail,
@@ -29,6 +31,7 @@ import {
   applyOnlineRoomVisibility,
   resolveOnlineRoomViewer,
 } from '@/lib/events/online-room-service';
+import { isWallClockNow } from '@/domain/cache/public-cache-rules';
 
 export interface PublicEventView {
   /** A projeção com `onlineUrl` zerado onde o visitante não tem lugar. */
@@ -37,11 +40,30 @@ export interface PublicEventView {
   byActivity: ReadonlyMap<string, string>;
 }
 
+const loadAnonymousPublicEventView = cache(
+  async (tenantId: string, eventSlug: string): Promise<PublicEventView | null> => {
+    const publicEvent = await getPublicEvent(tenantId, eventSlug);
+    if (!publicEvent) return null;
+
+    const viewer = await resolveOnlineRoomViewer({
+      tenantId,
+      eventId: publicEvent.id,
+      userId: null,
+    });
+
+    return applyOnlineRoomVisibility(publicEvent, viewer);
+  },
+);
+
 /**
  * A leitura pública com a visibilidade da sala aplicada.
  *
  * `now` é opcional e só a API o injeta — o mesmo instante do `generatedAt` da
  * resposta. A página não o passa e continua usando o relógio do processo.
+ *
+ * Para visitantes anônimos em relógio real, `React.cache` evita que
+ * `generateMetadata` e `PublicEventPage` executem a projeção duas vezes na
+ * mesma requisição (FASE 116).
  */
 export async function getPublicEventView(input: {
   tenantId: string;
@@ -49,6 +71,10 @@ export async function getPublicEventView(input: {
   userId: string | null;
   now?: Date;
 }): Promise<PublicEventView | null> {
+  if (input.userId === null && isWallClockNow(input.now)) {
+    return loadAnonymousPublicEventView(input.tenantId, input.eventSlug);
+  }
+
   const publicEvent = await getPublicEvent(
     input.tenantId,
     input.eventSlug,

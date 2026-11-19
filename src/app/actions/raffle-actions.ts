@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 import { RAFFLE_SCOPES, type RaffleScope } from '@/domain/raffles/raffle-rules';
 import {
   cancelRaffle,
@@ -547,6 +548,7 @@ export async function drawRoundAction(
   );
   revalidatePath(eventPath);
   // O telão e o resultado público leem a apuração: apurar é publicar para eles.
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   if (!drawn.ok) {
@@ -705,6 +707,7 @@ export async function reversePrizeDeliveryAction(
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/sorteios`));
   // A publicação mostra a retirada do prêmio: desfazer a entrega muda o que o
   // público vê no resultado publicado.
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/eventos`), 'layout');
 
   return result.ok
@@ -757,6 +760,7 @@ export async function setRaffleVisibilityAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
   // A página pública do evento mostra o resultado: invalidar é parte de publicar.
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'));
   revalidatePath(eventPath);
 

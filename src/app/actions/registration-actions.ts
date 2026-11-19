@@ -16,6 +16,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { revalidatePath } from 'next/cache';
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
@@ -230,6 +231,7 @@ export async function registerForActivityAction(
   }
 
   // A página precisa refletir o novo contador de vagas.
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(
     tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`),
     'page',
@@ -466,6 +468,7 @@ export async function registerForEventAction(
 
   // A programação inteira muda de estado para esta pessoa: as atividades abertas
   // passam a ter a inscrição dela, e a página do evento mostra o crachá.
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
   revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
 
@@ -681,6 +684,7 @@ export async function completeEventRegistrationDataAction(
     return { ok: false, code: outcome.code, message: outcome.message, values };
   }
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}/inscricao`), 'page');
 
@@ -752,6 +756,7 @@ export async function cancelRegistrationAction(
     return { ok: false, code: outcome.code, message: outcome.message };
   }
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'page');
   revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
 
@@ -845,6 +850,7 @@ export async function eraseMyFormResponsesAction(
   }
 
   revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
 
   return {
@@ -913,6 +919,7 @@ export async function acceptPromotionAction(
   }
 
   revalidatePath(tenantPath(data.tenantSlug, '/minhas-inscricoes'), 'page');
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
 
   return {

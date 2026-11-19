@@ -104,14 +104,34 @@ function respond(
   return new Response(body, { status, headers });
 }
 
-/** O 200/304 com o envelope da casa, a ordem canônica e o ETag. */
-export function eventApiSuccessResponse(input: {
-  request: Request;
+export interface CachedEventApiEntry {
+  etag: string;
+  bodyJson: string;
+}
+
+/** Constrói o par `{ etag, bodyJson }` pronto para cache em Redis (FASE 116). */
+export function buildEventApiCachedEntry(input: {
   resource: ApiResource;
   data: unknown;
   generatedAt: Date;
-}): Response {
+}): CachedEventApiEntry {
   const etag = computeEventApiEtag(input.resource, input.data);
+  const envelope = buildApiEnvelope({
+    resource: input.resource,
+    data: input.data,
+    generatedAt: input.generatedAt,
+    etag,
+  });
+
+  return { etag, bodyJson: JSON.stringify(envelope) };
+}
+
+/** Responde 200/304/HEAD a partir de um par `{ etag, bodyJson }` já calculado. */
+export function eventApiCachedSuccessResponse(input: {
+  request: Request;
+  entry: CachedEventApiEntry;
+}): Response {
+  const { etag, bodyJson } = input.entry;
 
   const headers = baseHeaders();
   headers.set('Cache-Control', 'public, max-age=60');
@@ -126,16 +146,20 @@ export function eventApiSuccessResponse(input: {
     return respond(input.request, 304, null, headers);
   }
 
-  const envelope = buildApiEnvelope({
-    resource: input.resource,
-    data: input.data,
-    generatedAt: input.generatedAt,
-    etag,
-  });
-
   headers.set('Content-Type', 'application/json; charset=utf-8');
 
-  return respond(input.request, 200, JSON.stringify(envelope), headers);
+  return respond(input.request, 200, bodyJson, headers);
+}
+
+/** O 200/304 com o envelope da casa, a ordem canônica e o ETag. */
+export function eventApiSuccessResponse(input: {
+  request: Request;
+  resource: ApiResource;
+  data: unknown;
+  generatedAt: Date;
+}): Response {
+  const entry = buildEventApiCachedEntry(input);
+  return eventApiCachedSuccessResponse({ request: input.request, entry });
 }
 
 /** A resposta de erro: envelope `{ code, message }`, `no-store`, CORS. */

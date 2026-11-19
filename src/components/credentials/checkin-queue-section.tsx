@@ -8,6 +8,7 @@ import {
   formatQueueTruncationNotice,
   type CheckinQueueStatusFilter,
 } from '@/domain/events/checkin-console-rules';
+import { resolveCheckinInitialQueueLimit } from '@/domain/cache/public-cache-rules';
 import { Alert } from '@/components/ui';
 
 function formatTimeInEventZone(date: Date, timeZone: string): string {
@@ -63,7 +64,7 @@ export async function CheckinQueueSection({
   const queue = await listCheckinQueue(tenantId, eventId, {
     query,
     statusFilter,
-    limit: 60,
+    limit: resolveCheckinInitialQueueLimit(query),
     deduplicateByUser: true,
   });
 

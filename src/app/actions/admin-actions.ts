@@ -33,6 +33,7 @@ import {
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 import { DEFAULT_RUBRIC } from '@/domain/review/review-rules';
 import { buildRubricFromRows } from '@/domain/review/review-rules';
 import { CARD_RARITIES, CARD_TRIGGERS, TASK_KINDS, XP_SOURCE_KINDS } from '@/domain/gamification/types';
@@ -200,6 +201,7 @@ export async function saveEventAction(
     registrationRequiresMembership: formData.get('registrationRequiresMembership') === 'on',
   });
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug, includeDirectory: true });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/administracao/eventos'));
 
   /**
@@ -320,6 +322,7 @@ export async function deleteRoomAction(
     roomId: parsed.data.roomId,
   });
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
 
   return result.ok
@@ -468,8 +471,10 @@ export async function saveActivityAction(
     confirmationInstructions: nullable(formData.get('confirmationInstructions')),
   });
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
   // A programação pública e a página do evento mudam quando a atividade muda.
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   if (!result.ok) {
@@ -551,6 +556,7 @@ export async function confirmRegistrationAction(
       `/administracao/eventos/${parsed.data.eventId}/confirmacoes`,
     ),
   );
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
 
   if (!result.ok) {
@@ -634,6 +640,7 @@ export async function resolveConfirmationItemAction(
   revalidatePath(
     tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/confirmacoes`),
   );
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
 
   if (!result.ok) {
@@ -695,7 +702,9 @@ export async function deleteActivityAction(
     activityId: parsed.data.activityId,
   });
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}`));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return result.ok

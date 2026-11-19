@@ -57,6 +57,18 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Validação pública de certificado não lê sessão nem cookies: pode ser
+        // servida por CDN (`s-maxage`) mantendo `max-age=0` no navegador para
+        // refletir revogação imediata ao recarregar (FASE 116).
+        source: '/validar/:code',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, s-maxage=30, stale-while-revalidate=60',
+          },
+        ],
+      },
     ];
   },
 };

@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 115** (**F56 a F115 entregues**)
-Testes ................. **4938** (Vitest: unit + integração, 297 arquivos) + **564** (Playwright E2E) + 1 skip
-ADRs ................... 468 (numeração GLOBAL e sequencial — a próxima é ADR-469)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 116** (**F56 a F116 entregues**)
+Testes ................. **4946** (Vitest: unit + integração, 299 arquivos) + **565** (Playwright E2E) + 1 skip
+ADRs ................... 471 (numeração GLOBAL e sequencial — a próxima é ADR-472)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 63 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor, identity_audit_logs e cookie_consents — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -83,7 +83,7 @@ desapareceu, e o arquivo continuou válido, só menor do que deveria). Por isso 
 estado **confere o tamanho no fim** (`(Get-Item AGENTS.md).Length`) e, se passar do teto, a
 primeira opção é **mover o próximo bloco para o histórico**, não condensar: o mais antigo ainda
 na tabela da §9 vai para [`docs/fases-historico.md`](docs/fases-historico.md), que guarda as
-fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111), **96 a 97** (FASE 113), **98 a 99** (FASE 114) e **100** (FASE 115),
+fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111), **96 a 97** (FASE 113), **98 a 99** (FASE 114) e **100** (FASE 115) e **101** (FASE 116),
 movidas como estavam — o cabeçalho de lá registra cada movimento e o byte count —
 e a **§9 carrega a tabela corrente**
 (as fases recentes) + o ponteiro para o histórico. Condensar **apaga detalhe**; mover
@@ -113,7 +113,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4938 testes passando (297 arquivos)
+npm test              # esperado: 4946 testes passando (299 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -128,7 +128,7 @@ npm run db:verify:pooling     # esperado: "Pooling íntegro: contexto por transa
 # E2E exige o container rodando o código NOVO:
 docker compose --profile app up -d --build web worker
 docker images | grep eventflow/web        # conferir que a imagem é recente
-npm run test:e2e      # esperado: **564 passando + 1 skip** (565 casos); medido na F115: +1 cenário novo (em f115);
+npm run test:e2e      # esperado: **565 passando + 1 skip** (566 casos); medido na F116: +1 cenário novo (em f116);
                       # nenhum vermelho
 ```
 
@@ -706,14 +706,13 @@ tests/{unit,integration,e2e}
 
 ## 9. Estado por fase e próximos passos
 
-> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111), **96 a 97** (FASE 113), **98 a 99** (FASE 114) e **100** (FASE 115) foram movidas
+> As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111), **96 a 97** (FASE 113), **98 a 99** (FASE 114), **100** (FASE 115) e **101** (FASE 116) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**101 a 115**).
+> e no `README.md`. A tabela abaixo é a corrente (**102 a 116**).
 
 | Fase | Tema | Situação |
 |---|---|---|
-| 101 | **Correção empírica da reatividade, interceptação real de links e useOptimistic estável** — restauração do listener na fase de captura (`capture: true`) com guardas granulares (`data-no-progress`, `role="button"`, URLs iguais descartadas) e componente `<AppLink>` com prop `onNavigate` nativa do Next.js 16 para a barra global (ADR-423); `CheckinQueue` adota transição assíncrona real (`startTransition(async () => ...)`), mantendo o feedback "Credenciando agora…" e desabilitando o botão contra duplo clique até resposta do servidor (ADR-424); e `ComiteFilterBar` verifica idempotência de URL antes de ativar a barra de progresso (ADR-425). 5 testes Vitest + 3 E2E. ADR-423 … 425 | ✅ |
 | 102 | **Consolidação de progresso global, check-in idiomático React 19 e filtros operacionais reativos** — guarda contra mesma URL em `AppLink` e remoção da barra duplicada em `RouteProgress`, transformando-o em âncora semântica de acessibilidade (`sr-only`) com escuta a eventos globais (ADR-426); `QueueRow` refatorado para uso 100% idiomático de `useActionState` conectado ao `<form action={formAction}>`, com `setOptimisticInside` síncrono no payload de transição, bloqueio estrito contra duplo clique via `pending || isPending` e rollback seguro (ADR-427); `key={filterKey}` realocado da casca do `<Suspense>` para `<ComiteResults>` no comitê sem flash de esqueleto, e filtros operacionais reativos com debounce, atalho `/` e `Escape` no balcão e participantes preservando No-JS (ADR-428). 7 testes Vitest + 3 E2E. ADR-426 … 428 | ✅ |
 | 103 | **UX operacional: micro-interações otimistas, streaming de dados, teclado power-user e proteção de rascunho** — **`FavoriteButton` 100% otimista no React 19** (`useOptimistic` + `useTransition` em 0ms com progressive enhancement nativo do `<form action={toggleFavoriteAction}>` preservado para No-JS/`javaScriptEnabled: false`); **streaming e Suspense granular em `/participantes`** (`ParticipantResults` sob `<Suspense key={filterKey} fallback={<ParticipantSkeleton />}>`, mantendo `PageHeader` e `ParticipantFilterBar` reativos); **fila de confirmação reativa e otimista** (`ConfirmationItemsChecklist` com `useOptimistic` e `resolveConfirmationItemAction` instantâneo sem flash de página inteira); **expansão canônica do `AppLink`** (`Breadcrumbs` e link de volta do `PageHeader` preservando o contrato de Server Component com 0 hooks); **navegação operacional por teclado** (`ArrowDown`/`ArrowUp` + `Enter`) em `CheckinQueue` e `ParticipantDirectory`; **proteção de rascunho em editores críticos** (`useUnsavedChanges` no editor visual de certificados contra perda acidental por recarga ou clique de link). **6 testes Vitest** novos + **3 cenários E2E**; E2E **527 passando + 1 skip** (528 casos). ADR-429/430/431 | ✅ |
 | 104 | **Refinamento de UX: Feedback de Rollback Otimista, Auto-scroll Operacional por Teclado, Empty States Acionáveis, Limpeza Rápida de Filtros e Expansão de Proteção de Rascunhos** — tratamento explícito de falhas em mutações otimistas com rollback perceptível e anúncio acessível (`aria-live="polite"` e `role="alert"`) em `FavoriteButton` e `ConfirmationItemsChecklist`, com preservação de `NEXT_REDIRECT` para redirecionamento anônimo legítimo (ADR-432); auto-scroll suave (`scrollIntoView`) e região viva de acessibilidade na navegação por teclado (`ArrowDown`/`ArrowUp`) no credenciamento (`CheckinQueue`) e diretório (`ParticipantDirectory`) sem salto visual (ADR-433); empty states acionáveis com restauração rápida de filtros em 1 clique no diretório e confirmações (ADR-434); guardião de rascunhos (`useUnsavedChanges`) expandido para `ProposalForm` e `SubmissionDraftForm` contra perda acidental; e botão de limpeza instantânea `(×)` com cancelamento de debounce em `ParticipantFilterBar`. **7 testes Vitest** novos + **3 cenários E2E**; E2E **530 passando + 1 skip** (531 casos). ADR-432 … 434 | ✅ |
@@ -728,6 +727,7 @@ tests/{unit,integration,e2e}
 | 113 | **Autocredenciamento e Autocheck-in por QR Code com Segurança Antifraude** — tabela `self_checkin_points` sob RLS + índices parciais para pontos ativos (`ADR-460`); regras puras (`self-checkin-rules.ts`), TOTP HMAC-SHA256 60s e PIN (`self-checkin-totp.ts`), extensão de `checkIn` (`SELF_DECLARED`, `ADR-462`), geofencing Haversine + `maxAccuracyMeters`, anti-ubiquidade (`CONCURRENT_ACTIVITY_OPEN`), cooldown de saída e IP LGPD (`self-checkin-service.ts`, `self-checkin-actions.ts`); cartaz A4 PDF/SVG/PNG (`/api/t/[tenantSlug]/credenciamento/cartaz`), Telão dinâmico (`/credenciamento/telao/[pointId]` + `/api/...`), portal móvel (`/presenca/[token]`) e painel em `/credenciamento` (`ADR-461`). **14 Vitest** + **4 E2E**; Vitest **4920** (294 arquivos); E2E **561 passando + 1 skip**. ADR-460 … 462 | ✅ |
 | 114 | **Ergonomia de Balcão, Abas por URL e Refinos de App Router no Credenciamento** — separação em abas reais por query (`?aba=balcao` vs `?aba=autocredenciamento`), grid desktop `lg:grid-cols-12`, `<CheckinQueueSection>` sob `<Suspense>` com filtro `statusFilter` (`Todos`/`Aguardando`/`Presentes`), aviso de truncamento e consolidação em 1 transação `withTenant` sem 2º `getRequestContext()` (`ADR-463`); `monitor-feedback` acima de `<ScanGate>`, saída imediata pontual (`modeInputRef`) sem corromper `localStorage`, trava `scanInFlightRef` e `ConfirmSubmitButton` no fechamento em massa (`ADR-464`); política antifraude recolhível (`<details>`), filtro de atividades, `Copiar link`, `Cartaz com PIN`, exclusão com `<ConfirmDialog>` (`deleteSelfCheckinPoint`/`deleteSelfCheckinPointAction`), correção de `lastActionKind` e fuso explícito em `SelfCheckinManager` (`ADR-465`). **8 Vitest** + **2 E2E**; Vitest **4929** (295 arquivos); E2E **563 passando + 1 skip**. ADR-463 … 465 | ✅ |
 | 115 | **Sincronização de Contexto (Portaria × Atividade), Registro Manual Contextual e Fila Escalável no Credenciamento** — consolidação opt-in de 1 card por participante (`deduplicateByUser: true`) ordenado por `user.name ASC` com mapas pré-computados `registrationIdByContext` e `openSessionsByContext` (`ADR-466`); sincronização instantânea entre `MonitorConsole` e `CheckinQueue` via `CHECKIN_CONTEXT_EVENT` (`queue-context-banner` + selos de vínculo) e suporte a `contextKind`/`targetActivityId` em `checkIn`/`checkOut` (`attendance-service.ts`, `attendance-actions.ts`) para registrar chegada na Portaria ou frequência em atividades abertas/restritas (`ADR-467`); e contenção de scroll vertical (`max-h-[520px] overflow-y-auto`) na fila manual (`ADR-468`). **9 Vitest** (`6` unit. + `3` integr.) + **1 E2E**; Vitest **4938** (297 arquivos); E2E **564 passando + 1 skip**. ADR-466 … 468 | ✅ |
+| 116 | **Cache de Leitura Pública, API v1 no Redis e Otimização de Payload/Streaming no Balcão** — regras puras em `public-cache-rules.ts` + cache JSON distribuído em Redis com invalidação O(1) por versão (`INCR`) e falha aberta (`redis-json-cache.ts`, `public-read-cache.ts`), `React.cache` + `Promise.all` na página pública (sem vazar sessão/`onlineUrl`) e `Cache-Control` CDN em `/validar/:code` sem cachear `NOT_FOUND` (`ADR-469`); cache de envelope + `ETag` no Redis pós-portas de segurança na API v1 (`event-api-route-handlers.ts`, `6,1×` vazão, `ADR-470`); e streaming de `CheckinDeskSummarySection` em `<Suspense>` + janela inicial de `25` cards sem busca em `/credenciamento` (`-35%` HTML, `ADR-471`). **8 Vitest** (`6` unit. + `2` integr.) + **1 E2E**; Vitest **4946** (299 arquivos); E2E **565 passando + 1 skip**. ADR-469 … 471 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
@@ -741,7 +741,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 107 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-115-contexto-sincronizado-e-fila-escalavel.md`; antes, F114, F113, F112, F111, F110, F97, ..., F68; a
+   fase entregue** (`docs/fase-116-cache-leitura-publica-api-v1-e-balcao.md`; antes, F115, F114, F113, F112, F111, F110, F97, ..., F68; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).

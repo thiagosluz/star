@@ -56,6 +56,78 @@ export const dynamic = 'force-dynamic';
  *      `getRequestContext()` uma segunda vez nem duplicar a leitura de atividades.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+function CheckinDeskSummarySkeleton() {
+  return (
+    <section
+      aria-label="Resumo operacional"
+      aria-busy="true"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface-low px-4 py-3 text-xs"
+    >
+      <div className="h-4 w-72 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+    </section>
+  );
+}
+
+async function CheckinDeskSummarySection({
+  tenantId,
+  tenantSlug,
+  eventId,
+  activeTab,
+  selfCheckinEnabled,
+  activePointsCount,
+}: {
+  tenantId: string;
+  tenantSlug: string;
+  eventId: string;
+  activeTab: 'balcao' | 'autocredenciamento';
+  selfCheckinEnabled: boolean;
+  activePointsCount: number;
+}) {
+  const deskSummary = await getCheckinDeskSummary(tenantId, eventId);
+
+  return (
+    <section
+      aria-label="Resumo operacional"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface-low px-4 py-3 text-xs"
+      data-testid="checkin-desk-summary"
+    >
+      <div className="flex flex-wrap items-center gap-4">
+        <div>
+          <span className="text-muted-foreground">Inscrições elegíveis: </span>
+          <strong className="font-semibold text-foreground">
+            {deskSummary.confirmedRegistrations}
+          </strong>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Sessões abertas agora: </span>
+          <strong className="font-semibold text-foreground">
+            {deskSummary.insideNowCount}
+          </strong>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">QR autoatendimento:</span>
+          <Badge tone={selfCheckinEnabled ? 'success' : 'neutral'}>
+            {selfCheckinEnabled ? `${activePointsCount} ativo(s)` : 'Desativado'}
+          </Badge>
+        </div>
+      </div>
+
+      {activeTab === 'balcao' ? (
+        <AppLink
+          href={buildCheckinHref({
+            tenantSlug,
+            eventId,
+            tab: 'autocredenciamento',
+          })}
+          className="font-medium text-primary hover:underline"
+        >
+          Configurar QR Codes e cartazes →
+        </AppLink>
+      ) : null}
+    </section>
+  );
+}
+
 export default async function CheckinPage({
   params,
   searchParams,
@@ -123,13 +195,12 @@ export default async function CheckinPage({
         eventSelection,
         activities: [],
         nowMs: 0,
-        deskSummary: { confirmedRegistrations: 0, insideNowCount: 0 },
         selfCheckinSummary: { enabled: false, activePointsCount: 0, hasCoordinates: false },
         selfCheckinData: null,
       };
     }
 
-    const [activities, clock, deskSummary] = await Promise.all([
+    const [activities, clock, selfCheckinSummary] = await Promise.all([
       tx.activity.findMany({
         where: { tenantId, eventId: selectedEventId, deletedAt: null, status: { not: 'CANCELED' } },
         orderBy: { startsAt: 'asc' },
@@ -146,7 +217,9 @@ export default async function CheckinPage({
         },
       }),
       tx.$queryRaw<{ now: Date }[]>`SELECT now() AS now`,
-      getCheckinDeskSummary(tenantId, selectedEventId, tx),
+      activeTab === 'balcao'
+        ? getSelfCheckinStatusSummary(tenantId, selectedEventId, tx)
+        : Promise.resolve({ enabled: false, activePointsCount: 0, hasCoordinates: false }),
     ]);
 
     const nowDate = clock[0]?.now ?? new Date(0);
@@ -166,7 +239,6 @@ export default async function CheckinPage({
         eventSelection,
         activities,
         nowMs,
-        deskSummary,
         selfCheckinSummary: {
           enabled: selfCheckinData?.policy.enabled ?? false,
           activePointsCount,
@@ -177,40 +249,43 @@ export default async function CheckinPage({
       };
     }
 
-    const selfCheckinSummary = await getSelfCheckinStatusSummary(tenantId, selectedEventId, tx);
-
     return {
       events,
       eventSelection,
       activities,
       nowMs,
-      deskSummary,
       selfCheckinSummary,
       selfCheckinData: null,
     };
   });
 
-  const { events, eventSelection, activities, nowMs, deskSummary, selfCheckinSummary, selfCheckinData } =
+  const { events, eventSelection, activities, nowMs, selfCheckinSummary, selfCheckinData } =
     bootstrap;
   const { selectedEventId, selectedEvent } = eventSelection;
   const eventTimeZone = selectedEvent?.timezone ?? 'America/Sao_Paulo';
 
-  const monitorActivities: MonitorActivity[] = activities.map((activity) => ({
-    id: activity.id,
-    title: activity.title,
-    startsAtIso: activity.startsAt.toISOString(),
-    endsAtIso: activity.endsAt.toISOString(),
-    roomName: activity.room?.name ?? null,
-    isNow: activity.startsAt.getTime() <= nowMs && activity.endsAt.getTime() >= nowMs,
-    checkInEnabled: activity.checkInEnabled,
-  }));
+  const monitorActivities: MonitorActivity[] =
+    activeTab === 'balcao'
+      ? activities.map((activity) => ({
+          id: activity.id,
+          title: activity.title,
+          startsAtIso: activity.startsAt.toISOString(),
+          endsAtIso: activity.endsAt.toISOString(),
+          roomName: activity.room?.name ?? null,
+          isNow: activity.startsAt.getTime() <= nowMs && activity.endsAt.getTime() >= nowMs,
+          checkInEnabled: activity.checkInEnabled,
+        }))
+      : [];
 
-  const queueActivities = activities.map((activity) => ({
-    id: activity.id,
-    title: activity.title,
-    requiresRegistration: activity.requiresRegistration,
-    isNow: activity.startsAt.getTime() <= nowMs && activity.endsAt.getTime() >= nowMs,
-  }));
+  const queueActivities =
+    activeTab === 'balcao'
+      ? activities.map((activity) => ({
+          id: activity.id,
+          title: activity.title,
+          requiresRegistration: activity.requiresRegistration,
+          isNow: activity.startsAt.getTime() <= nowMs && activity.endsAt.getTime() >= nowMs,
+        }))
+      : [];
 
   const canManageBadges = Boolean(
     can(principal, PERMISSIONS.ATTENDANCE_MANAGE, { scope: 'TENANT' }) ||
@@ -270,47 +345,16 @@ export default async function CheckinPage({
                 activePointsCount={selfCheckinSummary.activePointsCount}
               />
 
-              <section
-                aria-label="Resumo operacional"
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface-low px-4 py-3 text-xs"
-                data-testid="checkin-desk-summary"
-              >
-                <div className="flex flex-wrap items-center gap-4">
-                  <div>
-                    <span className="text-muted-foreground">Inscrições elegíveis: </span>
-                    <strong className="font-semibold text-foreground">
-                      {deskSummary.confirmedRegistrations}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Sessões abertas agora: </span>
-                    <strong className="font-semibold text-foreground">
-                      {deskSummary.insideNowCount}
-                    </strong>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">QR autoatendimento:</span>
-                    <Badge tone={selfCheckinSummary.enabled ? 'success' : 'neutral'}>
-                      {selfCheckinSummary.enabled
-                        ? `${selfCheckinSummary.activePointsCount} ativo(s)`
-                        : 'Desativado'}
-                    </Badge>
-                  </div>
-                </div>
-
-                {activeTab === 'balcao' ? (
-                  <AppLink
-                    href={buildCheckinHref({
-                      tenantSlug,
-                      eventId: selectedEventId,
-                      tab: 'autocredenciamento',
-                    })}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    Configurar QR Codes e cartazes →
-                  </AppLink>
-                ) : null}
-              </section>
+              <Suspense fallback={<CheckinDeskSummarySkeleton />}>
+                <CheckinDeskSummarySection
+                  tenantId={tenantId}
+                  tenantSlug={tenantSlug}
+                  eventId={selectedEventId}
+                  activeTab={activeTab}
+                  selfCheckinEnabled={selfCheckinSummary.enabled}
+                  activePointsCount={selfCheckinSummary.activePointsCount}
+                />
+              </Suspense>
 
               {activeTab === 'autocredenciamento' && selfCheckinData ? (
                 <SelfCheckinManager

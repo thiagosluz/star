@@ -58,11 +58,22 @@ import { loadEventApiProjections } from '@/lib/api/event-api-service';
 import { extractBearerKey } from '@/lib/api/event-api-key-vault';
 import { verifyEventApiKey } from '@/lib/api/event-api-key-service';
 import {
+  EVENT_API_CACHE_TTL_SECONDS,
+  isWallClockNow,
+} from '@/domain/cache/public-cache-rules';
+import {
+  getVersionedJsonCache,
+  setVersionedJsonCache,
+  type RedisCacheClientLike,
+} from '@/lib/cache/redis-json-cache';
+import {
   EVENT_API_ALLOW,
   EVENT_API_RATE_LIMIT,
+  buildEventApiCachedEntry,
+  eventApiCachedSuccessResponse,
   eventApiErrorResponse,
   eventApiPreflightResponse,
-  eventApiSuccessResponse,
+  type CachedEventApiEntry,
 } from '@/lib/api/event-api-http';
 import { logger } from '@/lib/observability/logger';
 
@@ -80,6 +91,10 @@ export interface EventApiRouteDeps {
   rateLimit?: RateLimitStorage;
   /** Injetável para um teste determinístico de `generatedAt`. */
   now?: () => Date;
+  /** Injetável para testes determinísticos do cache de envelope + ETag (FASE 116). */
+  cacheClient?: RedisCacheClientLike;
+  /** Força o uso do cache mesmo sob Vitest quando `cacheClient` é injetado. */
+  forceCache?: boolean;
 }
 
 export interface EventApiRouteHandlers {
@@ -209,6 +224,21 @@ export function createEventApiRouteHandlers(
       }
 
       const generatedAt = now();
+      const cacheOpts = { client: deps.cacheClient, force: deps.forceCache };
+      const useProjectionCache = Boolean(deps.forceCache) || isWallClockNow(generatedAt);
+      const cacheSuffix = `${eventSlug}:${resource}`;
+
+      if (useProjectionCache) {
+        const cached = await getVersionedJsonCache<CachedEventApiEntry>(
+          'api-v1',
+          tenant.tenantId,
+          cacheSuffix,
+          cacheOpts,
+        );
+        if (cached) {
+          return eventApiCachedSuccessResponse({ request, entry: cached });
+        }
+      }
 
       const projections = await loadEventApiProjections({
         tenant: { tenantId: tenant.tenantId, slug: tenant.slug, name: tenant.name },
@@ -238,12 +268,24 @@ export function createEventApiRouteHandlers(
         });
       }
 
-      return eventApiSuccessResponse({
-        request,
+      const entry = buildEventApiCachedEntry({
         resource,
         data: projections.projections[resource],
         generatedAt: projections.generatedAt,
       });
+
+      if (useProjectionCache) {
+        await setVersionedJsonCache(
+          'api-v1',
+          tenant.tenantId,
+          cacheSuffix,
+          entry,
+          EVENT_API_CACHE_TTL_SECONDS,
+          cacheOpts,
+        );
+      }
+
+      return eventApiCachedSuccessResponse({ request, entry });
     } catch (error) {
       /**
        * Fail-closed: qualquer exceção não prevista (inclusive `ApiContractError`

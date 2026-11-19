@@ -33,6 +33,9 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { PUBLIC_EVENT_CACHE_TTL_SECONDS, isWallClockNow } from '@/domain/cache/public-cache-rules';
+import { getOrSetVersionedPublicCache } from '@/lib/cache/public-read-cache';
+
 import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
@@ -463,47 +466,64 @@ export async function listPublicCalls(input: {
   eventId: string;
   now: Date;
 }): Promise<CallResult<{ calls: CallView[] }>> {
-  try {
-    return await withTenant(input.tenantId, async (tx) => {
-      const [rows, timeZone] = await Promise.all([
-        tx.callForProposals.findMany({
-          where: { tenantId: input.tenantId, eventId: input.eventId, isPublished: true, deletedAt: null },
-          orderBy: [{ closesAt: 'asc' }, { title: 'asc' }],
-          take: CALL_LIST_LIMIT,
-          select: CALL_SELECT,
-        }),
-        eventTimeZone(tx, input.tenantId, input.eventId),
-      ]);
-
-      const counts = await countProposals(
-        tx,
-        input.tenantId,
-        rows.map((row) => row.id),
-        /** A vitrine não mostra trabalho em andamento — não paga a consulta. */
-        { inProgress: false },
-      );
-
-      if (!timeZone) {
-        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
-      }
-
-      return {
-        ok: true as const,
-        calls: rows.map((row) =>
-          toView({
-            row,
-            now: input.now,
-            timeZone,
-            counts: counts.get(row.id) ?? emptyCounts(false),
+  const loader = async (): Promise<CallResult<{ calls: CallView[] }>> => {
+    try {
+      return await withTenant(input.tenantId, async (tx) => {
+        const [rows, timeZone] = await Promise.all([
+          tx.callForProposals.findMany({
+            where: { tenantId: input.tenantId, eventId: input.eventId, isPublished: true, deletedAt: null },
+            orderBy: [{ closesAt: 'asc' }, { title: 'asc' }],
+            take: CALL_LIST_LIMIT,
+            select: CALL_SELECT,
           }),
-        ),
-      };
-    });
-  } catch (error) {
-    logger.error(`[proposals] falha ao listar chamadas públicas: ${errorMessage(error)}`);
+          eventTimeZone(tx, input.tenantId, input.eventId),
+        ]);
 
-    return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar as chamadas.' };
+        const counts = await countProposals(
+          tx,
+          input.tenantId,
+          rows.map((row) => row.id),
+          /** A vitrine não mostra trabalho em andamento — não paga a consulta. */
+          { inProgress: false },
+        );
+
+        if (!timeZone) {
+          return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
+        }
+
+        return {
+          ok: true as const,
+          calls: rows.map((row) =>
+            toView({
+              row,
+              now: input.now,
+              timeZone,
+              counts: counts.get(row.id) ?? emptyCounts(false),
+            }),
+          ),
+        };
+      });
+    } catch (error) {
+      logger.error(`[proposals] falha ao listar chamadas públicas: ${errorMessage(error)}`);
+
+      return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar as chamadas.' };
+    }
+  };
+
+  if (!isWallClockNow(input.now)) {
+    return loader();
   }
+
+  const { value } = await getOrSetVersionedPublicCache({
+    namespace: 'public-event',
+    scopeId: input.tenantId,
+    suffix: `calls:${input.eventId}`,
+    ttlSeconds: PUBLIC_EVENT_CACHE_TTL_SECONDS,
+    loader,
+    shouldCache: (res) => res.ok,
+  });
+
+  return value;
 }
 
 /**

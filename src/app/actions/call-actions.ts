@@ -38,6 +38,7 @@ import { z } from 'zod';
 import { guardAction, guardSelfServiceAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 import { getPublicEvent } from '@/lib/events/event-repository';
 import { isValidTimeZone, zonedWallTimeToInstant } from '@/domain/events/scheduling-rules';
 import {
@@ -245,7 +246,7 @@ export async function saveCallAction(
     };
   }
 
-  revalidateCallPaths({
+  await revalidateCallPaths({
     tenantSlug: data.tenantSlug,
     eventSlug: data.eventSlug,
     eventId: data.eventId,
@@ -303,7 +304,7 @@ export async function setCallPublishedAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateCallPaths({
+  await revalidateCallPaths({
     tenantSlug: parsed.data.tenantSlug,
     eventSlug: parsed.data.eventSlug,
     eventId: parsed.data.eventId,
@@ -350,7 +351,7 @@ export async function deleteCallAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateCallPaths({
+  await revalidateCallPaths({
     tenantSlug: parsed.data.tenantSlug,
     eventSlug: parsed.data.eventSlug,
     eventId: parsed.data.eventId,
@@ -367,12 +368,16 @@ export async function deleteCallAction(
  * mas deixaria o caminho da call page implícito — e um dia alguém move a seção de
  * resultado para fora do layout sem perceber que a revalidação parou de alcançá-la.
  */
-function revalidateCallPaths(input: {
+async function revalidateCallPaths(input: {
   tenantSlug: string;
   eventSlug: string;
   eventId: string;
   callSlug?: string;
-}): void {
+}): Promise<void> {
+  await invalidatePublicEventCacheBySlug({
+    tenantSlug: input.tenantSlug,
+    eventSlug: input.eventSlug,
+  });
   revalidatePath(tenantPath(input.tenantSlug, `/administracao/eventos/${input.eventId}/chamadas`), 'page');
 
   if (input.callSlug) {
@@ -498,7 +503,7 @@ async function runResultAction(input: {
    * evento vindo do cliente revalida o caminho errado — e ninguém percebe, porque a
    * revalidação não falha.
    */
-  revalidateCallPaths({
+  await revalidateCallPaths({
     tenantSlug: parsed.data.tenantSlug,
     eventId: result.eventId,
     eventSlug: result.eventSlug,
@@ -693,6 +698,7 @@ export async function submitProposalAction(
     };
   }
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
 
   /**
@@ -855,6 +861,7 @@ export async function acceptProposalAction(
    *  estado "já decidida" quando a página é re-renderizada com o status novo. Só a
    *  primeira metade deixaria o silêncio de volta na próxima navegação.
    */
+  await invalidatePublicEventCacheBySlug({ tenantSlug: data.tenantSlug, eventSlug: data.eventSlug });
   revalidatePath(tenantPath(data.tenantSlug, `/eventos/${data.eventSlug}`), 'layout');
 
   /**

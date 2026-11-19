@@ -23,6 +23,7 @@
 import { adminPrisma } from '@/lib/db/admin-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
+import { invalidatePublicEventCache } from '@/lib/cache/public-read-cache';
 import {
   HIDDEN_REASON_MAX_LENGTH,
   PROFILE_REPORT_CATEGORIES,
@@ -309,6 +310,16 @@ export async function decideReport(
       justificativa: { from: null, to: note },
     },
   });
+
+  if (input.action === 'HIDE') {
+    const memberships = await adminPrisma.userTenantProfile.findMany({
+      where: { userId: report.reportedUserId },
+      select: { tenantId: true },
+    });
+    await Promise.all(
+      memberships.map((m) => invalidatePublicEventCache({ tenantId: m.tenantId })),
+    );
+  }
 
   return {
     ok: true,

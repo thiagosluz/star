@@ -205,22 +205,25 @@ export default async function PublicEventPage({
 
   const { event, byActivity: onlineRooms } = view;
 
-  const publicRaffles = await listPublicRaffleResults(tenant.tenantId, event.id);
-
-  /**
-   * As chamadas PUBLICADAS (FASE 33). A leitura é do servidor e traz o estado de cada
-   * uma já decidido — o bloco da página só desenha, e por isso a chamada encerrada não
-   * continua anunciando prazo.
-   */
-  const calls = await listPublicCalls({ tenantId: tenant.tenantId, eventId: event.id, now });
-
-  const minhaAgenda = viewer
-    ? await getMyAgenda({
-        tenantId: tenant.tenantId,
-        userId: viewer.id,
-        eventId: event.id,
-      })
-    : null;
+  const [publicRaffles, calls, minhaAgenda, canOperateCounter] = await Promise.all([
+    listPublicRaffleResults(tenant.tenantId, event.id),
+    /**
+     * As chamadas PUBLICADAS (FASE 33). A leitura é do servidor e traz o estado de cada
+     * uma já decidido — o bloco da página só desenha, e por isso a chamada encerrada não
+     * continua anunciando prazo.
+     */
+    listPublicCalls({ tenantId: tenant.tenantId, eventId: event.id, now }),
+    viewer
+      ? getMyAgenda({
+          tenantId: tenant.tenantId,
+          userId: viewer.id,
+          eventId: event.id,
+        })
+      : Promise.resolve(null),
+    viewer
+      ? canOperateCheckIn({ userId: viewer.id, tenantId: tenant.tenantId, eventId: event.id })
+      : Promise.resolve(false),
+  ]);
 
   /**
    * ── O ENDEREÇO DE DOWNLOAD DA GRADE (FASE 65 · fatia 3) ───────────────────────
@@ -267,21 +270,6 @@ export default async function PublicEventPage({
       }),
     ),
   });
-
-  /**
-   * ── QUEM PODE ABRIR O BALCÃO (FASE 65 · fatia 4) ──────────────────────────────
-   *
-   *  A permissão é conferida AQUI, no servidor, e é a MESMA da tela de credenciamento
-   *  (`registration:checkin`, aceitando o escopo de EVENTO — quem opera a porta é a
-   *  equipe do dia). `loadPrincipal` só roda para quem tem vínculo ativo: o anônimo
-   *  nem chega a tocar o banco.
-   *
-   *  Isto decide apenas se o LINK aparece; a tela do balcão refaz a checagem por conta
-   *  própria. Autorização não é do link.
-   */
-  const canOperateCounter = viewer
-    ? await canOperateCheckIn({ userId: viewer.id, tenantId: tenant.tenantId, eventId: event.id })
-    : false;
 
   return (
     <EventLanding

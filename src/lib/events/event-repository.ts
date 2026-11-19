@@ -10,8 +10,15 @@
  *  justamente ela que descobre em qual contexto estamos (`tenants` é global).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { cache } from 'react';
+
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant } from '@/lib/db/tenant-client';
+import {
+  PUBLIC_EVENT_CACHE_TTL_SECONDS,
+  isWallClockNow,
+} from '@/domain/cache/public-cache-rules';
+import { getOrSetVersionedPublicCache } from '@/lib/cache/public-read-cache';
 import { resolveTheme, type ResolvedEventTheme } from '@/domain/events/landing-page';
 import { paginationWindow } from '@/domain/platform/pagination-rules';
 import {
@@ -65,10 +72,8 @@ export interface TenantContext {
   description: string | null;
 }
 
-/** Resolve o contexto da instituição pelo slug. */
-export async function getTenantContext(
-  slug: string,
-): Promise<TenantContext | null> {
+/** Resolve o contexto da instituição pelo slug (deduplicado por requisição via `React.cache`). */
+const loadTenantContext = cache(async (slug: string): Promise<TenantContext | null> => {
   const tenant = await adminPrisma.tenant.findUnique({
     where: { slug },
     select: {
@@ -96,6 +101,10 @@ export async function getTenantContext(
     timezone: tenant.timezone,
     description: tenant.description,
   };
+});
+
+export async function getTenantContext(slug: string): Promise<TenantContext | null> {
+  return loadTenantContext(slug);
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -508,15 +517,31 @@ export async function getPublicEvent(
    */
   options: { now?: Date } = {},
 ): Promise<PublicEventDetail | null> {
-  return loadEventDetail(
-    tenantId,
-    {
-      slug: eventSlug,
-      status: { in: [...PUBLIC_EVENT_STATUSES] },
-      deletedAt: null,
-    },
-    { now: options.now },
-  );
+  const loader = () =>
+    loadEventDetail(
+      tenantId,
+      {
+        slug: eventSlug,
+        status: { in: [...PUBLIC_EVENT_STATUSES] },
+        deletedAt: null,
+      },
+      { now: options.now },
+    );
+
+  if (!isWallClockNow(options.now)) {
+    return loader();
+  }
+
+  const { value } = await getOrSetVersionedPublicCache({
+    namespace: 'public-event',
+    scopeId: tenantId,
+    suffix: `detail:${eventSlug}`,
+    ttlSeconds: PUBLIC_EVENT_CACHE_TTL_SECONDS,
+    loader,
+    shouldCache: (detail) => detail !== null,
+  });
+
+  return value;
 }
 
 /**

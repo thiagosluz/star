@@ -63,11 +63,14 @@ const envelope = z.object({
   eventId: z.string().uuid(),
 });
 
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
+
 /**
  * A tela e a raiz do evento. A raiz porque o selo do cartão mostra o estado da
  * chave — e ele não pode continuar dizendo o que era antes do gesto.
  */
-function revalidateApi(tenantSlug: string, eventId: string): void {
+async function revalidateApi(tenantSlug: string, eventId: string): Promise<void> {
+  await invalidatePublicEventCacheBySlug({ tenantSlug });
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/api`));
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}`));
 }
@@ -102,7 +105,7 @@ export async function createEventApiKeyAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateApi(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateApi(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, chave: result.chave, message: 'Chave criada.' };
 }
@@ -174,7 +177,7 @@ export async function revokeEventApiKeyAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateApi(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateApi(parsed.data.tenantSlug, parsed.data.eventId);
 
   return {
     ok: true,
@@ -228,7 +231,7 @@ export async function updateEventApiSectionsAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateApi(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateApi(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Seções atualizadas.' };
 }

@@ -31,6 +31,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { can, holdsPermission, type Principal } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 import {
   MATERIAL_KINDS,
   MATERIAL_VISIBILITIES,
@@ -88,7 +89,8 @@ export interface SpeakerActionState {
  *  Revalidar o segmento cobre a subárvore inteira, inclusive telas que ainda não
  *  existem. Descoberto pelo E2E da fase, que é exatamente para isso que ele serve.
  */
-function revalidateSpeakerAdmin(tenantSlug: string): void {
+async function revalidateSpeakerAdmin(tenantSlug: string): Promise<void> {
+  await invalidatePublicEventCacheBySlug({ tenantSlug });
   revalidatePath(tenantPath(tenantSlug, '/administracao'), 'layout');
 }
 
@@ -353,7 +355,7 @@ export async function saveSpeakerProfileAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
-  revalidateSpeakerAdmin(parsed.data.tenantSlug);
+  await revalidateSpeakerAdmin(parsed.data.tenantSlug);
 
   return {
     ok: true,
@@ -416,7 +418,7 @@ export async function linkSpeakerAction(
     return { ok: false, code: result.code, message: result.message };
   }
 
-  revalidateSpeakerAdmin(parsed.data.tenantSlug);
+  await revalidateSpeakerAdmin(parsed.data.tenantSlug);
 
   return {
     ok: true,
@@ -456,7 +458,7 @@ export async function unlinkSpeakerAction(
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
-  revalidateSpeakerAdmin(parsed.data.tenantSlug);
+  await revalidateSpeakerAdmin(parsed.data.tenantSlug);
 
   return {
     ok: true,
@@ -589,6 +591,7 @@ export async function updateMySpeakerProfileAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message, details: result.details };
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/palestrante'));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return { ok: true, message: 'Perfil atualizado. A vitrine pública já mostra os dados novos.' };
@@ -645,6 +648,7 @@ export async function updateSpeakerNotesAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/palestrante'));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return { ok: true, message: 'Conteúdo da atividade salvo na página pública.' };
@@ -1165,6 +1169,7 @@ export async function confirmSpeakerMaterialUploadAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message, details: result.details };
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/palestrante'));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return {
@@ -1236,6 +1241,7 @@ export async function saveSpeakerMaterialLinkAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/palestrante'));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return { ok: true, message: 'Link publicado como material de apoio.' };
@@ -1299,6 +1305,7 @@ export async function updateSpeakerMaterialAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/palestrante'));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return { ok: true, message: 'Material atualizado.' };
@@ -1357,6 +1364,7 @@ export async function deleteSpeakerMaterialAction(
   if (!result.ok) return { ok: false, code: result.code, message: result.message };
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/palestrante'));
+  await invalidatePublicEventCacheBySlug({ tenantSlug: parsed.data.tenantSlug });
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/eventos'), 'layout');
 
   return { ok: true, message: 'Material removido da página.' };

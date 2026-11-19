@@ -64,6 +64,7 @@ import {
   sealEventApiKey,
 } from '@/lib/api/event-api-key-vault';
 import { logger } from '@/lib/observability/logger';
+import { invalidatePublicEventCache } from '@/lib/cache/public-read-cache';
 
 /** Por que a leitura foi recusada. Só a trilha e o log veem o detalhe. */
 export type EventApiRefusalReason =
@@ -476,6 +477,8 @@ export async function updateEventApiSections(input: {
     if (outcome.kind === 'REVOKED') {
       return { ok: false, code: 'REVOKED', message: 'Esta chave foi revogada. Gere outra.' };
     }
+
+    await invalidatePublicEventCache({ tenantId: input.tenantId });
 
     return { ok: true, secoes: outcome.secoes };
   } catch (error) {

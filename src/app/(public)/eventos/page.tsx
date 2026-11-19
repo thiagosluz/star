@@ -26,6 +26,11 @@ import {
   EVENT_MODALITY_OPTIONS,
 } from '@/domain/events/event-modality-rules';
 import { DEFAULT_DIRECTORY_PAGE_SIZE } from '@/domain/platform/platform-rules';
+import {
+  PUBLIC_DIRECTORY_CACHE_TTL_SECONDS,
+  shouldCachePublicDirectoryQuery,
+} from '@/domain/cache/public-cache-rules';
+import { getOrSetVersionedPublicCache } from '@/lib/cache/public-read-cache';
 import { listPublicDirectory } from '@/lib/platform/directory-service';
 import { searchPublicEvents } from '@/lib/platform/global-repository';
 
@@ -85,19 +90,44 @@ export default async function PublicEventsDirectoryPage({ searchParams }: Evento
   const page = Number.parseInt(params.pagina ?? '1', 10);
   const validPage = Number.isFinite(page) && page > 0 ? page : 1;
 
-  // Busca de eventos ou diretório conforme a aba
+  const cacheDefaultEvents = shouldCachePublicDirectoryQuery({
+    activeTab,
+    query,
+    category,
+    modality,
+    city,
+    state,
+    period,
+    page: validPage,
+  });
+
+  // Busca de eventos ou diretório conforme a aba (vitrine padrão sem filtros vai ao Redis com invalidação imediata)
   const [eventsResult, directoryResult] = await Promise.all([
     activeTab === 'eventos'
-      ? searchPublicEvents({
-          query,
-          category: category ?? undefined,
-          modality: modality || undefined,
-          city: city || undefined,
-          state: state || undefined,
-          period,
-          page: validPage,
-          pageSize: 12,
-        })
+      ? cacheDefaultEvents
+        ? getOrSetVersionedPublicCache({
+            namespace: 'public-directory',
+            scopeId: 'global',
+            suffix: 'events:default:p1',
+            ttlSeconds: PUBLIC_DIRECTORY_CACHE_TTL_SECONDS,
+            loader: () =>
+              searchPublicEvents({
+                query: '',
+                period: 'upcoming',
+                page: 1,
+                pageSize: 12,
+              }),
+          }).then((cached) => cached.value)
+        : searchPublicEvents({
+            query,
+            category: category ?? undefined,
+            modality: modality || undefined,
+            city: city || undefined,
+            state: state || undefined,
+            period,
+            page: validPage,
+            pageSize: 12,
+          })
       : null,
     activeTab === 'instituicoes'
       ? listPublicDirectory({

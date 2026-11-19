@@ -25,6 +25,15 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomInt, randomUUID } from 'node:crypto';
+import {
+  PUBLIC_CERTIFICATE_CACHE_TTL_SECONDS,
+  certificateCacheKey,
+  shouldCacheCertificateVerdict,
+} from '@/domain/cache/public-cache-rules';
+import {
+  getOrSetDirectPublicCache,
+  invalidatePublicCertificateCache,
+} from '@/lib/cache/public-read-cache';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
@@ -1832,10 +1841,10 @@ export async function revokeCertificate(input: {
   reason: string;
 }): Promise<CertificateResult<{ revokedAt: Date }>> {
   try {
-    return await withTenant(input.tenantId, async (tx) => {
+    const outcome = await withTenant(input.tenantId, async (tx) => {
       const certificate = await tx.certificate.findFirst({
         where: { id: input.certificateId },
-        select: { id: true, revokedAt: true },
+        select: { id: true, revokedAt: true, validationCode: true },
       });
 
       if (!certificate) {
@@ -1849,8 +1858,12 @@ export async function revokeCertificate(input: {
         data: { revokedAt, revokedReason: input.reason.slice(0, 400) },
       });
 
-      return { ok: true as const, revokedAt };
+      return { ok: true as const, revokedAt, validationCode: certificate.validationCode };
     });
+
+    if (!outcome.ok) return outcome;
+    await invalidatePublicCertificateCache(outcome.validationCode);
+    return { ok: true as const, revokedAt: outcome.revokedAt };
   } catch (error) {
     logger.error(`[certificates] falha ao revogar: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível revogar o certificado.' };
@@ -2023,9 +2036,14 @@ export async function getPublicCertificate(rawCode: string): Promise<
       };
     }
 
-    const baseUrl = publicBaseUrl();
+    const { value } = await getOrSetDirectPublicCache({
+      key: certificateCacheKey(code),
+      ttlSeconds: PUBLIC_CERTIFICATE_CACHE_TTL_SECONDS,
+      shouldCache: (res) => res.ok && shouldCacheCertificateVerdict(res.verdict.status),
+      loader: async () => {
+        const baseUrl = publicBaseUrl();
 
-    const row = await withValidationCode(code, async (tx) => {
+        const row = await withValidationCode(code, async (tx) => {
       const certificate = await tx.certificate.findFirst({
         where: { validationCode: code },
         select: {
@@ -2177,6 +2195,10 @@ export async function getPublicCertificate(rawCode: string): Promise<
         validationCount: row.validationCount + 1,
       },
     };
+      },
+    });
+
+    return value;
   } catch (error) {
     logger.error(`[certificates] falha na validação pública: ${errorMessage(error)}`);
     return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível validar o certificado.' };

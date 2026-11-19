@@ -24,6 +24,8 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
+
 import { guardAction } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -65,7 +67,8 @@ export interface LandingActionState {
  */
 
 /** A página pública e o editor precisam das duas rotas revalidadas. */
-function revalidateLanding(tenantSlug: string, eventId: string): void {
+async function revalidateLanding(tenantSlug: string, eventId: string): Promise<void> {
+  await invalidatePublicEventCacheBySlug({ tenantSlug });
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/pagina`));
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}`));
   /**
@@ -120,7 +123,7 @@ export async function ensureHomePageAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return {
     ok: true,
@@ -290,7 +293,7 @@ export async function savePageSettingsAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   /**
    * A mensagem vem do DOMÍNIO (`planPublication`), e não daqui: é ele que sabe se a
@@ -339,7 +342,7 @@ export async function addBlockAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Bloco adicionado ao fim da página.', data: { blockId: result.blockId } };
 }
@@ -368,7 +371,7 @@ export async function seedRecommendedBlocksAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return {
     ok: true,
@@ -494,7 +497,7 @@ export async function updateBlockAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Bloco salvo.' };
 }
@@ -532,7 +535,7 @@ export async function moveBlockAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Ordem atualizada.' };
 }
@@ -565,7 +568,7 @@ export async function deleteBlockAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Bloco removido.' };
 }
@@ -607,7 +610,7 @@ export async function restorePageVersionAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return {
     ok: true,
@@ -657,7 +660,7 @@ export async function deleteMediaAssetAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return { ok: true, message: 'Imagem removida do acervo.' };
 }
@@ -807,7 +810,7 @@ export async function confirmAssetUploadAction(
 
   if (!result.ok) return result;
 
-  revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
+  await revalidateLanding(parsed.data.tenantSlug, parsed.data.eventId);
 
   return {
     ok: true,

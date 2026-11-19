@@ -28,6 +28,10 @@ import { z } from 'zod';
 
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { PUBLIC_TENANTS_TAG } from '@/lib/platform/directory-service';
+import {
+  invalidatePublicDirectoryCache,
+  invalidatePublicEventCacheBySlug,
+} from '@/lib/cache/public-read-cache';
 import { recordAudit } from '@/lib/admin/audit';
 import { enqueueJobRun } from '@/lib/communication/email-queue';
 import { isJobKey, jobDefinition } from '@/domain/platform/job-catalog';
@@ -90,9 +94,15 @@ function failure(
  * contagem cacheada da vitrine. As duas coisas são necessárias: a primeira atualiza
  * as páginas do painel, a segunda a entrada de cache que a vitrine pública lê.
  */
-function revalidatePlatform(slug?: string): void {
+async function revalidatePlatform(slug?: string): Promise<void> {
+  if (slug) {
+    await invalidatePublicEventCacheBySlug({ tenantSlug: slug, includeDirectory: true });
+  } else {
+    await invalidatePublicDirectoryCache();
+  }
   revalidateTag(PUBLIC_TENANTS_TAG, 'max');
   revalidatePath('/organizacoes');
+  revalidatePath('/eventos');
   revalidatePath(PANEL_PATH);
   revalidatePath('/superadmin/metricas');
 
@@ -166,7 +176,7 @@ export async function provisionTenantAction(
     return failure(result.code, result.message, result.details);
   }
 
-  revalidatePlatform(result.slug);
+  await revalidatePlatform(result.slug);
 
   return {
     ok: true,
@@ -210,7 +220,7 @@ export async function setTenantStatusAction(
     return failure(result.code, result.message, result.details);
   }
 
-  revalidatePlatform(result.slug);
+  await revalidatePlatform(result.slug);
 
   return {
     ok: true,
@@ -279,7 +289,7 @@ export async function updateTenantProfileAction(
     return failure(result.code, result.message, result.details);
   }
 
-  revalidatePlatform(result.slug);
+  await revalidatePlatform(result.slug);
 
   return { ok: true, message: 'Perfil público atualizado.', data: { slug: result.slug } };
 }
@@ -336,7 +346,7 @@ export async function updateTenantPlanAction(
     return failure(result.code, result.message, result.details);
   }
 
-  revalidatePlatform(result.slug);
+  await revalidatePlatform(result.slug);
   // O detalhe da instituição é uma rota própria: sem isto, a tela que enviou o
   // formulário continuaria mostrando o plano anterior até um recarregamento.
   revalidatePath(`/superadmin/tenants/${parsed.data.tenantId}`);
@@ -391,7 +401,7 @@ export async function addTenantMemberAction(
     return failure(result.code, result.message, result.details);
   }
 
-  revalidatePlatform(result.slug);
+  await revalidatePlatform(result.slug);
   revalidatePath(`/superadmin/tenants/${parsed.data.tenantId}`);
 
   return {

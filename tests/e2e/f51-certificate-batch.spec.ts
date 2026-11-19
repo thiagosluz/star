@@ -32,6 +32,7 @@ import { randomUUID } from 'node:crypto';
 
 import { RUN_ID, cleanupRun, createActivity, createEvent, createTenant, e2eDb, grantRole, linkUser } from './helpers';
 import { VALIDATION_ALPHABET } from '../../src/domain/certificates/certificate-rules';
+import { invalidatePublicCertificateCache } from '../../src/lib/cache/public-read-cache';
 
 const PASSWORD = 'senha-forte-e2e-2026';
 const TENANT_LABEL = 'lote-f51';
@@ -358,6 +359,8 @@ test.describe('conferência de certificados em lote', () => {
         },
       });
     });
+
+    await invalidatePublicCertificateCache(validCode);
 
     await page.goto('/validar/lote');
     await page.getByTestId('batch-codes').fill(validCode);

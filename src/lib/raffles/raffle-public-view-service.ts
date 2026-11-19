@@ -20,6 +20,8 @@
  */
 import { withTenant } from '@/lib/db/tenant-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
+import { PUBLIC_EVENT_CACHE_TTL_SECONDS } from '@/domain/cache/public-cache-rules';
+import { getOrSetVersionedPublicCache } from '@/lib/cache/public-read-cache';
 import {
   RESULT_PAYLOAD_VERSION,
   publicWinnerEntry,
@@ -213,83 +215,93 @@ export async function listPublicRaffleResults(
   eventId: string,
 ): Promise<PublicRaffleResult[]> {
   try {
-    const rows = await withTenant(tenantId, (tx) =>
-      tx.raffle.findMany({
-        where: {
-          tenantId,
-          eventId,
-          deletedAt: null,
-          isPublic: true,
-          status: 'DRAWN',
-        },
-        orderBy: [{ drawnAt: 'desc' }],
-        take: 20,
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          drawnAt: true,
-          createdAt: true,
-          rounds: {
-            where: { drawnAt: { not: null } },
-            orderBy: { roundNumber: 'asc' },
+    const { value } = await getOrSetVersionedPublicCache<PublicRaffleResult[]>({
+      namespace: 'public-event',
+      scopeId: tenantId,
+      suffix: `raffles:${eventId}`,
+      ttlSeconds: PUBLIC_EVENT_CACHE_TTL_SECONDS,
+      loader: async () => {
+        const rows = await withTenant(tenantId, (tx) =>
+          tx.raffle.findMany({
+            where: {
+              tenantId,
+              eventId,
+              deletedAt: null,
+              isPublic: true,
+              status: 'DRAWN',
+            },
+            orderBy: [{ drawnAt: 'desc' }],
+            take: 20,
             select: {
-              roundNumber: true,
-              prizeTitle: true,
-              prizeDescription: true,
+              id: true,
+              title: true,
+              description: true,
               drawnAt: true,
-              resultHash: true,
-              seedCommitment: true,
-              seedRevealed: true,
-              sponsor: { select: { name: true, logoUrl: true } },
+              createdAt: true,
+              rounds: {
+                where: { drawnAt: { not: null } },
+                orderBy: { roundNumber: 'asc' },
+                select: {
+                  roundNumber: true,
+                  prizeTitle: true,
+                  prizeDescription: true,
+                  drawnAt: true,
+                  resultHash: true,
+                  seedCommitment: true,
+                  seedRevealed: true,
+                  sponsor: { select: { name: true, logoUrl: true } },
+                },
+              },
+              winners: {
+                orderBy: { position: 'asc' },
+                select: {
+                  position: true,
+                  kind: true,
+                  roundNumber: true,
+                  user: { select: PUBLIC_WINNER_NAME_SELECT },
+                },
+              },
             },
-          },
-          winners: {
-            orderBy: { position: 'asc' },
-            select: {
-              position: true,
-              kind: true,
-              roundNumber: true,
-              user: { select: PUBLIC_WINNER_NAME_SELECT },
-            },
-          },
-        },
-      }),
-    );
+          }),
+        );
 
-    return rows.map((row) => {
-      const rounds = row.rounds.map((round) =>
-        mapPublicRound({
-          round,
-          winners: row.winners,
-          createdAt: row.createdAt,
-        }),
-      );
+        return rows.map((row) => {
+          const rounds = row.rounds.map((round) =>
+            mapPublicRound({
+              round,
+              winners: row.winners,
+              createdAt: row.createdAt,
+            }),
+          );
 
-      /**
-       * As listas planas são a projeção de TODAS as rodadas: a vitrine do evento
-       * mostra "quem ganhou", sem separar por momento — quem quer o detalhe abre a
-       * página do sorteio.
-       */
-      const flatWinners = rounds.flatMap((round) => round.winners);
-      const flatAlternates = rounds.flatMap((round) => round.alternates);
-      const lastRound = rounds[rounds.length - 1];
+          /**
+           * As listas planas são a projeção de TODAS as rodadas: a vitrine do evento
+           * mostra "quem ganhou", sem separar por momento — quem quer o detalhe abre a
+           * página do sorteio.
+           */
+          const flatWinners = rounds.flatMap((round) => round.winners);
+          const flatAlternates = rounds.flatMap((round) => round.alternates);
+          const lastRound = rounds[rounds.length - 1];
 
-      return {
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        drawnAt: row.drawnAt ?? row.createdAt,
-        rounds,
-        // A "prova do sorteio" na vitrine é a do ÚLTIMO momento: é o número que o
-        // público acabou de ver. Cada rodada tem a sua, na página do sorteio.
-        resultHash: lastRound?.resultHash ?? null,
-        seedCommitment: lastRound?.seedCommitment ?? null,
-        seedRevealed: lastRound?.seedRevealed ?? null,
-        winners: flatWinners,
-        alternates: flatAlternates,
-      };
+          return {
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            drawnAt: row.drawnAt ?? row.createdAt,
+            rounds,
+            // A "prova do sorteio" na vitrine é a do ÚLTIMO momento: é o número que o
+            // público acabou de ver. Cada rodada tem a sua, na página do sorteio.
+            resultHash: lastRound?.resultHash ?? null,
+            seedCommitment: lastRound?.seedCommitment ?? null,
+            seedRevealed: lastRound?.seedRevealed ?? null,
+            winners: flatWinners,
+            alternates: flatAlternates,
+          };
+        });
+      },
     });
+
+    return value;
   } catch (error) {
     logger.error(`[raffles] falha ao carregar resultados públicos: ${errorMessage(error)}`);
     return [];

@@ -19,6 +19,7 @@ import {
   uniqueEmail,
   signOut,
 } from './helpers';
+import { invalidatePublicEventCache } from '../../src/lib/cache/public-read-cache';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -163,6 +164,8 @@ async function criarAtividade(input: {
       },
     });
   });
+
+  await invalidatePublicEventCache({ tenantId, eventSlug });
 
   return id;
 }

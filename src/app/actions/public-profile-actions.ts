@@ -17,6 +17,7 @@ import {
 } from '@/domain/profile/profile-moderation-rules';
 import { reportPublicProfile } from '@/lib/profile/profile-report-service';
 import { savePublicProfile } from '@/lib/profile/public-profile-service';
+import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 import type { AdminActionState } from '@/app/actions/admin-actions';
 
 /**
@@ -137,8 +138,10 @@ export async function savePublicProfileAction(
     return { ok: false, code: result.code, message: result.message, details: result.details };
   }
 
+  await invalidatePublicEventCacheBySlug({ tenantSlug });
   revalidatePath(tenantPath(tenantSlug, '/meu-perfil-publico'));
   revalidatePath(tenantPath(tenantSlug, `/u/${result.username}`));
+  revalidatePath(tenantPath(tenantSlug, '/eventos'), 'layout');
 
   return {
     ok: true,
