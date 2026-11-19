@@ -1,5 +1,7 @@
 'use server';
 
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Server Actions — O DESCADASTRO SEM LOGIN (FASE 67 · fatia 3)
@@ -43,10 +45,7 @@ import {
   unsubscribeReasonFor,
 } from '@/domain/communication/unsubscribe-reason-rules';
 
-export interface UnsubscribeActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
+export interface UnsubscribeActionState extends ActionGuardState {
   /** `true` quando a pessoa JÁ estava no estado pedido — nada mudou. */
   unchanged?: boolean;
 }

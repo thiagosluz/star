@@ -13,6 +13,7 @@ import {
   jobHealthOf,
   type JobHealth,
 } from '@/domain/platform/job-catalog';
+import { formatUtcMoment as formatMoment } from '@/domain/shared/date-format';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -59,10 +60,6 @@ const HEALTH_TONE: Record<JobHealth, 'neutral' | 'primary' | 'success' | 'warnin
   FAILING: 'danger',
   NEVER: 'neutral',
 };
-
-function formatMoment(date: Date): string {
-  return date.toISOString().slice(0, 16).replace('T', ' ');
-}
 
 /**
  * "há 12 min" é mais útil que um carimbo de data para decidir se algo está atrasado.

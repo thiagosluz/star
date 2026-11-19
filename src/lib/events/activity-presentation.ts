@@ -19,12 +19,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { effectiveActivityCapacity } from '@/domain/events/event-rules';
+import { toDatetimeLocalInput } from '@/domain/shared/date-format';
 
 /** O valor que `<input type="datetime-local">` espera, no fuso do navegador. */
 export function toLocalInput(date: Date | null): string {
-  if (!date) return '';
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  return toDatetimeLocalInput(date);
 }
 
 /**

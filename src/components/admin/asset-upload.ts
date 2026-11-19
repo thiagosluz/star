@@ -3,6 +3,7 @@ import {
   formatBytes,
   type ImageTarget,
 } from '@/domain/events/image-rules';
+import { readMagicBytes, sha256Hex } from '@/lib/client/file-crypto';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -23,7 +24,6 @@ import {
  */
 
 /** Quantos bytes iniciais cobrem todas as assinaturas aceitas (AVIF precisa de 12). */
-const MAGIC_BYTES_TO_READ = 16;
 
 /**
  * O ESTADO QUE A ESTEIRA PRECISA CONHECER — e só ele (FASE 46).
@@ -93,22 +93,6 @@ export type UploadAssetResult =
       sourceBytes: number;
     }
   | { ok: false; message: string };
-
-/** SHA-256 em hexadecimal, no navegador (Web Crypto). */
-async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/** Primeiros bytes do arquivo — é o que permite ao servidor conferir a assinatura. */
-async function readMagicBytes(file: File): Promise<number[]> {
-  const slice = file.slice(0, MAGIC_BYTES_TO_READ);
-  const buffer = await slice.arrayBuffer();
-  return Array.from(new Uint8Array(buffer));
-}
 
 export async function uploadAssetFile(input: UploadAssetInput): Promise<UploadAssetResult> {
   const { file } = input;

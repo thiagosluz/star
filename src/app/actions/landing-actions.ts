@@ -26,7 +26,8 @@ import { z } from 'zod';
 
 import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable, formText as text } from '@/lib/http/form-data';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { ASSET_TARGETS, type AssetTarget } from '@/domain/events/image-rules';
@@ -45,13 +46,7 @@ import { restorePageVersion } from '@/lib/admin/page-version-service';
 import { deleteMediaAsset } from '@/lib/admin/media-asset-service';
 import { isValidTimeZone, zonedWallTimeToInstant } from '@/domain/events/scheduling-rules';
 
-export interface LandingActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+export type LandingActionState = ActionGuardState;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Guarda
@@ -79,15 +74,6 @@ async function revalidateLanding(tenantSlug: string, eventId: string): Promise<v
    * segmento é mais barato do que servir conteúdo velho na vitrine.
    */
   revalidatePath(tenantPath(tenantSlug, '/eventos'), 'layout');
-}
-
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
-}
-
-function text(value: FormDataEntryValue | null): string {
-  return typeof value === 'string' ? value.trim() : '';
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getRequestContext } from '@/lib/auth/session';
 import { headers } from 'next/headers';
+import { extractClientIp } from '@/lib/http/request-meta';
 import { getParticipantProfile } from '@/lib/participants/participant-service';
 import { ENGAGEMENT_LABELS, PARTICIPANT_ORIGIN_LABELS } from '@/domain/participants/participant-rules';
 import { MessageComposer } from '@/components/participants/message-composer';
@@ -69,7 +70,7 @@ export default async function ParticipantProfilePage({
     tenantId,
     userId,
     actorId,
-    ipAddress: headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    ipAddress: extractClientIp(headerList),
     userAgent: headerList.get('user-agent'),
   });
 

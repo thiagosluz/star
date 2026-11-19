@@ -20,18 +20,13 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { removeMember, updateMemberRoles } from '@/lib/admin/member-service';
 import { demoteMemberToParticipant } from '@/lib/admin/member-demotion';
 
-export interface MemberActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-}
+export type MemberActionState = ActionGuardState;
 
 /** Papéis chegam como caixas de seleção repetidas — uma lista, nunca uma string. */
 function readRoles(formData: FormData): string[] {

@@ -9,21 +9,16 @@
  *  gamificação inteira perderia sentido.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { checkIn, checkOut } from '@/lib/events/attendance-service';
 
-export interface AttendanceActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  data?: Record<string, unknown>;
-}
+export type AttendanceActionState = ActionGuardState;
 
 const schema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
@@ -78,14 +73,14 @@ export async function checkInAction(
   });
   if (!auth.ok) return auth.state;
 
-  const headerList = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   const result = await checkIn({
     tenantId: auth.tenantId,
     registrationId: parsed.data.registrationId,
     staffUserId: auth.userId,
-    ipAddress: headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: headerList.get('user-agent'),
+    ipAddress,
+    userAgent,
     contextKind: parsed.data.contextKind,
     targetActivityId: parsed.data.targetActivityId ?? null,
   });

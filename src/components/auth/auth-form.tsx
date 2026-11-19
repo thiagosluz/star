@@ -1,20 +1,18 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/app/actions/auth-actions";
+import { SubmitButton as UiSubmitButton } from "@/components/ui";
 
 function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {pending ? "Processando…" : label}
-    </button>
+    <UiSubmitButton
+      label={label}
+      pendingLabel="Processando…"
+      showSpinner={false}
+      block
+      className="h-auto rounded-md px-4 py-2.5 transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+    />
   );
 }
 

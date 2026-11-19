@@ -51,19 +51,10 @@ import { validateCampaignText, campaignStatusLabel } from '@/domain/communicatio
 import type { SegmentDefinition } from '@/domain/communication/segments';
 import { maskEmailAddress } from '@/domain/communication/email-rules';
 import { withTenant } from '@/lib/db/tenant-client';
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable } from '@/lib/http/form-data';
 
-export interface CommunicationActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
-
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
-}
+export type CommunicationActionState = ActionGuardState;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Convite de equipe

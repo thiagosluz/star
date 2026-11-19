@@ -19,17 +19,12 @@
  */
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { revalidateTenantArea, TENANT_CACHE_AREAS } from '@/lib/cache/revalidate-area';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { restoreCardTemplate, restoreMission } from '@/lib/admin/catalog-archive-service';
 
-export interface CatalogArchiveActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-}
+export type CatalogArchiveActionState = ActionGuardState;
 
 export async function restoreCardTemplateAction(
   _prev: CatalogArchiveActionState | null,

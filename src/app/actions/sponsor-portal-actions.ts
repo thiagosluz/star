@@ -22,7 +22,8 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { getAuthenticatedUser } from '@/lib/auth/session';
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable } from '@/lib/http/form-data';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
@@ -39,13 +40,7 @@ import {
   setSponsorQrCodeActive,
 } from '@/lib/sponsors/sponsor-portal-service';
 
-export interface SponsorPortalActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+export type SponsorPortalActionState = ActionGuardState;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  A GUARDA DE GESTÃO SAIU; AS DUAS IRMÃS FICAM (FASE 75 · fatia 2)
@@ -118,11 +113,6 @@ async function guardSession(tenantSlug: string): Promise<
   }
 
   return { ok: true, userId: user.id, tenantId: tenant.id, userEmail: user.email ?? '' };
-}
-
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
 }
 
 function revalidateSponsorArea(tenantSlug: string, eventId?: string | null): void {

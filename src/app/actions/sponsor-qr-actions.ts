@@ -31,19 +31,10 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { sponsorQrInputSchema } from '@/domain/events/sponsor-experience-rules';
 import { countSponsorQrCodesInEvent, saveSponsorQrCode } from '@/lib/sponsors/sponsor-portal-service';
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable } from '@/lib/http/form-data';
 
-export interface SponsorQrConfirmationState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
-
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
-}
+export type SponsorQrConfirmationState = ActionGuardState;
 
 const qrFormSchema = z.object({
   tenantSlug: z.string().trim().min(1).max(63),
@@ -166,11 +157,10 @@ export async function saveSponsorQrWithConfirmationAction(
   return {
     ok: true,
     message: result.created
-      ? `QR criado. O código é ${result.code} — imprima no estande.${
-          result.existingInEvent > 1
-            ? ` Este patrocinador passou a ter ${result.existingInEvent} QRs neste evento.`
-            : ''
-        }`
+      ? `QR criado. O código é ${result.code} — imprima no estande.${result.existingInEvent > 1
+        ? ` Este patrocinador passou a ter ${result.existingInEvent} QRs neste evento.`
+        : ''
+      }`
       : 'QR atualizado.',
     data: {
       qrId: result.qrId,

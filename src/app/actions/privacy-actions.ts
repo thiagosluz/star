@@ -11,6 +11,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { cookies, headers } from 'next/headers';
+import { extractClientIp } from '@/lib/http/request-meta';
 
 import {
   COOKIE_CONSENT_COOKIE,
@@ -52,7 +53,7 @@ export async function saveCookieConsentAction(formData: FormData): Promise<void>
     source,
     userId: user?.id ?? null,
     existingToken: existing?.token ?? null,
-    ipAddress: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    ipAddress: extractClientIp(requestHeaders),
     userAgent: requestHeaders.get('user-agent'),
   });
 

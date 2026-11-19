@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -19,12 +19,7 @@ import {
   upsertProceedingsVolume,
 } from '@/lib/proceedings/proceedings-service';
 
-export interface ProceedingsActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-}
+export type ProceedingsActionState = ActionGuardState;
 
 function revalidateProceedingsPaths(tenantSlug: string, eventId: string) {
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/anais`));

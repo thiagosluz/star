@@ -491,6 +491,12 @@ function isAllowedMime(value: string): value is ImageMimeType {
   return (IMAGE_MIME_TYPES as readonly string[]).includes(value);
 }
 
+/** Normaliza um `Content-Type` (descartando parâmetros após `;`) para `ImageMimeType` aceito. */
+export function parseImageMime(value: string | null | undefined): ImageMimeType | null {
+  const normalized = (value ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  return isAllowedMime(normalized) ? normalized : null;
+}
+
 function extensionMatches(extension: string | null, mimeType: ImageMimeType): boolean {
   if (!extension) return false;
   return EXTENSION_BY_MIME[mimeType].includes(extension);

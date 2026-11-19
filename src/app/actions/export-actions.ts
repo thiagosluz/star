@@ -1,8 +1,10 @@
 'use server';
 
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { z } from 'zod';
 
 import { authorizeDataExport } from '@/lib/exports/export-access';
@@ -14,12 +16,7 @@ import { EXPORT_KINDS } from '@/domain/exports/export-rules';
  * O que a tela mostra quando o PEDIDO não deu certo. Não é o retorno da ação (o painel
  * é componente de servidor e recebe o motivo pela URL) — é o vocabulário do erro.
  */
-export interface ExportActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  data?: Record<string, unknown>;
-}
+export type ExportActionState = ActionGuardState;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -96,7 +93,7 @@ export async function createExportAction(formData: FormData): Promise<void> {
     redirectWithError(formData, access.message);
   }
 
-  const requestHeaders = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   const created = await createDataExport({
     tenantId: access.tenantId,
@@ -110,8 +107,8 @@ export async function createExportAction(formData: FormData): Promise<void> {
       onlyAttended: parsed.data.presente === '1',
       sponsorId: parsed.data.sponsorId,
     },
-    ipAddress: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: requestHeaders.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   if (!created.ok) {

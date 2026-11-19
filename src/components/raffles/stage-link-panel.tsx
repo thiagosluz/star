@@ -1,9 +1,9 @@
 'use client';
 
-import { useActionState, useState } from 'react';
-import { Copy, ExternalLink, Loader2, MonitorOff, MonitorPlay, ShieldCheck } from 'lucide-react';
+import { useActionState } from 'react';
+import { ExternalLink, Loader2, MonitorOff, MonitorPlay, ShieldCheck } from 'lucide-react';
 
-import { Alert, AppLink, Button } from '@/components/ui';
+import { Alert, AppLink, Button, CopyButton } from '@/components/ui';
 import type { BigscreenActionState } from '@/app/actions/bigscreen-actions';
 
 /**
@@ -133,8 +133,6 @@ function BigscreenSwitch({
 }
 
 function CopyField({ label, value, testId }: { label: string; value: string; testId: string }) {
-  const [copied, setCopied] = useState(false);
-
   return (
     <div className="space-y-1">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
@@ -142,23 +140,7 @@ function CopyField({ label, value, testId }: { label: string; value: string; tes
         <code className="code-data min-w-0 break-all text-xs" data-testid={`${testId}-value`}>
           {value}
         </code>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(value);
-              setCopied(true);
-            } catch {
-              setCopied(false);
-            }
-          }}
-          data-testid={`${testId}-copy`}
-        >
-          <Copy className="size-3.5" aria-hidden />
-          {copied ? 'Copiado' : 'Copiar'}
-        </Button>
+        <CopyButton value={value} data-testid={`${testId}-copy`} />
       </div>
     </div>
   );

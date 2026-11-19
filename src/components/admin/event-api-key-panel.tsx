@@ -1,10 +1,9 @@
 'use client';
 
 import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { AlertCircle, CheckCircle2, KeyRound, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
 
-import { Button } from '@/components/ui';
+import { SubmitButton as UiSubmitButton } from '@/components/ui';
 import {
   eventApiKeyStateCopy,
   type EventApiKeyState,
@@ -52,13 +51,14 @@ function SubmitButton({
   variant?: 'primary' | 'outline' | 'destructive';
   testId: string;
 }) {
-  const { pending } = useFormStatus();
-
   return (
-    <Button type="submit" disabled={pending} variant={variant} size="sm" data-testid={testId}>
-      {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : null}
-      {label}
-    </Button>
+    <UiSubmitButton
+      label={label}
+      variant={variant}
+      size="sm"
+      spinnerClassName="size-3.5"
+      data-testid={testId}
+    />
   );
 }
 

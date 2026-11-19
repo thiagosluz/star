@@ -6,6 +6,7 @@ import { CheckCircle2, FileUp, Loader2, ShieldCheck, XCircle } from 'lucide-reac
 
 import type { ActionState } from '@/app/actions/review-actions';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+import { readMagicBytes, sha256Hex } from '@/lib/client/file-crypto';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -53,22 +54,6 @@ const KIND_LABELS: Record<UploadKind, string> = {
 
 /** Limite alinhado ao domínio (`MAX_FILE_SIZE_BYTES`). */
 const MAX_BYTES = 25 * 1024 * 1024;
-
-/** Calcula o SHA-256 em hexadecimal usando a Web Crypto API. */
-async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/** Lê os primeiros bytes do arquivo para validar a assinatura de PDF. */
-async function readMagicBytes(file: File, count = 5): Promise<number[]> {
-  const slice = file.slice(0, count);
-  const buffer = await slice.arrayBuffer();
-  return Array.from(new Uint8Array(buffer));
-}
 
 type Phase = 'idle' | 'hashing' | 'requesting' | 'uploading' | 'confirming' | 'done' | 'error';
 
@@ -166,7 +151,7 @@ export function SubmissionUploader({
       // ── 1. Hash e assinatura do arquivo ──────────────────────────────────
       setPhase('hashing');
       const checksum = await sha256Hex(selected);
-      const magicBytes = await readMagicBytes(selected);
+      const magicBytes = await readMagicBytes(selected, 5);
 
       // ── 2. URL pré-assinada ──────────────────────────────────────────────
       setPhase('requesting');

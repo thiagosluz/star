@@ -26,11 +26,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { AlertCircle, CheckCircle2, Loader2, Send, TestTube2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Send, TestTube2 } from 'lucide-react';
 
 import { campaignSendAction, type CommunicationActionState } from '@/app/actions/communication-actions';
-import { Button } from '@/components/ui';
+import { SubmitButton as UiSubmitButton } from '@/components/ui';
 
 function SubmitButton({
   acao,
@@ -45,21 +44,18 @@ function SubmitButton({
   variant: 'outline' | 'primary';
   icon: React.ReactNode;
 }) {
-  const { pending } = useFormStatus();
-
   return (
-    <Button
-      type="submit"
+    <UiSubmitButton
       name="acao"
       value={acao}
-      disabled={pending}
+      label={label}
+      pendingLabel="Processando…"
       variant={variant}
       size="sm"
+      icon={icon}
+      spinnerClassName="size-3.5"
       data-testid={testId}
-    >
-      {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : icon}
-      {pending ? 'Processando…' : label}
-    </Button>
+    />
   );
 }
 

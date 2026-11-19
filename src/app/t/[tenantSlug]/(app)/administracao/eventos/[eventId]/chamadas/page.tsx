@@ -10,6 +10,7 @@ import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { listCallProposals, listCalls } from '@/lib/proposals/call-service';
 import { getCallResultPanel } from '@/lib/proposals/call-result-service';
 import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
+import { toDatetimeLocalInput as toLocalInput } from '@/domain/shared/date-format';
 import {
   CALL_STATE_LABELS,
   PROPOSAL_KINDS,
@@ -618,22 +619,4 @@ function blindOptionValue(value: boolean | null): string {
 
   return value ? 'on' : 'off';
 }
-
-/**
- * Instante → valor de `<input type="datetime-local">`.
- *
- * O painel mostra a hora de parede que o organizador digitou. Sem esta conversão, o
- * campo apareceria em UTC e salvar de novo deslocaria a data (armadilha 38 na
- * direção inversa). O `toLocalInput` local usa o fuso do PROCESSO — o que é aceitável
- * aqui porque o valor é apenas o que a tela mostra; a interpretação de volta é feita
- * no fuso do evento, pela action.
- */
-function toLocalInput(date: Date | null): string {
-  if (!date) return '';
-
-  const pad = (value: number): string => String(value).padStart(2, '0');
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`;
-}
+

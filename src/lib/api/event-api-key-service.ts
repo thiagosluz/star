@@ -65,6 +65,7 @@ import {
 } from '@/lib/api/event-api-key-vault';
 import { logger } from '@/lib/observability/logger';
 import { invalidatePublicEventCache } from '@/lib/cache/public-read-cache';
+import { asRecord as settingsObject } from '@/domain/shared/json-record';
 
 /** Por que a leitura foi recusada. Só a trilha e o log veem o detalhe. */
 export type EventApiRefusalReason =
@@ -90,13 +91,6 @@ export type EventApiKeyResult<T> =
 export type VerifyEventApiKeyResult =
   | { ok: true; eventId: string; config: EventApiStoredConfig }
   | { ok: false; code: 'INVALID_KEY'; reason: EventApiRefusalReason };
-
-/** `settings` é JSON livre: qualquer coisa que não seja objeto é tratada como vazio. */
-function settingsObject(settings: unknown): Record<string, unknown> {
-  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return {};
-
-  return settings as Record<string, unknown>;
-}
 
 function internalFailure(scope: string, error: unknown): { ok: false; code: 'INTERNAL'; message: string } {
   logger.error(`[api] falha ao ${scope} a chave do evento: ${errorMessage(error)}`);

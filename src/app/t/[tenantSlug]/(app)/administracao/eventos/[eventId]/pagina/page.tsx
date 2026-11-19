@@ -17,7 +17,8 @@ import {
   PUBLICATION_STATE_LABELS,
   type PageBlockType,
 } from '@/domain/events/landing-page';
-import { formatZonedDateTime, instantToZonedWallTime } from '@/domain/events/scheduling-rules';
+import { formatZonedDateTime } from '@/domain/events/scheduling-rules';
+import { toDatetimeLocalInput as toLocalInput } from '@/domain/shared/date-format';
 import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
 import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { LandingThemeFields } from '@/components/admin/landing-theme-fields';
@@ -47,12 +48,6 @@ const BLOCK_OPTIONS = (Object.keys(BLOCK_LABELS) as PageBlockType[]).map((type) 
   value: type,
   label: BLOCK_LABELS[type],
 }));
-
-/** `Date` → valor de `<input type="datetime-local">`, NO FUSO DO EVENTO (E17). */
-function toLocalInput(date: Date | null, timeZone: string): string {
-  if (!date) return '';
-  return instantToZonedWallTime(date, timeZone);
-}
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════

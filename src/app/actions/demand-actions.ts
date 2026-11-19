@@ -1,5 +1,7 @@
 'use server';
 
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Server Actions — Quadro de demandas internas do evento (FASE 38)
@@ -47,13 +49,7 @@ import {
   updateDemandColumn,
 } from '@/lib/events/demand-service';
 
-export interface DemandActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+export type DemandActionState = ActionGuardState;
 
 type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 

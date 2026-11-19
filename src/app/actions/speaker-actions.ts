@@ -25,7 +25,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { withTenant } from '@/lib/db/tenant-client';
 import { can, holdsPermission, type Principal } from '@/domain/rbac/authorization';
@@ -61,12 +61,7 @@ import { confirmAssetUpload, requestAssetUpload } from '@/lib/admin/asset-servic
 import { isUniqueViolation } from '@/lib/db/prisma-errors';
 import { logger } from '@/lib/observability/logger';
 
-export interface SpeakerActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
+export interface SpeakerActionState extends ActionGuardState {
   values?: {
     token?: string;
   };

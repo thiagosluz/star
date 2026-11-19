@@ -48,13 +48,10 @@ import {
   syncSponsorFromSource,
 } from '@/lib/admin/sponsor-service';
 
-export interface SponsorActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable } from '@/lib/http/form-data';
+
+export type SponsorActionState = ActionGuardState;
 
 async function revalidateSponsors(tenantSlug: string, eventId: string): Promise<void> {
   await invalidatePublicEventCacheBySlug({ tenantSlug });
@@ -62,11 +59,6 @@ async function revalidateSponsors(tenantSlug: string, eventId: string): Promise<
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores/novo`));
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}`));
   revalidatePath(tenantPath(tenantSlug, '/eventos'), 'layout');
-}
-
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
 }
 
 /**

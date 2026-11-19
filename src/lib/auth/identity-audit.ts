@@ -15,11 +15,11 @@
  *  repetindo o `userId` seria ruído na investigação.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { headers } from 'next/headers';
 
 import { recordIdentityAudit } from '@/lib/platform/identity-audit-service';
 import type { IdentityAuditEvent } from '@/domain/identity/identity-audit-rules';
 import { logger } from '@/lib/observability/logger';
+import { readRequestMeta } from '@/lib/http/request-meta';
 
 export async function recordIdentityEvent(input: {
   /** A conta afetada. `null` quando o fato não chegou a uma conta (e-mail inexistente). */
@@ -30,15 +30,15 @@ export async function recordIdentityEvent(input: {
   details?: Record<string, unknown>;
 }): Promise<void> {
   try {
-    const requestHeaders = await headers();
+    const { ipAddress, userAgent } = await readRequestMeta();
 
     await recordIdentityAudit({
       userId: input.userId ?? null,
       actorId: input.actorId ?? null,
       event: input.event,
       details: input.details,
-      ipAddress: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-      userAgent: requestHeaders.get('user-agent'),
+      ipAddress,
+      userAgent,
     });
   } catch (error) {
     /**

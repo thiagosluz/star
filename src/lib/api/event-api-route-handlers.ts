@@ -76,6 +76,7 @@ import {
   type CachedEventApiEntry,
 } from '@/lib/api/event-api-http';
 import { logger } from '@/lib/observability/logger';
+import { extractClientIp } from '@/lib/http/request-meta';
 
 export interface EventApiRouteContext {
   params: Promise<{ tenantSlug: string; eventSlug: string }>;
@@ -119,11 +120,7 @@ function togglableSection(resource: ApiResource): resource is EventApiSection {
  * limite por falta de cabeçalho.
  */
 function clientIp(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-
-  if (forwarded) return forwarded;
-
-  return request.headers.get('x-real-ip')?.trim() || 'desconhecido';
+  return extractClientIp(request.headers) ?? 'desconhecido';
 }
 
 const NOT_FOUND_CODE = 'NOT_FOUND';

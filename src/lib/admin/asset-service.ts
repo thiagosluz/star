@@ -47,6 +47,7 @@ import { ensureStorageRoom } from '@/lib/storage/storage-quota';
 import {
   canonicalExtension,
   formatBytes,
+  parseImageMime,
   STORED_IMAGE_MIME,
   validateImageUpload,
   webpKeyFor,
@@ -554,16 +555,5 @@ function detectImageMimeFromContentType(
   contentType: string,
   fallback: string,
 ): ImageMimeType | null {
-  const normalized = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
-
-  return asImageMime(normalized) ?? asImageMime(fallback);
-}
-
-function asImageMime(value: string): ImageMimeType | null {
-  return value === 'image/png' ||
-    value === 'image/jpeg' ||
-    value === 'image/webp' ||
-    value === 'image/avif'
-    ? value
-    : null;
+  return parseImageMime(contentType) ?? parseImageMime(fallback);
 }

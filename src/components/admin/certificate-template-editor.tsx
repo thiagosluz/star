@@ -1,6 +1,7 @@
 'use client';
 
-import { Fragment, useActionState, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useActionState, useRef, useState } from 'react';
+import { useIsInteractive } from '@/hooks/use-is-interactive';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, CheckCircle2, Loader2, Move, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 
@@ -110,21 +111,6 @@ export interface EditorModel {
    */
   previewWorstSvg: string | null;
   elements: EditorElement[];
-}
-
-/**
- * Interatividade só depois da hidratação.
- *
- * `useSyncExternalStore` é o jeito de perguntar "o JavaScript já carregou?" sem
- * `setState` dentro de efeito — que o React Compiler reprova (e com razão: render em
- * cascata). Antes disso a tela mostra o formulário completo e nenhum botão morto.
- */
-function useIsInteractive(): boolean {
-  return useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
 }
 
 /** Uma caixa vazia para o organizador começar. */

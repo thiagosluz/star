@@ -17,7 +17,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { CERTIFICATE_KINDS, type CertificateKind } from '@/domain/certificates/certificate-rules';
@@ -50,13 +50,7 @@ import {
   getCertificateDownloadUrl,
 } from '@/lib/certificates/certificate-service';
 
-export interface CertificateActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  /** Motivos por campo, quando a recusa vem de um validador do domínio. */
-  details?: readonly string[];
-  data?: Record<string, unknown>;
+export interface CertificateActionState extends ActionGuardState {
   values?: {
     minRatioPercent?: string;
     minMinutes?: string;
@@ -432,19 +426,7 @@ export async function requestCertificateDownloadAction(
 //
 //  TODA autorização é verificada aqui. A tela esconder o formulário não protege nada.
 // ═══════════════════════════════════════════════════════════════════════════════
-export interface CertificateTemplateActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  /** Problemas item a item (layout recusado, arte recusada). */
-  details?: readonly string[];
-  /**
-   * A MESMA forma de `AdminActionState` — é o que permite usar a moldura de
-   * formulário do painel (`AdminForm`) sem um componente paralelo que ficaria para
-   * trás no primeiro ajuste. `previewSvg` e `notice` viajam aqui dentro.
-   */
-  data?: Record<string, unknown>;
-}
+export type CertificateTemplateActionState = ActionGuardState;
 
 /**
  * Lê as linhas do formulário.

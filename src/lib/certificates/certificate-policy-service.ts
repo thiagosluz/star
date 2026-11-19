@@ -32,6 +32,7 @@ import {
   readCertificatePolicy,
   type CertificatePolicy,
 } from '@/domain/certificates/certificate-policy-rules';
+import { asRecord as settingsObject } from '@/domain/shared/json-record';
 import { logger } from '@/lib/observability/logger';
 
 export type CertificatePolicyErrorCode =
@@ -48,13 +49,6 @@ export type CertificatePolicyWriteResult =
       message: string;
       details?: readonly string[];
     };
-
-/** `settings` é JSON livre: qualquer coisa que não seja objeto é tratada como vazio. */
-function settingsObject(settings: unknown): Record<string, unknown> {
-  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return {};
-
-  return settings as Record<string, unknown>;
-}
 
 /**
  * Grava a política de presença do evento.

@@ -111,6 +111,7 @@ import { revalidateTenantArea, TENANT_CACHE_AREAS } from '@/lib/cache/revalidate
 const CLIENT_LIB_VALUE_ALLOWLIST = new Set([
   '@/lib/utils/cn',
   '@/lib/offline/credential-offline-queue',
+  '@/lib/client/file-crypto',
 ]);
 
 const FORBIDDEN_CLIENT_MODULES = [

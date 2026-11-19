@@ -38,7 +38,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { EVENT_API_SECTIONS, type EventApiSectionToggles } from '@/domain/api/event-api-key-rules';
@@ -49,10 +49,7 @@ import {
   updateEventApiSections,
 } from '@/lib/api/event-api-key-service';
 
-export interface EventApiActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
+export interface EventApiActionState extends ActionGuardState {
   /** Presente só em "gerar" e "mostrar": o estado vive na resposta, não no banco. */
   chave?: string;
 }

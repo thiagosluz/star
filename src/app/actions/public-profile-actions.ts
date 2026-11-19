@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { headers } from 'next/headers';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { z } from 'zod';
 
 import { guardSelfServiceAction } from '@/lib/auth/guard-action';
@@ -237,7 +237,7 @@ export async function reportPublicProfileAction(
     };
   }
 
-  const requestHeaders = await headers();
+  const { ipAddress } = await readRequestMeta();
 
   const result = await reportPublicProfile({
     tenantId: guard.tenantId,
@@ -245,7 +245,7 @@ export async function reportPublicProfileAction(
     username: parsed.data.username,
     category: parsed.data.category,
     details: parsed.data.details ?? null,
-    ipAddress: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    ipAddress,
   });
 
   if (!result.ok) {

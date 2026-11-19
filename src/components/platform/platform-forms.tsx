@@ -33,6 +33,7 @@ import {
 } from '@/app/actions/platform-actions';
 import { TENANT_PLANS, PLAN_DEFINITIONS, type TenantPlan } from '@/domain/platform/platform-rules';
 import { ROLE_KEYS, type RoleKey } from '@/domain/rbac/permissions';
+import { ActionFeedback } from '@/components/ui';
 
 /**
  * Papéis que podem ser concedidos a um vínculo de EQUIPE, calculados no cliente a
@@ -52,29 +53,7 @@ const MEMBER_ROLE_OPTIONS: readonly TenantMemberRole[] = ROLE_KEYS.filter(
 const INITIAL: PlatformActionState | null = null;
 
 function Feedback({ state, testId }: { state: PlatformActionState | null; testId: string }) {
-  if (!state) return null;
-
-  return (
-    <div
-      data-testid={testId}
-      data-ok={state.ok ? 'true' : 'false'}
-      role="status"
-      className={`mt-4 rounded-lg border p-3 text-sm ${
-        state.ok
-          ? 'border-success/40 bg-success-soft text-success-strong'
-          : 'border-destructive/40 bg-destructive/10 text-destructive'
-      }`}
-    >
-      <p className="font-medium">{state.message}</p>
-      {state.details && state.details.length > 0 ? (
-        <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
-          {state.details.map((detail) => (
-            <li key={detail}>{detail}</li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
+  return <ActionFeedback state={state} testId={testId} exactTestId className="mt-4" />;
 }
 
 function Submit({

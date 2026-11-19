@@ -25,6 +25,8 @@ import { z } from 'zod';
 
 import { colorSchema, safeUrlSchema } from '@/domain/events/landing-page';
 import { CARD_RARITIES, type CardRarity, type CardTrigger, type XpSourceKind } from '@/domain/gamification/types';
+import { asRecordOrNull as asRecord } from '@/domain/shared/json-record';
+import { round2 } from '@/domain/shared/number-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Distribuição de raridade
@@ -195,12 +197,6 @@ export function resolveArt(raw: unknown): CardArt {
     tilt: readField(percentSchema, record.tilt) ?? DEFAULT_TILT,
     backUrl: readField(safeUrlSchema, record.backUrl),
   };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
 }
 
 /** Variáveis CSS da paleta — o componente aplica como estilo, nunca como string solta. */
@@ -462,10 +458,6 @@ export function summarizeAlbum(entries: readonly AlbumEntry[]): AlbumSummary {
 
 /** Máximo de cartas fixadas no perfil público. */
 export const MAX_PINNED_CARDS = 3;
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Gatilhos

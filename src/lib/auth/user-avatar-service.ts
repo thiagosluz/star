@@ -42,6 +42,7 @@ import { isSha256Hex, verifyStoredObject } from '@/domain/review/submission-rule
 import { encodeAssetAsWebp } from '@/lib/storage/image-converter';
 import {
   BUCKETS,
+  buildPublicAssetUrl as publicUrl,
   createUploadUrl,
   deleteObject,
   getObjectBuffer,
@@ -52,6 +53,7 @@ import {
 } from '@/lib/storage/s3-client';
 import {
   canonicalExtension,
+  parseImageMime as asImageMime,
   STORED_IMAGE_MIME,
   USER_AVATAR_TARGET,
   validateImageUpload,
@@ -334,29 +336,6 @@ export async function removeUserAvatar(userId: string): Promise<AvatarResult<{ r
     logger.error(`[avatar] falha ao remover: ${errorMessage(error)}`);
     return { ok: false, code: 'STORAGE', message: 'Não foi possível remover a sua foto.' };
   }
-}
-
-function asImageMime(value: string | null | undefined): ImageMimeType | null {
-  const normalized = (value ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
-
-  return normalized === 'image/png' ||
-    normalized === 'image/jpeg' ||
-    normalized === 'image/webp' ||
-    normalized === 'image/avif'
-    ? (normalized as ImageMimeType)
-    : null;
-}
-
-/** URL pública do objeto — mesma montagem do acervo (bucket público de assets). */
-function publicUrl(bucket: string, objectKey: string): string {
-  const base = (
-    process.env.S3_PUBLIC_URL ??
-    process.env.S3_PUBLIC_ENDPOINT ??
-    process.env.S3_ENDPOINT ??
-    'http://localhost:9000'
-  ).replace(/\/+$/, '');
-
-  return `${base}/${bucket}/${objectKey}`;
 }
 
 /**

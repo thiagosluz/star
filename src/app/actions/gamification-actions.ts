@@ -14,7 +14,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { claimMission } from '@/lib/gamification/task-service';
@@ -25,12 +25,7 @@ import { grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { awardTopReviewers } from '@/lib/gamification/achievement-service';
 import { MAX_REVIEWER_AWARDS } from '@/domain/raffles/stage-rules';
 
-export interface GamificationActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  data?: Record<string, unknown>;
-}
+export type GamificationActionState = ActionGuardState;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Resgatar missão

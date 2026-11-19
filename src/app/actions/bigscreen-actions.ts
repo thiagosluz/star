@@ -22,18 +22,12 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { setBigscreenVisibility } from '@/lib/raffles/raffle-service';
 
-export interface BigscreenActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+export type BigscreenActionState = ActionGuardState;
 
 /**
  * A guarda local SAIU na FASE 75 (era a duplicação declarada com `raffle-actions`).

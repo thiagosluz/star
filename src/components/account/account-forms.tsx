@@ -14,7 +14,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
-import { Alert, AppLink, Button, ConfirmDialog, Field, Input } from '@/components/ui';
+import { ActionFeedback, Alert, AppLink, Button, ConfirmDialog, Field, Input } from '@/components/ui';
 import { uploadAssetFile } from '@/components/admin/asset-upload';
 import type { AccountActionState } from '@/app/actions/account-actions';
 import {
@@ -33,6 +33,7 @@ import {
   webpSavingsLabel,
 } from '@/domain/events/image-rules';
 import type { AccountSession } from '@/domain/account/account-rules';
+import { formatDateTimePtBr as formatMoment } from '@/domain/shared/date-format';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -58,21 +59,9 @@ type Action = (
 ) => Promise<AccountActionState>;
 
 function Feedback({ state, testId }: { state: AccountActionState | null; testId: string }) {
-  if (!state) return null;
-
-  const tone = state.ok ? 'success' : 'danger';
-
   return (
-    <Alert tone={tone} data-testid={`${testId}-${state.ok ? 'ok' : 'error'}`}>
-      <span>{state.message ?? (state.ok ? 'Pronto.' : 'Não foi possível concluir.')}</span>
-      {state.details && state.details.length > 0 ? (
-        <ul className="mt-1 list-disc pl-4 text-xs">
-          {state.details.map((detail) => (
-            <li key={detail}>{detail}</li>
-          ))}
-        </ul>
-      ) : null}
-      {state.code === 'SESSION_NOT_FRESH' ? (
+    <ActionFeedback state={state} testId={testId}>
+      {state?.code === 'SESSION_NOT_FRESH' ? (
         <span className="mt-2 block text-xs">
           <AppLink className="underline underline-offset-4" href="/login?redirectTo=%2Fconta">
             Entrar novamente
@@ -80,7 +69,7 @@ function Feedback({ state, testId }: { state: AccountActionState | null; testId:
           e voltar para cá.
         </span>
       ) : null}
-    </Alert>
+    </ActionFeedback>
   );
 }
 
@@ -857,21 +846,6 @@ export function AccountSessionsList({
       <Feedback state={state} testId="account-sessions-feedback" />
     </div>
   );
-}
-
-/** Data legível no fuso do navegador — a tela fala com quem está do outro lado. */
-function formatMoment(iso: string): string {
-  const date = new Date(iso);
-
-  if (Number.isNaN(date.getTime())) return '—';
-
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

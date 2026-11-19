@@ -1,6 +1,6 @@
-import { headers } from 'next/headers';
 
 import { authorizeDataExport } from '@/lib/exports/export-access';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { buildDataExportFile, getDataExport } from '@/lib/exports/export-service';
 import { EXPORT_TTL_HOURS } from '@/domain/exports/export-rules';
 import { tenantApiError } from '@/lib/api/tenant-api-error';
@@ -84,15 +84,15 @@ export async function GET(
     return tenantApiError(404, 'NOT_FOUND', 'Exportação não encontrada.');
   }
 
-  const requestHeaders = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   const file = await buildDataExportFile({
     tenantId: access.tenantId,
     exportId,
     tenantSlug,
     actorId: access.userId,
-    ipAddress: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: requestHeaders.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   if (!file.ok) {

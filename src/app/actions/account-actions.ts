@@ -1,5 +1,7 @@
 'use server';
 
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASOS DE USO — Área de conta (FASE 47)
@@ -58,12 +60,7 @@ import {
   totpSecretFromUri,
 } from '@/domain/account/account-rules';
 
-export interface AccountActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
+export interface AccountActionState extends ActionGuardState {
   /** Valores digitados (sem senhas) preservados em caso de recusa. */
   values?: {
     name?: string;

@@ -1,9 +1,9 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState } from 'react';
-import { ArrowRight, CheckCircle2, Copy, Loader2, Plus, RefreshCw, ShieldCheck, Unlink, UserPlus, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, Plus, RefreshCw, ShieldCheck, Unlink, UserPlus, X } from 'lucide-react';
 
-import { Alert, AppLink, Button, ConfirmDialog, Field, Input, Select, fieldAria } from '@/components/ui';
+import { Alert, AppLink, Button, ConfirmDialog, CopyButton, Field, Input, Select, fieldAria } from '@/components/ui';
 import {
   PHOTO_AUTHORIZATION_CHANNELS,
   PHOTO_AUTHORIZATION_CHANNEL_LABELS,
@@ -122,8 +122,6 @@ function Feedback({
 
 /** Código de convite + botão de copiar (o que o organizador precisa fazer com ele). */
 export function InviteTokenBox({ token, expiresAt }: { token: string; expiresAt: string | null }) {
-  const [copied, setCopied] = useState(false);
-
   return (
     <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3" data-testid="invite-token-box">
       <p className="text-xs font-medium">
@@ -133,23 +131,7 @@ export function InviteTokenBox({ token, expiresAt }: { token: string; expiresAt:
         <code className="code-data break-all" data-testid="invite-token">
           {token}
         </code>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(token);
-              setCopied(true);
-            } catch {
-              setCopied(false);
-            }
-          }}
-          data-testid="copy-invite-token"
-        >
-          <Copy className="size-3.5" aria-hidden />
-          {copied ? 'Copiado' : 'Copiar'}
-        </Button>
+        <CopyButton value={token} data-testid="copy-invite-token" />
       </div>
       {expiresAt ? (
         <p className="text-xs text-muted-foreground" suppressHydrationWarning>

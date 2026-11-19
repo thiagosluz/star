@@ -71,11 +71,9 @@ const globalForBus = globalThis as unknown as {
   };
 };
 
-const state = (globalForBus.__eventflowTenantCacheBus ??= {});
+import { getRedisUrl } from '@/lib/redis/config';
 
-function redisUrl(): string {
-  return process.env.REDIS_URL ?? 'redis://localhost:6379';
-}
+const state = (globalForBus.__eventflowTenantCacheBus ??= {});
 
 /** Registra a falha UMA vez: log repetido a cada requisição vira ruído. */
 function warnOnce(error: unknown): void {
@@ -88,7 +86,7 @@ function warnOnce(error: unknown): void {
 }
 
 function createClient(): Redis {
-  const client = new Redis(redisUrl(), {
+  const client = new Redis(getRedisUrl(), {
     lazyConnect: true,
     // Falha rápido em vez de enfileirar: uma requisição nunca espera o Redis.
     enableOfflineQueue: false,

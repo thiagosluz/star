@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useIsInteractive } from '@/hooks/use-is-interactive';
 import { Lock, Plus, Trash2 } from 'lucide-react';
 
 import { Button, Input } from '@/components/ui';
@@ -61,22 +62,6 @@ function readWeightSum(container: HTMLFieldSetElement): number | null {
   }
 
   return filled > 0 ? total : null;
-}
-
-/**
- * O JavaScript já carregou?
- *
- * `false` no HTML do servidor e `true` no cliente, sem `setState` dentro de efeito (que
- * provocaria um segundo render em cascata — e o lint do React Compiler reprova). É o
- * que decide se os botões de acrescentar/remover podem aparecer: botão que não faz nada
- * é pior que botão ausente, e quem está sem JavaScript usa as linhas do `<noscript>`.
- */
-function useIsInteractive(): boolean {
-  return useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
 }
 
 export function RubricEditor({

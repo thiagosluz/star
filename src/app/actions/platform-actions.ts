@@ -1,5 +1,7 @@
 'use server';
 
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Server Actions — Governança da plataforma
@@ -56,12 +58,7 @@ import {
 } from '@/domain/platform/lead-rules';
 import { logger } from '@/lib/observability/logger';
 
-export interface PlatformActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
+export interface PlatformActionState extends ActionGuardState {
   /** Valores submetidos retornados em erro para evitar o reset de formulário do React 19. */
   values?: {
     name?: string;

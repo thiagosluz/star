@@ -18,10 +18,16 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { revalidatePath, revalidateTag } from 'next/cache';
-import { headers } from 'next/headers';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
+import {
+  formDate as toDate,
+  formInt as toInt,
+  formNullableInt as toOptionalInt,
+  formNullableText as nullable,
+} from '@/lib/http/form-data';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { revalidateTenantArea, TENANT_CACHE_AREAS } from '@/lib/cache/revalidate-area';
 import { requirePlatformPermission } from '@/lib/platform/guard';
 import { decideReport } from '@/lib/platform/profile-moderation';
@@ -59,52 +65,7 @@ import { revokeCertificate } from '@/lib/certificates/certificate-service';
 import { confirmRegistration } from '@/lib/events/confirmation-service';
 import { resolveConfirmationItem } from '@/lib/events/confirmation-service';
 
-export interface AdminActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
-
-/** Converte string vazia em `null` — formulário HTML não conhece ausência. */
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
-}
-
-function toDate(value: FormDataEntryValue | null): Date | null {
-  const text = nullable(value);
-  if (!text) return null;
-
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function toInt(value: FormDataEntryValue | null, fallback = 0): number {
-  const numeric = Number(typeof value === 'string' ? value : NaN);
-  return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
-}
-
-/**
- * Inteiro OPCIONAL: campo vazio vira `null`, e não `0`.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE NÃO REUSAR `toInt(..., 0)`
- * ─────────────────────────────────────────────────────────────────────────────
- *  "Vazio" e "zero" são afirmações diferentes, e o campo de capacidade da sala é o
- *  caso em que a diferença importa: em branco significa "sem limite definido"
- *  (`null`), e não "não cabe ninguém". Com o `fallback = 0` genérico, quem deixasse
- *  o campo vazio gravaria zero — e a sala afirmaria o oposto do que a pessoa quis
- *  dizer.
- */
-function toOptionalInt(value: FormDataEntryValue | null): number | null {
-  const text = nullable(value);
-  if (text === null) return null;
-
-  const numeric = Number(text);
-  return Number.isFinite(numeric) ? Math.trunc(numeric) : null;
-}
+export type AdminActionState = ActionGuardState;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Evento, sala, atividade e trilha
@@ -534,14 +495,14 @@ export async function confirmRegistrationAction(
   });
   if (!auth.ok) return auth.state;
 
-  const request = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   const result = await confirmRegistration({
     tenantId: auth.tenantId,
     registrationId: parsed.data.registrationId,
     actorId: auth.userId,
-    ipAddress: request.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: request.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   /**
@@ -617,7 +578,7 @@ export async function resolveConfirmationItemAction(
   });
   if (!auth.ok) return auth.state;
 
-  const request = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   const result = await resolveConfirmationItem({
     tenantId: auth.tenantId,
@@ -626,8 +587,8 @@ export async function resolveConfirmationItemAction(
     status: parsed.data.status,
     actorId: auth.userId,
     note: parsed.data.note ?? null,
-    ipAddress: request.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: request.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   /**

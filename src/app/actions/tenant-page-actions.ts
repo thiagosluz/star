@@ -70,13 +70,10 @@ import {
   requestTenantPageAssetUpload,
 } from '@/lib/tenancy/tenant-page-asset-service';
 
-export interface TenantPageActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+import type { ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable, formText as text } from '@/lib/http/form-data';
+
+export type TenantPageActionState = ActionGuardState;
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Guarda
@@ -105,15 +102,6 @@ function revalidateTenantPage(tenantSlug: string): void {
 }
 
 const tenantSlugSchema = z.string().trim().min(1).max(63);
-
-function nullable(value: FormDataEntryValue | null): string | null {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > 0 ? text : null;
-}
-
-function text(value: FormDataEntryValue | null): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
 
 /**
  * O aviso padrão de recusa por vínculo/permissão, quando a página informada não é

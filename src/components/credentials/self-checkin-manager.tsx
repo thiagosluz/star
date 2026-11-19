@@ -1,7 +1,6 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
-import { useFormStatus } from 'react-dom';
 import {
   Check,
   CheckCircle2,
@@ -21,12 +20,13 @@ import {
 } from 'lucide-react';
 
 import type { SelfCheckinActionState } from '@/app/actions/self-checkin-actions';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import type {
   SelfCheckinActivityRow,
   SelfCheckinConsoleData,
   SelfCheckinPointSummary,
 } from '@/lib/events/self-checkin-service';
-import { Alert, AppLink, Badge, Button, ConfirmDialog, Input, Label } from '@/components/ui';
+import { Alert, AppLink, Badge, Button, ConfirmDialog, Input, Label, SubmitButton as UiSubmitButton } from '@/components/ui';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { describeSelfCheckinPolicySummary } from '@/domain/events/checkin-console-rules';
 import {
@@ -74,11 +74,15 @@ function SubmitButton({
   testId?: string;
   variant?: 'primary' | 'secondary' | 'ghost';
 }) {
-  const { pending } = useFormStatus();
   return (
-    <Button type="submit" variant={variant} size="sm" disabled={pending} data-testid={testId}>
-      {pending ? pendingLabel : label}
-    </Button>
+    <UiSubmitButton
+      label={label}
+      pendingLabel={pendingLabel}
+      variant={variant}
+      size="sm"
+      showSpinner={false}
+      data-testid={testId}
+    />
   );
 }
 
@@ -129,7 +133,8 @@ function PointRow({
   );
   const [regenOpen, setRegenOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { isCopied, copy } = useCopyToClipboard(2_000);
+  const copied = isCopied();
   const deleteFormRef = useRef<HTMLFormElement | null>(null);
 
   const rowKey = activity ? activity.activityId : 'portaria';
@@ -143,16 +148,10 @@ function PointRow({
         ? (regenState ?? state ?? deleteState)
         : (state ?? regenState ?? deleteState);
 
-  async function handleCopyLink(token: string) {
+  function handleCopyLink(token: string) {
     const path = tenantPath(tenantSlug, `/presenca/${token}`);
     const url = typeof window !== 'undefined' ? `${window.location.origin}${path}` : path;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+    void copy(url);
   }
 
   return (

@@ -13,6 +13,7 @@ import {
   PROFILE_REPORT_CATEGORY_MEANINGS,
   profileModerationEffect,
 } from '@/domain/profile/profile-moderation-rules';
+import { formatUtcMoment as formatMoment } from '@/domain/shared/date-format';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -43,10 +44,6 @@ import {
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const dynamic = 'force-dynamic';
-
-function formatMoment(date: Date): string {
-  return date.toISOString().slice(0, 16).replace('T', ' ');
-}
 
 export default async function ProfileModerationPage() {
   await requirePlatformPermission();

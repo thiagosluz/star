@@ -42,6 +42,7 @@ import {
   type PublicationState,
 } from '@/domain/events/landing-page';
 import { PAGE_VERSION_REASONS } from '@/domain/events/page-version-rules';
+import { asRecord } from '@/domain/shared/json-record';
 import { appendVersion } from '@/lib/admin/page-version-service';
 import { logger } from '@/lib/observability/logger';
 
@@ -214,11 +215,6 @@ export async function getLandingForEdit(
         : null,
     };
   });
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

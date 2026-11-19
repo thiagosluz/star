@@ -14,8 +14,8 @@
  *      anti-ubiquidade é aplicada transacionalmente em `submitSelfCheckin`).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { z } from 'zod';
 
 import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
@@ -303,7 +303,7 @@ export async function submitSelfCheckinAction(
     return { ok: false, code: 'GEO_INVALID', message: 'Coordenadas de localização inválidas.' };
   }
 
-  const headerList = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
   const result = await submitSelfCheckin({
     tenantId: auth.tenantId,
     token: parsed.data.token,
@@ -313,8 +313,8 @@ export async function submitSelfCheckinAction(
     latitude,
     longitude,
     accuracyMeters,
-    ipAddress: headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: headerList.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, `/presenca/${parsed.data.token}`));

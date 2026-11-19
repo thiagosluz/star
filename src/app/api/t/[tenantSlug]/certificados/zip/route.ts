@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { headers } from 'next/headers';
+import { readRequestMeta } from '@/lib/http/request-meta';
 
 import { guardAction } from '@/lib/auth/guard-action';
 import { tenantApiError } from '@/lib/api/tenant-api-error';
@@ -120,7 +120,7 @@ export async function GET(
    */
   const lote = plan;
 
-  const headerList = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   await recordAudit({
     tenantId: auth.tenantId,
@@ -133,8 +133,8 @@ export async function GET(
       certificados: { from: null, to: `${lote.entries.length} arquivo(s)` },
       fora_do_lote: { from: null, to: `${lote.pending} sem PDF` },
     },
-    ipAddress: headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: headerList.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   /**

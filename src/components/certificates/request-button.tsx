@@ -1,10 +1,10 @@
 'use client';
 
 import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { Award, Loader2 } from 'lucide-react';
+import { Award } from 'lucide-react';
 
 import type { SpeakerActionState } from '@/app/actions/speaker-actions';
+import { SubmitButton as UiSubmitButton } from '@/components/ui';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -24,22 +24,14 @@ import type { SpeakerActionState } from '@/app/actions/speaker-actions';
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-
   return (
-    <button
-      type="submit"
-      disabled={pending}
+    <UiSubmitButton
+      label={label}
+      pendingLabel="Emitindo…"
+      icon={<Award className="size-4" aria-hidden />}
       data-testid="emit-speaker-certificate"
-      className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
-    >
-      {pending ? (
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-      ) : (
-        <Award className="size-4" aria-hidden />
-      )}
-      {pending ? 'Emitindo…' : label}
-    </button>
+      className="h-auto rounded-md px-4 py-2 transition hover:opacity-90 disabled:opacity-60"
+    />
   );
 }
 

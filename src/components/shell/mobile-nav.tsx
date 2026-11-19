@@ -2,28 +2,12 @@
 
 import { Menu, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { KovenoMark } from '@/components/ui/brand-mark';
+import { useIsInteractive } from '@/hooks/use-is-interactive';
 import { cn } from '@/lib/utils/cn';
-
-/**
- * "O navegador já assumiu esta árvore?"
- *
- * É a mesma pergunta que `certificate-template-editor.tsx` e `holo-card.tsx` fazem, e
- * pelo mesmo motivo: `useEffect` + `setState` provoca render em cascata e a regra
- * `react-hooks/set-state-in-effect` reprova — com razão. Aqui ela decide se o portal
- * pode existir: `document` não existe no servidor, e o HTML do servidor precisa sair
- * igual ao primeiro render do cliente para a hidratação não divergir.
- */
-function useIsInteractive(): boolean {
-  return useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
-}
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════

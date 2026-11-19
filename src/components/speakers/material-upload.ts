@@ -4,6 +4,7 @@ import {
   validateMaterialUpload,
 } from '@/domain/speakers/speaker-rules';
 import { formatBytes } from '@/domain/events/image-rules';
+import { readMagicBytes, sha256Hex } from '@/lib/client/file-crypto';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -26,26 +27,10 @@ import { formatBytes } from '@/domain/events/image-rules';
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-const MAGIC_BYTES_TO_READ = 16;
-
 export type SpeakerUploadAction = (
   prev: SpeakerActionState | null,
   formData: FormData,
 ) => Promise<SpeakerActionState>;
-
-async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function readMagicBytes(file: File): Promise<number[]> {
-  const slice = file.slice(0, MAGIC_BYTES_TO_READ);
-  const buffer = await slice.arrayBuffer();
-  return Array.from(new Uint8Array(buffer));
-}
 
 export type UploadMaterialResult =
   | { ok: true; materialId: string }

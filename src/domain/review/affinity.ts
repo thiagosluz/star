@@ -25,6 +25,7 @@
  *  nome que depois é descartado mina a confiança no sistema.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { round2 } from '@/domain/shared/number-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Normalização de texto
@@ -340,10 +341,6 @@ function bandFor(score: number): AffinityBand {
   if (score >= 50) return 'GOOD';
   if (score >= MIN_USEFUL_AFFINITY) return 'FAIR';
   return 'WEAK';
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 /** Rótulo em pt-BR para a faixa de afinidade. */

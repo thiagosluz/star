@@ -4,7 +4,7 @@ import { startTransition, useActionState, useEffect, useRef, useState } from 're
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Trash2, Upload } from 'lucide-react';
 
-import { Alert, Button, ConfirmDialog, Field, Input, Select, Textarea, fieldAria, startNavigationProgress } from '@/components/ui';
+import { ActionFeedback, Alert, Button, ConfirmDialog, Field, Input, Select, Textarea, fieldAria, startNavigationProgress } from '@/components/ui';
 import {
   MATERIAL_ACCEPT_ATTRIBUTE,
   MATERIAL_KINDS,
@@ -36,23 +36,7 @@ import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
  */
 
 function Feedback({ state }: { state: SpeakerActionState | null }) {
-  if (!state) return null;
-
-  return (
-    <Alert
-      tone={state.ok ? 'success' : 'danger'}
-      data-testid={state.ok ? 'speaker-feedback-ok' : 'speaker-feedback-error'}
-    >
-      <span>{state.message ?? (state.ok ? 'Pronto.' : 'Não foi possível concluir.')}</span>
-      {state.details && state.details.length > 0 ? (
-        <ul className="mt-1 list-disc pl-4 text-xs">
-          {state.details.map((detail) => (
-            <li key={detail}>{detail}</li>
-          ))}
-        </ul>
-      ) : null}
-    </Alert>
-  );
+  return <ActionFeedback state={state} testId="speaker-feedback" />;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

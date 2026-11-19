@@ -35,6 +35,7 @@
  *  o hash chegam prontos do cofre (`src/lib/api/event-api-key-vault.ts`).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { asRecordOrNull as settingsObject } from '@/domain/shared/json-record';
 
 /** Entropia da chave: 192 bits (32 caracteres base64url). */
 export const EVENT_API_KEY_BYTES = 24;
@@ -80,13 +81,6 @@ const EMPTY_SECTIONS: EventApiSectionToggles = {
   patrocinadores: false,
   chamadas: false,
 };
-
-/** `settings` é JSON livre: qualquer coisa que não seja objeto vira "sem configuração". */
-function settingsObject(settings: unknown): Record<string, unknown> | null {
-  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return null;
-
-  return settings as Record<string, unknown>;
-}
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;

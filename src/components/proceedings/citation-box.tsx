@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { Check, Copy, Download } from 'lucide-react';
+
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
 export function CitationBox(props: {
   abnt: string;
@@ -10,12 +11,10 @@ export function CitationBox(props: {
   bibtexHref: string;
   risHref: string;
 }) {
-  const [copiedKey, setCopiedKey] = useState<'abnt' | 'apa' | 'bibtex' | null>(null);
+  const { copiedKey, copy: copyToClipboard } = useCopyToClipboard(2_000);
 
-  async function copy(key: 'abnt' | 'apa' | 'bibtex', text: string) {
-    await navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+  function copy(key: 'abnt' | 'apa' | 'bibtex', text: string) {
+    void copyToClipboard(text, key);
   }
 
   return (

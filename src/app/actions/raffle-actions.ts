@@ -19,7 +19,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
@@ -36,13 +36,7 @@ import {
 } from '@/lib/raffles/raffle-service';
 import { previewEligibility } from '@/lib/raffles/raffle-read-service';
 
-export interface RaffleActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  data?: Record<string, unknown>;
-}
+export type RaffleActionState = ActionGuardState;
 
 function toDateOnly(value: FormDataEntryValue | null): Date | null {
   const text = typeof value === 'string' ? value.trim() : '';

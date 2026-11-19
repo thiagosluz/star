@@ -548,6 +548,18 @@ export async function getObjectBuffer(bucket: string, objectKey: string): Promis
   }));
 }
 
+/** Monta a URL pública de leitura de um objeto em bucket público de mídia. */
+export function buildPublicAssetUrl(bucket: string, objectKey: string): string {
+  const base = (
+    process.env.S3_PUBLIC_URL ??
+    process.env.S3_PUBLIC_ENDPOINT ??
+    process.env.S3_ENDPOINT ??
+    'http://localhost:9000'
+  ).replace(/\/+$/, '');
+
+  return `${base}/${bucket}/${objectKey}`;
+}
+
 /** Verifica se o storage está acessível. Usado pelo healthcheck. */
 export async function pingStorage(): Promise<{ ok: boolean; message: string }> {
   try {

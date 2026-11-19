@@ -57,6 +57,7 @@ import { formatCpf, isValidCpf } from '@/domain/events/registration-form-rules';
  * importar a camada de desenho. A dependência é do domínio para o domínio.
  */
 import { fitTextInBox, type TextBoxFit } from '@/domain/documents/text-measure-rules';
+import { round2 } from '@/domain/shared/number-rules';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Formato da página
@@ -1070,9 +1071,6 @@ export interface LayoutIssue {
 
 export type LayoutValidation = { ok: true } | { ok: false; issues: readonly LayoutIssue[] };
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
 
 /** Um número utilizável em geometria (finito e não negativo). */
 function isUsableNumber(value: number): boolean {

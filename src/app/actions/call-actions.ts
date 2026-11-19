@@ -36,6 +36,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
 import { guardAction, guardSelfServiceAction, type ActionGuardState } from '@/lib/auth/guard-action';
+import { formNullableText as nullable } from '@/lib/http/form-data';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
@@ -68,13 +69,6 @@ export interface CallActionState extends ActionGuardState {
   protocol?: string;
   /** Caminho para onde o proponente pode ir depois de enviar. */
   redirectTo?: string;
-}
-
-/** Campo de texto opcional: `""` é ausência, não string vazia. */
-function nullable(value: FormDataEntryValue | null | undefined): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
 }
 
 /**

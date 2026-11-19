@@ -60,6 +60,7 @@ import {
 import {
   canonicalExtension,
   formatBytes,
+  parseImageMime as asImageMime,
   STORED_IMAGE_MIME,
   validateImageUpload,
   webpKeyFor,
@@ -375,15 +376,4 @@ export async function confirmTenantPageAssetUpload(
       message: 'Não foi possível confirmar a imagem enviada.',
     };
   }
-}
-
-function asImageMime(value: string | null | undefined): ImageMimeType | null {
-  const normalized = (value ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
-
-  return normalized === 'image/png' ||
-    normalized === 'image/jpeg' ||
-    normalized === 'image/webp' ||
-    normalized === 'image/avif'
-    ? normalized
-    : null;
 }

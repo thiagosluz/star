@@ -26,18 +26,13 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { registrationFieldFromFormData } from '@/lib/admin/registration-form-editing';
 import { applyRegistrationFormOperationOnEvent } from '@/lib/admin/registration-form-service';
 
-export interface RegistrationFormActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-}
+export type RegistrationFormActionState = ActionGuardState;
 
 /** O envelope comum: a instituição e o evento da operação. */
 const envelope = z.object({

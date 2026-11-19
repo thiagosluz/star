@@ -25,7 +25,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { revalidatePath } from 'next/cache';
-import { headers } from 'next/headers';
+import { readRequestMeta } from '@/lib/http/request-meta';
 import { z } from 'zod';
 
 import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
@@ -81,7 +81,7 @@ export async function sendParticipantMessageAction(
    * base inteira é informação que precisa sobreviver à sessão (mesmo padrão do
    * credenciamento, FASE 12).
    */
-  const headerList = await headers();
+  const { ipAddress, userAgent } = await readRequestMeta();
 
   const result = await sendParticipantMessage({
     tenantId: auth.tenantId,
@@ -91,8 +91,8 @@ export async function sendParticipantMessageAction(
     subject: parsed.data.subject,
     body: parsed.data.body,
     eventId: parsed.data.eventId ?? null,
-    ipAddress: headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
-    userAgent: headerList.get('user-agent'),
+    ipAddress,
+    userAgent,
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/participantes'));
@@ -227,7 +227,7 @@ export async function replyToParticipantMessageAction(
     userId: auth.userId,
     messageId: parsed.data.messageId,
     body: parsed.data.body,
-    ipAddress: (await headers()).get('x-forwarded-for'),
+    ipAddress: (await readRequestMeta()).ipAddress,
   });
 
   revalidatePath(tenantPath(parsed.data.tenantSlug, '/minhas-mensagens'));

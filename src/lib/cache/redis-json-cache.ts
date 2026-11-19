@@ -34,6 +34,7 @@ import {
   type PublicCacheNamespace,
 } from '@/domain/cache/public-cache-rules';
 import { logger } from '@/lib/observability/logger';
+import { getRedisUrl } from '@/lib/redis/config';
 
 export interface RedisCacheClientLike {
   get(key: string): Promise<string | null>;
@@ -53,10 +54,6 @@ const globalForCache = globalThis as unknown as {
   __eventflowPublicCacheWarned?: boolean;
 };
 
-function redisUrl(): string {
-  return process.env.REDIS_URL ?? 'redis://localhost:6379';
-}
-
 function warnUnavailableOnce(error: unknown): void {
   if (globalForCache.__eventflowPublicCacheWarned) return;
   globalForCache.__eventflowPublicCacheWarned = true;
@@ -69,7 +66,7 @@ function warnUnavailableOnce(error: unknown): void {
 
 function defaultClient(): Redis {
   if (!globalForCache.__eventflowPublicCacheClient) {
-    const client = new Redis(redisUrl(), {
+    const client = new Redis(getRedisUrl(), {
       lazyConnect: true,
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,

@@ -8,6 +8,7 @@ import {
   type RafflePoolEntry,
 } from '@/domain/raffles/draw-selection';
 import { prepareWebRandomInt } from '@/domain/raffles/web-seeded-random';
+import { sha256Hex } from '@/lib/client/file-crypto';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -68,12 +69,6 @@ export interface RaffleAuditModel {
     diverged: number;
     positions: AuditReproductionPosition[];
   };
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /** Selo de conferência: verde quando confere, vermelho quando não, cinza sem dado. */

@@ -31,7 +31,7 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import {
@@ -61,14 +61,7 @@ import type { ReviewRecommendation } from '@/domain/review/review-rules';
 // ───────────────────────────────────────────────────────────────────────────────
 //  Contexto autorizado
 // ───────────────────────────────────────────────────────────────────────────────
-export interface ActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-  /** Payload de sucesso, específico de cada ação. */
-  data?: Record<string, unknown>;
-}
+export type ActionState = ActionGuardState;
 
 
 // ───────────────────────────────────────────────────────────────────────────────

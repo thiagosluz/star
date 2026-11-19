@@ -68,9 +68,7 @@ interface RedisLike {
   connect?(): Promise<void>;
 }
 
-function redisUrl(): string {
-  return process.env.REDIS_URL ?? 'redis://localhost:6379';
-}
+import { getRedisUrl } from '@/lib/redis/config';
 
 const globalForLimiter = globalThis as unknown as {
   __eventflowRateLimitClient?: Redis;
@@ -78,7 +76,7 @@ const globalForLimiter = globalThis as unknown as {
 };
 
 function client(): Redis {
-  globalForLimiter.__eventflowRateLimitClient ??= new Redis(redisUrl(), {
+  globalForLimiter.__eventflowRateLimitClient ??= new Redis(getRedisUrl(), {
     lazyConnect: true,
     // Falha rápido: uma requisição de login não pode esperar o Redis voltar.
     enableOfflineQueue: false,

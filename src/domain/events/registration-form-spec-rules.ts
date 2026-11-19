@@ -49,6 +49,7 @@
  *  existe para ninguém trocar um pelo outro numa próxima fase.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { asRecordOrNull as asRecord } from '@/domain/shared/json-record';
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  A allowlist de tipos (decisão do humano na FASE 70)
@@ -1265,13 +1266,6 @@ function normalizeAnswer(
       return text;
     }
   }
-}
-
-/** As respostas cruas, quando vieram como objeto indexável. */
-function asRecord(raw: unknown): Record<string, unknown> | null {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
-
-  return raw as Record<string, unknown>;
 }
 
 /**

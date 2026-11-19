@@ -37,6 +37,7 @@ import { withTenant } from '@/lib/db/tenant-client';
 import { recordAudit } from '@/lib/admin/audit';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { readRegistrationForm } from '@/domain/events/registration-form-spec-rules';
+import { asRecord as settingsObject } from '@/domain/shared/json-record';
 import {
   applyRegistrationFormOperation,
   describeRegistrationForm,
@@ -62,13 +63,6 @@ export type RegistrationFormWriteResult =
       message: string;
       details?: readonly string[];
     };
-
-/** `settings` é JSON livre: qualquer coisa que não seja objeto é tratada como vazio. */
-function settingsObject(settings: unknown): Record<string, unknown> {
-  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return {};
-
-  return settings as Record<string, unknown>;
-}
 
 /**
  * Aplica UMA operação sobre o formulário declarado do evento.

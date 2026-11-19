@@ -28,18 +28,13 @@ import { z } from 'zod';
 
 import { invalidatePublicEventCacheBySlug } from '@/lib/cache/public-read-cache';
 
-import { guardAction } from '@/lib/auth/guard-action';
+import { guardAction, type ActionGuardState } from '@/lib/auth/guard-action';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { moveWithinList } from '@/domain/events/demand-rules';
 import { loadEventTeamOrder, reorderEventTeams } from '@/lib/events/demand-service';
 
-export interface TeamOrderActionState {
-  ok: boolean;
-  code?: string;
-  message?: string;
-  details?: readonly string[];
-}
+export type TeamOrderActionState = ActionGuardState;
 
 async function revalidateTeams(tenantSlug: string, eventId: string): Promise<void> {
   await invalidatePublicEventCacheBySlug({ tenantSlug });

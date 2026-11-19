@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState } from 'react';
 import { BookOpen, CheckCircle2, Download, ExternalLink, Globe, Import } from 'lucide-react';
 
 import {
@@ -21,6 +21,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import type { ProceedingsActionState } from '@/app/actions/proceedings-actions';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import type { AdminProceedingsEntryView, AdminProceedingsOverview } from '@/lib/proceedings/proceedings-service';
 import {
   PROCEEDINGS_PUBLIC_FILE_KINDS,
@@ -205,16 +206,15 @@ export function ProceedingsAdminPanel(props: {
   const [importState, importFormAction] = useActionState(props.importAcceptedAction, null);
   const [publishState, publishFormAction] = useActionState(props.publishAction, null);
   const [unpublishState, unpublishFormAction] = useActionState(props.unpublishAction, null);
-  const [copiedOai, setCopiedOai] = useState(false);
+  const { isCopied, copy } = useCopyToClipboard(2_000);
+  const copiedOai = isCopied();
 
   const publicProceedingsHref = tenantPath(tenantSlug, `/eventos/${overview.event.slug}/anais`);
   const oaiRelativePath = `/api/t/${tenantSlug}/eventos/${overview.event.slug}/oai?verb=ListRecords&metadataPrefix=oai_dc`;
 
-  async function copyOaiEndpoint() {
+  function copyOaiEndpoint() {
     const fullUrl = `${window.location.origin}/api/t/${tenantSlug}/eventos/${overview.event.slug}/oai`;
-    await navigator.clipboard.writeText(fullUrl);
-    setCopiedOai(true);
-    setTimeout(() => setCopiedOai(false), 2000);
+    void copy(fullUrl);
   }
 
   return (

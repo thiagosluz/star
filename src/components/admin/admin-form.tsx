@@ -1,11 +1,10 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
-import { useFormStatus } from 'react-dom';
-import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, Save, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Save, X } from 'lucide-react';
 
 import type { AdminActionState } from '@/app/actions/admin-actions';
-import { AppLink, Checkbox, Input, Select } from '@/components/ui';
+import { AppLink, Checkbox, Input, Select, SubmitButton as UiSubmitButton } from '@/components/ui';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 /**
@@ -59,19 +58,15 @@ function AdminFieldShell({
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 function SubmitButton({ label, pendingOverride = false }: { label: string; pendingOverride?: boolean }) {
-  const { pending: formStatusPending } = useFormStatus();
-  const pending = formStatusPending || pendingOverride;
-
   return (
-    <button
-      type="submit"
-      disabled={pending}
+    <UiSubmitButton
+      label={label}
+      pendingLabel="Salvando…"
+      pendingOverride={pendingOverride}
+      icon={<Save className="size-4" aria-hidden />}
       data-testid="admin-submit"
-      className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-60"
-    >
-      {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Save className="size-4" aria-hidden />}
-      {pending ? 'Salvando…' : label}
-    </button>
+      className="h-auto rounded-md px-4 py-2 transition hover:opacity-90 disabled:opacity-60"
+    />
   );
 }
 

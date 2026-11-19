@@ -53,6 +53,7 @@
  *  O módulo é PURO: não importa Prisma, Next, relógio nem `node:crypto`.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import { asRecordOrNull as settingsObject } from '@/domain/shared/json-record';
 
 /** A única forma de agregação aceita nesta versão (ver o cabeçalho). */
 export const CERTIFICATE_POLICY_AGGREGATION = 'ACTIVITY' as const;
@@ -122,13 +123,6 @@ const POLICY_NUMBER = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 
 
 function formatNumber(value: number): string {
   return POLICY_NUMBER.format(value);
-}
-
-/** `settings` é JSON livre: qualquer coisa que não seja objeto não tem política. */
-function settingsObject(settings: unknown): Record<string, unknown> | null {
-  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return null;
-
-  return settings as Record<string, unknown>;
 }
 
 /** Rótulo do valor recusado, sem lançar com objeto/ciclo (o JSON vem do banco). */

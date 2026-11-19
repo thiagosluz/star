@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 import { Check, Clock, Link2, Share2, Trash2 } from 'lucide-react';
 
 import {
@@ -12,6 +12,7 @@ import {
   type ShareChannel,
 } from '@/domain/gamification/card-share-rules';
 import type { GamificationActionState } from '@/app/actions/gamification-actions';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -100,7 +101,8 @@ export function ShareCardPanel({
 
   const [validity, setValidity] = useState<string>(DEFAULT_SHARE_VALIDITY);
   const [customDay, setCustomDay] = useState('');
-  const [copied, setCopied] = useState(false);
+  const { isCopied, copy } = useCopyToClipboard(2_500);
+  const copied = isCopied();
 
   /**
    * ─────────────────────────────────────────────────────────────────────────────
@@ -126,12 +128,6 @@ export function ShareCardPanel({
   const statusLabel = textOr(fresh?.statusLabel, justRevoked ? null : initialStatusLabel);
   const viewCount = typeof fresh?.viewCount === 'number' ? fresh.viewCount : initialViewCount;
   const lastViewedLabel = textOr(fresh?.lastViewedLabel, initialLastViewedLabel);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2_500);
-    return () => clearTimeout(timer);
-  }, [copied]);
 
   const channelUrl = url ?? '';
   const hasLink = statusLabel !== null;
@@ -168,14 +164,8 @@ export function ShareCardPanel({
               type="button"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium"
               data-testid="share-copy"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(url);
-                  setCopied(true);
-                } catch {
-                  /** Sem permissão de área de transferência, o campo continua selecionável. */
-                  setCopied(false);
-                }
+              onClick={() => {
+                void copy(url);
               }}
             >
               {copied ? <Check className="size-3.5" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}

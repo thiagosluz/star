@@ -21,6 +21,7 @@ import type { CardRarity, CardTrigger } from '@/domain/gamification/types';
 import { CARD_TRIGGER_LABELS } from '@/domain/gamification/types';
 import type { CardAnimation, CardArt, CardParticle } from '@/domain/gamification/card-rules';
 import { RARITY_LABELS } from '@/domain/gamification/card-rules';
+import { round2 } from '@/domain/shared/number-rules';
 
 /**
  * Teto e piso do giro, em graus.
@@ -156,17 +157,6 @@ export function tiltFromPointer(input: {
     glareX: round2((clampedX / width) * 100),
     glareY: round2((clampedY / height) * 100),
   };
-}
-
-function round2(value: number): number {
-  const rounded = Math.round(value * 100) / 100;
-  /**
-   * `-0` não é curiosidade: `Math.round(-0.001 * 100) / 100` devolve `-0`, e o
-   * componente escreveria `rotateX(-0deg)`. O valor é o mesmo, o texto não — e o
-   * teste unitário enxerga a diferença (`Object.is(-0, 0)` é falso), que é como
-   * esta linha apareceu.
-   */
-  return rounded === 0 ? 0 : rounded;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
