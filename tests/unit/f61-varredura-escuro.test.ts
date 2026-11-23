@@ -119,10 +119,15 @@ const DEBITO_PB: Record<string, { teto: number; motivo: string }> = {
     motivo:
       'o quadrado branco do QR: leitor de código exige módulo escuro sobre fundo branco — clarear ou escurecer isso quebraria a leitura no balcão',
   },
-  'src/components/admin/certificate-template-editor.tsx': {
-    teto: 2,
+  'src/components/admin/certificate-template/template-stage.tsx': {
+    teto: 1,
     motivo:
-      'o palco e a prévia do certificado simulam PAPEL: o layout é tinta escura sobre SVG transparente, e sobre o cartão escuro o organizador não veria o que está posicionando — papel é branco nos dois modos',
+      'o palco do certificado simula PAPEL: o layout é tinta escura sobre SVG transparente, e sobre o cartão escuro o organizador não veria o que está posicionando — papel é branco nos dois modos',
+  },
+  'src/components/admin/certificate-template/template-preview-panel.tsx': {
+    teto: 1,
+    motivo:
+      'a prévia do certificado simula PAPEL: o SVG da prévia é transparente e o texto é tinta escura nos dois modos',
   },
 };
 

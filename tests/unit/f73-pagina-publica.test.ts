@@ -58,7 +58,7 @@ const SERVICO = 'src/lib/proposals/call-result-public-service.ts';
 const PAGINA =
   'src/app/t/[tenantSlug]/(public)/eventos/[eventSlug]/chamada/[callSlug]/page.tsx';
 const COMPONENTE = 'src/components/proposals/call-result-public-view.tsx';
-const BLOCO = 'src/components/events/block-renderer.tsx';
+const BLOCO = 'src/components/events/block-calls-section.tsx';
 const SERVICO_DA_CHAMADA = 'src/lib/proposals/call-service.ts';
 
 /** Comentário que CITA o proibido não é o proibido (a precaução das catracas da casa). */

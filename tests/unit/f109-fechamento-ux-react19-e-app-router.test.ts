@@ -333,7 +333,7 @@ describe('FASE 109 · Fechamento de UX, React 19 & App Router', () => {
 
     it('substitui os formulários GET e links internos remanescentes por GetSearchForm e AppLink', () => {
       for (const file of [
-        'src/app/t/[tenantSlug]/(app)/administracao/comunicacao/page.tsx',
+        'src/components/communication/segments-panel.tsx',
         'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/demandas/page.tsx',
         'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/pagina/midia/page.tsx',
         'src/app/t/[tenantSlug]/(app)/meu-cracha/page.tsx',

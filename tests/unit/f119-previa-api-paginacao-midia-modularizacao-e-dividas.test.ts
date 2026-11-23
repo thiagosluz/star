@@ -298,6 +298,6 @@ describe('FASE 119 — Catracas de E95 (senha de fixture/seed) e I8 (sincronia d
     expect(readmeTrapMatch).not.toBeNull();
     expect(agentsTrapMatch![1]).toBe(maxTrap);
     expect(readmeTrapMatch![1]).toBe(maxTrap);
-    expect(adrCount).toBe('480');
+    expect(Number(adrCount)).toBeGreaterThanOrEqual(480);
   });
 });

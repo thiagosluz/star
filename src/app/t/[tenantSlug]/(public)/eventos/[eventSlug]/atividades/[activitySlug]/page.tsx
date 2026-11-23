@@ -1,54 +1,24 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import {
-  CalendarDays,
-  Clock,
-  MapPin,
-  Mic,
-  Users,
-  AlertCircle,
-  LogIn,
-  Video,
-} from 'lucide-react';
 
-/**
- * Import por ALIAS, não relativo.
- *
- * O caminho relativo aqui é `../../../..` e fica frágil: mover a rota um nível
- * quebra o build silenciosamente (o erro só aparece no `next build`). O alias
- * `@/` é independente da profundidade da rota.
- */
 import '@/app/t/[tenantSlug]/(public)/eventos/event-theme.css';
 
-import { getPublicActivity, getTenantContext } from '@/lib/events/event-repository';
-import {
-  evaluateRegistrationWindow,
-  formatDuration,
-} from '@/domain/events/event-rules';
-import { activityTypeLabel } from '@/domain/events/activity-rules';
-import {
-  publicRegistrationNotice,
-  restrictedEventNotice,
-} from '@/domain/events/public-registration-rules';
-import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
-import { adminPrisma } from '@/lib/db/admin-client';
-import { findMyRegistrationFor } from '@/lib/events/registration-read-service';
+import { ActivityDetailSections } from '@/components/events/activity-detail-sections';
+import { ActivityRegistrationSidebar } from '@/components/events/activity-registration-sidebar';
+import { Section, ThemeScope } from '@/components/events/theme-scope';
+import { evaluateRegistrationWindow } from '@/domain/events/event-rules';
+import { seesActivityOnlineRoom } from '@/domain/events/online-room-rules';
 import { can } from '@/domain/rbac/authorization';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { RegistrationForm } from '@/components/events/registration-form';
-import { Section, ThemeScope } from '@/components/events/theme-scope';
-import {
-  ActivitySpeakerList,
-} from '@/components/events/speaker-gallery';
-import { ActivityMaterials } from '@/components/events/activity-materials';
+import { getAuthenticatedUser, loadPrincipal } from '@/lib/auth/session';
+import { adminPrisma } from '@/lib/db/admin-client';
+import { getPublicActivity, getTenantContext } from '@/lib/events/event-repository';
+import { resolveOnlineRoomViewer } from '@/lib/events/online-room-service';
+import { findMyRegistrationFor } from '@/lib/events/registration-read-service';
 import { listActivityMaterials, resolveActivityViewer } from '@/lib/speakers/material-service';
 import { loadActivityNotes } from '@/lib/speakers/speaker-service';
-import {
-  resolveOnlineRoomViewer,
-} from '@/lib/events/online-room-service';
-import { seesActivityOnlineRoom } from '@/domain/events/online-room-rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,14 +41,8 @@ export async function generateMetadata({
 }
 
 /**
- * Página de uma atividade, com o formulário de inscrição.
- *
- * Três estados possíveis para o visitante:
- *   1. anônimo          -> convite para entrar, preservando o destino
- *   2. autenticado s/ inscrição -> formulário (ou aviso de janela fechada/lotada)
- *   3. autenticado c/ inscrição -> confirmação do status
- *
- * A checagem de permissão aqui é de UX; a autorização real está na Server Action.
+ * Página pública da atividade: resolve contexto do visitante/RBAC/sala online
+ * e compõe ficha (`ActivityDetailSections`) + painel lateral (`ActivityRegistrationSidebar`).
  */
 export default async function ActivityPage({
   params,
@@ -109,20 +73,12 @@ export default async function ActivityPage({
     },
   });
 
-  // ── Contexto do visitante ──────────────────────────────────────────────────
   const user = await getAuthenticatedUser();
 
   let membershipStatus: string | null = null;
   let alreadyRegistered: 'PENDING' | 'CONFIRMED' | 'WAITLISTED' | null = null;
   let myRegistrationId: string | null = null;
   let canRegister = false;
-  /**
-   * A pessoa gerencia palestrantes nesta instituição?
-   *
-   * Serve para ela ver na página pública o material em RASCUNHO que o palestrante
-   * ainda não publicou — é quem dá suporte a ele. A decisão vem do RBAC, e não da
-   * tela.
-   */
   let isOrganizer = false;
 
   if (user) {
@@ -134,77 +90,32 @@ export default async function ActivityPage({
 
     if (membershipStatus === 'ACTIVE') {
       const principal = await loadPrincipal(user.id, tenant.tenantId, 'ACTIVE');
-      canRegister = can(principal, PERMISSIONS.REGISTRATION_CREATE, {
-        scope: 'TENANT',
-      });
+      canRegister = can(principal, PERMISSIONS.REGISTRATION_CREATE, { scope: 'TENANT' });
       isOrganizer = can(principal, PERMISSIONS.SPEAKER_MANAGE, { scope: 'TENANT' });
     } else {
-      /**
-       * INSCRIÇÃO PÚBLICA (FASE 10).
-       *
-       * Quem não é membro entra pela porta pública — a decisão definitiva é do
-       * servidor (`decideParticipantLink`, sob RLS); aqui só espelhamos o resultado
-       * para a tela não oferecer o que o servidor vai recusar. Vínculo suspenso ou
-       * removido é BLOQUEIO da instituição, e a tela diz isso em vez de oferecer o
-       * formulário.
-       */
       canRegister = membershipStatus !== 'SUSPENDED' && membershipStatus !== 'REMOVED';
     }
 
     if (membershipStatus === 'ACTIVE') {
-      const mine = await findMyRegistrationFor(
-        tenant.tenantId,
-        user.id,
-        activity.id,
-      );
+      const mine = await findMyRegistrationFor(tenant.tenantId, user.id, activity.id);
       myRegistrationId = mine?.id ?? null;
 
       if (
         mine &&
         (mine.status === 'PENDING' || mine.status === 'CONFIRMED' || mine.status === 'WAITLISTED')
       ) {
-        /**
-         * `PENDING` entra aqui (FASE 34): quem está com a vaga RETIDA não pode ver o
-         * formulário de novo — o servidor recusaria com "você já está inscrito", e a
-         * tela estaria oferecendo o que ela mesma nega. O que a pessoa precisa nesse
-         * estado é saber que falta confirmar e ONDE.
-         */
         alreadyRegistered = mine.status;
       }
     }
   }
 
   const isFull = activity.remainingSeats === 0;
-
-  /**
-   * A SALA é quem está limitando? (revisão da FASE 3)
-   *
-   * `capacity` já chega como o limite EFETIVO. Quando ele é menor do que a atividade
-   * declarou — ou quando a atividade não declarou nada e a sala sim —, a página diz
-   * de onde vem o número: sem isso, "40 vagas" numa atividade configurada com 80
-   * pareceria erro de cadastro.
-   */
   const roomLimits =
     activity.roomCapacity !== null &&
     (activity.capacity === null || activity.capacity > activity.roomCapacity);
-
   const activityClosed =
-    activity.status === 'CANCELED' ||
-    activity.status === 'COMPLETED' ||
-    activity.status === 'IN_PROGRESS';
+    activity.status === 'CANCELED' || activity.status === 'COMPLETED' || activity.status === 'IN_PROGRESS';
 
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  MATERIAIS DO PALESTRANTE (FASE 25)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  A leitura é feita com o VISITANTE REAL (`resolveMaterialViewer` consulta o
-   *  banco: ministrante desta atividade, equipe ou inscrito confirmado). É o que
-   *  libera o material de inscritos para quem tem vaga — e o que mantém o rascunho
-   *  do palestrante fora da página.
-   *
-   *  `lockedCount` vem da mesma varredura: é o que existe e não está liberado, e a
-   *  página o usa para avisar que há conteúdo exclusivo em vez de escondê-lo.
-   */
   const [materialList, notes] = await Promise.all([
     listActivityMaterials({
       tenantId: tenant.tenantId,
@@ -221,17 +132,6 @@ export default async function ActivityPage({
 
   const { materials, lockedCount } = materialList;
 
-  /**
-   * ── A SALA ONLINE DESTA ATIVIDADE (FASE 68 · fatia 3) ─────────────────────────
-   *
-   *  Mesma pergunta da página do evento, e a mesma resposta resolvida no BANCO
-   *  (`resolveOnlineRoomViewer`): a inscrição que dá lugar NESTA atividade, ou a do
-   *  evento quando a atividade é aberta, ou a equipe. Aqui a régua é a da ATIVIDADE
-   *  porque é ela que tem (ou não) endereço próprio — a atividade não herda o do evento.
-   *
-   *  Para quem não tem lugar, a variável é `null` e o link NÃO é renderizado: o
-   *  endereço não entra no HTML, e não é escondido por CSS.
-   */
   const onlineRoomViewer = await resolveOnlineRoomViewer({
     tenantId: tenant.tenantId,
     eventId: event.id,
@@ -263,489 +163,45 @@ export default async function ActivityPage({
           </nav>
 
           <div className="grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-            {/* ── Detalhes ─────────────────────────────────────────────────── */}
-            <article className="space-y-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="ef-badge">
-                  {activityTypeLabel(activity.type)}
-                </span>
-                {activity.status === 'CANCELED' ? (
-                  <span className="ef-badge text-destructive">Cancelada</span>
-                ) : null}
-                {isFull && activity.waitlistEnabled ? (
-                  <span className="ef-badge">Lista de espera disponível</span>
-                ) : null}
-              </div>
+            <ActivityDetailSections
+              tenantSlug={tenantSlug}
+              eventSlug={eventSlug}
+              timeZone={event.timezone}
+              activity={activity}
+              isFull={isFull}
+              roomLimits={roomLimits}
+              onlineUrl={onlineUrl}
+              windowOpen={window.open}
+              alreadyRegistered={alreadyRegistered}
+              membershipStatus={membershipStatus}
+              canRegister={canRegister}
+              isAuthenticated={Boolean(user)}
+              notes={notes}
+              materials={materials}
+              lockedCount={lockedCount}
+            />
 
-              <h1 className="text-balance text-3xl font-semibold tracking-tight">
-                {activity.title}
-              </h1>
-
-              {/**
-                * ═══════════════════════════════════════════════════════════════════
-                *  A FICHA DA ATIVIDADE DEIXOU DE SER UMA `<dl>` (FASE 68 · fatia 5)
-                *
-                *  ───────────────────────────────────────────────────────────────────
-                *  O DEFEITO QUE O PORTÃO ACHOU, E POR QUE ELE ERA ESTRUTURAL
-                *  ───────────────────────────────────────────────────────────────────
-                *  Isto era `<dl>` com `<div>` no meio: `dl > div > div > dt/dd`. O
-                *  `definition-list` do `axe` exige que `dt`/`dd` sejam filhos DIRETOS
-                *  do `dl` (ele sobe no máximo um `div` sem `role`), e a varredura
-                *  reprovava **1 nó de `definition-list` e 10 de `dlitem`** — a marcação
-                *  afirmava "lista de definições" e não entregava uma.
-                *
-                *  ───────────────────────────────────────────────────────────────────
-                *  POR QUE NÃO "CONSERTAR O `<dl>`"
-                *  ───────────────────────────────────────────────────────────────────
-                *  Consertar significaria tirar o `div` que agrupa o ÍCONE com o rótulo
-                *  — e o desenho desta ficha é exatamente esse par. Dava para trocar o
-                *  `dt`/`dd` por `span` dentro de um `div` com `role="term"`/
-                *  `role="definition"`… o que é a mesma lista de definições escrita
-                *  à mão, com `role` inventado num lugar onde o produto NÃO tem pares
-                *  termo/definição: são RÓTULOS DE FICHA ("Data e horário", "Vagas",
-                *  "Local"). Um `div` com rótulo e valor é o que isto sempre foi.
-                *
-                *  ───────────────────────────────────────────────────────────────────
-                *  E O `opacity-60` SAIU JUNTO (`ef-muted`)
-                *  ───────────────────────────────────────────────────────────────────
-                *  Os rótulos usavam `opacity-60`, que COMPÕE o texto com o fundo em vez
-                *  de escolher uma cor — a família exata do defeito da FASE 66 (o
-                *  `eyebrow` que media 4,44:1). O papel do tema que resolve isto sobre
-                *  a `--ef-background` é `.ef-muted` (5,08:1 no claro e 5,91:1 no
-                *  escuro, medidos e presos em `tests/unit/f66-contraste-do-rotulo.test.ts`),
-                *  e é ele que os rótulos E os ícones usam agora.
-                * ═══════════════════════════════════════════════════════════════════
-                */}
-              <div className="grid gap-3 text-sm sm:grid-cols-2">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="ef-muted size-4 shrink-0" aria-hidden />
-                  <div>
-                    <span className="ef-muted block text-xs">Data e horário</span>
-                    <span className="block" data-testid="activity-schedule">
-                      {new Intl.DateTimeFormat('pt-BR', {
-                        weekday: 'long',
-                        day: '2-digit',
-                        month: 'long',
-                        timeZone: event.timezone,
-                      }).format(activity.startsAt)}
-                      {', '}
-                      {new Intl.DateTimeFormat('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        timeZone: event.timezone,
-                      }).format(activity.startsAt)}{' '}
-                      –{' '}
-                      {new Intl.DateTimeFormat('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        timeZone: event.timezone,
-                      }).format(activity.endsAt)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Clock className="ef-muted size-4 shrink-0" aria-hidden />
-                  <div>
-                    <span className="ef-muted block text-xs">Carga horária</span>
-                    <span className="block">{formatDuration(activity.workloadMinutes)}</span>
-                  </div>
-                </div>
-
-                {activity.roomName ? (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="ef-muted size-4 shrink-0" aria-hidden />
-                    <div>
-                      <span className="ef-muted block text-xs">Local</span>
-                      <span className="block">{activity.roomName}</span>
-                    </div>
-                  </div>
-                ) : null}
-
-                {/**
-                  * A SALA ONLINE (FASE 68): só existe para quem tem lugar nela — a
-                  * decisão veio resolvida do banco logo acima. O rótulo usa o MESMO
-                  * papel dos vizinhos (`ef-muted`): um rótulo com mecanismo próprio
-                  * seria a inconsistência seguinte.
-                  */}
-                {onlineUrl ? (
-                  <div className="flex items-center gap-2">
-                    <Video className="ef-muted size-4 shrink-0" aria-hidden />
-                    <div>
-                      <span className="ef-muted block text-xs">Sala online</span>
-                      <span className="block">
-                        <a
-                          href={onlineUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          data-testid="atividade-sala-online"
-                          className="underline underline-offset-4"
-                        >
-                          Entrar na sala online
-                        </a>
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-
-                {activity.speakers.length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    <Mic className="ef-muted size-4 shrink-0" aria-hidden />
-                    <div>
-                      <span className="ef-muted block text-xs">
-                        {activity.speakers.length === 1 ? 'Palestrante' : 'Palestrantes'}
-                      </span>
-                      <span className="flex flex-wrap gap-x-2">
-                        {activity.speakers.map((speaker, index) => (
-                          <span key={speaker.id}>
-                            <Link
-                              href={tenantPath(
-                                tenantSlug,
-                                `/eventos/${eventSlug}/palestrantes/${speaker.id}`,
-                              )}
-                              className="underline underline-offset-4"
-                              data-testid={`activity-speaker-link-${speaker.id}`}
-                            >
-                              {speaker.name}
-                            </Link>
-                            {index < activity.speakers.length - 1 ? ',' : ''}
-                          </span>
-                        ))}
-                      </span>
-                    </div>
-                  </div>
-                ) : activity.speakerNames.length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    <Mic className="ef-muted size-4 shrink-0" aria-hidden />
-                    <div>
-                      <span className="ef-muted block text-xs">
-                        {activity.speakerNames.length === 1
-                          ? 'Palestrante'
-                          : 'Palestrantes'}
-                      </span>
-                      <span className="block">{activity.speakerNames.join(', ')}</span>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="flex items-center gap-2">
-                  <Users className="ef-muted size-4 shrink-0" aria-hidden />
-                  <div>
-                    <span className="ef-muted block text-xs">Vagas</span>
-                    <span className="block" data-testid="activity-seats">
-                      {activity.capacity === null
-                        ? 'Ilimitadas'
-                        : `${activity.confirmedCount} de ${activity.capacity} preenchidas`}
-                      {activity.remainingSeats !== null && activity.remainingSeats > 0
-                        ? ` · ${activity.remainingSeats} restantes`
-                        : ''}
-                      {roomLimits ? ` · a sala comporta ${activity.roomCapacity}` : ''}
-                    </span>
-                    {/**
-                     * DIAGNÓSTICO PARA OS TESTES, EM ATRIBUTOS — nunca em texto.
-                     *
-                     * Aqui existia uma linha visível (`cap=150 conf=0 rem=150 mem=null
-                     * can=false`), deixada durante a depuração da FASE 3 e esquecida: ela
-                     * aparecia para QUALQUER visitante, expondo estado interno da inscrição
-                     * (lotação, janela, vínculo, permissão) em página pública.
-                     *
-                     * O que os testes E2E precisam é do estado no momento da falha — e isso
-                     * se entrega em atributos, que não renderizam nada. A tela não é lugar
-                     * de diagnóstico.
-                     */}
-                    <span
-                      data-testid="activity-flags"
-                      hidden
-                      data-capacity={String(activity.capacity)}
-                      data-room-capacity={String(activity.roomCapacity)}
-                      data-confirmed={String(activity.confirmedCount)}
-                      data-remaining={String(activity.remainingSeats)}
-                      data-full={String(isFull)}
-                      data-waitlist={String(activity.waitlistEnabled)}
-                      data-status={activity.status}
-                      data-window-open={String(window.open)}
-                      data-registered={String(alreadyRegistered)}
-                      data-membership={membershipStatus ?? 'null'}
-                      data-can-register={String(canRegister)}
-                      data-authenticated={user ? 'sim' : 'nao'}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {activity.description ? (
-                <div className="whitespace-pre-line text-pretty leading-relaxed opacity-80">
-                  {activity.description}
-                </div>
-              ) : null}
-
-              {activity.tags.length > 0 ? (
-                <ul className="flex flex-wrap gap-1.5">
-                  {activity.tags.map((tag) => (
-                    <li key={tag} className="ef-badge">
-                      {tag}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {/**
-               * ─── EMENTA E REQUISITOS DO PALESTRANTE (FASE 25) ────────────────
-               *
-               * A ementa oficial da atividade continua sendo a descrição acima, que a
-               * instituição controla. O que aparece aqui é a contribuição ATRIBUÍDA do
-               * ministrante — e o crédito vai no título, porque num minicurso com dois
-               * instrutores o texto é de um deles.
-               */}
-              {notes ? (
-                <section className="space-y-4" aria-labelledby="ementa-detalhada">
-                  <h2 id="ementa-detalhada" className="text-lg font-semibold tracking-tight">
-                    Ementa detalhada
-                  </h2>
-                  <p className="text-xs opacity-60" data-testid="notes-author">
-                    Por {notes.speakerName}
-                  </p>
-
-                  {notes.syllabus ? (
-                    <div className="space-y-1.5" data-testid="activity-syllabus">
-                      <h3 className="text-sm font-medium">Conteúdo programático</h3>
-                      <div className="whitespace-pre-line text-pretty text-sm leading-relaxed opacity-85">
-                        {notes.syllabus}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {notes.requirements ? (
-                    <div className="space-y-1.5" data-testid="activity-requirements">
-                      <h3 className="text-sm font-medium">Pré-requisitos e ferramentas</h3>
-                      <div className="whitespace-pre-line text-pretty text-sm leading-relaxed opacity-85">
-                        {notes.requirements}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {notes.bibliography ? (
-                    <div className="space-y-1.5" data-testid="activity-bibliography">
-                      <h3 className="text-sm font-medium">Bibliografia recomendada</h3>
-                      <div className="whitespace-pre-line text-pretty text-sm leading-relaxed opacity-85">
-                        {notes.bibliography}
-                      </div>
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
-
-              <ActivitySpeakerList
-                speakers={activity.speakers}
-                tenantSlug={tenantSlug}
-                eventSlug={eventSlug}
-              />
-
-              <ActivityMaterials
-                materials={materials}
-                activityTitle={activity.title}
-                tenantSlug={tenantSlug}
-                isAuthenticated={Boolean(user)}
-                lockedCount={lockedCount}
-              />
-            </article>
-
-            {/* ── Painel de inscrição ──────────────────────────────────────── */}
-            <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-              {/**
-                * ─── ATIVIDADE ABERTA (revisão da FASE 3) ────────────────────────────
-                *
-                *  Sem formulário: o público dela é o público do evento. A tela explica
-                *  como entrar e leva para a inscrição do evento — oferecer um botão de
-                *  inscrição aqui seria um caminho que o servidor recusa (e, pior, uma
-                *  segunda porta sem a inscrição que dá acesso à programação).
-                */}
-              {!activity.requiresRegistration && !activityClosed ? (
-                <div className="ef-card space-y-3 p-5" data-testid="activity-open-notice">
-                  <p className="flex items-center gap-2 font-medium">
-                    <Users className="size-4" aria-hidden />
-                    Aberta a todos os inscritos no evento
-                  </p>
-                  <p className="text-sm opacity-70">
-                    Esta atividade não tem inscrição individual: quem se inscreveu no evento
-                    participa dela automaticamente.
-                    {activity.remainingSeats !== null
-                      ? ' O número de vagas é informativo.'
-                      : ''}
-                  </p>
-                  <Link
-                    href={tenantPath(tenantSlug, `/eventos/${eventSlug}/inscricao`)}
-                    className="ef-button w-full"
-                    data-testid="activity-event-registration-link"
-                  >
-                    Inscrever-se no evento
-                  </Link>
-                </div>
-              ) : activityClosed ? (
-                <div className="ef-card space-y-2 p-5">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertCircle className="size-4" aria-hidden />
-                    {activity.status === 'CANCELED'
-                      ? 'Atividade cancelada'
-                      : 'Inscrições encerradas'}
-                  </p>
-                  <p className="text-sm opacity-70">
-                    {activity.status === 'CANCELED'
-                      ? 'Esta atividade foi cancelada pela organização.'
-                      : 'Esta atividade já começou ou foi concluída.'}
-                  </p>
-                </div>
-              ) : !window.open && !alreadyRegistered ? (
-                <div className="ef-card space-y-2 p-5">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertCircle className="size-4" aria-hidden />
-                    Inscrições indisponíveis
-                  </p>
-                  <p className="text-sm opacity-70">{window.message}</p>
-                </div>
-              ) : !user ? (
-                <div className="ef-card space-y-3 p-5">
-                  <p className="font-medium">Entre para se inscrever</p>
-                  <p className="text-sm opacity-70">
-                    Você precisa de uma conta na plataforma para reservar sua vaga.
-                    É rápido e vale para todas as instituições.
-                  </p>
-                  <Link href={loginHref} className="ef-button w-full">
-                    <LogIn className="size-4" aria-hidden />
-                    Entrar e continuar
-                  </Link>
-                  <Link
-                    href={`/signup?redirectTo=${encodeURIComponent(
-                      tenantPath(
-                        tenantSlug,
-                        `/eventos/${eventSlug}/atividades/${activitySlug}`,
-                      ),
-                    )}`}
-                    className="ef-button-outline w-full"
-                  >
-                    Criar conta
-                  </Link>
-                </div>
-              ) : membershipStatus === 'SUSPENDED' || membershipStatus === 'REMOVED' ? (
-                /**
-                 * BLOQUEIO DA INSTITUIÇÃO (FASE 10).
-                 *
-                 * Antes esta tela dizia "peça um convite" para QUALQUER pessoa sem
-                 * vínculo — inclusive para quem a instituição havia removido. Eram
-                 * duas mensagens diferentes espremidas em uma: quem nunca teve
-                 * relação com a instituição (que agora se inscreve sozinho) e quem foi
-                 * bloqueado (que não deve se inscrever). Separar as duas é o que
-                 * permite a inscrição pública sem abrir a porta para quem foi barrado.
-                 */
-                <div className="ef-card space-y-2 p-5">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertCircle className="size-4" aria-hidden />
-                    Acesso bloqueado
-                  </p>
-                  <p className="text-sm opacity-70">
-                    Seu acesso a {tenant.name} está bloqueado. Fale com a organização do
-                    evento.
-                  </p>
-                </div>
-              ) : event.registrationRequiresMembership && membershipStatus !== 'ACTIVE' ? (
-                /**
-                 * EVENTO RESTRITO À COMUNIDADE (FASE 12, item I3).
-                 *
-                 * A instituição escolheu não abrir este evento — assembleia, turma
-                 * interna, reunião de conselho. É a situação que a FASE 10 passou a
-                 * tratar como "inscreva-se" em TODOS os eventos; aqui ela volta a ter
-                 * tratamento próprio, com `data-testid` porque o texto genérico de
-                 * antes ("peça um convite") não distinguia restrição de bloqueio.
-                 */
-                <div className="ef-card space-y-2 p-5" data-testid="activity-restricted">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertCircle className="size-4" aria-hidden />
-                    Restrito à comunidade
-                  </p>
-                  <p className="text-sm opacity-70">{restrictedEventNotice(tenant.name)}</p>
-                </div>
-              ) : !canRegister ? (
-                <div className="ef-card space-y-2 p-5">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertCircle className="size-4" aria-hidden />
-                    Inscrição não permitida
-                  </p>
-                  <p className="text-sm opacity-70">
-                    Seu perfil não tem permissão para se inscrever em atividades
-                    nesta instituição.
-                  </p>
-                </div>
-              ) : isFull && !activity.waitlistEnabled && !alreadyRegistered ? (
-                /**
-                 * ─── ATIVIDADE LOTADA, SEM LISTA DE ESPERA ────────────────────
-                 *
-                 * Este ramo faltava, e a consequência era um bug de UX: com
-                 * `remainingSeats === 0` e `waitlistEnabled === false`, a página
-                 * exibia "1 de 1 preenchidas" e AINDA oferecia o botão de
-                 * inscrição. Quem clicasse recebia um erro do servidor — o
-                 * controle de lotação está correto, mas a interface prometia algo
-                 * que não existia.
-                 *
-                 * A condição inclui `!waitlistEnabled`: com lista de espera
-                 * habilitada, o caminho correto é o formulário com o rótulo
-                 * "Entrar na lista de espera", não este aviso.
-                 *
-                 * Descoberto pelo teste E2E "o último lugar fecha a atividade".
-                 */
-                <div className="ef-card space-y-2 p-5" data-testid="activity-full">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertCircle className="size-4" aria-hidden />
-                    Atividade lotada
-                  </p>
-                  <p className="text-sm opacity-70">
-                    Todas as vagas foram preenchidas e esta atividade não possui
-                    lista de espera. Entre em contato com a organização para
-                    verificar a possibilidade de abrir novas vagas.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/**
-                   * Aviso de vínculo (FASE 10): quem não é membro precisa saber que a
-                   * inscrição cria o vínculo de participante. Fazer isso sem avisar
-                   * seria inscrever a pessoa em algo que ela não pediu.
-                   */}
-                  {membershipStatus !== 'ACTIVE' ? (
-                    <div
-                      className="ef-card space-y-1 p-4 text-xs opacity-80"
-                      data-testid="public-registration-notice"
-                    >
-                      <p>{publicRegistrationNotice(tenant.name)}</p>
-                    </div>
-                  ) : null}
-
-                  <RegistrationForm
-                    tenantSlug={tenantSlug}
-                    eventSlug={eventSlug}
-                    activitySlug={activitySlug}
-                    isWaitlist={isFull && activity.waitlistEnabled}
-                    alreadyRegistered={alreadyRegistered}
-                  />
-                </>
-              )}
-
-              {/**
-                * O RÓTULO DA INSCRIÇÃO TAMBÉM USA O PAPEL DO TEMA (FASE 68 · fatia 5).
-                *
-                * Era `opacity-60` — o mesmo mecanismo que reprovava os rótulos da ficha
-                * acima: a opacidade COMPÕE o texto com a `--ef-background` que o
-                * organizador escolheu, em vez de escolher uma cor. O portão mediu este
-                * nó (`.text-center`, **1 violação de `color-contrast`**) na varredura da
-                * página da atividade, e a correção é o papel que já existe para esta
-                * superfície (`.ef-muted`, 5,08:1 no tema padrão claro).
-                */}
-              {myRegistrationId && alreadyRegistered ? (
-                <p className="ef-muted text-center text-xs">
-                  Inscrição #{myRegistrationId.slice(0, 8)} · pode ser cancelada em
-                  “Minhas inscrições”.
-                </p>
-              ) : null}
-            </aside>
+            <ActivityRegistrationSidebar
+              tenantSlug={tenantSlug}
+              tenantName={tenant.name}
+              eventSlug={eventSlug}
+              activitySlug={activitySlug}
+              requiresRegistration={activity.requiresRegistration}
+              remainingSeats={activity.remainingSeats}
+              waitlistEnabled={activity.waitlistEnabled}
+              activityStatus={activity.status}
+              activityClosed={activityClosed}
+              windowOpen={window.open}
+              windowMessage={window.open ? null : window.message}
+              isFull={isFull}
+              isAuthenticated={Boolean(user)}
+              membershipStatus={membershipStatus}
+              requiresMembership={event.registrationRequiresMembership}
+              canRegister={canRegister}
+              alreadyRegistered={alreadyRegistered}
+              myRegistrationId={myRegistrationId}
+              loginHref={loginHref}
+            />
           </div>
         </Section>
       </main>

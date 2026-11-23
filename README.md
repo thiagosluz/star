@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21 a 25, 29 a 119 concluídas · **F119 entregue** (**performance na prévia da API (`B11`), paginação do acervo de mídia, modularização de serviços e quitação de `I8` + `E95`** — leitura única compartilhada na prévia da API do evento reduzindo de `5×` para `1×` (`ADR-477`), paginação real `?pagina=N` sem JS em `/pagina/midia` (`ADR-478`), fatiamento de `registration-service` e `certificate-service` mantendo contratos (`ADR-479`), senha `Koveno@2026`/`Koveno#2026` no seed/doc/specs e catraca de sincronia documental (`ADR-480`); **39 dívidas abertas**; ADR-477 a ADR-480) · **4969 testes** unitários/integração (302 arquivos) · **565 testes E2E** (+ 1 skip)
+> **Estado:** FASES 1 a 17, 21 a 25, 29 a 121 concluídas · **F121 entregue** (**modularização SRP das Frentes 2 (Client) e 3 (Server Pages & God Modules)** — decomposição de `RaffleHistory` (`1094 → 182`), `SelfCheckinManager` (`843 → 154`) e `BlockContentFields` (`513 → 66`) (`ADR-485`), fatiamento de `BlockRenderer` (`1439 → 109`) e da página da atividade (`755 → 211`) (`ADR-486`), extração dos painéis de `comunicacao/page.tsx` (`1364 → 129`) e `demandas/page.tsx` (`907 → 331`) (`ADR-487`), totalizando `-5733` linhas nos 7 orquestradores em 26 submódulos com SSR + catraca AST em `f121-*.test.ts` (`ADR-488`); **39 dívidas abertas**; ADR-485 a ADR-488) · **4983 testes** unitários/integração (304 arquivos) · **565 testes E2E** (+ 1 skip)
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -454,7 +454,7 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 4969 testes (302 arquivos) — unit + integração com banco real
+npm test                  # 4983 testes (304 arquivos) — unit + integração com banco real
 npm run test:e2e          # 565 testes E2E (+1 skip) contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
@@ -499,6 +499,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 
 | Documento | Conteúdo | ADRs |
 |---|---|---|
+| [`docs/fase-121-modularizacao-srp-client-e-server-pages.md`](docs/fase-121-modularizacao-srp-client-e-server-pages.md) | **Modularização SRP das Frentes 2 (Client) e 3 (Server Pages & God Modules):** decomposição de `RaffleHistory` (`1094 → 182`), `SelfCheckinManager` (`843 → 154`) e `BlockContentFields` (`513 → 66`) (`ADR-485`), fatiamento de `BlockRenderer` (`1439 → 109`) e da página da atividade (`755 → 211`) sob `events/` (`ADR-486`), extração dos painéis de `comunicacao/page.tsx` (`1364 → 129`) e `demandas/page.tsx` (`907 → 331`) (`ADR-487`), e catraca AST + testes SSR em `f121-*.test.ts` (`ADR-488`) | ADR-485 … 488 |
+| [`docs/fase-120-modularizacao-srp-client-components.md`](docs/fase-120-modularizacao-srp-client-components.md) | **Modularização SRP de Client Components Críticos e Redução de Profundidade JSX:** fatiamento de `CertificateTemplateEditor` (`1381 → 250` linhas, `jsxDepth 13 → 7`, `ADR-481`), extração dos hooks `useRaffleLiveStream`/`useRaffleRoulette` e views em `RaffleStage` (`722 → 181`, `ADR-482`), isolamento de câmera em `useQrCameraScanner` (`qr-camera-reader.tsx` `511 → 120`) e painéis em `MonitorConsole` (`602 → 341`, `ADR-483`), e catraca AST da FASE 120 (`ADR-484`) | ADR-481 … 484 |
 | [`docs/fase-119-performance-previa-paginacao-modularizacao-e-dividas.md`](docs/fase-119-performance-previa-paginacao-modularizacao-e-dividas.md) | **Performance da Prévia da API (`B11`), Paginação do Acervo de Mídia, Modularização de Serviços e Quitação de `I8` + `E95`:** leitura única compartilhada na prévia de `/administracao/eventos/[id]/api` (`5× → 1×`, `ADR-477`); paginação real `?pagina=N` sem JS em `/pagina/midia` (`ADR-478`); extração de `registration-types.ts`, `registration-participant-link.ts` e `certificate-read-service.ts` preservando contratos e catracas F75/F85 (`ADR-479`); e senha `Koveno@2026`/`Koveno#2026` no seed/doc/specs (**E95**) + catraca de sincronia `AGENTS.md × README.md` (**I8**, `ADR-480`, 42 → 39 dívidas) | ADR-477 … 480 |
 | [`docs/fase-01-infra-e-modelagem.md`](docs/fase-01-infra-e-modelagem.md) | Docker Compose, PostgreSQL 18, roles `admin`/`app`, RLS com `FORCE`, modelagem completa (34+ modelos), contrato de isolamento | ADR-001 … 008 |
 | [`docs/fase-02-auth-rbac.md`](docs/fase-02-auth-rbac.md) | Better Auth, 11 papéis (66 permissões hoje, incluindo as de plataforma), escopos, acúmulo de papéis, troca de contexto por cookie assinado | ADR-009 … 013 |

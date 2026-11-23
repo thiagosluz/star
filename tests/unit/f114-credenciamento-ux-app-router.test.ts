@@ -117,7 +117,11 @@ describe('FASE 114 — Catracas estruturais de React 19, App Router e UX', () =>
   });
 
   it('SelfCheckinManager usa última ação rastreada, resumo recolhível, Cartaz com PIN, exclusão com modal e fuso horário explícito', () => {
-    const src = readSrc('src/components/credentials/self-checkin-manager.tsx');
+    const src = [
+      readSrc('src/components/credentials/self-checkin-manager.tsx'),
+      readSrc('src/components/credentials/self-checkin-policy-form.tsx'),
+      readSrc('src/components/credentials/self-checkin-point-row.tsx'),
+    ].join('\n');
 
     expect(src).toContain('lastActionKind');
     expect(src).toContain('data-testid="self-checkin-policy-toggle"');

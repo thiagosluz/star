@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { CalendarClock, LayoutGrid, Plus, Search, Users } from 'lucide-react';
+import { LayoutGrid, Search } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -9,16 +9,7 @@ import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { DEMAND_COLUMN_PAGE_SIZE, loadDemandBoard } from '@/lib/events/demand-service';
-import {
-  DEMAND_PRIORITIES,
-  DEMAND_PRIORITY_LABELS,
-  DEMAND_SITUATION_LABELS,
-} from '@/domain/events/demand-rules';
-import { InlineActionForm } from '@/components/admin/inline-action-form';
-import { DemandBoardDnd } from '@/components/admin/demand-board-dnd';
-import { DemandCalendar } from '@/components/admin/demand-calendar';
-import { DemandGantt } from '@/components/admin/demand-gantt';
-import { demandSituationTone } from '@/components/admin/demand-situation-tone';
+import { DEMAND_SITUATION_LABELS } from '@/domain/events/demand-rules';
 import {
   DemandViewSwitcher,
   isDemandView,
@@ -32,15 +23,11 @@ import {
 import { timelineWindow } from '@/domain/events/demand-timeline-rules';
 import { GetSearchForm, PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
-import {
-  createColumnAction,
-  createDemandAction,
-  deleteColumnAction,
-  moveDemandAction,
-  moveDemandFormAction,
-  reorderColumnsAction,
-  updateColumnAction,
-} from '@/app/actions/demand-actions';
+import { DemandsColumnsConfig } from '@/components/demands/demands-columns-config';
+import { DemandsCreateDetails } from '@/components/demands/demands-create-details';
+import { DemandsKanbanBoard } from '@/components/demands/demands-kanban-board';
+import { DemandsSummarySection } from '@/components/demands/demands-summary-section';
+import { DemandsTimelineViews } from '@/components/demands/demands-timeline-views';
 
 export const metadata = { title: 'Demandas do evento' };
 export const dynamic = 'force-dynamic';
@@ -48,34 +35,14 @@ export const dynamic = 'force-dynamic';
 /**
  * Id do aviso que ensina o atalho de teclado (dívida E51).
  *
- * Vive AQUI, no servidor, e não no componente de cliente, porque os dois precisam do
- * mesmo valor: o aviso é renderizado pelo cliente (`keyboardHintId`) e o cartão aponta
- * para ele com `aria-describedby`, montado aqui. Constante exportada de módulo
- * `'use client'` chegaria ao servidor como referência de cliente — um objeto, não a
- * string —, então a fonte é a página, e o cliente recebe o valor por prop.
+ * Vive aqui, no servidor, porque `DemandBoardDnd` (cliente) desenha o aviso e os
+ * cartões (servidor) apontam para ele via `aria-describedby`.
  */
 const KEYBOARD_HINT_ID = 'demand-board-keyboard-hint';
 
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  QUADRO DE DEMANDAS INTERNAS DO EVENTO (FASE 38)
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE ESTA TELA É
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O trabalho da EQUIPE da instituição no evento: uma diretoria por coluna (o estado
- *  do trabalho), cartões com responsáveis, prazo e conversa. Ela não é a programação:
- *  "atividade" neste sistema é a sessão com sala, vagas, presença e certificado — a
- *  demanda é o que a organização precisa fazer para que aquilo aconteça.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE A TELA MOSTRA A QUEM
- *  ─────────────────────────────────────────────────────────────────────────────
- *  Ver o quadro exige `demand:read`; mexer nos cartões, `demand:manage`; configurar
- *  colunas e equipes, `demand:team:manage`. A página ESCONDE o que a pessoa não pode
- *  fazer, e cada Server Action reconfere a permissão: o menu e o botão são
- *  conveniência, a barreira é a action.
- * ═══════════════════════════════════════════════════════════════════════════════
+ * Quadro de demandas internas do evento (FASE 38) com vistas Kanban, Gantt e
+ * Calendário (FASE 57) compartilhando a mesma leitura filtrada do servidor.
  */
 export default async function EventDemandsPage({
   params,
@@ -87,13 +54,9 @@ export default async function EventDemandsPage({
     equipe?: string;
     situacao?: string;
     busca?: string;
-    /** Quantos cartões por coluna — o "carregar mais" da coluna truncada (E52). */
     cartoes?: string;
-    /** Qual das três vistas desenhar: `kanban` (padrão), `gantt` ou `calendario` (F57). */
     vista?: string;
-    /** Âncora do eixo do Gantt, `AAAA-MM-DD` (F57). */
     de?: string;
-    /** Mês do calendário, `AAAA-MM` (F57). */
     mes?: string;
   }>;
 }) {
@@ -102,22 +65,8 @@ export default async function EventDemandsPage({
   const { tenantSlug } = resolvedParams;
   const { responsavel, equipe, situacao, busca, cartoes, vista, de, mes } = await searchParams;
 
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  UMA LEITURA, TRÊS VISTAS (FASE 57)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  O Gantt e o calendário NÃO fazem consulta nova: eles desenham as demandas que o
-   *  quadro já carregou, já filtradas. Uma leitura por vista seria a porta pela qual as
-   *  três discordariam — o filtro, a janela de cartões e a régua de situação teriam de
-   *  ser repetidos em cada caminho.
-   *
-   *  O instante é UM só, e vem daqui: é ele que decide "vence hoje" no cartão, no Gantt e
-   *  no anel do calendário. Duas chamadas a `new Date()` na mesma renderização poderiam
-   *  cair em dias diferentes na virada da meia-noite — e a mesma demanda apareceria
-   *  atrasada numa vista e no prazo na outra.
-   */
+  // Instante único garante consistência entre situação do cartão, Gantt e calendário.
   const now = new Date();
-
   const { tenantId, principal } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.DEMAND_READ,
@@ -127,32 +76,16 @@ export default async function EventDemandsPage({
   const event = await getAdminEvent(tenantId, eventId);
   if (!event) notFound();
 
-  /**
-   * A mesma pergunta em dois escopos: o papel pode valer na INSTITUIÇÃO (a
-   * coordenação) ou só no EVENTO (a equipe do dia) — e exigir o escopo largo
-   * recusaria o caso normal, que é o da equipe.
-   */
-  const allowed = (
-    permission: (typeof PERMISSIONS)[keyof typeof PERMISSIONS],
-  ): boolean =>
+  const allowed = (permission: (typeof PERMISSIONS)[keyof typeof PERMISSIONS]): boolean =>
     can(principal, permission, { scope: 'EVENT', eventId }) ||
     can(principal, permission, { scope: 'TENANT' });
 
   const canManage = allowed(PERMISSIONS.DEMAND_MANAGE);
   const canConfigure = allowed(PERMISSIONS.DEMAND_TEAM_MANAGE);
 
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  O TETO DE CARTÕES POR COLUNA (FASE 50 · dívida E52)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  O quadro trazia TODAS as demandas do evento numa consulta. O teto padrão cabe num
-   *  quadro de operação; quando uma coluna passa dele, a tela diz quantos ficaram de
-   *  fora e oferece o link que reabre com mais — o caminho é um parâmetro de URL, então
-   *  funciona sem JavaScript.
-   */
-  const pedido = Number.parseInt(cartoes ?? '', 10);
+  const requestedCards = Number.parseInt(cartoes ?? '', 10);
   const cardsPerColumn = Math.min(
-    Math.max(Number.isFinite(pedido) ? pedido : DEMAND_COLUMN_PAGE_SIZE, 1),
+    Math.max(Number.isFinite(requestedCards) ? requestedCards : DEMAND_COLUMN_PAGE_SIZE, 1),
     500,
   );
 
@@ -173,17 +106,7 @@ export default async function EventDemandsPage({
 
   const { board } = result;
   const basePath = `/administracao/eventos/${eventId}/demandas`;
-
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  A VISTA, E O QUE CADA UMA PRECISA
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  Valor desconhecido cai em `kanban`: um `?vista=` colado à mão (ou de uma versão
-   *  antiga da tela) não pode virar tela em branco — o padrão é a vista que já existia.
-   *
-   *  As demandas na régua das vistas novas SÃO as do quadro filtrado, convertidas uma vez
-   *  (`toTimelineDemands`); `undefined` no Kanban evita pagar a conversão que ninguém usa.
-   */
+  const boardPath = tenantPath(tenantSlug, basePath);
   const view = isDemandView(vista) ? vista : 'kanban';
   const timeline = view === 'kanban' ? [] : toTimelineDemands(board.columns, now, board.timeZone);
 
@@ -204,28 +127,10 @@ export default async function EventDemandsPage({
       ? calendarMonthKey({ requested: mes ?? null, timeZone: board.timeZone, now })
       : null;
 
-  /**
-   * Os filtros da tela viajam nos links das vistas e na navegação do período: trocar de
-   * vista (ou de mês) e perder o filtro mostraria OUTRA lista, e a pessoa concluiria que
-   * o filtro não vale ali.
-   */
   const filters: DemandViewFilters = { responsavel, equipe, situacao, busca, cartoes };
-
-  /**
-   * O teto de cartões por coluna (E52) também vale para as vistas novas — elas desenham o
-   * quadro filtrado, e não uma segunda leitura. Quando alguma coluna ficou truncada, a
-   * tela DIZ isso na vista nova: esconder em silêncio faria o Gantt omitir trabalho real.
-   */
   const truncated = board.columns.some((column) => column.totalCards > column.cards.length);
 
-  /**
-   * O link de "ver mais" PRESERVA os filtros da tela: perder o filtro ao pedir mais
-   * cartões mostraria outra lista, e a pessoa acharia que o quadro mudou sozinho.
-   *
-   * Nas vistas novas ele preserva também a VISTA e o período: pedir mais cartões e cair
-   * no Kanban (ou no mês de hoje) seria sair da tela em que a pessoa estava.
-   */
-  const moreCardsQuery = (totalDaColuna: number): string => {
+  const moreCardsQuery = (totalInColumn: number): string => {
     const next = new URLSearchParams();
 
     if (responsavel) next.set('responsavel', responsavel);
@@ -235,7 +140,7 @@ export default async function EventDemandsPage({
 
     next.set(
       'cartoes',
-      String(Math.min(500, Math.max(totalDaColuna, cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE))),
+      String(Math.min(500, Math.max(totalInColumn, cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE))),
     );
 
     if (view === 'gantt' && ganttWindow) {
@@ -250,7 +155,13 @@ export default async function EventDemandsPage({
 
     return next.toString();
   };
-  const boardPath = tenantPath(tenantSlug, basePath);
+
+  const moreCardsHrefByColumnId = Object.fromEntries(
+    board.columns
+      .filter((column) => column.totalCards > column.cards.length)
+      .map((column) => [column.id, `${basePath}?${moreCardsQuery(column.totalCards)}`]),
+  );
+  const timelineMoreCardsHref = `${boardPath}?${moreCardsQuery(cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE)}`;
 
   return (
     <main className="space-y-8">
@@ -275,76 +186,11 @@ export default async function EventDemandsPage({
         · as pessoas atribuídas saem da equipe ativa da instituição.
       </p>
 
-      {/**
-        * ─────────────────────────────────────────────────────────────────────────────
-        *  TRÊS DESENHOS DA MESMA LISTA (FASE 57)
-        * ─────────────────────────────────────────────────────────────────────────────
-        *  O Kanban continua sendo o padrão; o Gantt responde "o que atravessa o período" e
-        *  o calendário, "o que vence em cada dia". A barra de filtros vale para as três —
-        *  o seletor fica ACIMA dela para que a escolha da vista e o recorte da lista
-        *  apareçam na ordem em que a pessoa os usa.
-        */}
-      <DemandViewSwitcher
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        current={view}
-        filters={filters}
-      />
+      <DemandViewSwitcher tenantSlug={tenantSlug} eventId={eventId} current={view} filters={filters} />
 
-      {/* ── Resumo: o que aperta primeiro ───────────────────────────────────── */}
-      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="demand-summary">
-        {[
-          { key: 'open', label: 'Em aberto', value: board.summary.open },
-          { key: 'overdue', label: 'Atrasadas', value: board.summary.overdue },
-          { key: 'dueToday', label: 'Vencem hoje', value: board.summary.dueToday },
-          { key: 'done', label: 'Concluídas', value: board.summary.done },
-        ].map((item) => (
-          <div
-            key={item.key}
-            className="rounded-lg border border-border bg-card p-3"
-            data-testid={`demand-summary-${item.key}`}
-          >
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-            <p className="text-2xl font-semibold tracking-tight">{item.value}</p>
-          </div>
-        ))}
-      </section>
+      <DemandsSummarySection summary={board.summary} teams={board.teams} />
 
-      {board.summary.byTeam.length > 0 ? (
-        <section className="space-y-2" data-testid="demand-summary-teams">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Como as equipes estão
-          </h2>
-          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {board.summary.byTeam.map((row) => {
-              const team = board.teams.find((candidate) => candidate.id === row.teamId);
-
-              return (
-                <li key={row.teamId ?? 'sem-equipe'} className="rounded-lg border border-border p-3 text-sm">
-                  <p className="font-medium">
-                    {team?.name ?? 'Sem equipe'}
-                    {team?.leadName ? (
-                      <span className="text-xs text-muted-foreground"> · líder: {team.leadName}</span>
-                    ) : null}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {row.open} em aberto · {row.overdue} atrasada(s) · {row.done} concluída(s)
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
-      {/* ── Filtros ─────────────────────────────────────────────────────────── */}
       <GetSearchForm action={boardPath} className="flex flex-wrap items-end gap-2" data-testid="demand-filters">
-        {/**
-          * O formulário é um GET com os campos da barra: sem a vista no endereço, filtrar
-          * no Gantt ou no calendário devolveria o Kanban — a pessoa perderia a vista ao
-          * apertar "Filtrar". No Kanban nada é enviado (ele é o padrão), então a URL dele
-          * continua a mesma de antes.
-          */}
         {view === 'kanban' ? null : <input type="hidden" name="vista" value={view} />}
         <label className="space-y-1 text-xs">
           <span className="block text-muted-foreground">Buscar</span>
@@ -427,363 +273,42 @@ export default async function EventDemandsPage({
         </Link>
       </GetSearchForm>
 
-      {/* ── Nova demanda ────────────────────────────────────────────────────── */}
       {canManage ? (
-        <details className="rounded-lg border border-border bg-card p-4" data-testid="demand-create">
-          <summary className="cursor-pointer text-sm font-medium">
-            <Plus className="mr-1 inline size-4" aria-hidden />
-            Nova demanda
-          </summary>
-
-          <InlineActionForm
-            action={createDemandAction}
-            submitLabel="Criar demanda"
-            testId="demand-create-form"
-            variant="primary"
-            className="mt-4 space-y-4"
-          >
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
-            <input type="hidden" name="eventId" value={eventId} />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1 text-xs sm:col-span-2">
-                <span className="block text-muted-foreground">Título</span>
-                <input
-                  name="title"
-                  required
-                  maxLength={160}
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-title"
-                />
-              </label>
-
-              <label className="space-y-1 text-xs sm:col-span-2">
-                <span className="block text-muted-foreground">Descrição</span>
-                <textarea
-                  name="description"
-                  rows={3}
-                  maxLength={4000}
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-description"
-                />
-              </label>
-
-              <label className="space-y-1 text-xs">
-                <span className="block text-muted-foreground">Coluna</span>
-                <select
-                  name="columnId"
-                  defaultValue={board.columns[0]?.id ?? ''}
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-column"
-                >
-                  {board.columns.map((column) => (
-                    <option key={column.id} value={column.id}>
-                      {column.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1 text-xs">
-                <span className="block text-muted-foreground">Prioridade</span>
-                <select
-                  name="priority"
-                  defaultValue="NORMAL"
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-priority"
-                >
-                  {DEMAND_PRIORITIES.map((priority) => (
-                    <option key={priority} value={priority}>
-                      {DEMAND_PRIORITY_LABELS[priority]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1 text-xs">
-                <span className="block text-muted-foreground">Equipe</span>
-                <select
-                  name="teamId"
-                  defaultValue=""
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-team"
-                >
-                  <option value="">sem equipe</option>
-                  {board.teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1 text-xs">
-                <span className="block text-muted-foreground">Início</span>
-                <input
-                  type="date"
-                  name="startAt"
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-start"
-                />
-              </label>
-
-              <label className="space-y-1 text-xs">
-                <span className="block text-muted-foreground">Prazo (fim do dia, no fuso do evento)</span>
-                <input
-                  type="date"
-                  name="dueAt"
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-due"
-                />
-              </label>
-
-              <label className="space-y-1 text-xs sm:col-span-2">
-                <span className="block text-muted-foreground">
-                  Responsáveis (equipe ativa da instituição)
-                </span>
-                <select
-                  name="assigneeIds"
-                  multiple
-                  size={Math.min(Math.max(board.people.length, 3), 8)}
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  data-testid="demand-assignees"
-                >
-                  {board.people.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </InlineActionForm>
-        </details>
+        <DemandsCreateDetails
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          columns={board.columns}
+          teams={board.teams}
+          people={board.people}
+        />
       ) : null}
 
-      {/* ── As vistas ───────────────────────────────────────────────────────── */}
-      {/**
-        * O Kanban só entra no DOM quando é a vista escolhida, e o bloco inteiro fica como
-        * sempre esteve: o arrastar, os formulários do cartão e todos os `data-testid`
-        * continuam sendo os mesmos. O invólucro existe para a vista ter um identificador
-        * próprio — o do componente de arrastar (`demand-board`) continua no lugar.
-        */}
       {view === 'kanban' ? (
-        <div data-testid="demand-board-kanban">
-          <DemandBoardDnd
-            action={moveDemandAction}
-            tenantSlug={tenantSlug}
-            eventId={eventId}
-            canMove={canManage}
-            keyboardHintId={KEYBOARD_HINT_ID}
-          >
-          {board.columns.map((column) => (
-            <section
-              key={column.id}
-              data-column-drop={column.id}
-              data-testid={`demand-column-${column.id}`}
-              className="flex min-h-40 flex-col gap-2 rounded-lg border border-border bg-card/60 p-2"
-            >
-              <header className="flex items-center justify-between gap-2 px-1">
-                <h2 className="text-sm font-medium">
-                  {column.name}
-                  {column.isDone ? (
-                    <span className="ml-1 text-xs uppercase tracking-wide text-muted-foreground">
-                      conclui
-                    </span>
-                  ) : null}
-                </h2>
-                <span className="text-xs text-muted-foreground" data-testid={`demand-column-count-${column.id}`}>
-                  {column.cards.length}
-                </span>
-              </header>
-
-              {column.cards.length === 0 ? (
-                <p className="px-1 py-4 text-xs text-muted-foreground">Nenhuma demanda aqui.</p>
-              ) : null}
-
-              {/**
-                * ─────────────────────────────────────────────────────────────────────
-                *  COLUNA TRUNCADA SE ANUNCIA E DÁ O CAMINHO (FASE 50 · dívida E52)
-                * ─────────────────────────────────────────────────────────────────────
-                *  Esconder cartão em silêncio seria pior que a lentidão: quem organiza
-                *  concluiria que a demanda sumiu. O aviso diz QUANTOS ficaram de fora, e o
-                *  link reabre o quadro com mais — parâmetro de URL, sem JavaScript.
-                */}
-              {column.totalCards > column.cards.length ? (
-                <p
-                  className="rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground"
-                  data-testid={`demand-column-truncated-${column.id}`}
-                >
-                  Mostrando {column.cards.length} de {column.totalCards} demandas.{' '}
-                  <Link
-                    href={`${basePath}?${moreCardsQuery(column.totalCards)}`}
-                    className="underline underline-offset-4"
-                    data-testid={`demand-column-more-${column.id}`}
-                  >
-                    Ver mais
-                  </Link>
-                </p>
-              ) : null}
-
-              {column.cards.map((card, index) => (
-                <article
-                  key={card.id}
-                  data-demand-id={card.id}
-                  data-demand-column={column.id}
-                  data-demand-index={index}
-                  data-demand-situation={card.situation}
-                  /**
-                   * O nome vai no DOM porque o ANÚNCIO do movimento por teclado precisa
-                   * dele ("A demanda X agora é a 2ª de 5"): ler o texto do link seria
-                   * depender da marcação interna, que muda por motivo de layout.
-                   */
-                  data-demand-title={card.title}
-                  /**
-                   * ─────────────────────────────────────────────────────────────────────
-                   *  O CARTÃO É FOCÁVEL, E O ATALHO VEM DESCRITO (dívida E51)
-                   * ─────────────────────────────────────────────────────────────────────
-                   *  `tabIndex={0}` põe o cartão na ordem de tabulação; o
-                   *  `aria-describedby` aponta para o aviso que ensina o `Alt + ↑/↓`, então
-                   *  quem chega pelo teclado OUVE o atalho ao focar — em vez de descobri-lo
-                   *  por acaso. Sem permissão de mover não há atalho: o cartão continua
-                   *  focável (o link do título é o conteúdo), mas nada é anunciado.
-                   */
-                  tabIndex={canManage ? 0 : undefined}
-                  aria-describedby={canManage ? KEYBOARD_HINT_ID : undefined}
-                  draggable={canManage}
-                  data-testid={`demand-card-${card.id}`}
-                  /**
-                   * O anel de foco NÃO é escrito aqui: o `globals.css` já o aplica a todo
-                   * `[tabindex]` com `focus-visible` (o anel é do sistema, não de quem
-                   * lembra de escrever a classe).
-                   */
-                  className={`space-y-2 rounded-md border p-2 text-sm ${demandSituationTone(card.situation)}`}
-                >
-                  <Link
-                    href={tenantPath(tenantSlug, `${basePath}/${card.id}`)}
-                    className="block font-medium underline-offset-2 hover:underline"
-                    data-testid={`demand-card-title-${card.id}`}
-                  >
-                    {card.title}
-                  </Link>
-
-                  <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span data-testid={`demand-card-priority-${card.id}`}>{card.priorityLabel}</span>
-                    {card.dueLabel ? (
-                      <span className="flex items-center gap-1" data-testid={`demand-card-due-${card.id}`}>
-                        <CalendarClock className="size-3" aria-hidden />
-                        {card.dueLabel}
-                      </span>
-                    ) : null}
-                    <span data-testid={`demand-card-situation-${card.id}`}>{card.situationLabel}</span>
-                    {card.commentCount > 0 ? <span>{card.commentCount} comentário(s)</span> : null}
-                  </p>
-
-                  <p className="flex flex-wrap items-center gap-1 text-xs" data-testid={`demand-card-people-${card.id}`}>
-                    <Users className="size-3 text-muted-foreground" aria-hidden />
-                    {card.teamName ? <span className="font-medium">{card.teamName}</span> : null}
-                    {card.assignees.length > 0 ? (
-                      <span className="text-muted-foreground">
-                        {card.assignees.map((assignee) => assignee.name).join(', ')}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">sem responsável</span>
-                    )}
-                  </p>
-
-                  {/**
-                   * O formulário do cartão é o caminho que NÃO depende de JavaScript:
-                   * um `<form>` com a ação nativa `(formData) => void`, que o React
-                   * envia mesmo antes da hidratação. O arrastar e soltar é o atalho.
-                   */}
-                  {canManage && board.columns.length > 1 ? (
-                    <form action={moveDemandFormAction} className="flex items-center gap-1">
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="demandId" value={card.id} />
-                      <input type="hidden" name="fromColumnId" value={column.id} />
-                      <select
-                        name="toColumnId"
-                        defaultValue={column.id}
-                        aria-label={`Mover "${card.title}" para`}
-                        className="min-w-0 flex-1 rounded-md border border-border bg-background px-1.5 py-1 text-xs"
-                        data-testid={`demand-move-select-${card.id}`}
-                      >
-                        {board.columns.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="submit"
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
-                        data-testid={`demand-move-submit-${card.id}`}
-                      >
-                        Mover
-                      </button>
-                    </form>
-                  ) : null}
-                </article>
-              ))}
-            </section>
-          ))}
-          </DemandBoardDnd>
-        </div>
-      ) : null}
-
-      {view === 'gantt' && ganttWindow ? (
-        <div className="space-y-2">
-          {truncated ? (
-            <p className="text-xs text-muted-foreground" data-testid="demand-view-truncated">
-              Algumas colunas têm mais demandas do que a janela trouxe — o eixo mostra as{' '}
-              {cardsPerColumn} primeiras de cada uma.{' '}
-              <Link
-                href={`${boardPath}?${moreCardsQuery(cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE)}`}
-                className="underline"
-              >
-                Ver mais
-              </Link>
-            </p>
-          ) : null}
-
-          <DemandGantt
-            tenantSlug={tenantSlug}
-            eventId={eventId}
-            demands={timeline}
-            window={ganttWindow}
-            timeZone={board.timeZone}
-            filters={filters}
-          />
-        </div>
-      ) : null}
-
-      {view === 'calendario' && calendarKey ? (
-        <div className="space-y-2">
-          {truncated ? (
-            <p className="text-xs text-muted-foreground" data-testid="demand-view-truncated">
-              Algumas colunas têm mais demandas do que a janela trouxe — o mês mostra as{' '}
-              {cardsPerColumn} primeiras de cada uma.{' '}
-              <Link
-                href={`${boardPath}?${moreCardsQuery(cardsPerColumn + DEMAND_COLUMN_PAGE_SIZE)}`}
-                className="underline"
-              >
-                Ver mais
-              </Link>
-            </p>
-          ) : null}
-
-          <DemandCalendar
-            tenantSlug={tenantSlug}
-            eventId={eventId}
-            demands={timeline}
-            monthKey={calendarKey}
-            timeZone={board.timeZone}
-            now={now}
-            filters={filters}
-          />
-        </div>
-      ) : null}
+        <DemandsKanbanBoard
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          basePath={basePath}
+          columns={board.columns}
+          moreCardsHrefByColumnId={moreCardsHrefByColumnId}
+          canManage={canManage}
+          keyboardHintId={KEYBOARD_HINT_ID}
+        />
+      ) : (
+        <DemandsTimelineViews
+          view={view}
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          demands={timeline}
+          timeZone={board.timeZone}
+          now={now}
+          filters={filters}
+          truncated={truncated}
+          cardsPerColumn={cardsPerColumn}
+          moreCardsHref={timelineMoreCardsHref}
+          ganttWindow={ganttWindow}
+          calendarKey={calendarKey}
+        />
+      )}
 
       {board.columns.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -791,111 +316,10 @@ export default async function EventDemandsPage({
         </p>
       ) : null}
 
-      {/* ── Configuração das colunas ────────────────────────────────────────── */}
       {canConfigure ? (
-        <details className="rounded-lg border border-border bg-card p-4" data-testid="demand-columns-config">
-          <summary className="cursor-pointer text-sm font-medium">Colunas do quadro</summary>
-
-          <div className="mt-4 space-y-4">
-            {board.columns.map((column) => (
-              <div
-                key={column.id}
-                className="flex flex-wrap items-end gap-2 border-b border-border pb-3 last:border-0"
-                data-testid={`demand-column-row-${column.id}`}
-              >
-                <InlineActionForm
-                  action={updateColumnAction}
-                  submitLabel="Renomear"
-                  testId={`demand-column-rename-${column.id}`}
-                >
-                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                  <input type="hidden" name="eventId" value={eventId} />
-                  <input type="hidden" name="columnId" value={column.id} />
-                  <input
-                    name="name"
-                    defaultValue={column.name}
-                    maxLength={40}
-                    className="w-44 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                    data-testid={`demand-column-name-${column.id}`}
-                  />
-                </InlineActionForm>
-
-                <InlineActionForm
-                  action={updateColumnAction}
-                  submitLabel={column.isDone ? 'Deixar de concluir' : 'Marcar como conclusão'}
-                  testId={`demand-column-done-${column.id}`}
-                >
-                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                  <input type="hidden" name="eventId" value={eventId} />
-                  <input type="hidden" name="columnId" value={column.id} />
-                  <input type="hidden" name="isDone" value={column.isDone ? 'false' : 'true'} />
-                </InlineActionForm>
-
-                <InlineActionForm
-                  action={reorderColumnsAction}
-                  submitLabel="←"
-                  testId={`demand-column-up-${column.id}`}
-                >
-                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                  <input type="hidden" name="eventId" value={eventId} />
-                  <input type="hidden" name="columnId" value={column.id} />
-                  <input type="hidden" name="direction" value="up" />
-                </InlineActionForm>
-
-                <InlineActionForm
-                  action={reorderColumnsAction}
-                  submitLabel="→"
-                  testId={`demand-column-down-${column.id}`}
-                >
-                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                  <input type="hidden" name="eventId" value={eventId} />
-                  <input type="hidden" name="columnId" value={column.id} />
-                  <input type="hidden" name="direction" value="down" />
-                </InlineActionForm>
-
-                <InlineActionForm
-                  action={deleteColumnAction}
-                  submitLabel="Excluir"
-                  testId={`demand-column-delete-${column.id}`}
-                  variant="destructive"
-                  confirm={{
-                    title: `Excluir a coluna "${column.name}"?`,
-                    description:
-                      'A coluna só pode ser excluída se estiver vazia. As demandas que estão nela precisam ser movidas antes.',
-                    confirmLabel: 'Excluir coluna',
-                  }}
-                >
-                  <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                  <input type="hidden" name="eventId" value={eventId} />
-                  <input type="hidden" name="columnId" value={column.id} />
-                </InlineActionForm>
-              </div>
-            ))}
-
-            <InlineActionForm
-              action={createColumnAction}
-              submitLabel="Criar coluna"
-              testId="demand-column-create"
-            >
-              <input type="hidden" name="tenantSlug" value={tenantSlug} />
-              <input type="hidden" name="eventId" value={eventId} />
-              <input
-                name="name"
-                placeholder="Nome da coluna"
-                maxLength={40}
-                className="w-44 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                data-testid="demand-column-new-name"
-              />
-              <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                <input type="checkbox" name="isDone" data-testid="demand-column-new-done" />
-                conclui a demanda
-              </label>
-            </InlineActionForm>
-          </div>
-        </details>
+        <DemandsColumnsConfig tenantSlug={tenantSlug} eventId={eventId} columns={board.columns} />
       ) : null}
 
-      {/* O menu do evento usa a mesma permissão da página. */}
       <p className="text-xs text-muted-foreground">
         <Link href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)} className="underline">
           Voltar ao painel do evento

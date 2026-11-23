@@ -16,9 +16,9 @@ gamificação (XP, cartas, missões) e certificação com validação pública p
 **Estado atual:**
 
 ```text
-Fases concluídas ........ 1 a 17, 21 a 25, **29 a 119** (**F56 a F119 entregues**)
-Testes ................. **4969** (Vitest: unit + integração, 302 arquivos) + **565** (Playwright E2E) + 1 skip
-ADRs ................... 480 (numeração GLOBAL e sequencial — a próxima é ADR-481)
+Fases concluídas ........ 1 a 17, 21 a 25, **29 a 121** (**F56 a F121 entregues**)
+Testes ................. **4983** (Vitest: unit + integração, 304 arquivos) + **565** (Playwright E2E) + 1 skip
+ADRs ................... 488 (numeração GLOBAL e sequencial — a próxima é ADR-489)
 Permissões ............. 66 (11 papéis, 4 escopos)
 Tabelas de tenant ...... 63 sob RLS + FORCE (+ as partições mensais de audit_logs)
 Tabelas de plataforma .. job_runs, two_factor, identity_audit_logs e cookie_consents — sem RLS (ou sem tenant) e SEM acesso para a role de runtime (verificado no contrato)
@@ -113,7 +113,7 @@ registro completo do que foi condensado segue no `docs/fase-NN-*.md` e no `READM
 ```bash
 npm run lint          # esperado: 0 erros, 0 warnings
 npm run typecheck     # esperado: 0 erros
-npm test              # esperado: 4969 testes passando (302 arquivos)
+npm test              # esperado: 4983 testes passando (304 arquivos)
 npm run build         # esperado: "Compiled successfully" e a rota nova listada
 npm run db:verify     # esperado: "Contrato íntegro." (inclui: nenhuma tabela de plataforma
                       #           alcançável pela role de runtime)
@@ -709,7 +709,7 @@ tests/{unit,integration,e2e}
 > As fases **1 a 25**, **29 a 30**, **31 a 35**, **36 a 42**, **43 a 49**, **50 a 59**, **60**, **61 a 62**, **63 a 65**, **66 a 67**, **68 a 69**, **70 a 71**, **72 a 74**, **75 a 76**, **77 a 78**, **79 a 80**, **81 a 82**, **83** (FASE 101), **84** (FASE 102), **85** (FASE 103), **86** (FASE 104), **87** (FASE 106), **88** (FASE 107), **89** (FASE 108), **90 a 91** (FASE 109), **92 a 93** (FASE 110), **94 a 95** (FASE 111), **96 a 97** (FASE 113), **98 a 99** (FASE 114), **100** (FASE 115), **101** (FASE 116), **102** (FASE 117), **103** (FASE 118) e **104** (FASE 119) foram movidas
 > **como estavam** para [`docs/fases-historico.md`](docs/fases-historico.md); o cabeçalho de lá
 > registra cada movimento e o byte count. O registro de cada uma segue em `docs/fase-NN-*.md`
-> e no `README.md`. A tabela abaixo é a corrente (**105 a 119**).
+> e no `README.md`. A tabela abaixo é a corrente (**105 a 121**).
 
 | Fase | Tema | Situação |
 |---|---|---|
@@ -728,6 +728,8 @@ tests/{unit,integration,e2e}
 | 117 | **Consolidação DRY de Primitivos de UI, Hooks e Utilitários Compartilhados** — utilitários puros em `src/domain/shared/` (`asRecord`/`asRecordOrNull`, `round2`, `stripDiacritics`, `date-format` com `Intl.DateTimeFormat` cacheado), `parseImageMime` (`image-rules.ts`), `buildPublicAssetUrl` (`s3-client.ts`) e `getRedisUrl` (`redis/config.ts`) (`ADR-472`); `form-data.ts`, `request-meta.ts` (`import("next/headers")` preguiçoso + `extractClientIp`), `file-crypto.ts` (`sha256Hex`/`readMagicBytes`) e unificação de `*ActionState` sobre `ActionGuardState` (`ADR-473`); hooks `useIsInteractive` e `useCopyToClipboard` + primitivos `<CopyButton>`, `<ActionFeedback>` e `<SubmitButton>` em `@/components/ui`, com `0 px` de diferença visual em `f62` e catraca estrutural DRY (`ADR-474`). **12 Vitest**; Vitest **4958** (300 arquivos); E2E **565 passando + 1 skip**. ADR-472 … 474 | ✅ |
 | 118 | **Faxina de Código Morto e Redução de Superfície de Server Actions** — exclusão do componente órfão `badge-checkin-form.tsx` (`112` linhas), remoção das 6 Server Actions `use server` sem consumidor (`loadAccount`, `checkInByBadgeAction`, `requestCertificateDownloadAction`, `enterTenantAction`, `adjustXpAction`, `saveSponsorQrAction`), fechamento do `export` em `deleteCertificateTemplateAction` e em 5 componentes internos (`ActivityCard`, `SpeakerCard`, `ShellNav`, `InviteTokenBox`, `PublicEventCard`), com catraca AST travando ações e componentes órfãos (`ADR-475`); remoção de 32 funções mortas (0 chamadores em todo o repositório) + 18 imports/helpers em cascata até `tsc --noEmit --noUnusedLocals` zerar (`ADR-476`). **3 Vitest**; Vitest **4961** (301 arquivos); E2E **565 passando + 1 skip**. ADR-475 … 476 | ✅ |
 | 119 | **Performance da Prévia da API (`B11`), Paginação do Acervo de Mídia, Modularização de Serviços e Quitação de `I8` + `E95`** — leitura única compartilhada (`resolveTenant`/`verifyKey`/`loadProjections` memoizados) na prévia de `/administracao/eventos/[id]/api` mantendo as 5 portas HTTP (`5× → 1×`, quita **B11**, `ADR-477`); paginação real `?pagina=N` sem JS em `/pagina/midia` (`parseMediaPage`, `computeMediaPagination`, `buildMediaPageHref`, `ADR-478`); fatiamento de `registration-service.ts` (`registration-types.ts` + `registration-participant-link.ts`, `-671` linhas) e `certificate-service.ts` (`certificate-read-service.ts`, `-735` linhas) mantendo reexportações e catracas F75/F85 (`ADR-479`); senha padrão `Koveno@2026`/`Koveno#2026` no seed/doc/35 specs (**E95**) e catraca de sincronia `AGENTS.md × README.md × dividas-tecnicas × armadilhas` (**I8**, `ADR-480`). **8 Vitest**; Vitest **4969** (302 arquivos); E2E **565 passando + 1 skip**; **39 dívidas abertas**. ADR-477 … 480 | ✅ |
+| 120 | **Modularização SRP de Client Components Críticos e Redução de Profundidade JSX** — fatiamento de `certificate-template-editor.tsx` (`1381 → 250` linhas, `jsxDepth 13 → 7`) em 8 submódulos sob `certificate-template/` com migração das exceções de papel em `f61` (`ADR-481`); extração em `RaffleStage` (`722 → 181` linhas) dos hooks `useRaffleLiveStream` e `useRaffleRoulette` + views (`ADR-482`); isolamento do motor de câmera em `useQrCameraScanner` (`qr-camera-reader.tsx` `511 → 120`) e subcomponentes do `MonitorConsole` (`602 → 341`) preservando `f99`/`f114`/`f115` (`ADR-483`); e catraca AST de linhas/aninhamento em `f120-modularizacao-srp-client-components.test.ts` (`ADR-484`). **7 Vitest**; Vitest **4976** (303 arquivos); E2E **565 passando + 1 skip**; **39 dívidas abertas**. ADR-481 … 484 | ✅ |
+| 121 | **Modularização SRP das Frentes 2 (Client) e 3 (Server Pages & God Modules)** — fatiamento de `RaffleHistory` (`1094 → 182`), `SelfCheckinManager` (`843 → 154`) e `BlockContentFields` (`513 → 66`) em submódulos coesos preservando `f109`/`f114` (`ADR-485`); decomposição de `BlockRenderer` (`1439 → 109`, `jsxDepth 1`) e da página da atividade (`755 → 211`) sob `events/` com registro em `f73`/`f89` (`ADR-486`); extração dos painéis de `comunicacao/page.tsx` (`1364 → 129`) e `demandas/page.tsx` (`907 → 331`, props serializáveis para "Ver mais", `ADR-487`); e suíte SSR + catraca AST dos 7 alvos (`6915 → 1182`, 26 submódulos) em `f121-*.test.ts` (`ADR-488`). **7 Vitest**; Vitest **4983** (304 arquivos); E2E **565 passando + 1 skip**; **39 dívidas abertas**. ADR-485 … 488 | ✅ |
 > **Numeração de tema, não de ordem.** O número identifica o TEMA, e o humano o escolhe
 > pelo nome: por isso a F16, a F17, a F23, a F24 e a F25 vieram antes da F15, e a F21 foi
 > entregue depois de todas. A tabela segue a ordem cronológica.
@@ -741,7 +743,7 @@ Seguem abertas: **E76, E77, E78, E85** (assinatura `webcal` + revogação indivi
 
 1. Ler `README.md`, `docs/design-system.md`, `docs/dividas-tecnicas.md`,
    `docs/armadilhas.md` (a tabela COMPLETA das 107 armadilhas) e o documento da **última
-   fase entregue** (`docs/fase-119-performance-previa-paginacao-modularizacao-e-dividas.md`; antes, F118, F117, F116, F115, F114, F113, F112, F111, F110, F97, ..., F68; a
+   fase entregue** (`docs/fase-121-modularizacao-srp-client-e-server-pages.md`; antes, F120, F119, F118, F117, F116, F115, F114, F113, F112, F111, F110, F97, ..., F68; a
    comunicação é `docs/fase-15-comunicacao.md`).
 2. Rodar a bateria da seção 4 para confirmar que a árvore está verde **antes** de
    mexer em qualquer coisa (se algo falhar, isso é o primeiro trabalho).
