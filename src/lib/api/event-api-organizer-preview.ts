@@ -35,6 +35,9 @@ import { API_RESOURCES, type ApiResource } from '@/domain/api/public-api-contrac
 import type { RateLimitStorage } from '@/lib/auth/rate-limit-storage';
 import { createEventApiRouteHandlers } from '@/lib/api/event-api-route-handlers';
 import { eventApiResourcePath } from '@/domain/api/event-api-organizer-rules';
+import { getTenantContext } from '@/lib/events/event-repository';
+import { verifyEventApiKey } from '@/lib/api/event-api-key-service';
+import { loadEventApiProjections } from '@/lib/api/event-api-service';
 
 export interface EventApiPreview {
   /** O código HTTP REAL daquela resposta (200, 404, …). */
@@ -72,19 +75,52 @@ function readableBody(text: string, contentType: string | null): string {
   }
 }
 
+export interface EventApiPreviewDeps {
+  resolveTenant?: typeof getTenantContext;
+  verifyKey?: typeof verifyEventApiKey;
+  loadProjections?: typeof loadEventApiProjections;
+}
+
 /**
- * As cinco prévias, em paralelo.
+ * As cinco prévias, em paralelo — com leitura única (FASE 119, quita B11).
+ *
+ * `resolveTenant`, `verifyKey` e `loadProjections` são memoizados por chamada de
+ * `buildEventApiPreviews` para que os cinco recursos compartilhem uma única leitura de
+ * instituição, chave e projeção do evento, atravessando as mesmas portas HTTP da rota.
  *
  * `now` é injetável para a tela ser determinística em teste; em produção é o
  * instante da renderização — o mesmo que o `meta.generatedAt` mostra.
  */
-export async function buildEventApiPreviews(input: {
-  tenantSlug: string;
-  eventSlug: string;
-  chave: string;
-  now?: Date;
-}): Promise<EventApiPreviewsResult> {
+export async function buildEventApiPreviews(
+  input: {
+    tenantSlug: string;
+    eventSlug: string;
+    chave: string;
+    now?: Date;
+  },
+  deps: EventApiPreviewDeps = {},
+): Promise<EventApiPreviewsResult> {
   const now = input.now ?? new Date();
+  const baseResolveTenant = deps.resolveTenant ?? getTenantContext;
+  const baseVerifyKey = deps.verifyKey ?? verifyEventApiKey;
+  const baseLoadProjections = deps.loadProjections ?? loadEventApiProjections;
+
+  let tenantPromise: ReturnType<typeof getTenantContext> | null = null;
+  let authPromise: ReturnType<typeof verifyEventApiKey> | null = null;
+  let projectionsPromise: ReturnType<typeof loadEventApiProjections> | null = null;
+
+  const sharedResolveTenant: typeof getTenantContext = (slug) => {
+    tenantPromise ??= baseResolveTenant(slug);
+    return tenantPromise;
+  };
+  const sharedVerifyKey: typeof verifyEventApiKey = (params) => {
+    authPromise ??= baseVerifyKey(params);
+    return authPromise;
+  };
+  const sharedLoadProjections: typeof loadEventApiProjections = (params) => {
+    projectionsPromise ??= baseLoadProjections(params);
+    return projectionsPromise;
+  };
 
   try {
     const entries = await Promise.all(
@@ -92,6 +128,9 @@ export async function buildEventApiPreviews(input: {
         const handlers = createEventApiRouteHandlers(resource, {
           rateLimit: PREVIEW_RATE_LIMIT,
           now: () => now,
+          resolveTenant: sharedResolveTenant,
+          verifyKey: sharedVerifyKey,
+          loadProjections: sharedLoadProjections,
         });
 
         const request = new Request(

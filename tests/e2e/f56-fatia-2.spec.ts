@@ -22,7 +22,7 @@ import { createSubmission } from '../../src/lib/review/submission-service';
  *  clicando no formulário: o que este cenário mede é a RETIRADA, e montar a submissão
  *  pela tela custaria uma dúzia de passos que já têm teste próprio.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f56-fatia2-${RUN_ID}`;
 const EVENT_SLUG = `eventos-paginados-${RUN_ID}`;
 

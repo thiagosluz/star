@@ -28,7 +28,7 @@ import { RUN_ID, createTenant, e2eDb, grantRole, linkUser,
  *  acessível (é o que o portão WCAG cobra em `link-name`), e o teste prende isso
  *  do lado de fora, olhando o que o navegador expõe — não a classe do CSS.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f59-nav-${RUN_ID}`;
 
 let tenantId: string;

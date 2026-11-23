@@ -13,8 +13,10 @@ import {
   MEDIA_NO_SOURCE_EVENT,
   MEDIA_USAGE_EM_USO,
   MEDIA_USAGE_LIVRE,
+  buildMediaPageHref,
   normalizeMediaMimeType,
   normalizeMediaSearch,
+  parseMediaPage,
   parseMediaUsageFilter,
 } from '@/domain/events/media-filter-rules';
 import { resolveUuidQueryFilter } from '@/domain/validation/query-filter-rules';
@@ -69,12 +71,12 @@ export default async function EventMediaLibraryPage({
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
-  searchParams: Promise<{ busca?: string; tipo?: string; evento?: string; uso?: string }>;
+  searchParams: Promise<{ busca?: string; tipo?: string; evento?: string; uso?: string; pagina?: string }>;
 }) {
   const resolvedParams = await params;
   const eventId = requireUuidParam(resolvedParams, 'eventId');
   const { tenantSlug } = resolvedParams;
-  const { busca, tipo, evento, uso } = await searchParams;
+  const { busca, tipo, evento, uso, pagina } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
@@ -111,6 +113,7 @@ export default async function EventMediaLibraryPage({
     mimeType: normalizeMediaMimeType(tipo),
     sourceEventId: sourceEventFilter?.kind === 'applied' ? sourceEventFilter.value : null,
     inUse: parseMediaUsageFilter(uso),
+    page: parseMediaPage(pagina),
   };
 
   const hasFilter =
@@ -305,9 +308,53 @@ export default async function EventMediaLibraryPage({
           */}
         <p className="text-xs text-muted-foreground" data-testid="media-result-count">
           {library.truncated
-            ? `Mostrando ${library.assets.length} de ${library.matchedCount} imagens — refine os filtros para chegar no resto.`
+            ? `Mostrando ${library.assets.length} de ${library.matchedCount} imagens (página ${library.page} de ${library.totalPages}) — refine os filtros ou avance de página para chegar no resto.`
             : `${library.matchedCount} imagem(ns) ${hasFilter ? 'no resultado' : 'no acervo'}.`}
         </p>
+
+        {library.totalPages > 1 ? (
+          <nav
+            aria-label="Paginação do acervo"
+            data-testid="media-pagination"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-low px-3 py-2 text-xs"
+          >
+            <span data-testid="media-page-indicator" className="text-muted-foreground">
+              Página {library.page} de {library.totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              {library.hasPreviousPage ? (
+                <Link
+                  href={buildMediaPageHref(mediaPath, {
+                    busca: filters.search,
+                    tipo: filters.mimeType,
+                    evento: filters.sourceEventId,
+                    uso: usageValue || null,
+                    pagina: library.page - 1,
+                  })}
+                  data-testid="media-page-prev"
+                  className="rounded-md border border-border bg-background px-2.5 py-1 hover:bg-accent"
+                >
+                  Anterior
+                </Link>
+              ) : null}
+              {library.hasNextPage ? (
+                <Link
+                  href={buildMediaPageHref(mediaPath, {
+                    busca: filters.search,
+                    tipo: filters.mimeType,
+                    evento: filters.sourceEventId,
+                    uso: usageValue || null,
+                    pagina: library.page + 1,
+                  })}
+                  data-testid="media-page-next"
+                  className="rounded-md border border-border bg-background px-2.5 py-1 hover:bg-accent"
+                >
+                  Próxima
+                </Link>
+              ) : null}
+            </div>
+          </nav>
+        ) : null}
 
         {library.assets.length > 0 ? (
           <ul className="space-y-3" data-testid="media-list">

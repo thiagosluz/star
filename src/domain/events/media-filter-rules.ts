@@ -123,3 +123,62 @@ export function parseMediaUsageFilter(raw: string | null | undefined): boolean |
 
   return null;
 }
+
+/** Página solicitada pela query (`?pagina=N`), sempre inteiro `>= 1` (FASE 119). */
+export function parseMediaPage(raw: string | null | undefined): number {
+  const parsed = Number.parseInt((raw ?? '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+export interface MediaPaginationResult {
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  skip: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+}
+
+/** Calcula janela (`skip`/`take`) e limites de paginação com clamp em `1..totalPages`. */
+export function computeMediaPagination(input: {
+  matchedCount: number;
+  page: number;
+  pageSize?: number;
+}): MediaPaginationResult {
+  const pageSize = Math.max(1, Math.trunc(input.pageSize ?? MEDIA_LIBRARY_LIMIT));
+  const totalPages = Math.max(1, Math.ceil(Math.max(0, input.matchedCount) / pageSize));
+  const page = Math.min(Math.max(1, Math.trunc(input.page || 1)), totalPages);
+  const skip = (page - 1) * pageSize;
+
+  return {
+    page,
+    pageSize,
+    totalPages,
+    skip,
+    hasPreviousPage: page > 1,
+    hasNextPage: page < totalPages,
+  };
+}
+
+/** Monta URL de paginação preservando os filtros ativos e omitindo `pagina=1`. */
+export function buildMediaPageHref(
+  basePath: string,
+  params: {
+    busca?: string | null;
+    tipo?: string | null;
+    evento?: string | null;
+    uso?: string | null;
+    pagina?: number;
+  },
+): string {
+  const query = new URLSearchParams();
+  if (params.busca) query.set('busca', params.busca);
+  if (params.tipo) query.set('tipo', params.tipo);
+  if (params.evento) query.set('evento', params.evento);
+  if (params.uso) query.set('uso', params.uso);
+  if (params.pagina && params.pagina > 1) query.set('pagina', String(params.pagina));
+
+  const qs = query.toString();
+  return qs ? `${basePath}?${qs}` : basePath;
+}

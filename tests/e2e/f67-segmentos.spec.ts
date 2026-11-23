@@ -49,7 +49,7 @@ import {
   signOut,
 } from './helpers';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f67-segmentos-${RUN_ID}`;
 const EVENT_TITLE = 'Congresso dos Segmentos';
 

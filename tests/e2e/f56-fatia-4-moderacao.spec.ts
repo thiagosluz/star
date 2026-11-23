@@ -32,7 +32,7 @@ import { RUN_ID, cleanupRun, createTenant, e2eDb, grantPlatformRole, grantRole, 
  *  é lido de lá, e não de uma variável preenchida por outro teste.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f56-fatia4-moderacao-${RUN_ID}`;
 
 const RELATO =

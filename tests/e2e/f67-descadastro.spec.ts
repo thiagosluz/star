@@ -57,7 +57,7 @@ import {
 import { notifyConfirmationRequired } from '../../src/lib/events/registration-notices';
 import { unsubscribeUrlFor } from '../../src/lib/communication/unsubscribe-service';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f67-descadastro-${RUN_ID}`;
 const EVENT_TITLE = 'Congresso do Descadastro';
 const ATIVIDADE_TITULO = 'Oficina com vaga retida';

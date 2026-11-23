@@ -19,7 +19,7 @@ import { RUN_ID, createTenant, e2eDb, grantRole, linkUser,
  *  a depender do VÍNCULO (`sponsor_users` ativo), e este cenário prende os dois lados no
  *  NAVEGADOR: sem vínculo o item não existe; com vínculo ele existe como ÁREA.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f59-patrocinador-${RUN_ID}`;
 
 let tenantId: string;

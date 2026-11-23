@@ -559,4 +559,26 @@ describe('teto de 200 e filtro NO BANCO (E19)', () => {
     expect(filtrado.assets).toHaveLength(200);
     expect(filtrado.truncated).toBe(false);
   });
+
+  it('paginação real retorna a página 2 com os 5 itens restantes e clamp fora de faixa (FASE 119)', async () => {
+    const pagina1 = await listMediaLibrary(bulkTenantId, { filters: { page: 1 } });
+    expect(pagina1.page).toBe(1);
+    expect(pagina1.totalPages).toBe(2);
+    expect(pagina1.hasPreviousPage).toBe(false);
+    expect(pagina1.hasNextPage).toBe(true);
+    expect(pagina1.assets).toHaveLength(200);
+
+    const pagina2 = await listMediaLibrary(bulkTenantId, { filters: { page: 2 } });
+    expect(pagina2.page).toBe(2);
+    expect(pagina2.totalPages).toBe(2);
+    expect(pagina2.hasPreviousPage).toBe(true);
+    expect(pagina2.hasNextPage).toBe(false);
+    expect(pagina2.assets).toHaveLength(5);
+    expect(pagina2.assets.every((asset) => asset.fileName.startsWith('alvo-'))).toBe(true);
+
+    // Página acima do total cai na última página válida (clamp).
+    const fora = await listMediaLibrary(bulkTenantId, { filters: { page: 99 } });
+    expect(fora.page).toBe(2);
+    expect(fora.assets).toHaveLength(5);
+  });
 });

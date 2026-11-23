@@ -40,7 +40,7 @@ import {
 import { decideReport } from '../../src/lib/platform/profile-moderation';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f60-ocultacao-${RUN_ID}`;
 const CARD_SLUG = `guardiao-f60-${RUN_ID}`;
 const CARD_NAME = 'Guardião do Método';

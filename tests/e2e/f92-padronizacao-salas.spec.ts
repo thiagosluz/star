@@ -25,7 +25,7 @@ import {
   uniqueEmail,
 } from './helpers';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = 'f92-salas';
 
 let tenantSlug: string;

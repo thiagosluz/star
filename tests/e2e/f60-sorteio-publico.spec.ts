@@ -51,7 +51,7 @@ import { decideReport } from '../../src/lib/platform/profile-moderation';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 import { createRaffle, drawRaffle } from '../../src/lib/raffles/raffle-service';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f60-sorteio-${RUN_ID}`;
 
 const NOME_PESSOA = 'Ana Oculta';

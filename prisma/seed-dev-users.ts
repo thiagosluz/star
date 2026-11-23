@@ -67,7 +67,7 @@ if (!connectionString) {
 }
 
 /** Senha única de todas as contas de teste (mínimo de 10 caracteres do Better Auth). */
-const PASSWORD = process.env.SEED_TEST_PASSWORD ?? 'EventFlow@2026';
+const PASSWORD = process.env.SEED_TEST_PASSWORD ?? 'Koveno@2026';
 const EMAIL_DOMAIN = process.env.SEED_TEST_EMAIL_DOMAIN ?? 'eventflow.test';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg(connectionString) });

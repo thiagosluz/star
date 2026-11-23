@@ -41,7 +41,7 @@ import {
 import { decideReport } from '../../src/lib/platform/profile-moderation';
 import { reportPublicProfile } from '../../src/lib/profile/profile-report-service';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f62-ranking-${RUN_ID}`;
 
 const HANDLE = `ana-oculta-${RUN_ID}`;

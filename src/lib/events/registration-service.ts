@@ -54,7 +54,6 @@ import {
   RESERVE_ACTIVITY_SEAT_SQL,
   RESERVE_EVENT_SEAT_SQL,
   RESERVE_OPEN_ACTIVITY_SEAT_SQL,
-  type RegistrationDecision,
 } from '@/domain/events/registration-rules';
 import {
   effectiveActivityCapacity,
@@ -68,7 +67,6 @@ import {
   confirmationDeadlineLabel,
   confirmationDueAt,
   parseConfirmationRequirements,
-  type ConfirmationPolicy,
 } from '@/domain/events/confirmation-rules';
 import { snapshotRequirements } from '@/domain/events/confirmation-item-rules';
 import {
@@ -76,173 +74,61 @@ import {
   notifyWaitlistPromoted,
 } from '@/lib/events/registration-notices';
 import {
-  PUBLIC_REGISTRATION_ROLE,
-  evaluateParticipantLink,
   isOpenToPublicEvent,
   readEventRegistrationPolicy,
-  shouldGrantParticipantRole,
-  type MembershipStatusName,
   type ParticipantLinkDecision,
 } from '@/domain/events/public-registration-rules';
 import { recordAudit } from '@/lib/admin/audit';
 import { rewardRegistrationConfirmedById } from '@/lib/gamification/hooks';
 import { revertRegistrationReward } from '@/lib/gamification/xp-reversal';
-import {
-  kindAfterPublicRegistration,
-  type MembershipKind as MembershipKindName,
-} from '@/domain/tenancy/membership-rules';
 import { invalidateTenantCache } from '@/lib/tenancy/tenant-resolver';
-import {
-  isTransientDbError,
-  isUniqueViolation,
-  violatedIndexName,
-} from '@/lib/db/prisma-errors';
 import { logger } from '@/lib/observability/logger';
+import {
+  RegistrationError,
+  classifyUniqueConflict,
+  isTransientFailure,
+  logUnexpected,
+  toCancelOutcome,
+  toEventOutcome,
+  toOutcome,
+  type AcceptPromotionInput,
+  type AcceptPromotionOutcome,
+  type ActivityContext,
+  type CancelInput,
+  type CancelOutcome,
+  type EnsureEventRegistrationInput,
+  type EventAdmissionContext,
+  type EventAdmissionCore,
+  type RegisterForEventInput,
+  type RegisterForEventOutcome,
+  type RegisterInput,
+  type RegistrationErrorCode,
+  type RegistrationOutcome,
+  type UpdateEventRegistrationInput,
+  type UpdateEventRegistrationOutcome,
+} from '@/lib/events/registration-types';
+import {
+  decideParticipantLink,
+  applyParticipantLink,
+  linkParticipantIfEligible,
+} from '@/lib/events/registration-participant-link';
 
-// ───────────────────────────────────────────────────────────────────────────────
-//  Erros de aplicação
-// ───────────────────────────────────────────────────────────────────────────────
-export type RegistrationErrorCode =
-  | 'EVENT_NOT_FOUND'
-  | 'ACTIVITY_NOT_FOUND'
-  | 'TENANT_NOT_FOUND'
-  | 'NOT_AUTHENTICATED'
-  | 'WINDOW_CLOSED'
-  | 'DUPLICATE'
-  | 'FULL'
-  | 'FULL_NO_WAITLIST'
-  | 'ALREADY_WAITLISTED'
-  | 'ACTIVITY_CANCELED'
-  | 'ACTIVITY_NOT_OPEN'
-  /** Atividade aberta a todos os inscritos: a inscrição é a do EVENTO. */
-  | 'ACTIVITY_OPEN'
-  /** A instituição suspendeu ou removeu o vínculo desta pessoa. */
-  | 'MEMBERSHIP_BLOCKED'
-  /**
-   * O evento é restrito à comunidade e esta pessoa não tem vínculo ATIVO (FASE 70).
-   *
-   * Código próprio, e não `MEMBERSHIP_BLOCKED`: "você foi bloqueado" e "este evento
-   * pede vínculo" mandam a pessoa fazer coisas diferentes — uma fala com a
-   * organização, a outra pede o vínculo. Juntar as duas esconderia o caminho.
-   */
-  | 'MEMBERSHIP_REQUIRED'
-  | 'INVALID_TRANSITION'
-  | 'NOT_REGISTERED'
-  /** Conflito transitório do banco: a operação merece nova tentativa. */
-  | 'CONFLICT'
-  | 'SERIALIZATION_FAILURE'
-  | 'INTERNAL';
-
-export class RegistrationError extends Error {
-  constructor(
-    readonly code: RegistrationErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'RegistrationError';
-  }
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Resultado
-// ───────────────────────────────────────────────────────────────────────────────
-export type RegistrationOutcome =
-  | {
-      ok: true;
-      /**
-       * `PENDING` = a vaga está RETIDA aguardando a confirmação da equipe (FASE 34).
-       * A tela usa isto para dizer "confirme até <data>" em vez de "inscrição
-       * confirmada" — prometer o que ainda depende do balcão seria mentira.
-       */
-      status: Extract<RegistrationStatus, 'PENDING' | 'CONFIRMED' | 'WAITLISTED'>;
-      registrationId: string;
-      /** Posição na lista de espera, quando aplicável. */
-      waitlistPosition: number | null;
-      /** Vagas restantes após a operação. `null` = ilimitado. */
-      remainingSeats: number | null;
-      /** Quando o prazo de confirmação vence. Nulo nas atividades automáticas. */
-      confirmationDueAt: Date | null;
-      /**
-       * O prazo já formatado NO FUSO DO EVENTO (FASE 34).
-       *
-       * Vem pronto do serviço porque o processo roda em UTC no container: formatar na
-       * tela com o fuso do processo mostraria "até 26/09, 02:59" onde o e-mail diz
-       * "até 25/09, 23:59" — duas respostas para a mesma pergunta, e a da tela seria a
-       * errada (armadilha 38).
-       */
-      confirmationDueLabel: string | null;
-      /**
-       * `true` quando esta inscrição CRIOU o vínculo de participante (inscrição
-       * pública). A UI usa para explicar à pessoa que ela passou a ser participante
-       * da instituição — e que aquilo foi consequência do que ela pediu.
-       */
-      linkedAsParticipant: boolean;
-    }
-  | {
-      ok: false;
-      code: RegistrationErrorCode;
-      message: string;
-    };
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Contexto da atividade (para validação de janela)
-// ───────────────────────────────────────────────────────────────────────────────
-interface ActivityContext {
-  id: string;
-  slug: string;
-  title: string;
-  status: ActivityStatus;
-  /**
-   * LIMITE EFETIVO da atividade (revisão da FASE 3): o menor entre a lotação que
-   * ela declara e a capacidade da SALA onde acontece (`effectiveActivityCapacity`).
-   *
-   * `null` = ilimitada de verdade (nem a atividade nem a sala declaram limite);
-   * `0` = esgotada. Quem monta este contexto já aplicou o teto da sala, então todo
-   * consumidor daqui para baixo — mensagem de lotação, vagas restantes, decisão de
-   * lista de espera — fala do número real, e não do que foi digitado na tela.
-   */
-  capacity: number | null;
-  confirmedCount: number;
-  waitlistEnabled: boolean;
-  waitlistCount: number;
-  startsAt: Date;
-  endsAt: Date;
-  eventId: string;
-  /**
-   * Como a vaga desta atividade é confirmada (FASE 34). `REQUIRED` faz a inscrição
-   * nascer `PENDING`, RETENDO a vaga até a equipe confirmar — é a diferença entre
-   * "reservei" e "é meu".
-   */
-  confirmationPolicy: ConfirmationPolicy;
-  /** Prazo em dias, contado da inscrição de cada pessoa. Nulo quando `AUTO`. */
-  confirmationWindowDays: number | null;
-  /**
-   * A LISTA de exigências da atividade (JSON, FASE 34) — lida aqui para virar o
-   * SNAPSHOT da inscrição (FASE 37): o que a pessoa foi cobrada é um fato do dia em que
-   * ela se inscreveu, e editar a atividade depois não pode reescrevê-lo.
-   */
-  confirmationRequirements: unknown;
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Inscrição
-// ───────────────────────────────────────────────────────────────────────────────
-export interface RegisterInput {
-  tenantId: string;
-  eventSlug: string;
-  activitySlug: string;
-  userId: string;
-  /** Consentimentos LGPD coletados no formulário. */
-  consentImage?: boolean;
-  consentData?: boolean;
-  accessibilityNotes?: string | null;
-  formResponses?: Record<string, unknown>;
-  /**
-   * Ignora a checagem de janela. Usado APENAS pelo credenciamento presencial
-   * (FASE 7), onde o staff inscreve alguém no balcão depois do início.
-   */
-  ignoreWindow?: boolean;
-}
+export {
+  RegistrationError,
+  linkParticipantIfEligible,
+  type AcceptPromotionInput,
+  type AcceptPromotionOutcome,
+  type CancelInput,
+  type CancelOutcome,
+  type EnsureEventRegistrationInput,
+  type RegisterForEventInput,
+  type RegisterForEventOutcome,
+  type RegisterInput,
+  type RegistrationErrorCode,
+  type RegistrationOutcome,
+  type UpdateEventRegistrationInput,
+  type UpdateEventRegistrationOutcome,
+};
 
 /**
  * Inscreve um usuário em uma atividade, com controle de lotação.
@@ -618,241 +504,6 @@ async function attemptRegistration(
   } catch (error) {
     return toOutcome(error);
   }
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Vínculo do participante (inscrição pública)
-// ───────────────────────────────────────────────────────────────────────────────
-/**
- * Dá vínculo de participante a quem chegou por um caminho PÚBLICO.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE ISTO É EXPORTADO (FASE 33)
- * ─────────────────────────────────────────────────────────────────────────────
- *  A inscrição pública (FASE 10) e a submissão de proposta pela chamada (FASE 33)
- *  fazem a MESMA pergunta: "esta pessoa, que acabou de criar conta, pode passar a
- *  participar desta instituição pública?". A resposta é uma regra só
- *  (`evaluateParticipantLink` + `kindAfterPublicRegistration`, em
- *  `src/domain/tenancy/membership-rules.ts`) — e uma segunda cópia dela faria a
- *  proposta aceitar quem a inscrição recusa, ou o contrário, sem ninguém notar
- *  (armadilha 55).
- *
- *  Roda na transação do CHAMADOR, de propósito: o vínculo nasce junto com o fato que
- *  o justificou (a inscrição ou a proposta), e não numa transação paralela que
- *  poderia sobreviver a uma falha.
- */
-export async function linkParticipantIfEligible(
-  tx: TxClient,
-  input: {
-    tenantId: string;
-    userId: string;
-    eventIsPublic: boolean;
-    /**
-     * O evento é restrito à comunidade (FASE 70). Sem esta chave o caminho da PROPOSTA
-     * (F33) aceitaria quem a inscrição recusa, e a chamada de um evento fechado seria
-     * uma porta lateral para o vínculo que a instituição não quis dar.
-     */
-    requiresMembership: boolean;
-    tenantName: string;
-  },
-): Promise<{ linked: boolean; blocked: boolean; message: string | null }> {
-  const decision = await decideParticipantLink(tx, input);
-
-  if (decision.action === 'BLOCKED') {
-    return { linked: false, blocked: true, message: decision.message ?? null };
-  }
-
-  const linked = await applyParticipantLink(tx, {
-    tenantId: input.tenantId,
-    userId: input.userId,
-    decision,
-  });
-
-  return { linked, blocked: false, message: null };
-}
-
-/**
- * Descobre o que fazer com o vínculo de quem está se inscrevendo.
- *
- * Roda sob RLS, dentro da transação da inscrição: os dois vínculos possíveis
- * (`user_tenant_profiles` e `role_assignments`) têm `tenantId`, então a policy
- * cobre a leitura e a escrita. Não há nada aqui que precise da conexão
- * administrativa — o que é uma boa notícia: a regra que amplia acesso é executada
- * com o MESMO nível de privilégio do resto do fluxo.
- */
-async function decideParticipantLink(
-  tx: TxClient,
-  input: {
-    tenantId: string;
-    userId: string;
-    eventIsPublic: boolean;
-    /**
-     * O evento é restrito à comunidade? (FASE 12, conferido no SERVIDOR na FASE 70)
-     *
-     * Quem responde é `readEventRegistrationPolicy(settings)`, sobre o MESMO evento
-     * que a transação já leu — sem consulta nova e sem chance de a tela e o serviço
-     * lerem coisas diferentes.
-     */
-    requiresMembership: boolean;
-    /** Nome da instituição para a mensagem da recusa. */
-    tenantName: string;
-  },
-): Promise<ParticipantLinkDecision> {  const membership = await tx.userTenantProfile.findFirst({
-    where: { tenantId: input.tenantId, userId: input.userId },
-    select: { status: true, deletedAt: true },
-  });
-
-  return evaluateParticipantLink({
-    membershipStatus: (membership?.status ?? null) as MembershipStatusName | null,
-    // Vínculo apagado (soft delete) é "removido" para todos os efeitos.
-    deleted: Boolean(membership?.deletedAt),
-    eventIsPublic: input.eventIsPublic,
-    requiresMembership: input.requiresMembership,
-    tenantName: input.tenantName,
-  });
-}
-
-/**
- * Aplica a decisão, criando ou ativando o vínculo — e devolvendo `true` quando o
- * vínculo nasceu aqui.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE `upsert` E NÃO `create`
- * ─────────────────────────────────────────────────────────────────────────────
- *  Duas inscrições simultâneas da MESMA pessoa nova (duas abas abertas, por
- *  exemplo) leriam "sem vínculo" ao mesmo tempo e tentariam criar a mesma linha. O
- *  `upsert` transforma a corrida em `ON CONFLICT DO UPDATE`, que o PostgreSQL
- *  resolve sem erro — e o efeito é o mesmo nos dois casos.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O PAPEL SÓ É CONCEDIDO A QUEM NÃO TEM PAPEL NENHUM
- * ─────────────────────────────────────────────────────────────────────────────
- *  Um membro que já tem papel (patrocinador, revisor, equipe) não recebe
- *  `PARTICIPANT` de brinde: o acúmulo de papéis ampliaria permissões que a
- *  instituição não concedeu. A inscrição de quem já é membro continua dependendo
- *  de `registration:create` — verificado na Server Action.
- *
- *  A concessão é auditada como `PERMISSION_CHANGE`, porque é o que ela é.
- */
-async function applyParticipantLink(
-  tx: TxClient,
-  input: { tenantId: string; userId: string; decision: ParticipantLinkDecision },
-): Promise<boolean> {
-  if (input.decision.action === 'ALREADY_MEMBER' || input.decision.action === 'BLOCKED') {
-    return false;
-  }
-
-  const now = new Date();
-  const activated = input.decision.action === 'ACTIVATE';
-
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  A INSCRIÇÃO CRIA PARTICIPANTE E NUNCA REBAIXA MEMBRO (FASE 14)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  `kindAfterPublicRegistration` é o que impede a ordem dos acontecimentos de
-   *  mudar o resultado: quem se inscreve antes de entrar para a equipe fica
-   *  PARTICIPANT (e é promovido depois, se for vinculado pela plataforma), e quem
-   *  já é da equipe e se inscreve continua MEMBER — inclusive contando na quota do
-   *  plano. `currentKind` só é lido aqui para a decisão; o `update` abaixo não toca
-   *  em `kind`.
-   */
-  const existing = await tx.userTenantProfile.findUnique({
-    where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
-    select: { kind: true },
-  });
-
-  const kind = kindAfterPublicRegistration(
-    (existing?.kind as MembershipKindName | undefined) ?? null,
-  );
-
-  await tx.userTenantProfile.upsert({
-    where: { tenantId_userId: { tenantId: input.tenantId, userId: input.userId } },
-    create: {
-      tenantId: input.tenantId,
-      userId: input.userId,
-      status: 'ACTIVE',
-      kind,
-      joinedAt: now,
-      invitedAt: null,
-      invitedById: null,
-    },
-    /**
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  `joinedAt` SÓ NASCE NO `create` (FASE 83)
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  O `update` existia para a corrida de duas inscrições simultâneas e para
-     *  ativar um convite pendente — e regravava `joinedAt = now` nos dois casos.
-     *  Só que `joinedAt` não é telemetria: é o degrau de ANTIGUIDADE do desempate
-     *  do vínculo ativo (`active-membership.ts`: MEMBER → mais antigo → tenantId).
-     *  Reescrevê-lo a cada inscrição apagava a data real do vínculo e mudava a
-     *  escolha implícita de instituição sem ninguém pedir. O vínculo que já existe
-     *  mantém a data que tem; quem a define é a CRIAÇÃO.
-     */
-    update: { status: 'ACTIVE', deletedAt: null },
-    select: { id: true },
-  });
-
-  const roles = await tx.roleAssignment.findMany({
-    where: { tenantId: input.tenantId, userId: input.userId, revokedAt: null },
-    select: { role: true },
-  });
-
-  if (shouldGrantParticipantRole(roles.map((role) => role.role))) {
-    /**
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  A CORRIDA AQUI É ESPERADA — E NÃO PODE DERRUBAR A INSCRIÇÃO
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  A FASE 12 criou o índice único de concessão vigente
-     *  (`role_assignments_live_unique`). Duas inscrições simultâneas da mesma pessoa
-     *  nova passam pelo `findMany` acima enxergando "sem papel" e tentam conceder
-     *  PARTICIPANT ao mesmo tempo; a segunda recebe violação de unicidade.
-     *
-     *  Isso NÃO é erro de negócio: o papel que ela queria conceder já existe. Deixar
-     *  a exceção subir abortaria a transação inteira e a pessoa perderia a VAGA, por
-     *  causa de um papel que já está lá. A concessão é idempotente por natureza —
-     *  então o conflito é absorvido aqui, e só aqui.
-     */
-    try {
-      await tx.roleAssignment.create({
-        data: {
-          tenantId: input.tenantId,
-          userId: input.userId,
-          role: PUBLIC_REGISTRATION_ROLE,
-          scope: 'TENANT',
-          reason: 'Inscrição em atividade de evento público',
-        },
-      });
-
-      await recordAudit(
-        {
-          tenantId: input.tenantId,
-          userId: input.userId,
-          action: 'PERMISSION_CHANGE',
-          entityType: 'RoleAssignment',
-          changes: { role: { from: null, to: PUBLIC_REGISTRATION_ROLE } },
-        },
-        tx,
-      );
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-    }
-  }
-
-  await recordAudit(
-    {
-      tenantId: input.tenantId,
-      userId: input.userId,
-      action: activated ? 'UPDATE' : 'CREATE',
-      entityType: 'UserTenantProfile',
-      changes: {
-        status: { from: activated ? 'INVITED' : null, to: 'ACTIVE' },
-        origem: { from: null, to: 'inscrição pública' },
-      },
-    },
-    tx,
-  );
-
-  return true;
 }
 
 /**
@@ -1240,37 +891,6 @@ async function enqueueEventRegistration(
 // ───────────────────────────────────────────────────────────────────────────────
 //  Inscrição no EVENTO (revisão da FASE 3)
 // ───────────────────────────────────────────────────────────────────────────────
-export interface RegisterForEventInput {
-  tenantId: string;
-  eventSlug: string;
-  userId: string;
-  consentImage?: boolean;
-  consentData?: boolean;
-  accessibilityNotes?: string | null;
-  formResponses?: Record<string, unknown>;
-  /** Ignora a checagem de janela (credenciamento presencial). */
-  ignoreWindow?: boolean;
-}
-
-export type RegisterForEventOutcome =
-  | {
-      ok: true;
-      registrationId: string;
-      /**
-       * `true` quando o evento estava lotado e a pessoa entrou na FILA (E33): ela não
-       * ocupa vaga, não foi inscrita nas atividades abertas e será promovida — com
-       * prazo para confirmar (E1) — quando uma vaga for devolvida.
-       */
-      waitlisted: boolean;
-      /** Posição na fila do evento, quando `waitlisted`. */
-      waitlistPosition: number | null;
-      /** Quantas atividades abertas receberam a inscrição automaticamente. */
-      enrolledActivities: number;
-      titles: readonly string[];
-      linkedAsParticipant: boolean;
-    }
-  | { ok: false; code: RegistrationErrorCode; message: string };
-
 /**
  * Inscreve a pessoa no EVENTO.
  *
@@ -1340,73 +960,6 @@ export async function registerForEvent(
 // ───────────────────────────────────────────────────────────────────────────────
 //  O CAMINHO COMUM DA INSCRIÇÃO NO EVENTO (FASE 70)
 // ───────────────────────────────────────────────────────────────────────────────
-/**
- * O evento, resolvido, como as duas portas o entregam ao caminho comum.
- *
- * `tenantName` entra porque a recusa de evento restrito é uma frase com o nome da
- * instituição — e quem já leu o evento tem esse nome à mão, sem consulta nova.
- */
-interface EventAdmissionContext {
-  id: string;
-  title: string;
-  capacity: number | null;
-  settings: unknown;
-  tenantName: string;
-}
-
-/**
- * O essencial de uma admissão no evento, comum às duas portas.
- *
- * `null` é resposta de NEGÓCIO, e não erro: significa "o evento está lotado e não há
- * fila" — quem chama a porta do EVENTO traduz isso em `FULL` (a pessoa não entrou), e
- * quem chama a porta da ATIVIDADE segue em frente (a oficina tem vaga; o evento não é
- * problema dela). Lançar aqui obrigaria a porta da atividade a distinguir "erro de
- * verdade" de "lotação do evento" por conta própria.
- *
- * `inserted` diz se a LINHA NASCEU nesta chamada: `false` é a corrida perdida para
- * outra requisição da mesma pessoa, e quem escreve trilha precisa saber a diferença
- * (registrar duas vezes o mesmo fato é ruído na auditoria).
- *
- * Não há ramo de erro no tipo: o caminho comum LANÇA `RegistrationError` para o que é
- * recusa (vínculo, duplicidade) e quem o chama traduz no seu próprio formato.
- */
-type EventAdmissionCore =
-  | {
-      registrationId: string;
-      waitlisted: boolean;
-      waitlistPosition: number | null;
-      inserted: boolean;
-    }
-  | null;
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  O CAMINHO COMUM DA INSCRIÇÃO NO EVENTO — extraído para ser REUSADO (FASE 70)
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE ISTO FOI EXTRAÍDO, E NÃO COPIADO
- * ─────────────────────────────────────────────────────────────────────────────
- *  A inscrição numa atividade passou a MATERIALIZAR a inscrição no evento. Escrever
- *  um segundo caminho que "faz quase o mesmo" criaria duas respostas para as mesmas
- *  perguntas — vínculo do participante, evento restrito, evento lotado (fila),
- *  duplicidade, consentimentos — e a segunda cópia é a que fica desatualizada
- *  (armadilha 55). As duas portas passam por AQUI.
- *
- *  A ordem das checagens é a da prioridade, e ela é a mesma de antes:
- *
- *    1. VÍNCULO — quem a instituição suspendeu ou removeu é recusado ANTES de
- *       qualquer escrita, e quem chegou a um evento restrito sem vínculo também;
- *    2. DUPLICIDADE — quem já tem inscrição viva no evento não ganha outra (o índice
- *       único parcial `registrations_live_event_user_key` é a garantia final);
- *    3. VAGA — o `UPDATE` condicional decide. Sem vaga e com lotação, a FILA; sem
- *       vaga e sem lotação, a recusa.
- *
- *  O QUE O CHAMADOR FAZ DEPOIS DA RESERVA é a única diferença entre as portas: a
- *  inscrição no evento inscreve a pessoa nas atividades ABERTAS (e quem entra pela
- *  atividade não deve ganhar isso de brinde — ela já escolheu a dela). Por isso o
- *  pós-reserva é um CALLBACK, e não uma cópia da função inteira.
- */
 async function admitToEventRegistration(
   tx: TxClient,
   input: {
@@ -1620,18 +1173,6 @@ async function admitToEventRegistration(
  *  único parcial `registrations_live_event_user_key` é a garantia final sob
  *  concorrência.
  */
-export interface EnsureEventRegistrationInput {
-  tenantId: string;
-  userId: string;
-  /** O evento já lido pela transação da ATIVIDADE — sem consulta nova. */
-  event: EventAdmissionContext;
-  linkDecision: ParticipantLinkDecision;
-  consentImage: boolean;
-  consentData: boolean;
-  accessibilityNotes: string | null;
-  formResponses: object;
-}
-
 export async function ensureEventRegistration(
   tx: TxClient,
   input: EnsureEventRegistrationInput,
@@ -1992,54 +1533,6 @@ async function enrollEventRegistrationInOpenActivities(
 // ───────────────────────────────────────────────────────────────────────────────
 //  Completar os dados da inscrição no evento (FASE 70)
 // ───────────────────────────────────────────────────────────────────────────────
-export interface UpdateEventRegistrationInput {
-  tenantId: string;
-  userId: string;
-  eventSlug: string;
-  consentImage: boolean;
-  consentData: boolean;
-  accessibilityNotes: string | null;
-  /** Respostas NOVAS — mescladas sobre as existentes, sem apagar o que já havia. */
-  formResponses?: Record<string, unknown>;
-}
-
-export type UpdateEventRegistrationOutcome =
-  | { ok: true; registrationId: string; status: RegistrationStatus }
-  | { ok: false; code: RegistrationErrorCode; message: string };
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  COMPLETAR OS DADOS DA INSCRIÇÃO NO EVENTO (FASE 70)
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE ESTA FUNÇÃO PRECISA EXISTIR
- *  ─────────────────────────────────────────────────────────────────────────────
- *  A inscrição numa atividade passou a MATERIALIZAR a linha do evento — e essa linha
- *  nasce com `formResponses` HERDADO (vazio), porque o formulário da atividade não
- *  coleta CPF. Sem uma porta para completar, quem veio pela oficina ficaria para
- *  sempre com um certificado sem CPF e sem lugar para informá-lo: `registerForEvent`
- *  recusa quem já tem inscrição viva (`DUPLICATE`), e recusar é o certo — não faz
- *  sentido "inscrever de novo" quem já está inscrito.
- *
- *  O que a pessoa precisa é ATUALIZAR a própria inscrição, e é isso que esta função
- *  faz: a MESMA linha, com os dados de contato e o CPF que faltavam.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  AS TRÊS REGRAS DELA
- *  ─────────────────────────────────────────────────────────────────────────────
- *  1. **Só a PRÓPRIA inscrição** (`userId` da sessão, casado no `where`) e só no
- *     evento do slug — posse conferida no banco, não na tela;
- *  2. **Mescla, não substitui**: `formResponses` é um depósito com outras chaves (e
- *     com as chaves que a fase do formulário personalizável trouxer), então gravar o
- *     objeto novo inteiro apagaria respostas que já existiam;
- *  3. **Não mexe em vaga nem em status**: lugar, fila e confirmação são de outros
- *     fatos. Completar dados não é se inscrever nem confirmar nada.
- *
- *  A JANELA não é conferida aqui, de propósito: quem está inscrito precisa poder
- *  corrigir o próprio CPF depois de as inscrições fecharem — é justamente quando o
- *  certificado está sendo pedido.
- */
 export async function updateEventRegistrationData(
   input: UpdateEventRegistrationInput,
 ): Promise<UpdateEventRegistrationOutcome> {
@@ -2260,43 +1753,9 @@ export async function syncOpenActivityEnrollments(input: {
   });
 }
 
-function toEventOutcome(error: unknown): RegisterForEventOutcome {
-  if (error instanceof RegistrationError) {
-    return { ok: false, code: error.code, message: error.message };
-  }
-
-  logUnexpected('registerForEvent', error);
-  return {
-    ok: false,
-    code: 'INTERNAL',
-    message: 'Não foi possível concluir a inscrição. Tente novamente.',
-  };
-}
-
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cancelamento
 // ───────────────────────────────────────────────────────────────────────────────
-export interface CancelInput {
-  tenantId: string;
-  registrationId: string;
-  userId: string;
-  reason?: string | null;
-}
-
-export type CancelOutcome =
-  | {
-      ok: true;
-      /**
-       * Quem foi chamado da fila nesta operação — a da ATIVIDADE liberada e/ou a do
-       * EVENTO. É LISTA, e não um único: cancelar a inscrição do evento devolve o lugar
-       * no evento E a vaga de cada atividade aberta que ela criou, e cada vaga devolvida
-       * tem a sua fila (dívida E33). Um campo singular obrigaria a escolher qual fila
-       * atender — e a outra ficaria com vaga livre e gente esperando.
-       */
-      promoted: { registrationId: string }[];
-    }
-  | { ok: false; code: RegistrationErrorCode; message: string };
-
 /**
  * Cancela uma inscrição e promove o próximo da lista de espera.
  *
@@ -2775,136 +2234,6 @@ async function reindexWaitlist(
   `;
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
-//  Conversão de erro
-// ───────────────────────────────────────────────────────────────────────────────
-function toOutcome(error: unknown): RegistrationOutcome {
-  if (error instanceof RegistrationError) {
-    return { ok: false, code: error.code, message: error.message };
-  }
-
-  // Corrida no índice único: outra requisição do mesmo usuário venceu.
-  if (isUniqueViolation(error)) {
-    return {
-      ok: false,
-      code: 'DUPLICATE',
-      message: 'Você já está inscrito nesta atividade.',
-    };
-  }
-
-  /**
-   * Conflito transitório (deadlock / serialização / estouro de tempo da
-   * transação). Não é falha de negócio nem bug: é contenção. Devolvemos um
-   * código que o retry reconhece.
-   *
-   * Não logamos: sob carga concorrente isso é rotina e poluiria o log.
-   */
-  if (isTransientDbError(error)) {
-    return {
-      ok: false,
-      code: 'CONFLICT',
-      message: 'Conflito temporário ao processar a inscrição. Tente novamente.',
-    };
-  }
-
-  logUnexpected('registerForActivity', error);
-  return {
-    ok: false,
-    code: 'INTERNAL',
-    message: 'Não foi possível concluir a inscrição. Tente novamente.',
-  };
-}
-
-function toCancelOutcome(error: unknown): CancelOutcome {
-  if (error instanceof RegistrationError) {
-    return { ok: false, code: error.code, message: error.message };
-  }
-  logUnexpected('cancelRegistration', error);
-  return {
-    ok: false,
-    code: 'INTERNAL',
-    message: 'Não foi possível cancelar a inscrição. Tente novamente.',
-  };
-}
-
-/**
- * O erro é uma colisão que vale a pena reprocessar?
- *
- * Duas colisões são esperadas quando há disputa pela lista de espera:
- *
- *   • `registrations_waitlist_position_key` — outra transação pegou a posição
- *     que havíamos calculado. Recalcular resolve.
- *
- *   • `registrations_live_activity_user_key` — outra requisição do MESMO usuário
- *     acabou de entrar na fila. Aqui não há o que recalcular: a inscrição já
- *     existe, então devolvemos "já inscrito" em vez de tentar de novo.
- *
- *   • `registrations_live_event_user_key` (FASE 70) — a mesma pessoa ganhou a linha do
- *     EVENTO em outra transação (as duas atividades dela, num clique duplo). É a
- *     resposta idempotente do caminho que materializa a inscrição no evento: a linha
- *     que existe é a resposta, e não um erro.
- *
- * Qualquer outra violação (inclusive posse não reconhecida) propaga.
- *
- * `isUniqueViolation` e `violatedIndexName` vêm de `@/lib/db/prisma-errors` —
- * a leitura do formato do driver adapter mora em um lugar só.
- */
-function classifyUniqueConflict(
-  error: unknown,
-): 'retry-position' | 'already-registered' | 'already-in-event' | 'unrelated' {
-  if (!isUniqueViolation(error)) return 'unrelated';
-
-  const index = violatedIndexName(error);
-
-  if (index === 'registrations_waitlist_position_key') return 'retry-position';
-  if (index === 'registrations_live_activity_user_key') return 'already-registered';
-  if (index === 'registrations_live_event_user_key') return 'already-in-event';
-
-  return 'unrelated';
-}
-
-function logUnexpected(operation: string, error: unknown): void {
-  logger.error(`[registration] falha inesperada em ${operation}:`, { error: error instanceof Error ? error.message : error });
-}
-
-/**
- * A falha é transitória (vale tentar de novo)?
- *
- *   • `SERIALIZATION_FAILURE` — marcado explicitamente pela aplicação quando o
- *     banco devolve morte por deadlock/serialização (SQLSTATE 40001).
- *   • `P2034` — o Prisma sinaliza conflito de escrita/deadlock neste código.
- *   • `P2028` / mensagem de timeout de transação — a transação não terminou a
- *     tempo por causa da disputa, não por excesso de trabalho.
- */
-function isTransientFailure(code: RegistrationErrorCode | undefined): boolean {
-  return code === 'SERIALIZATION_FAILURE' || code === 'CONFLICT';
-}
-
-
-export interface AcceptPromotionInput {
-  tenantId: string;
-  registrationId: string;
-  userId: string;
-}
-
-export type AcceptPromotionOutcome =
-  | { ok: true; registrationId: string }
-  | { ok: false; code: 'NOT_FOUND' | 'NOT_REQUIRED' | 'EXPIRED' | 'ALREADY_SETTLED' | 'INTERNAL'; message: string };
-
-/**
- * Aceita a vaga ofertada pela fila (dívida E1).
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  A POSSE É DO DONO DA INSCRIÇÃO, E A ESCRITA É CONDICIONAL
- * ─────────────────────────────────────────────────────────────────────────────
- *  `userId` entra no `where` do `updateMany`: aceitar a vaga de outra pessoa não é uma
- *  permissão que se confere antes — é uma linha que não existe (invariante 4). E o
- *  `status: 'PENDING'` no mesmo `where` é o que faz dois cliques (ou o clique que
- *  chega depois de a vaga vencer) produzirem UM efeito: o segundo afeta 0 linhas.
- *
- *  O prazo é conferido no DOMÍNIO antes (mensagem boa) e na ESCRITA depois (verdade):
- *  a varredura pode ter liberado a vaga entre a leitura e o clique.
- */
 export async function acceptPromotion(
   input: AcceptPromotionInput,
 ): Promise<AcceptPromotionOutcome> {
@@ -2989,4 +2318,5 @@ export async function acceptPromotion(
 }
 
 
-export { invalidateTenantCache, type RegistrationDecision };
+export { invalidateTenantCache };
+export type { RegistrationDecision } from '@/lib/events/registration-types';

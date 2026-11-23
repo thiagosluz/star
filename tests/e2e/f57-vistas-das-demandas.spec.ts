@@ -40,7 +40,7 @@ import { zonedWallTimeToInstant } from '../../src/domain/events/scheduling-rules
  *  Nada aqui procura texto que a regravação possa desmontar: as asserções são por
  *  `data-testid`, por atributo e por URL.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f57-vistas-${RUN_ID}`;
 const EVENT_SLUG = `evento-f57-${RUN_ID}`;
 const TIME_ZONE = 'America/Bahia';

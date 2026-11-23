@@ -31,7 +31,7 @@ import {
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = 'f97-missoes-palestrantes';
 
 let tenantId: string;

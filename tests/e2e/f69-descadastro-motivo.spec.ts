@@ -67,7 +67,7 @@ import {
   UNSUBSCRIBE_REASON_NOTE_FIELD,
 } from '../../src/domain/communication/unsubscribe-reason-rules';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f69-motivo-${RUN_ID}`;
 const ATIVIDADE_TITULO = 'Oficina do motivo';
 

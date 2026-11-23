@@ -25,19 +25,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { randomInt, randomUUID } from 'node:crypto';
-import {
-  PUBLIC_CERTIFICATE_CACHE_TTL_SECONDS,
-  certificateCacheKey,
-  shouldCacheCertificateVerdict,
-} from '@/domain/cache/public-cache-rules';
-import {
-  getOrSetDirectPublicCache,
-  invalidatePublicCertificateCache,
-} from '@/lib/cache/public-read-cache';
 
 import { withTenant, type TxClient } from '@/lib/db/tenant-client';
 import { errorMessage, isUniqueViolation, violatedIndexName } from '@/lib/db/prisma-errors';
-import { BUCKETS, createDownloadUrl, putObjectBuffer } from '@/lib/storage/s3-client';
+import { BUCKETS, putObjectBuffer } from '@/lib/storage/s3-client';
 import {
   buildCanonicalPayload,
   buildCanonicalPayloadV2,
@@ -45,16 +36,11 @@ import {
   buildWorkloadBreakdown,
   computeWorkload,
   evaluateEligibility,
-  evaluateValidation,
   generateValidationCode,
   hashCanonicalPayload,
-  isValidValidationCodeFormat,
-  normalizeValidationCode,
-  readWorkloadBreakdown,
   type AttendanceRecord,
   type CertificateKind,
   type EligibilityFacts,
-  type ValidationVerdict,
   type WorkloadBreakdownEntry,
   type WorkloadResult,
 } from '@/domain/certificates/certificate-rules';
@@ -90,24 +76,42 @@ import { computeSpeakerWorkload } from '@/domain/speakers/speaker-rules';
 import { notifyCertificateIssued } from '@/lib/communication/notification-service';
 import { rewardCertificateIssuedById } from '@/lib/gamification/hooks';
 import { renderCertificatePdf, renderCertificateSvg } from '@/lib/certificates/renderer';
-import { getSigningConfig, isSigningConfigured, signContentHash, verifySignature } from '@/lib/certificates/signer';
-
-export type CertificateErrorCode =
-  | 'NOT_FOUND'
-  | 'NOT_ELIGIBLE'
-  | 'ALREADY_ISSUED'
-  | 'SIGNING_NOT_CONFIGURED'
-  | 'INVALID_CODE'
-  | 'NOT_STORED'
-  | 'INTERNAL';
-
-export type CertificateResult<T> =
-  | ({ ok: true } & T)
-  | { ok: false; code: CertificateErrorCode; message: string; details?: readonly string[] };
-
+import { getSigningConfig, isSigningConfigured, signContentHash } from '@/lib/certificates/signer';
 import { publicBaseUrl } from '@/lib/public-url';
 import { cpfFromFormResponses } from '@/domain/events/registration-form-rules';
 import { logger } from '@/lib/observability/logger';
+import {
+  formatWorkloadLabel,
+  getCertificateDownloadUrl,
+  getPublicCertificate,
+  getPublicCertificateDownloadUrl,
+  listCertificates,
+  planEventCertificateZip,
+  revokeCertificate,
+  validationUrlFor,
+  verifyCertificateIntegrity,
+  type CertificateErrorCode,
+  type CertificateResult,
+  type CertificateSummary,
+  type CertificateZipPlan,
+  type PublicCertificate,
+} from '@/lib/certificates/certificate-read-service';
+
+export {
+  getCertificateDownloadUrl,
+  getPublicCertificate,
+  getPublicCertificateDownloadUrl,
+  listCertificates,
+  planEventCertificateZip,
+  revokeCertificate,
+  validationUrlFor,
+  verifyCertificateIntegrity,
+  type CertificateErrorCode,
+  type CertificateResult,
+  type CertificateSummary,
+  type CertificateZipPlan,
+  type PublicCertificate,
+};
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Configuração de exibição
@@ -118,10 +122,6 @@ import { logger } from '@/lib/observability/logger';
  * precedência de variáveis divergiriam. O reexport mantém os consumidores daqui.
  */
 export { publicBaseUrl };
-
-export function validationUrlFor(code: string): string {
-  return `${publicBaseUrl()}/validar/${code}`;
-}
 
 // ───────────────────────────────────────────────────────────────────────────────
 //  Levantamento de fatos
@@ -1400,14 +1400,6 @@ export async function generateCertificate(input: {
   }
 }
 
-function formatWorkloadLabel(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest}min`;
-  if (rest === 0) return `${hours}h`;
-  return `${hours}h${String(rest).padStart(2, '0')}`;
-}
-
 // ───────────────────────────────────────────────────────────────────────────────
 //  Emissão em lote por evento
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1568,732 +1560,6 @@ export async function issueCertificate(
   }
 
   return { ...requested, generated: true };
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Leitura (tenant)
-// ───────────────────────────────────────────────────────────────────────────────
-export interface CertificateSummary {
-  id: string;
-  kind: CertificateKind;
-  status: string;
-  title: string;
-  recipientName: string;
-  eventTitle: string;
-  validationCode: string;
-  workloadMinutes: number;
-  workloadLabel: string;
-  issuedAt: Date | null;
-  revokedAt: Date | null;
-  validationUrl: string;
-  contentHash: string | null;
-  hasFile: boolean;
-  eventId: string;
-  userId: string;
-}
-
-export async function listCertificates(input: {
-  tenantId: string;
-  userId?: string;
-  eventId?: string;
-  limit?: number;
-}): Promise<CertificateResult<{ certificates: CertificateSummary[] }>> {
-  try {
-    const rows = await withTenant(input.tenantId, (tx) =>
-      tx.certificate.findMany({
-        where: {
-          tenantId: input.tenantId,
-          ...(input.userId ? { userId: input.userId } : {}),
-          ...(input.eventId ? { eventId: input.eventId } : {}),
-        },
-        orderBy: [{ issuedAt: 'desc' }, { createdAt: 'desc' }],
-        take: Math.min(Math.max(1, input.limit ?? 50), 200),
-        select: {
-          id: true,
-          kind: true,
-          status: true,
-          title: true,
-          recipientName: true,
-          validationCode: true,
-          workloadMinutes: true,
-          issuedAt: true,
-          revokedAt: true,
-          contentHash: true,
-          storageKey: true,
-          eventId: true,
-          userId: true,
-          event: { select: { title: true } },
-        },
-      }),
-    );
-
-    return {
-      ok: true as const,
-      certificates: rows.map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        status: row.status,
-        title: row.title,
-        recipientName: row.recipientName,
-        eventTitle: row.event?.title ?? '',
-        validationCode: row.validationCode,
-        workloadMinutes: row.workloadMinutes,
-        workloadLabel: formatWorkloadLabel(row.workloadMinutes),
-        issuedAt: row.issuedAt,
-        revokedAt: row.revokedAt,
-        validationUrl: validationUrlFor(row.validationCode),
-        contentHash: row.contentHash,
-        hasFile: Boolean(row.storageKey),
-        eventId: row.eventId,
-        userId: row.userId,
-      })),
-    };
-  } catch (error) {
-    logger.error(`[certificates] falha ao listar certificados: ${errorMessage(error)}`);
-    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível carregar os certificados.' };
-  }
-}
-
-/**
- * ─── O LOTE DE CERTIFICADOS DE UM EVENTO (FASE 36) ─────────────────────────────
- *
- *  Devolve só a LISTA do que dá para baixar (chave, bucket e nome de arquivo); os
- *  bytes saem depois, um a um, pelo fluxo do ZIP. É essa separação que mantém a
- *  memória do processo limitada a UM PDF: montar o lote em memória funcionaria no
- *  evento de 30 pessoas e derrubaria o servidor no de 3.000.
- *
- *  Os certificados sem arquivo (ainda `GENERATING`) NÃO entram — e são CONTADOS, para
- *  que a tela possa dizer quantos ficaram de fora em vez de entregar um ZIP menor
- *  sem explicação.
- */
-export interface CertificateZipPlan {
-  eventTitle: string;
-  eventSlug: string;
-  entries: { certificateId: string; bucket: string; storageKey: string; fileName: string }[];
-  /** Certificados emitidos que ainda não têm PDF — ficam de fora, e a tela diz. */
-  pending: number;
-}
-
-export async function planEventCertificateZip(input: {
-  tenantId: string;
-  eventId: string;
-}): Promise<CertificateResult<CertificateZipPlan>> {
-  try {
-    const plan = await withTenant(input.tenantId, async (tx) => {
-      const event = await tx.event.findFirst({
-        where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
-        select: { title: true, slug: true },
-      });
-
-      if (!event) return null;
-
-      const rows = await tx.certificate.findMany({
-        where: { tenantId: input.tenantId, eventId: input.eventId, status: 'ISSUED' },
-        orderBy: [{ kind: 'asc' }, { issuedAt: 'asc' }],
-        select: {
-          id: true,
-          bucket: true,
-          storageKey: true,
-          validationCode: true,
-          recipientName: true,
-        },
-      });
-
-      /**
-       * ─── QUEM FICOU DE FORA, E POR QUÊ ──────────────────────────────────────────
-       *  São DUAS populações, e contá-las pela mesma condição foi um defeito pego pelo
-       *  teste de integração:
-       *
-       *    • **em geração** (`QUEUED`/`GENERATING`) — o certificado existe e o PDF
-       *      ainda não. É o caso comum de quem clica "baixar tudo" logo depois de
-       *      emitir, e é justamente ele que a mensagem "ainda estão sendo gerados"
-       *      precisa atender;
-       *    • **emitido sem arquivo** — `ISSUED` sem `storageKey`, que só acontece se a
-       *      geração travou entre o `UPDATE` e o envio ao storage.
-       *
-       *  Antes, `pending` contava apenas a segunda — então a mensagem de "gerando"
-       *  praticamente nunca aparecia, e o lote saía vazio com a explicação errada.
-       */
-      const inFlight = await tx.certificate.count({
-        where: {
-          tenantId: input.tenantId,
-          eventId: input.eventId,
-          status: { in: ['QUEUED', 'GENERATING'] },
-        },
-      });
-
-      const entries: CertificateZipPlan['entries'] = [];
-      let pending = inFlight;
-
-      for (const row of rows) {
-        if (!row.storageKey || !row.bucket) {
-          pending += 1;
-          continue;
-        }
-
-        entries.push({
-          certificateId: row.id,
-          bucket: row.bucket,
-          storageKey: row.storageKey,
-          fileName: `${row.validationCode}-${row.recipientName
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-zA-Z0-9]+/g, '-')
-            .toLowerCase()}.pdf`,
-        });
-      }
-
-      return { eventTitle: event.title, eventSlug: event.slug, entries, pending };
-    });
-
-    if (!plan) {
-      return { ok: false as const, code: 'NOT_FOUND', message: 'Evento não encontrado.' };
-    }
-
-    if (plan.entries.length === 0) {
-      return {
-        ok: false as const,
-        code: 'NOT_STORED',
-        message:
-          plan.pending > 0
-            ? `Os ${plan.pending} certificado(s) deste evento ainda estão sendo gerados. Tente de novo em alguns minutos.`
-            : 'Este evento ainda não tem certificados emitidos.',
-      };
-    }
-
-    return { ok: true as const, ...plan };
-  } catch (error) {
-    logger.error(`[certificates] falha ao montar o lote: ${errorMessage(error)}`);
-
-    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível preparar o lote.' };
-  }
-}
-
-/**
- * URL assinada de download do PDF.
- *
- * A validade é curta (5 min) e a URL é gerada sob demanda: um certificado contém
- * dados pessoais e não deve ficar acessível por link permanente em histórico de
- * navegador ou cache de proxy.
- */
-export async function getCertificateDownloadUrl(input: {
-  tenantId: string;
-  certificateId: string;
-  /** Permite baixar certificado de TERCEIRO (equipe/validação pública). */
-  allowAnyUser?: boolean;
-  userId?: string;
-}): Promise<CertificateResult<{ url: string; fileName: string }>> {
-  try {
-    const certificate = await withTenant(input.tenantId, (tx) =>
-      tx.certificate.findFirst({
-        where: {
-          id: input.certificateId,
-          ...(input.allowAnyUser ? {} : input.userId ? { userId: input.userId } : {}),
-        },
-        select: {
-          storageKey: true,
-          bucket: true,
-          status: true,
-          recipientName: true,
-          validationCode: true,
-          revokedAt: true,
-        },
-      }),
-    );
-
-    if (!certificate) {
-      return { ok: false as const, code: 'NOT_FOUND', message: 'Certificado não encontrado.' };
-    }
-
-    if (!certificate.storageKey || !certificate.bucket || certificate.status !== 'ISSUED') {
-      return {
-        ok: false as const,
-        code: 'NOT_STORED',
-        message: 'O arquivo do certificado ainda está sendo gerado.',
-      };
-    }
-
-    const fileName = `${certificate.validationCode}-${certificate.recipientName
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9]+/g, '-')
-      .toLowerCase()}.pdf`;
-
-    const url = await createDownloadUrl({
-      bucket: certificate.bucket,
-      objectKey: certificate.storageKey,
-      fileName,
-    });
-
-    return { ok: true as const, url, fileName };
-  } catch (error) {
-    logger.error(`[certificates] falha ao gerar URL de download: ${errorMessage(error)}`);
-    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível preparar o download.' };
-  }
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Revogação
-// ───────────────────────────────────────────────────────────────────────────────
-export async function revokeCertificate(input: {
-  tenantId: string;
-  certificateId: string;
-  reason: string;
-}): Promise<CertificateResult<{ revokedAt: Date }>> {
-  try {
-    const outcome = await withTenant(input.tenantId, async (tx) => {
-      const certificate = await tx.certificate.findFirst({
-        where: { id: input.certificateId },
-        select: { id: true, revokedAt: true, validationCode: true },
-      });
-
-      if (!certificate) {
-        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Certificado não encontrado.' };
-      }
-
-      const revokedAt = certificate.revokedAt ?? new Date();
-
-      await tx.certificate.update({
-        where: { id: certificate.id },
-        data: { revokedAt, revokedReason: input.reason.slice(0, 400) },
-      });
-
-      return { ok: true as const, revokedAt, validationCode: certificate.validationCode };
-    });
-
-    if (!outcome.ok) return outcome;
-    await invalidatePublicCertificateCache(outcome.validationCode);
-    return { ok: true as const, revokedAt: outcome.revokedAt };
-  } catch (error) {
-    logger.error(`[certificates] falha ao revogar: ${errorMessage(error)}`);
-    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível revogar o certificado.' };
-  }
-}
-
-// ───────────────────────────────────────────────────────────────────────────────
-//  Validação pública (SEM contexto de tenant)
-// ───────────────────────────────────────────────────────────────────────────────
-export interface PublicCertificate {
-  validationCode: string;
-  kind: CertificateKind;
-  title: string;
-  recipientName: string;
-  bodyText: string;
-  workloadMinutes: number;
-  workloadLabel: string;
-  workloadBreakdown: WorkloadBreakdownEntry[];
-  issuedAt: Date | null;
-  revokedAt: Date | null;
-  revokedReason: string | null;
-  expiresAt: Date | null;
-  status: string;
-  contentHash: string | null;
-  signatureValid: boolean;
-  signatureKeyId: string | null;
-  signatureAlg: string | null;
-  tenantName: string;
-  eventTitle: string;
-  validationUrl: string;
-  validationCount: number;
-}
-
-/**
- * Lê o certificado pelo código, sem contexto de tenant.
- *
- * A transação define `app.validation_code` em vez de `app.tenant_id`: a policy
- * dedicada libera EXATAMENTE a linha daquele código. Sem o código, zero linhas —
- * a mesma política fail-closed do resto do sistema.
- *
- * A assinatura é verificada AQUI, e o resultado viaja junto com o documento: a
- * página pública mostra se a assinatura confere, em vez de apenas afirmar que o
- * documento é autêntico.
- */
-/**
- * A INTEGRIDADE DO CERTIFICADO CONFERE? (FASE 51)
- *
- * ─────────────────────────────────────────────────────────────────────────────
- *  UMA VERIFICAÇÃO, DOIS CAMINHOS
- * ─────────────────────────────────────────────────────────────────────────────
- *  A exibição pública (com o veredito) e o DOWNLOAD precisam da mesma resposta —
- *  recomputar o conteúdo canônico a partir do banco e conferir a assinatura. Duas
- *  implementações divergiriam no primeiro caso de borda (versão 2 com layout, payload
- *  v1 antigo) e a tela passaria a aprovar o que o download recusa, ou o contrário.
- *
- *  Devolve `ok` e o `signatureValid` para o chamador montar o veredito sem repetir a
- *  leitura das colunas cobertas.
- */
-export async function verifyCertificateIntegrity(
-  certificateId: string,
-  tenantId: string,
-): Promise<{
-  ok: boolean;
-  signatureValid: boolean;
-  /**
-   * A linha TEM assinatura gravada? (FASE 51)
-   *
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  POR QUE ESTA PERGUNTA PRECISA SER RESPONDIDA À PARTE
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  Certificado emitido antes de a assinatura existir (F6) não tem o que conferir. Tratar
-   *  "sem assinatura" como "adulterado" acusaria de fraude um documento legítimo e
-   *  antigo — e recusaria o download dele. São dois estados distintos: NÃO HÁ PROVA
-   *  (limitação declarada) e A PROVA NÃO CONFERE (adulteração). Este campo é o que
-   *  permite dizer qual dos dois é o caso.
-   */
-  hasSignature: boolean;
-  contentHash: string | null;
-}> {
-  const row = await withTenant(tenantId, (tx) =>
-    tx.certificate.findFirst({
-      where: { id: certificateId },
-      select: {
-        validationCode: true,
-        tenantId: true,
-        eventId: true,
-        userId: true,
-        activityId: true,
-        kind: true,
-        recipientName: true,
-        title: true,
-        bodyText: true,
-        workloadMinutes: true,
-        issuedAt: true,
-        createdAt: true,
-        contentHash: true,
-        signature: true,
-        layoutSnapshot: true,
-        variableSnapshot: true,
-      },
-    }),
-  );
-
-  if (!row) return { ok: false, signatureValid: false, hasSignature: false, contentHash: null };
-
-  const issuedAt = row.issuedAt ?? row.createdAt;
-  const storedLayout = readStoredLayout(row.layoutSnapshot);
-
-  const canonical = storedLayout
-    ? buildCanonicalPayloadV2({
-        version: 2,
-        validationCode: row.validationCode,
-        tenantId: row.tenantId,
-        eventId: row.eventId,
-        userId: row.userId,
-        activityId: row.activityId,
-        kind: row.kind,
-        recipientName: row.recipientName,
-        title: row.title,
-        bodyText: row.bodyText,
-        workloadMinutes: row.workloadMinutes,
-        issuedAt: issuedAt.toISOString(),
-        layout: serializeLayout(storedLayout),
-        content: serializeContentValues(
-          contentValuesFrom((row.variableSnapshot as Record<string, string> | null) ?? {}),
-        ),
-      })
-    : buildCanonicalPayload({
-        version: 1,
-        validationCode: row.validationCode,
-        tenantId: row.tenantId,
-        eventId: row.eventId,
-        userId: row.userId,
-        activityId: row.activityId,
-        kind: row.kind,
-        recipientName: row.recipientName,
-        title: row.title,
-        bodyText: row.bodyText,
-        workloadMinutes: row.workloadMinutes,
-        issuedAt: issuedAt.toISOString(),
-      });
-
-  const recomputedHash = hashCanonicalPayload(canonical);
-  const hashMatches = recomputedHash === row.contentHash;
-  const signatureValid =
-    hashMatches &&
-    Boolean(row.signature) &&
-    verifySignature({ contentHash: recomputedHash, signature: row.signature ?? '' });
-
-  const hasSignature = Boolean(row.signature);
-
-  return { ok: signatureValid, signatureValid, hasSignature, contentHash: row.contentHash };
-}
-
-export async function getPublicCertificate(rawCode: string): Promise<
-  CertificateResult<{ verdict: ValidationVerdict; certificate: PublicCertificate | null }>
-> {
-  try {
-    const code = normalizeValidationCode(rawCode);
-
-    if (!isValidValidationCodeFormat(code)) {
-      return {
-        ok: true as const,
-        verdict: {
-          status: 'NOT_FOUND' as const,
-          message: 'Código em formato inválido. Confira os caracteres e tente novamente.',
-          isUsable: false,
-        },
-        certificate: null,
-      };
-    }
-
-    const { value } = await getOrSetDirectPublicCache({
-      key: certificateCacheKey(code),
-      ttlSeconds: PUBLIC_CERTIFICATE_CACHE_TTL_SECONDS,
-      shouldCache: (res) => res.ok && shouldCacheCertificateVerdict(res.verdict.status),
-      loader: async () => {
-        const baseUrl = publicBaseUrl();
-
-        const row = await withValidationCode(code, async (tx) => {
-      const certificate = await tx.certificate.findFirst({
-        where: { validationCode: code },
-        select: {
-          id: true,
-          tenantId: true,
-          eventId: true,
-          userId: true,
-          activityId: true,
-          kind: true,
-          status: true,
-          validationCode: true,
-          title: true,
-          recipientName: true,
-          bodyText: true,
-          workloadMinutes: true,
-          workloadBreakdown: true,
-          issuedAt: true,
-          createdAt: true,
-          revokedAt: true,
-          revokedReason: true,
-          expiresAt: true,
-          contentHash: true,
-          signature: true,
-          signatureKeyId: true,
-          signatureAlg: true,
-          validationCount: true,
-          layoutSnapshot: true,
-          variableSnapshot: true,
-        },
-      });
-
-      if (!certificate) return null;
-
-      return certificate;
-    });
-
-    if (!row) {
-      return {
-        ok: true as const,
-        verdict: evaluateValidation({
-          found: false,
-          status: null,
-          revokedAt: null,
-          revokedReason: null,
-          expiresAt: null,
-          now: new Date(),
-        }),
-        certificate: null,
-      };
-    }
-
-    /**
-     * Verificação da assinatura: recalcula o conteúdo canônico A PARTIR DO BANCO.
-     * Se alguém alterar `bodyText` (ou qualquer campo coberto) por fora, o hash
-     * deixa de casar e a assinatura não confere — que é exatamente o que a
-     * assinatura existe para detectar.
-     *
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  A VERSÃO DO DOCUMENTO É DERIVADA, NÃO GRAVADA (FASE 40)
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  Certificado com layout no snapshot é versão 2, e a verificação reconstrói o
-     *  payload com o LAYOUT (que carrega a impressão da arte) e com o CONTEÚDO
-     *  congelado das variáveis. Sem layout, é versão 1 — e ela continua sendo
-     *  reconstruída exatamente como nasceu, senão todo certificado antigo passaria a
-     *  reprovar. Ter uma coluna de versão criaria o estado incoerente "versão 2 sem
-     *  layout"; o snapshot é o que existe de fato.
-     */
-    /**
-     * A conferência é a MESMA função que o download usa (`verifyCertificateIntegrity`):
-     * uma implementação, dois caminhos. A leitura extra é o preço de não existirem duas
-     * respostas para a mesma pergunta — e validação pública não é caminho quente.
-     */
-    const integrity = await verifyCertificateIntegrity(row.id, row.tenantId);
-    const signatureValid = integrity.signatureValid;
-
-    // Leitura de exibição + contador de acesso, dentro do contexto de tenant já
-    // resolvido. A policy de validação pública é SOMENTE de SELECT: quem valida
-    // pode ler o documento pelo código, mas a escrita acontece no contexto
-    // correto (e é o tenant que responde por ela).
-    const display = await withTenant(row.tenantId, async (tx) => {
-      const [tenant, event] = await Promise.all([
-        tx.tenant.findUnique({ where: { id: row.tenantId }, select: { name: true } }),
-        tx.event.findFirst({ where: { id: row.eventId }, select: { title: true } }),
-      ]);
-
-      await tx.certificate.update({
-        where: { id: row.id },
-        data: { validationCount: { increment: 1 }, lastValidatedAt: new Date() },
-      });
-
-      return { tenantName: tenant?.name ?? '', eventTitle: event?.title ?? '' };
-    }).catch(() => ({ tenantName: '', eventTitle: '' }));
-
-    /**
-     * A INTEGRIDADE ENTRA NO VEREDITO (FASE 51 — defeito real encontrado ao construir
-     * a conferência em lote da dívida E7).
-     *
-     * Antes, `signatureValid` era só um aviso ao lado: a página anunciava "Certificado
-     * autêntico" e oferecia o PDF de um documento cujo hash não batia mais com a
-     * assinatura. A conferência em lote reprovava esse mesmo documento — duas telas
-     * públicas dizendo coisas opostas sobre a mesma prova, e a mais permissiva era
-     * justamente a de um código só.
-     */
-    const verdict = evaluateValidation({
-      found: true,
-      status: row.status,
-      revokedAt: row.revokedAt,
-      revokedReason: row.revokedReason,
-      expiresAt: row.expiresAt,
-      now: new Date(),
-      /**
-       * Sem assinatura gravada, a integridade é "não verificável" — e `undefined` é
-       * exatamente isso para o domínio: ele mantém o veredito anterior em vez de acusar
-       * adulteração de um documento legítimo e antigo.
-       */
-      signatureValid: integrity.hasSignature ? signatureValid : undefined,
-    });
-
-    return {
-      ok: true as const,
-      verdict,
-      certificate: {
-        validationCode: row.validationCode,
-        kind: row.kind,
-        title: row.title,
-        recipientName: row.recipientName,
-        bodyText: row.bodyText,
-        workloadMinutes: row.workloadMinutes,
-        workloadLabel: formatWorkloadLabel(row.workloadMinutes),
-        /**
-         * O leitor tolera os dois formatos: documento emitido antes da FASE 86 tem
-         * o detalhamento como LISTA; a partir dela, `{ policy, entries }`. A tela
-         * pública continua vendo entradas — a política é contexto do documento, não
-         * um campo da validação.
-         */
-        workloadBreakdown: readWorkloadBreakdown(row.workloadBreakdown).entries,
-        issuedAt: row.issuedAt,
-        revokedAt: row.revokedAt,
-        revokedReason: row.revokedReason,
-        expiresAt: row.expiresAt,
-        status: row.status,
-        contentHash: row.contentHash,
-        signatureValid,
-        signatureKeyId: row.signatureKeyId,
-        signatureAlg: row.signatureAlg,
-        tenantName: display.tenantName,
-        eventTitle: display.eventTitle,
-        validationUrl: `${baseUrl}/validar/${row.validationCode}`,
-        validationCount: row.validationCount + 1,
-      },
-    };
-      },
-    });
-
-    return value;
-  } catch (error) {
-    logger.error(`[certificates] falha na validação pública: ${errorMessage(error)}`);
-    return { ok: false as const, code: 'INTERNAL', message: 'Não foi possível validar o certificado.' };
-  }
-}
-
-/**
- * Executa uma leitura com a capacidade de validação ativa.
- *
- * `set_config(..., true)` é LOCAL à transação: a capacidade morre no COMMIT e não
- * vaza para a próxima requisição que usar a mesma conexão do pool. É o mesmo
- * raciocínio do `app.tenant_id` — e a razão de não existir um `SET` global.
- */
-async function withValidationCode<T>(
-  code: string,
-  fn: (tx: TxClient) => Promise<T>,
-): Promise<T> {
-  const { systemClient } = await import('@/lib/db/tenant-client');
-
-  return systemClient().$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.validation_code', ${code}, true)`;
-    return fn(tx as TxClient);
-  });
-}
-
-/**
- * URL assinada do PDF a partir do CÓDIGO de validação.
- *
- * É o download público: quem tem o código (impresso no documento ou lido do QR)
- * baixa o próprio certificado. O código É a credencial — por isso ele é longo e
- * usa alfabeto sem ambiguidade, e por isso a URL assinada dura 5 minutos.
- */
-export async function getPublicCertificateDownloadUrl(
-  rawCode: string,
-): Promise<CertificateResult<{ url: string; fileName: string }>> {
-  const code = normalizeValidationCode(rawCode);
-
-  if (!isValidValidationCodeFormat(code)) {
-    return { ok: false as const, code: 'INVALID_CODE', message: 'Código de validação inválido.' };
-  }
-
-  const located = await withValidationCode(code, async (tx) =>
-    tx.certificate.findFirst({
-      where: { validationCode: code },
-      select: { id: true, tenantId: true, revokedAt: true, status: true },
-    }),
-  );
-
-  if (!located) {
-    return { ok: false as const, code: 'NOT_FOUND', message: 'Certificado não encontrado.' };
-  }
-
-  if (located.revokedAt) {
-    return {
-      ok: false as const,
-      code: 'NOT_FOUND',
-      message: 'Este certificado foi revogado e não pode ser baixado.',
-    };
-  }
-
-  if (located.status !== 'ISSUED') {
-    return {
-      ok: false as const,
-      code: 'NOT_STORED',
-      message: 'O arquivo ainda está sendo gerado. Tente novamente em instantes.',
-    };
-  }
-
-  /**
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  CONTEÚDO ADULTERADO NÃO É BAIXÁVEL (FASE 51)
-   * ─────────────────────────────────────────────────────────────────────────────
-   *  A rota é pública e o código é a credencial: esconder o botão na tela não impede
-   *  ninguém de chamar o endereço. A integridade é conferida AQUI — recomputando o
-   *  hash canônico e verificando a assinatura —, e não só no veredito de exibição,
-   *  porque é este caminho que entrega o arquivo.
-   *
-   *  A ordem segue a da tela: revogação e status falam primeiro (são o ATO da
-   *  instituição); a adulteração é a última pergunta e vale por si.
-   */
-  const integrity = await verifyCertificateIntegrity(located.id, located.tenantId);
-
-  if (integrity.hasSignature && !integrity.ok) {
-    return {
-      ok: false as const,
-      code: 'NOT_FOUND',
-      message: 'Este certificado não passa na conferência de integridade e não pode ser baixado.',
-    };
-  }
-
-  return getCertificateDownloadUrl({
-    tenantId: located.tenantId,
-    certificateId: located.id,
-    allowAnyUser: true,
-  });
 }
 
 /** Reexportado para consumo das telas (mantém o domínio como fonte única). */

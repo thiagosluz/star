@@ -41,7 +41,7 @@ import { RUN_ID, cleanupRun, createTenant, e2eDb, grantRole, linkUser,
  *  `<details>` do menu é HTML nativo, e a troca de tema tem de acontecer com o
  *  navegador sem executar uma linha de script.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f61-tema-${RUN_ID}`;
 
 let tenantSlug: string;

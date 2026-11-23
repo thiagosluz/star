@@ -20,7 +20,7 @@ import {
   RUN_ID,
 } from './helpers';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 
 async function createUser(
   page: Page,

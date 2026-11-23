@@ -22,7 +22,7 @@ import { RUN_ID, createTenant, e2eDb, grantRole, linkUser,
  *  controles têm de continuar visíveis — nos três estados em que o bloco aparece
  *  (barra inteira, barra recolhida e gaveta do celular).
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f61-conta-${RUN_ID}`;
 
 let tenantSlug: string;

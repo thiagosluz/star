@@ -10,7 +10,7 @@ senha.
 
 ```text
 Senha de todas as contas:  a definida em SEED_TEST_PASSWORD no seu .env
-                           (hoje: 1234567890 · padrão do script: EventFlow@2026)
+                           (hoje: 1234567890 · padrão do script: Koveno@2026)
 Login:                     http://localhost:3000/login
 Instituições de teste:     ufba-demo · fiocruz-demo (do seed de demonstração)
 ```

@@ -22,7 +22,7 @@ import { BUCKETS, putObjectBuffer } from '../../src/lib/storage/s3-client';
  *       deriva na primeira visita e a guarda no bucket. Sem isso, abrir o acervo baixa
  *       a foto inteira para desenhar um quadrado.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f56-fatia3-${RUN_ID}`;
 const EVENT_SLUG = `evento-fatia3-${RUN_ID}`;
 

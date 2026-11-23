@@ -22,7 +22,7 @@ import { RUN_ID, createEvent, createTenant, e2eDb, grantRole, linkUser,
  *  O passo 5 é o que fechou a dívida E1: sem ele a vaga venceria em 48 h e rodaria para
  *  o próximo, para sempre.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `fila-evento-${RUN_ID}`;
 const EVENT_SLUG = `evento-uma-vaga-${RUN_ID}`;
 

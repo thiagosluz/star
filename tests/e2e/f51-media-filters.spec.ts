@@ -447,6 +447,18 @@ test.describe('filtros do acervo de mídia', () => {
       );
       await expect(page.getByTestId('media-result-count')).toContainText('refine os filtros');
 
+      // Paginação real sem JavaScript (FASE 119): avança para a página 2 e vê as 5 restantes.
+      await expect(page.getByTestId('media-page-indicator')).toHaveText('Página 1 de 2');
+      await page.getByTestId('media-page-next').click();
+      await page.waitForLoadState('domcontentloaded');
+      await expect(page).toHaveURL(/pagina=2/);
+      await expect(page.getByTestId('media-page-indicator')).toHaveText('Página 2 de 2');
+      await expect(assetRows(page)).toHaveCount(5);
+
+      await page.getByTestId('media-page-prev').click();
+      await page.waitForLoadState('domcontentloaded');
+      await expect(assetRows(page)).toHaveCount(200);
+
       // O acervo inteiro segue contado no cabeçalho — o teto é da JANELA, não do acervo.
       await expect(page.getByTestId('media-summary')).toContainText('205 imagem(ns)');
     } finally {

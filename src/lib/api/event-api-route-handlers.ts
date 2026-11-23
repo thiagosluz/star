@@ -96,6 +96,14 @@ export interface EventApiRouteDeps {
   cacheClient?: RedisCacheClientLike;
   /** Força o uso do cache mesmo sob Vitest quando `cacheClient` é injetado. */
   forceCache?: boolean;
+  /**
+   * Loaders compartilháveis por requisição (FASE 119, dívida B11): a prévia do
+   * organizador lê tenant, chave e projeção uma única vez para os cinco recursos
+   * enquanto preserva todas as portas HTTP do handler.
+   */
+  resolveTenant?: typeof getTenantContext;
+  verifyKey?: typeof verifyEventApiKey;
+  loadProjections?: typeof loadEventApiProjections;
 }
 
 export interface EventApiRouteHandlers {
@@ -132,6 +140,9 @@ export function createEventApiRouteHandlers(
 ): EventApiRouteHandlers {
   const rateLimit = deps.rateLimit ?? createRedisRateLimitStorage({ prefix: 'ef:rl:event-api:' });
   const now = deps.now ?? (() => new Date());
+  const resolveTenant = deps.resolveTenant ?? getTenantContext;
+  const verifyKey = deps.verifyKey ?? verifyEventApiKey;
+  const loadProjections = deps.loadProjections ?? loadEventApiProjections;
 
   const methodNotAllowed: EventApiRouteHandler = async (request) =>
     eventApiErrorResponse({
@@ -186,7 +197,7 @@ export function createEventApiRouteHandlers(
 
       const presentedKey = extractBearerKey(request.headers.get('authorization'));
 
-      const tenant = await getTenantContext(tenantSlug);
+      const tenant = await resolveTenant(tenantSlug);
 
       /**
        * Instituição inexistente NÃO é 404: é o mesmo 401 da chave. O contrário
@@ -198,7 +209,7 @@ export function createEventApiRouteHandlers(
         return unauthorized(request, presentedKey ? 'INVALID_API_KEY' : 'MISSING_API_KEY');
       }
 
-      const auth = await verifyEventApiKey({
+      const auth = await verifyKey({
         tenantId: tenant.tenantId,
         eventSlug,
         presentedKey,
@@ -237,7 +248,7 @@ export function createEventApiRouteHandlers(
         }
       }
 
-      const projections = await loadEventApiProjections({
+      const projections = await loadProjections({
         tenant: { tenantId: tenant.tenantId, slug: tenant.slug, name: tenant.name },
         eventSlug,
         generatedAt,

@@ -19,7 +19,7 @@ import { sendParticipantMessage } from '../../src/lib/participants/message-servi
  *  O recado é enviado pelo SERVIÇO (o caminho da tela de envio tem spec próprio) —
  *  o que este cenário mede é a RESPOSTA.
  */
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = `f56-fatia4-${RUN_ID}`;
 
 let tenantId: string;

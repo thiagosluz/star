@@ -34,7 +34,11 @@ import { errorMessage } from '@/lib/db/prisma-errors';
 import { recordAudit } from '@/lib/admin/audit';
 import { BUCKETS, deleteObject } from '@/lib/storage/s3-client';
 import { ASSET_TARGET_LABELS, imageFormatLabel, type AssetTarget } from '@/domain/events/image-rules';
-import { MEDIA_LIBRARY_LIMIT, MEDIA_NO_SOURCE_EVENT } from '@/domain/events/media-filter-rules';
+import {
+  MEDIA_LIBRARY_LIMIT,
+  MEDIA_NO_SOURCE_EVENT,
+  computeMediaPagination,
+} from '@/domain/events/media-filter-rules';
 import { logger } from '@/lib/observability/logger';
 
 export type MediaErrorCode = 'NOT_FOUND' | 'IN_USE' | 'STORAGE' | 'INTERNAL';
@@ -161,6 +165,10 @@ export interface MediaLibraryFilters {
   sourceEventId?: string | null;
   /** `true` = só em uso · `false` = só sem uso · `null`/ausente = todos. */
   inUse?: boolean | null;
+  /** Página 1-based para navegação além da janela inicial (FASE 119). */
+  page?: number | null;
+  /** Tamanho da página (padrão `MEDIA_LIBRARY_LIMIT`). */
+  pageSize?: number | null;
 }
 
 /** Uma opção dos seletores, com quantas imagens ela alcança AGORA. */
@@ -178,9 +186,15 @@ export interface MediaLibrary {
   totalMegabytes: number;
   /** Quantas imagens o filtro alcançou no banco — pode ser maior que `assets.length`. */
   matchedCount: number;
-  /** Teto aplicado à lista (`MEDIA_LIBRARY_LIMIT`). */
+  /** Teto aplicado à lista por página (`MEDIA_LIBRARY_LIMIT` ou `pageSize`). */
   limit: number;
-  /** `true` quando o resultado não coube no teto: a tela avisa "mostrando N de M". */
+  /** Página corrente (1-based, clampada no intervalo válido). */
+  page: number;
+  /** Total de páginas para os filtros atuais (`>= 1`). */
+  totalPages: number;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+  /** `true` quando o resultado ultrapassa uma página: a tela anuncia e pagina. */
   truncated: boolean;
   /**
    * Números do ACERVO INTEIRO (sem os filtros da pessoa, respeitando só o escopo da
@@ -283,7 +297,7 @@ export async function listMediaLibrary(
           ? { ...where, url: { notIn: usedUrls } }
           : where;
 
-    const [aggregate, inUseCount, matchedCount, assets, typeGroups, eventGroups] =
+    const [aggregate, inUseCount, matchedCount, typeGroups, eventGroups] =
       await Promise.all([
         tx.mediaAsset.aggregate({
           where: scope,
@@ -292,23 +306,6 @@ export async function listMediaLibrary(
         }),
         tx.mediaAsset.count({ where: { ...scope, url: { in: usedUrls } } }),
         tx.mediaAsset.count({ where: withUsage }),
-        tx.mediaAsset.findMany({
-          where: withUsage,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          take: MEDIA_LIBRARY_LIMIT,
-          select: {
-            id: true,
-            url: true,
-            fileName: true,
-            mimeType: true,
-            sizeBytes: true,
-            target: true,
-            eventId: true,
-            createdAt: true,
-            uploadedBy: { select: { name: true } },
-            event: { select: { title: true } },
-          },
-        }),
         /**
          * As opções dos seletores saem do ACERVO, não de uma lista fixa no código.
          * Tipo que a instituição não tem não vira opção inútil, e tipo que ela venha a
@@ -326,6 +323,31 @@ export async function listMediaLibrary(
           _count: { _all: true },
         }),
       ]);
+
+    const pagination = computeMediaPagination({
+      matchedCount,
+      page: filters.page ?? 1,
+      pageSize: filters.pageSize ?? MEDIA_LIBRARY_LIMIT,
+    });
+
+    const assets = await tx.mediaAsset.findMany({
+      where: withUsage,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: pagination.skip,
+      take: pagination.pageSize,
+      select: {
+        id: true,
+        url: true,
+        fileName: true,
+        mimeType: true,
+        sizeBytes: true,
+        target: true,
+        eventId: true,
+        createdAt: true,
+        uploadedBy: { select: { name: true } },
+        event: { select: { title: true } },
+      },
+    });
 
     const rows: MediaAssetRow[] = assets.map((asset) => {
       const usages = usage.get(asset.url) ?? [];
@@ -369,8 +391,12 @@ export async function listMediaLibrary(
       totalBytes,
       totalMegabytes: Math.round((totalBytes / 1024 / 1024) * 10) / 10,
       matchedCount,
-      limit: MEDIA_LIBRARY_LIMIT,
-      truncated: matchedCount > rows.length,
+      limit: pagination.pageSize,
+      page: pagination.page,
+      totalPages: pagination.totalPages,
+      hasPreviousPage: pagination.hasPreviousPage,
+      hasNextPage: pagination.hasNextPage,
+      truncated: matchedCount > pagination.pageSize,
       library: {
         count: aggregate._count._all,
         inUse: inUseCount,

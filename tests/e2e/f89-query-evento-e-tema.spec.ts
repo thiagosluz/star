@@ -33,7 +33,7 @@ import {
   uniqueEmail,
 } from './helpers';
 
-const PASSWORD = 'EventFlow#2026';
+const PASSWORD = 'Koveno#2026';
 const TENANT_LABEL = 'f89-query-tema';
 const ID_MALFORMADO = 'nao-e-uuid';
 const UUID_AUSENTE = randomUUID();
