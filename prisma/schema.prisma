@@ -1153,6 +1153,10 @@ model Tenant {
   proceedingsVolumes ProceedingsVolume[]
   proceedingsEntries ProceedingsEntry[]
 
+  /// FASE 122 — fontes de financiamento/fomento e lançamentos financeiros dos eventos.
+  fundingSources   EventFundingSource[]
+  financialEntries EventFinancialEntry[]
+
   @@index([status])
   @@index([deletedAt])
   @@map("tenants")
@@ -1799,6 +1803,10 @@ model Event {
 
   /// FASE 111 — volume de anais deste evento (publicação curada pela organização).
   proceedingsVolume      ProceedingsVolume?
+
+  /// FASE 122 — gestão financeira, editais de fomento e prestação de contas do evento.
+  fundingSources   EventFundingSource[]
+  financialEntries EventFinancialEntry[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, status])
@@ -2531,7 +2539,9 @@ model Sponsor {
   /// Rodadas de sorteio cujo prêmio este patrocinador deu — FASE 30.
   raffleRounds RaffleRound[]   @relation("RaffleRoundSponsor")
   /// Pessoas do patrocinador com acesso à área dele (FASE 42).
-  users        SponsorUser[]
+  users          SponsorUser[]
+  /// Fontes de financiamento vinculadas a este contrato de patrocínio (FASE 122).
+  fundingSources EventFundingSource[]
   /// QR codes deste patrocinador (FASE 42).
   qrCodes      SponsorQrCode[]
   /// Visitas lidas nos QRs deste patrocinador (FASE 42).
@@ -4797,5 +4807,81 @@ model ProceedingsEntry {
   @@index([tenantId, volumeId, displayOrder])
   @@map("proceedings_entries")
 }
+
+/// ═══════════════════════════════════════════════════════════════════════════════
+///  GESTÃO FINANCEIRA, FOMENTO E PRESTAÇÃO DE CONTAS DO EVENTO (FASE 122)
+///
+///  Modela fontes pagadoras carimbadas (editais FAPEG/CNPq/CAPES, fundação FUNAPE,
+///  contrapartida UF/IF, patrocínio privado e recursos próprios) e o livro-razão de
+///  entradas e saídas em centavos inteiros sob RLS + FORCE.
+/// ═══════════════════════════════════════════════════════════════════════════════
+model EventFundingSource {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @db.Uuid
+  eventId  String @db.Uuid
+
+  name                 String   @db.VarChar(180)
+  /// `PUBLIC_GRANT` | `FOUNDATION` | `INSTITUTIONAL` | `SPONSORSHIP` | `OWN_REVENUE`
+  kind                 String   @default("PUBLIC_GRANT") @db.VarChar(32)
+  /// Número do edital, processo SEI, termo de outorga ou contrato.
+  codeOrProcess        String?  @db.VarChar(120)
+  /// Teto aprovado/contratado na fonte, em centavos inteiros.
+  approvedCents        Int      @default(0)
+  /// Rubricas permitidas por este edital/fonte (vazio = livre para qualquer categoria).
+  restrictedCategories String[] @default([])
+  sponsorId            String?  @db.Uuid
+  notes                String?  @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event   Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sponsor Sponsor?               @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
+  entries EventFinancialEntry[]
+
+  @@index([tenantId, eventId, kind])
+  @@index([sponsorId])
+  @@map("event_funding_sources")
+}
+
+model EventFinancialEntry {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @db.Uuid
+  eventId  String  @db.Uuid
+  sourceId String? @db.Uuid
+
+  /// `INCOME` (Entrada) | `EXPENSE` (Saída)
+  type     String @db.VarChar(16)
+  /// `PLANNED` | `COMMITTED` | `SETTLED` | `CANCELED`
+  status   String @default("PLANNED") @db.VarChar(24)
+  /// Rubrica do lançamento (`GRANT_DISBURSEMENT`, `TRAVEL_AND_PER_DIEM`, `CATERING`…).
+  category String @default("OTHER") @db.VarChar(48)
+
+  title             String  @db.VarChar(200)
+  amountCents       Int
+  /// Data `AAAA-MM-DD` da competência/ocorrência no fuso do evento.
+  occurredOn        String  @db.VarChar(10)
+  /// Data `AAAA-MM-DD` da liquidação (recebimento/pagamento efetivo).
+  settledOn         String? @db.VarChar(10)
+  counterpartyName  String? @db.VarChar(180)
+  counterpartyTaxId String? @db.VarChar(32)
+  documentNumber    String? @db.VarChar(80)
+  notes             String? @db.Text
+  createdById       String? @db.Uuid
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  tenant Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event  Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  source EventFundingSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, eventId, type, status])
+  @@index([tenantId, eventId, occurredOn])
+  @@index([sourceId])
+  @@map("event_financial_entries")
+}
+
 
 

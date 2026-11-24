@@ -52,7 +52,7 @@ export async function getEventAreaCounts(input: {
     return await withTenant(input.tenantId, async (tx) => {
       const escopo = { tenantId: input.tenantId, eventId: input.eventId };
 
-      const [calls, rooms, activities, teams, sponsors, credentials, certificates, proceedingsEntries, openDemands, speakers, page, estadoDoEvento] =
+      const [calls, rooms, activities, teams, sponsors, credentials, certificates, proceedingsEntries, financialEntries, openDemands, speakers, page, estadoDoEvento] =
         await Promise.all([
           tx.callForProposals.count({ where: { ...escopo, deletedAt: null } }),
           tx.room.count({ where: escopo }),
@@ -67,6 +67,9 @@ export async function getEventAreaCounts(input: {
               includeInProceedings: true,
               volume: { tenantId: input.tenantId, eventId: input.eventId },
             },
+          }),
+          tx.eventFinancialEntry.count({
+            where: { ...escopo, status: { not: 'CANCELED' } },
           }),
           tx.demand.count({ where: { ...escopo, completedAt: null } }),
           /**
@@ -133,6 +136,7 @@ export async function getEventAreaCounts(input: {
           credentials,
           certificates,
           proceedingsEntries,
+          financialEntries,
           openDemands,
           speakers,
           /**

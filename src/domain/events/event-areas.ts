@@ -173,6 +173,14 @@ export const EVENT_AREAS: readonly EventArea[] = [
     permission: PERMISSIONS.DEMAND_READ,
   },
   {
+    id: 'financeiro',
+    label: 'Finanças e fomento',
+    purpose: 'Fontes de recurso (editais, fundação, patrocínio), entradas, saídas, gráficos e prestação de contas.',
+    group: 'CONFIGURAR',
+    href: (context) => route(context, '/financeiro'),
+    permission: PERMISSIONS.SPONSOR_MANAGE,
+  },
+  {
     id: 'pagina',
     label: 'Editar página',
     purpose: 'Blocos, tema, capa, logotipo e o acervo de imagens.',
@@ -383,6 +391,7 @@ export interface EventAreaCounts {
   credentials: number | null;
   certificates: number | null;
   proceedingsEntries: number | null;
+  financialEntries: number | null;
   speakers: number | null;
   /**
    * Campos DECLARADOS no formulário de inscrição do evento (FASE 70).
@@ -476,6 +485,15 @@ export function eventAreaMetric(areaId: string, counts: EventAreaCounts): string
       return counts.proceedingsEntries === null
         ? null
         : quantidade(counts.proceedingsEntries, 'trabalho nos anais', 'trabalhos nos anais', 'nenhum trabalho nos anais');
+    case 'financeiro':
+      return counts.financialEntries === null
+        ? null
+        : quantidade(
+            counts.financialEntries,
+            'lançamento financeiro',
+            'lançamentos financeiros',
+            'nenhum lançamento financeiro',
+          );
     case 'pagina':
       if (counts.pagePublished === null) return null;
 
@@ -510,6 +528,7 @@ export const EMPTY_EVENT_AREA_COUNTS: EventAreaCounts = {
   credentials: null,
   certificates: null,
   proceedingsEntries: null,
+  financialEntries: null,
   speakers: null,
   formFields: null,
   pagePublished: null,

@@ -213,6 +213,12 @@ export const TENANT_SCOPED_TABLES = [
    * Contém o segredo de TOTP e o PIN de sala, exigindo isolamento rigoroso por tenant.
    */
   'self_checkin_points',
+  /**
+   * FASE 122 — fontes de fomento/patrocínio e lançamentos financeiros do evento.
+   * Guardam valores contratuais, processos SEI/editais, CPF/CNPJ de favorecidos e notas fiscais.
+   */
+  'event_funding_sources',
+  'event_financial_entries',
 ];
 
 /**
