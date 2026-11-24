@@ -296,15 +296,21 @@ test.describe('página pública, patrocínio e autoria', () => {
 
   test('o patrocinador cadastrado aparece na página e some ao ser ocultado (E4, E5)', async ({ page }) => {
     await signInAs(page, adminEmail);
-    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores`);
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores?aba=cotas`);
 
-    // ── Cota ──────────────────────────────────────────────────────────────────
+    // ── Cota (rota dedicada na FASE 125) ──────────────────────────────────────
+    await page.getByTestId('btn-nova-cota-aba').click();
+    await expect(page).toHaveURL(new RegExp(`/patrocinadores/cotas/nova$`));
     const tierForm = page.getByTestId('create-tier');
     await tierForm.getByLabel('Nome da cota').fill(`Ouro ${RUN_ID}`);
     await tierForm.getByLabel('Ordem de exibição').fill('10');
     await tierForm.getByLabel('Limite de patrocinadores').fill('1');
     await tierForm.getByTestId('admin-submit').click();
 
+    await expect(tierForm.getByTestId('create-tier-feedback')).toContainText(/cota criada/i, {
+      timeout: 20_000,
+    });
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores?aba=cotas`);
     await expect(page.getByTestId('tier-list')).toContainText(`Ouro ${RUN_ID}`, { timeout: 20_000 });
 
     // ── Patrocinador ──────────────────────────────────────────────────────────
@@ -369,16 +375,10 @@ test.describe('página pública, patrocínio e autoria', () => {
     page,
   }) => {
     await signInAs(page, adminEmail);
-    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores`);
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores/cotas/nova`);
 
     /**
-     * ─── A COTA NOVA NASCE COM COR E TAMANHO ────────────────────────────────────
-     *
-     *  Antes desta fase o campo de cor existia só dentro do "Editar cota" (recolhido)
-     *  e o tamanho não existia em lugar nenhum: toda logo saía com a mesma altura na
-     *  página pública. O cenário monta DUAS cotas com degraus diferentes e mede o
-     *  resultado na página — é a única prova de que o tamanho é a hierarquia
-     *  comprada, e não um número guardado sem leitor.
+     * ─── A COTA NOVA NASCE COM COR E TAMANHO (rota dedicada na FASE 125) ───────
      */
     const grande = page.getByTestId('create-tier');
     await grande.getByLabel('Nome da cota').fill(`Vitrine Grande ${RUN_ID}`);
@@ -386,10 +386,11 @@ test.describe('página pública, patrocínio e autoria', () => {
     await grande.getByTestId('tier-style-new-scale').selectOption('FEATURE');
     await grande.getByTestId('tier-style-new-color').fill('#b45309');
     await grande.getByTestId('admin-submit').click();
-    await expect(page.getByTestId('tier-list')).toContainText(`Vitrine Grande ${RUN_ID}`, {
+    await expect(grande.getByTestId('create-tier-feedback')).toContainText(/cota criada/i, {
       timeout: 20_000,
     });
 
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores/cotas/nova`);
     const pequena = page.getByTestId('create-tier');
     await pequena.getByLabel('Nome da cota').fill(`Vitrine Pequena ${RUN_ID}`);
     await pequena.getByLabel('Ordem de exibição').fill('80');
@@ -398,6 +399,14 @@ test.describe('página pública, patrocínio e autoria', () => {
     // organizador usa, e ele precisa escrever no mesmo campo que o servidor lê.
     await pequena.getByTestId('tier-style-new-swatch-prata').click();
     await pequena.getByTestId('admin-submit').click();
+    await expect(pequena.getByTestId('create-tier-feedback')).toContainText(/cota criada/i, {
+      timeout: 20_000,
+    });
+
+    await page.goto(`/t/${TENANT_LABEL}-${RUN_ID}/administracao/eventos/${eventId}/patrocinadores?aba=cotas`);
+    await expect(page.getByTestId('tier-list')).toContainText(`Vitrine Grande ${RUN_ID}`, {
+      timeout: 20_000,
+    });
     await expect(page.getByTestId('tier-list')).toContainText(`Vitrine Pequena ${RUN_ID}`, {
       timeout: 20_000,
     });

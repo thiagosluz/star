@@ -601,3 +601,176 @@ function normalizeSyncValue(value: string | null | undefined): string | null {
   const text = (value ?? '').trim();
   return text.length > 0 ? text : null;
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Cockpit por intenção: abas por URL e KPIs executivos (FASE 125)
+// ───────────────────────────────────────────────────────────────────────────────
+export const SPONSOR_TABS = ['patrocinadores', 'cotas', 'estandes'] as const;
+
+export type SponsorTab = (typeof SPONSOR_TABS)[number];
+
+export const SPONSOR_TAB_LABELS: Record<SponsorTab, string> = {
+  patrocinadores: 'Patrocinadores',
+  cotas: 'Cotas e vitrine',
+  estandes: 'Estandes, QRs e leads',
+};
+
+export function isSponsorTab(value: unknown): value is SponsorTab {
+  return typeof value === 'string' && (SPONSOR_TABS as readonly string[]).includes(value);
+}
+
+/**
+ * Resolve a aba ativa do cockpit de patrocínio na URL.
+ *
+ * Parâmetros operacionais de estande/LGPD (`confirmarQr`, `exportacao`, `erro`)
+ * ativam automaticamente `estandes` quando `aba` não foi declarada, garantindo
+ * que os fluxos No-JS das FASES 49 e 51 sempre reabram na aba correta.
+ */
+export function resolveSponsorTab(input: {
+  aba?: string | null;
+  confirmarQr?: string | null;
+  exportacao?: string | null;
+  erro?: string | null;
+}): SponsorTab {
+  if (isSponsorTab(input.aba)) return input.aba;
+
+  const hasExperienceIntent = Boolean(
+    input.confirmarQr?.trim() || input.exportacao?.trim() || input.erro?.trim(),
+  );
+
+  return hasExperienceIntent ? 'estandes' : 'patrocinadores';
+}
+
+export function buildEventSponsorsHref(
+  basePath: string,
+  params?: {
+    aba?: SponsorTab | null;
+    patrocinador?: string | null;
+    confirmarQr?: string | null;
+    exportacao?: string | null;
+    erro?: string | null;
+  },
+): string {
+  const search = new URLSearchParams();
+  const hasExperienceParam = Boolean(
+    params?.patrocinador?.trim() ||
+      params?.confirmarQr?.trim() ||
+      params?.exportacao?.trim() ||
+      params?.erro?.trim(),
+  );
+
+  if (params?.aba && (params.aba !== 'patrocinadores' || hasExperienceParam)) {
+    search.set('aba', params.aba);
+  }
+  if (params?.patrocinador?.trim()) {
+    search.set('patrocinador', params.patrocinador.trim());
+  }
+  if (params?.confirmarQr?.trim()) {
+    search.set('confirmarQr', params.confirmarQr.trim());
+  }
+  if (params?.exportacao?.trim()) {
+    search.set('exportacao', params.exportacao.trim());
+  }
+  if (params?.erro?.trim()) {
+    search.set('erro', params.erro.trim());
+  }
+
+  const query = search.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+export interface SponsorExperienceCounts {
+  qrCount: number;
+  activeQrCount: number;
+  visitCount: number;
+  leadCount: number;
+}
+
+export interface SponsorKpiSummary {
+  totalSponsors: number;
+  publicCount: number;
+  hiddenCount: number;
+  withoutLogoCount: number;
+  totalContractValueCents: number;
+  activeContractsCount: number;
+  expiredContractsCount: number;
+  copiedCount: number;
+  totalTiers: number;
+  limitedTiersCount: number;
+  occupiedLimitedSlots: number;
+  totalLimitedSlots: number;
+  qrCount: number;
+  activeQrCount: number;
+  visitCount: number;
+  leadCount: number;
+  /** `null` quando `visitCount === 0` (`null !== 0`). */
+  consentRatePercent: number | null;
+}
+
+export function computeSponsorKpiSummary(input: {
+  tiers: readonly { maxSponsors: number; sponsorCount: number }[];
+  sponsors: readonly {
+    isActive: boolean;
+    logoUrl: string | null;
+    contractValueCents: number | null;
+    contractState: ContractState;
+    sourceSponsorId: string | null;
+  }[];
+  experience?: SponsorExperienceCounts;
+}): SponsorKpiSummary {
+  let publicCount = 0;
+  let withoutLogoCount = 0;
+  let totalContractValueCents = 0;
+  let activeContractsCount = 0;
+  let expiredContractsCount = 0;
+  let copiedCount = 0;
+
+  for (const sponsor of input.sponsors) {
+    if (sponsor.isActive) publicCount += 1;
+    if (!sponsor.logoUrl) withoutLogoCount += 1;
+    if (typeof sponsor.contractValueCents === 'number' && sponsor.contractValueCents > 0) {
+      totalContractValueCents += sponsor.contractValueCents;
+    }
+    if (sponsor.contractState === 'ACTIVE') activeContractsCount += 1;
+    if (sponsor.contractState === 'EXPIRED') expiredContractsCount += 1;
+    if (sponsor.sourceSponsorId) copiedCount += 1;
+  }
+
+  let limitedTiersCount = 0;
+  let occupiedLimitedSlots = 0;
+  let totalLimitedSlots = 0;
+
+  for (const tier of input.tiers) {
+    if (tier.maxSponsors > 0) {
+      limitedTiersCount += 1;
+      occupiedLimitedSlots += tier.sponsorCount;
+      totalLimitedSlots += tier.maxSponsors;
+    }
+  }
+
+  const qrCount = input.experience?.qrCount ?? 0;
+  const activeQrCount = input.experience?.activeQrCount ?? 0;
+  const visitCount = input.experience?.visitCount ?? 0;
+  const leadCount = input.experience?.leadCount ?? 0;
+
+  return {
+    totalSponsors: input.sponsors.length,
+    publicCount,
+    hiddenCount: input.sponsors.length - publicCount,
+    withoutLogoCount,
+    totalContractValueCents,
+    activeContractsCount,
+    expiredContractsCount,
+    copiedCount,
+    totalTiers: input.tiers.length,
+    limitedTiersCount,
+    occupiedLimitedSlots,
+    totalLimitedSlots,
+    qrCount,
+    activeQrCount,
+    visitCount,
+    leadCount,
+    consentRatePercent:
+      visitCount <= 0 ? null : Math.min(100, Math.round((leadCount / visitCount) * 100)),
+  };
+}

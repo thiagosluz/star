@@ -255,6 +255,90 @@ function toStringArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === 'string');
 }
 
+/** Lê UMA cota do evento para a tela dedicada `/patrocinadores/cotas/[tierId]/editar`. */
+export async function getSponsorTierForEdit(
+  tenantId: string,
+  eventId: string,
+  tierId: string,
+): Promise<SponsorTierRow | null> {
+  return withTenant(tenantId, async (tx) => {
+    const tier = await tx.sponsorTier.findFirst({
+      where: {
+        id: tierId,
+        eventId,
+        tenantId,
+        event: { deletedAt: null },
+      },
+      select: {
+        id: true,
+        key: true,
+        name: true,
+        description: true,
+        color: true,
+        logoScale: true,
+        rank: true,
+        priceCents: true,
+        currency: true,
+        maxSponsors: true,
+        benefits: true,
+        _count: { select: { sponsors: { where: { deletedAt: null } } } },
+      },
+    });
+
+    if (!tier) return null;
+
+    const capacity = evaluateTierCapacity({
+      maxSponsors: tier.maxSponsors,
+      currentCount: tier._count.sponsors,
+    });
+
+    return {
+      id: tier.id,
+      key: tier.key as SponsorTierKey,
+      name: tier.name,
+      description: tier.description,
+      color: tier.color,
+      logoScale: parseSponsorLogoScale(tier.logoScale),
+      rank: tier.rank,
+      priceCents: tier.priceCents,
+      currency: tier.currency,
+      maxSponsors: tier.maxSponsors,
+      benefits: toStringArray(tier.benefits),
+      sponsorCount: tier._count.sponsors,
+      remaining: capacity.remaining,
+    };
+  });
+}
+
+/** Lê UM patrocinador e as cotas do evento para `/patrocinadores/[sponsorId]/editar`. */
+export async function getSponsorForEdit(
+  tenantId: string,
+  eventId: string,
+  sponsorId: string,
+  options: { now?: Date } = {},
+): Promise<{ sponsor: SponsorRow; tiers: SponsorTierRow[]; eventTitle: string } | null> {
+  const board = await listSponsorBoard(tenantId, eventId, options);
+  if (!board) return null;
+
+  const sponsor = board.sponsors.find((entry) => entry.id === sponsorId);
+  if (!sponsor) return null;
+
+  const event = await withTenant(tenantId, (tx) =>
+    tx.event.findFirst({
+      where: { id: eventId, tenantId, deletedAt: null },
+      select: { title: true },
+    }),
+  );
+
+  if (!event) return null;
+
+  return {
+    sponsor,
+    tiers: board.tiers,
+    eventTitle: event.title,
+  };
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 //  Cotas
 // ───────────────────────────────────────────────────────────────────────────────

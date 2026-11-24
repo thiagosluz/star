@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { BadgeCheck, Handshake, Plus, Tags } from 'lucide-react';
+import { BadgeCheck, Handshake, Pencil, Plus, QrCode, Tags } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -10,17 +10,22 @@ import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { withTenant } from '@/lib/db/tenant-client';
 import { listSponsorBoard } from '@/lib/admin/sponsor-service';
 import {
-  DEFAULT_SPONSOR_LOGO_SCALE,
   SPONSOR_LOGO_SCALE_LABELS,
-  SPONSOR_TIER_KEYS,
+  SPONSOR_TABS,
+  SPONSOR_TAB_LABELS,
   SPONSOR_TIER_LABELS,
+  buildEventSponsorsHref,
+  computeSponsorKpiSummary,
+  resolveSponsorTab,
+  sponsorTierTint,
   type ContractState,
+  type SponsorTab,
 } from '@/domain/events/sponsor-rules';
-import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
-import { SponsorTierStyleFields } from '@/components/admin/sponsor-tier-style';
+import { SponsorKpiCards } from '@/components/admin/sponsor-kpi-cards';
 import { SponsorExperiencePanel } from '@/components/admin/sponsor-experience-panel';
 import { getDataExport, listRecentDataExports } from '@/lib/exports/export-service';
 import {
+  getEventSponsorExperienceCounts,
   listSponsorLeads,
   listSponsorQrCodes,
   listSponsorTeam,
@@ -35,8 +40,6 @@ import {
 import {
   deleteTierAction,
   removeSponsorAction,
-  saveSponsorAction,
-  saveTierAction,
   setSponsorActiveAction,
   syncSponsorAction,
 } from '@/app/actions/sponsor-actions';
@@ -46,11 +49,6 @@ import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 export const metadata = { title: 'Patrocinadores do evento' };
 export const dynamic = 'force-dynamic';
 
-const TIER_OPTIONS = SPONSOR_TIER_KEYS.map((key) => ({
-  value: key,
-  label: SPONSOR_TIER_LABELS[key],
-}));
-
 const CONTRACT_TONE: Record<ContractState, string> = {
   ACTIVE: 'text-success-strong',
   SCHEDULED: 'text-muted-foreground',
@@ -58,18 +56,10 @@ const CONTRACT_TONE: Record<ContractState, string> = {
   UNKNOWN: 'text-muted-foreground',
 };
 
-/** Mesma formatação da tela de patrocínio da organização (centavos → moeda). */
 function formatMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(cents / 100);
 }
 
-/**
- * Cartas ativas da instituição, para o QR conceder uma delas na visita.
- *
- * A leitura passa por `withTenant` (RLS): o seletor só oferece carta DESTA
- * instituição — o serviço ainda reconfere antes de gravar, porque o id chega do
- * formulário.
- */
 async function listCardTemplateOptions(
   tenantId: string,
 ): Promise<{ value: string; label: string }[]> {
@@ -84,99 +74,102 @@ async function listCardTemplateOptions(
   });
 }
 
-function toDateInput(value: Date | null): string {
-  return value ? value.toISOString().slice(0, 10) : '';
-}
-
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  PATROCÍNIO DO EVENTO (FASE 17, item E5)
+ * Cockpit de patrocínio do evento por intenção (FASE 125).
  *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  DUAS SEÇÕES, NESTA ORDEM: COTAS E DEPOIS PATROCINADORES
- *  ─────────────────────────────────────────────────────────────────────────────
- *  A cota define onde o patrocinador aparece na página (Diamante no topo, Apoio no
- *  fim). Quem cadastra um patrocinador precisa ter as cotas à vista para escolher —
- *  por isso elas vêm primeiro, e o formulário de patrocinador lista as cotas pelo
- *  nome, não por um identificador.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE A TELA NÃO MOSTRA
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O documento fiscal (CNPJ/CPF) aparece MASCARADO. Ele é gravado, é usado pelo
- *  financeiro para conferir, e não precisa circular inteiro numa tela que fica
- *  aberta no balcão do evento.
- * ═══════════════════════════════════════════════════════════════════════════════
+ * Separa em 3 abas reais na URL (`patrocinadores`, `cotas`, `estandes`), mantém
+ * a faixa executiva fixa no topo (`SponsorKpiCards`) e isola os formulários densos
+ * nas rotas dedicadas (`/novo`, `/[sponsorId]/editar`, `/cotas/nova`,
+ * `/cotas/[tierId]/editar`). As consultas pesadas de QRs, equipe e leads só
+ * executam quando `activeTab === 'estandes'`.
  */
 export default async function EventSponsorsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
-  /** `exportacao` traz o pedido recém-criado de contatos (FASE 49). */
-  searchParams: Promise<{ exportacao?: string; erro?: string; confirmarQr?: string }>;
+  searchParams: Promise<{
+    aba?: string;
+    patrocinador?: string;
+    exportacao?: string;
+    erro?: string;
+    confirmarQr?: string;
+  }>;
 }) {
   const resolvedParams = await params;
   const eventId = requireUuidParam(resolvedParams, 'eventId');
   const { tenantSlug } = resolvedParams;
-  const { exportacao, erro, confirmarQr } = await searchParams;
+  const { aba, patrocinador, exportacao, erro, confirmarQr } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
     permission: PERMISSIONS.SPONSOR_MANAGE,
   });
 
-  const event = await getAdminEvent(tenantId, eventId);
-  if (!event) notFound();
+  const activeTab = resolveSponsorTab({ aba, confirmarQr, exportacao, erro });
 
-  const board = await listSponsorBoard(tenantId, eventId);
-  if (!board) notFound();
-
-  const returnTo = tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`);
-
-  /**
-   * ─── EXPORTAÇÃO DE CONTATOS COM PRAZO (FASE 49) ─────────────────────────────
-   *
-   *  Uma consulta só traz as exportações recentes de TODOS os patrocinadores do
-   *  evento (o painel filtra por `sponsorId`): N consultas — uma por patrocinador —
-   *  seriam N idas ao banco para montar uma lista de cinco linhas.
-   */
-  const [recentExports, createdExport] = await Promise.all([
-    listRecentDataExports({ tenantId, kind: 'SPONSOR_CONTACTS_CSV', limit: 30 }),
-    exportacao ? getDataExport({ tenantId, exportId: exportacao }) : Promise.resolve(null),
+  const [event, board, experienceCounts] = await Promise.all([
+    getAdminEvent(tenantId, eventId),
+    listSponsorBoard(tenantId, eventId),
+    getEventSponsorExperienceCounts(tenantId, eventId),
   ]);
 
-  const [qrPorPatrocinador, equipePorPatrocinador, contatosPorPatrocinador, cartas] = await Promise.all([
-    Promise.all(board.sponsors.map((sponsor) => listSponsorQrCodes(tenantId, sponsor.id))),
-    Promise.all(board.sponsors.map((sponsor) => listSponsorTeam(tenantId, sponsor.id))),
-    Promise.all(board.sponsors.map((sponsor) => listSponsorLeads(tenantId, sponsor.id))),
-    listCardTemplateOptions(tenantId),
-  ]);
+  if (!event || !board) notFound();
 
-  /**
-   * ─── A IMAGEM DE CADA QR ───────────────────────────────────────────────────
-   *
-   *  Gerada no SERVIDOR (o pacote `qrcode` não vai para o navegador) e indexada por
-   *  id, para o painel mostrar a peça que a organização imprime. O endereço dentro
-   *  do QR é absoluto — quem aponta a câmera não tem a página aberta.
-   */
+  const baseUrl = tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`);
+  const summary = computeSponsorKpiSummary({
+    tiers: board.tiers,
+    sponsors: board.sponsors,
+    experience: experienceCounts,
+  });
+
+  // Dados operacionais de estande/QR/LGPD carregados apenas na aba `estandes`.
+  let recentExports: Awaited<ReturnType<typeof listRecentDataExports>> = [];
+  let createdExport: Awaited<ReturnType<typeof getDataExport>> = null;
+  let qrRows: Awaited<ReturnType<typeof listSponsorQrCodes>> = [];
+  let teamRows: (Awaited<ReturnType<typeof listSponsorTeam>>[number] & { sponsorId: string })[] =
+    [];
+  let leadRows: (Awaited<ReturnType<typeof listSponsorLeads>>[number] & { sponsorId: string })[] =
+    [];
+  let cardOptions: { value: string; label: string }[] = [];
   const qrSheets: Record<string, SponsorQrSheet> = {};
-  await Promise.all(
-    qrPorPatrocinador.flat().map(async (qr) => {
-      qrSheets[qr.id] = await sponsorQrSheet({ tenantSlug, code: qr.code });
-    }),
-  );
 
-  const tierChoices = [
-    { value: '', label: 'Sem cota (aparece em "Patrocinadores")' },
-    ...board.tiers.map((tier) => ({
-      value: tier.id,
-      label: `${tier.name}${tier.remaining === null ? '' : ` — ${tier.remaining} vaga(s)`}`,
-    })),
-  ];
+  if (activeTab === 'estandes') {
+    const [exportsList, created, qrLists, teamLists, leadLists, cards] = await Promise.all([
+      listRecentDataExports({ tenantId, kind: 'SPONSOR_CONTACTS_CSV', limit: 30 }),
+      exportacao ? getDataExport({ tenantId, exportId: exportacao }) : Promise.resolve(null),
+      Promise.all(board.sponsors.map((sponsor) => listSponsorQrCodes(tenantId, sponsor.id))),
+      Promise.all(board.sponsors.map((sponsor) => listSponsorTeam(tenantId, sponsor.id))),
+      Promise.all(board.sponsors.map((sponsor) => listSponsorLeads(tenantId, sponsor.id))),
+      listCardTemplateOptions(tenantId),
+    ]);
+
+    recentExports = exportsList;
+    createdExport = created;
+    qrRows = qrLists.flat();
+    teamRows = board.sponsors.flatMap((sponsor, index) =>
+      (teamLists[index] ?? []).map((line) => ({ ...line, sponsorId: sponsor.id })),
+    );
+    leadRows = board.sponsors.flatMap((sponsor, index) =>
+      (leadLists[index] ?? []).map((lead) => ({ ...lead, sponsorId: sponsor.id })),
+    );
+    cardOptions = cards;
+
+    await Promise.all(
+      qrRows.map(async (qr) => {
+        qrSheets[qr.id] = await sponsorQrSheet({ tenantSlug, code: qr.code });
+      }),
+    );
+  }
+
+  const tabCounts: Record<SponsorTab, number> = {
+    patrocinadores: board.sponsors.length,
+    cotas: board.tiers.length,
+    estandes: experienceCounts.qrCount,
+  };
 
   return (
-    <main className="max-w-4xl space-y-8">
+    <main className="max-w-5xl space-y-6">
       <PageHeader
         title="Patrocinadores"
         eyebrow={TENANT_NAV_GROUPS.operacao}
@@ -188,17 +181,24 @@ export default async function EventSponsorsPage({
           </>
         }
         actions={
-          <Link
-            href={tenantPath(
-              tenantSlug,
-              `/administracao/eventos/${eventId}/patrocinadores/novo`,
-            )}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            data-testid="btn-novo-patrocinador"
-          >
-            <Plus className="size-4" aria-hidden />
-            Novo patrocinador
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`${baseUrl}/cotas/nova`}
+              data-testid="btn-nova-cota"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-accent"
+            >
+              <Plus className="size-4" aria-hidden />
+              Nova cota
+            </Link>
+            <Link
+              href={`${baseUrl}/novo`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              data-testid="btn-novo-patrocinador"
+            >
+              <Plus className="size-4" aria-hidden />
+              Novo patrocinador
+            </Link>
+          </div>
         }
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
@@ -218,386 +218,409 @@ export default async function EventSponsorsPage({
         </Link>
       </p>
 
-      {/* ── Cotas ────────────────────────────────────────────────────────── */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm" data-testid="tier-section">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-base font-semibold">
-            <Tags className="size-4" aria-hidden />
-            Cotas ({board.tiers.length})
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            A cota define a ORDEM na página e quantos patrocinadores ela aceita.
-          </p>
-        </div>
+      <SponsorKpiCards summary={summary} tenantSlug={tenantSlug} eventId={eventId} />
 
-        {board.tiers.length > 0 ? (
-          <ul className="divide-y divide-border rounded-lg border border-border" data-testid="tier-list">
-            {board.tiers.map((tier) => (
-              <li key={tier.id} data-testid={`tier-${tier.id}`} className="space-y-2 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      <span
-                        aria-hidden
-                        className="inline-block size-3 rounded-full border border-border"
-                        style={{ backgroundColor: tier.color ?? undefined }}
-                      />
-                      {tier.name}
-                      <span className="text-xs font-normal text-muted-foreground">
-                        {SPONSOR_TIER_LABELS[tier.key]} · ordem {tier.rank} · logo{' '}
-                        {SPONSOR_LOGO_SCALE_LABELS[tier.logoScale].toLowerCase()}
-                      </span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {tier.sponsorCount} patrocinador(es) ·{' '}
-                      {tier.maxSponsors === 0 ? 'vagas ilimitadas' : `limite ${tier.maxSponsors}`} ·{' '}
-                      {tier.priceCents > 0 ? formatMoney(tier.priceCents, tier.currency) : 'sem valor definido'}
-                    </p>
-                    {tier.benefits.length > 0 ? (
-                      <p className="text-xs text-muted-foreground">{tier.benefits.join(' · ')}</p>
-                    ) : null}
-                    {tier.description ? (
-                      <p className="text-xs text-muted-foreground">{tier.description}</p>
-                    ) : null}
-                  </div>
+      <nav
+        aria-label="Visões de patrocínio"
+        data-testid="sponsor-tabs"
+        className="flex flex-wrap gap-2 border-b border-border pb-3"
+      >
+        {SPONSOR_TABS.map((tab) => {
+          const isCurrent = activeTab === tab;
+          return (
+            <Link
+              key={tab}
+              href={buildEventSponsorsHref(baseUrl, { aba: tab })}
+              data-testid={`sponsor-tab-${tab}`}
+              aria-current={isCurrent ? 'page' : undefined}
+              className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                isCurrent
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+            >
+              <span>{SPONSOR_TAB_LABELS[tab]}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${
+                  isCurrent ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-surface-low'
+                }`}
+              >
+                {tabCounts[tab]}
+              </span>
+            </Link>
+          );
+        })}
+      </nav>
 
-                  <InlineActionForm
-                    action={deleteTierAction}
-                    submitLabel="Remover"
-                    variant="destructive"
-                    testId={`delete-tier-${tier.id}`}
-                    confirm={{
-                      title: `Remover a cota “${tier.name}”?`,
-                      description:
-                        'A cota deixa de existir neste evento. Patrocinadores que já estão nela precisam ser movidos antes, senão a remoção é recusada.',
-                      confirmLabel: 'Remover cota',
-                    }}
-                  >
-                    <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                    <input type="hidden" name="eventId" value={eventId} />
-                    <input type="hidden" name="tierId" value={tier.id} />
-                  </InlineActionForm>
-                </div>
+      {/* ── Aba 1: Patrocinadores ────────────────────────────────────────── */}
+      {activeTab === 'patrocinadores' ? (
+        <section
+          className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+          data-testid="sponsor-section"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-base font-semibold">
+              <Handshake className="size-4" aria-hidden />
+              Patrocinadores ({board.sponsors.length})
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Ordenados pela cota e depois pela ordem dentro da cota.
+            </p>
+          </div>
 
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-xs font-medium">Editar cota</summary>
-                  <div className="pt-3">
-                    <AdminForm action={saveTierAction} submitLabel="Salvar cota" testId={`tier-form-${tier.id}`} compact>
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="tierId" value={tier.id} />
-
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Nome da cota" name="name" required defaultValue={tier.name} />
-                        <SelectField label="Categoria" name="key" options={TIER_OPTIONS} defaultValue={tier.key} />
-                        <Field label="Ordem de exibição" name="rank" type="number" min={0} defaultValue={tier.rank} />
-                        <Field label="Limite de patrocinadores" name="maxSponsors" type="number" min={0} defaultValue={tier.maxSponsors} hint="0 = ilimitado" />
-                        <Field label="Valor comercial (R$)" name="priceReais" defaultValue={(tier.priceCents / 100).toFixed(2)} />
-                        <Field label="Moeda" name="currency" defaultValue={tier.currency} />
-                        <Field label="Descrição" name="description" defaultValue={tier.description} />
+          {board.sponsors.length > 0 ? (
+            <ul className="space-y-3" data-testid="sponsor-list">
+              {board.sponsors.map((sponsor) => (
+                <li
+                  key={sponsor.id}
+                  data-testid={`sponsor-${sponsor.id}`}
+                  data-active={sponsor.isActive ? 'true' : 'false'}
+                  className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-surface-low">
+                        {sponsor.logoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={sponsor.logoUrl}
+                            alt={sponsor.name}
+                            className="size-full object-contain"
+                          />
+                        ) : (
+                          <Handshake className="size-5 text-muted-foreground" aria-hidden />
+                        )}
                       </div>
 
-                      <SponsorTierStyleFields
-                        color={tier.color}
-                        logoScale={tier.logoScale}
-                        testPrefix={`tier-style-${tier.id}`}
-                      />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                          <span>{sponsor.name}</span>
+                          {sponsor.isActive ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-strong">
+                              <BadgeCheck className="size-3" aria-hidden />
+                              visível
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-surface-low px-2 py-0.5 text-xs text-muted-foreground">
+                              oculto
+                            </span>
+                          )}
+                          {sponsor.sourceSponsorId ? (
+                            <span
+                              className="text-xs font-normal text-muted-foreground"
+                              data-testid={`sponsor-source-${sponsor.id}`}
+                            >
+                              · Copiado de {sponsor.sourceName ?? 'outra edição'}
+                            </span>
+                          ) : null}
+                        </p>
 
-                      <Field
-                        label="Benefícios (um por linha)"
-                        name="benefits"
-                        defaultValue={tier.benefits.join('\n')}
-                        hint="Logo no site, estande, palestra de 10 minutos…"
-                      />
-                    </AdminForm>
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground" data-testid="empty-tiers">
-            Nenhuma cota cadastrada. Sem cotas, todo patrocinador aparece no agrupamento
-            &quot;Patrocinadores&quot;.
-          </p>
-        )}
+                        <div className="grid gap-1 text-xs sm:grid-cols-2">
+                          <div className="space-y-0.5">
+                            <p className="text-muted-foreground">
+                              {sponsor.tierName ?? 'Sem cota'} · ordem {sponsor.displayOrder}
+                              {sponsor.contractValueCents
+                                ? ` · ${formatMoney(sponsor.contractValueCents, 'BRL')}`
+                                : ''}
+                            </p>
+                            <p className={CONTRACT_TONE[sponsor.contractState]}>
+                              {sponsor.contractStateLabel}
+                              {sponsor.contractEnd
+                                ? ` · até ${sponsor.contractEnd.toLocaleDateString('pt-BR')}`
+                                : ''}
+                            </p>
+                          </div>
 
-        <div className="border-t border-border pt-4">
-          <h3 className="mb-3 text-sm font-medium">Nova cota</h3>
-          <AdminForm action={saveTierAction} submitLabel="Criar cota" testId="create-tier" compact>
-            <input type="hidden" name="tenantSlug" value={tenantSlug} />
-            <input type="hidden" name="eventId" value={eventId} />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Nome da cota" name="name" required placeholder="Diamante" />
-              <SelectField label="Categoria" name="key" options={TIER_OPTIONS} defaultValue="CUSTOM" />
-              <Field label="Ordem de exibição" name="rank" type="number" min={0} defaultValue={0} hint="Menor aparece primeiro" />
-              <Field label="Limite de patrocinadores" name="maxSponsors" type="number" min={0} defaultValue={0} hint="0 = ilimitado" />
-              <Field label="Valor comercial (R$)" name="priceReais" placeholder="15000,00" />
-              <Field label="Moeda" name="currency" defaultValue="BRL" />
-            </div>
-
-            {/* Cor e tamanho no cadastro de cota NOVA: eram o que faltava para a
-                vitrine — a cor existia só no "Editar cota" (recolhido) e o tamanho
-                não existia em lugar nenhum (FASE 41). */}
-            <SponsorTierStyleFields
-              color={null}
-              logoScale={DEFAULT_SPONSOR_LOGO_SCALE}
-              testPrefix="tier-style-new"
-            />
-
-            <Field label="Benefícios (um por linha)" name="benefits" placeholder={'Logo no site\nEstande de 9 m²'} />
-          </AdminForm>
-        </div>
-      </section>
-
-      {/* ── Patrocinadores ───────────────────────────────────────────────── */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm" data-testid="sponsor-section">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-base font-semibold">
-            <Handshake className="size-4" aria-hidden />
-            Patrocinadores ({board.sponsors.length})
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Ordenados pela cota e depois pela ordem dentro da cota.
-          </p>
-        </div>
-
-        {board.sponsors.length > 0 ? (
-          <ul className="space-y-3" data-testid="sponsor-list">
-            {board.sponsors.map((sponsor) => (
-              <li
-                key={sponsor.id}
-                data-testid={`sponsor-${sponsor.id}`}
-                data-active={sponsor.isActive ? 'true' : 'false'}
-                className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-surface-low">
-                      {sponsor.logoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={sponsor.logoUrl} alt={sponsor.name} className="size-full object-contain" />
-                      ) : (
-                        <Handshake className="size-5 text-muted-foreground" aria-hidden />
-                      )}
+                          <div className="space-y-0.5 text-muted-foreground">
+                            {sponsor.contactName || sponsor.contactEmail ? (
+                              <p>
+                                {sponsor.contactName ?? ''}
+                                {sponsor.contactEmail ? ` · ${sponsor.contactEmail}` : ''}
+                              </p>
+                            ) : null}
+                            {sponsor.taxIdMasked ? (
+                              <p className="code-data">Documento {sponsor.taxIdMasked}</p>
+                            ) : null}
+                            {sponsor.websiteUrl ? (
+                              <a
+                                href={sponsor.websiteUrl}
+                                target="_blank"
+                                rel="noopener noreferrer nofollow"
+                                className="inline-block underline underline-offset-4"
+                              >
+                                {sponsor.websiteUrl}
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        {sponsor.name}
-                        {sponsor.isActive ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-success-strong">
-                            <BadgeCheck className="size-3" aria-hidden />
-                            visível
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">oculto</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {sponsor.tierName ?? 'Sem cota'} · ordem {sponsor.displayOrder}
-                        {sponsor.contractValueCents
-                          ? ` · ${formatMoney(sponsor.contractValueCents, 'BRL')}`
-                          : ''}
-                      </p>
-                      <p className={`text-xs ${CONTRACT_TONE[sponsor.contractState]}`}>
-                        {sponsor.contractStateLabel}
-                        {sponsor.contractEnd
-                          ? ` · até ${sponsor.contractEnd.toLocaleDateString('pt-BR')}`
-                          : ''}
-                      </p>
-                      {sponsor.contactName || sponsor.contactEmail ? (
-                        <p className="text-xs text-muted-foreground">
-                          {sponsor.contactName ?? ''}
-                          {sponsor.contactEmail ? ` · ${sponsor.contactEmail}` : ''}
-                        </p>
-                      ) : null}
-                      {sponsor.taxIdMasked ? (
-                        <p className="code-data text-xs text-muted-foreground">
-                          Documento {sponsor.taxIdMasked}
-                        </p>
-                      ) : null}
-                      {/*
-                        Vínculo com a edição de origem (FASE 24, item E15): a cópia
-                        continua sendo um cadastro do evento, mas agora sabe de onde
-                        veio e pode ser sincronizada com um clique.
-                      */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Link
+                        href={`${baseUrl}/${sponsor.id}/editar`}
+                        data-testid={`edit-sponsor-${sponsor.id}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                        Editar
+                      </Link>
+
+                      <Link
+                        href={buildEventSponsorsHref(baseUrl, {
+                          aba: 'estandes',
+                          patrocinador: sponsor.id,
+                        })}
+                        data-testid={`booth-sponsor-${sponsor.id}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                      >
+                        <QrCode className="size-3" aria-hidden />
+                        Estande & QR
+                      </Link>
+
                       {sponsor.sourceSponsorId ? (
-                        <p className="text-xs text-muted-foreground" data-testid={`sponsor-source-${sponsor.id}`}>
-                          Copiado de {sponsor.sourceName ?? 'outra edição'}
-                        </p>
-                      ) : null}
-                      {sponsor.websiteUrl ? (
-                        <a
-                          href={sponsor.websiteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer nofollow"
-                          className="text-xs underline underline-offset-4"
+                        <InlineActionForm
+                          action={syncSponsorAction}
+                          submitLabel="Sincronizar"
+                          testId={`sync-sponsor-${sponsor.id}`}
                         >
-                          {sponsor.websiteUrl}
-                        </a>
+                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                          <input type="hidden" name="eventId" value={eventId} />
+                          <input type="hidden" name="sponsorId" value={sponsor.id} />
+                        </InlineActionForm>
                       ) : null}
-                    </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-1">
-                    {sponsor.sourceSponsorId ? (
                       <InlineActionForm
-                        action={syncSponsorAction}
-                        submitLabel="Sincronizar"
-                        testId={`sync-sponsor-${sponsor.id}`}
+                        action={setSponsorActiveAction}
+                        submitLabel={sponsor.isActive ? 'Ocultar' : 'Exibir'}
+                        testId={`toggle-sponsor-${sponsor.id}`}
+                      >
+                        <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                        <input type="hidden" name="eventId" value={eventId} />
+                        <input type="hidden" name="sponsorId" value={sponsor.id} />
+                        <input
+                          type="hidden"
+                          name="isActive"
+                          value={sponsor.isActive ? 'false' : 'true'}
+                        />
+                      </InlineActionForm>
+
+                      <InlineActionForm
+                        action={removeSponsorAction}
+                        submitLabel="Remover"
+                        variant="destructive"
+                        testId={`remove-sponsor-${sponsor.id}`}
+                        confirm={{
+                          title: `Remover “${sponsor.name}” do evento?`,
+                          description:
+                            'O cadastro sai da página pública e da lista. O histórico financeiro é preservado.',
+                          confirmLabel: 'Remover patrocinador',
+                        }}
                       >
                         <input type="hidden" name="tenantSlug" value={tenantSlug} />
                         <input type="hidden" name="eventId" value={eventId} />
                         <input type="hidden" name="sponsorId" value={sponsor.id} />
                       </InlineActionForm>
-                    ) : null}
-
-                    <InlineActionForm
-                      action={setSponsorActiveAction}
-                      submitLabel={sponsor.isActive ? 'Ocultar' : 'Exibir'}
-                      testId={`toggle-sponsor-${sponsor.id}`}
-                    >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="sponsorId" value={sponsor.id} />
-                      <input type="hidden" name="isActive" value={sponsor.isActive ? 'false' : 'true'} />
-                    </InlineActionForm>
-
-                    <InlineActionForm
-                      action={removeSponsorAction}
-                      submitLabel="Remover"
-                      variant="destructive"
-                      testId={`remove-sponsor-${sponsor.id}`}
-                      confirm={{
-                        title: `Remover “${sponsor.name}” do evento?`,
-                        description:
-                          'O cadastro sai da página pública e da lista. O histórico financeiro é preservado.',
-                        confirmLabel: 'Remover patrocinador',
-                      }}
-                    >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="sponsorId" value={sponsor.id} />
-                    </InlineActionForm>
+                    </div>
                   </div>
-                </div>
 
-                <AssetUploader
-                  tenantSlug={tenantSlug}
-                  eventId={eventId}
-                  target="SPONSOR_LOGO"
-                  sponsorId={sponsor.id}
-                  currentUrl={sponsor.logoUrl}
-                  requestUploadAction={requestAssetUploadAction}
-                  confirmUploadAction={confirmAssetUploadAction}
-                />
+                  <AssetUploader
+                    tenantSlug={tenantSlug}
+                    eventId={eventId}
+                    target="SPONSOR_LOGO"
+                    sponsorId={sponsor.id}
+                    currentUrl={sponsor.logoUrl}
+                    requestUploadAction={requestAssetUploadAction}
+                    confirmUploadAction={confirmAssetUploadAction}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div
+              className="rounded-lg border border-dashed border-border p-8 text-center"
+              data-testid="empty-sponsors"
+            >
+              <Handshake className="mx-auto size-8 text-muted-foreground" aria-hidden />
+              <p className="mt-2 text-sm font-medium">Nenhum patrocinador cadastrado</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Adicione patrocinadores e parceiros para exibir suas marcas e gerenciar contratos.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href={`${baseUrl}/novo`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  Cadastrar primeiro patrocinador
+                </Link>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
 
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-xs font-medium">Editar dados</summary>
-                  <div className="pt-3">
-                    <AdminForm
-                      action={saveSponsorAction}
-                      submitLabel="Salvar patrocinador"
-                      testId={`sponsor-form-${sponsor.id}`}
-                      compact
-                    >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="sponsorId" value={sponsor.id} />
-                      <input type="hidden" name="logoUrl" value={sponsor.logoUrl ?? ''} />
+      {/* ── Aba 2: Cotas e vitrine ───────────────────────────────────────── */}
+      {activeTab === 'cotas' ? (
+        <section
+          className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+          data-testid="tier-section"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold">
+                <Tags className="size-4" aria-hidden />
+                Cotas e vitrine ({board.tiers.length})
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                A cota define a ORDEM na página pública, a cor do cartão e quantos patrocinadores ela aceita.
+              </p>
+            </div>
+            <Link
+              href={`${baseUrl}/cotas/nova`}
+              data-testid="btn-nova-cota-aba"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Nova cota
+            </Link>
+          </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Nome" name="name" required defaultValue={sponsor.name} />
-                        <SelectField
-                          label="Cota"
-                          name="tierId"
-                          options={tierChoices}
-                          defaultValue={sponsor.tierId ?? ''}
-                        />
-                        <Field label="Site" name="websiteUrl" defaultValue={sponsor.websiteUrl} placeholder="https://empresa.com.br" />
-                        <Field label="Ordem na página" name="displayOrder" type="number" min={0} defaultValue={sponsor.displayOrder} />
-                        <Field label="Contato" name="contactName" defaultValue={sponsor.contactName} />
-                        <Field label="E-mail do contato" name="contactEmail" type="email" defaultValue={sponsor.contactEmail} />
-                        <Field label="Telefone" name="contactPhone" defaultValue={sponsor.contactPhone} />
-                        <Field
-                          label="CNPJ/CPF"
-                          name="taxId"
-                          defaultValue={sponsor.taxIdMasked ? '' : undefined}
-                          placeholder={sponsor.taxIdMasked ?? 'Somente números'}
-                          hint="Gravado e exibido apenas mascarado. Em branco não substitui o valor atual."
-                        />
-                        <Field label="Valor do contrato (R$)" name="contractValueReais" defaultValue={sponsor.contractValueCents ? (sponsor.contractValueCents / 100).toFixed(2) : undefined} />
-                        <Field label="Início do contrato" name="contractStart" type="date" defaultValue={toDateInput(sponsor.contractStart)} />
-                        <Field label="Fim do contrato" name="contractEnd" type="date" defaultValue={toDateInput(sponsor.contractEnd)} />
+          {board.tiers.length > 0 ? (
+            <ul className="space-y-3" data-testid="tier-list">
+              {board.tiers.map((tier) => {
+                const tint = sponsorTierTint(tier.color);
+                return (
+                  <li
+                    key={tier.id}
+                    data-testid={`tier-${tier.id}`}
+                    className="rounded-lg border p-4"
+                    style={
+                      tint
+                        ? { backgroundColor: tint.surface, borderColor: tint.border }
+                        : undefined
+                    }
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                          <span
+                            aria-hidden
+                            className="inline-block size-3 rounded-full border border-border"
+                            style={{ backgroundColor: tier.color ?? undefined }}
+                          />
+                          <span>{tier.name}</span>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {SPONSOR_TIER_LABELS[tier.key]} · ordem {tier.rank} · logo{' '}
+                            {SPONSOR_LOGO_SCALE_LABELS[tier.logoScale].toLowerCase()}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {tier.sponsorCount} patrocinador(es) ·{' '}
+                          {tier.maxSponsors === 0
+                            ? 'vagas ilimitadas'
+                            : `limite ${tier.maxSponsors}${
+                                tier.remaining !== null ? ` (${tier.remaining} livre(s))` : ''
+                              }`}{' '}
+                          ·{' '}
+                          {tier.priceCents > 0
+                            ? formatMoney(tier.priceCents, tier.currency)
+                            : 'sem valor definido'}
+                        </p>
+                        {tier.benefits.length > 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            {tier.benefits.join(' · ')}
+                          </p>
+                        ) : null}
+                        {tier.description ? (
+                          <p className="text-xs text-muted-foreground">{tier.description}</p>
+                        ) : null}
                       </div>
 
-                      <Field label="Descrição" name="description" defaultValue={sponsor.description} />
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Link
+                          href={`${baseUrl}/cotas/${tier.id}/editar`}
+                          data-testid={`edit-tier-${tier.id}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                        >
+                          <Pencil className="size-3" aria-hidden />
+                          Editar cota
+                        </Link>
 
-                      <CheckboxField
-                        label="Visível na página pública"
-                        name="isActive"
-                        defaultChecked={sponsor.isActive}
-                      />
-                    </AdminForm>
-                  </div>
-                </details>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div
-            className="rounded-lg border border-dashed border-border p-8 text-center"
-            data-testid="empty-sponsors"
-          >
-            <Handshake className="mx-auto size-8 text-muted-foreground" aria-hidden />
-            <p className="mt-2 text-sm font-medium">Nenhum patrocinador cadastrado</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Adicione patrocinadores e parceiros para exibir suas marcas e gerenciar contratos.
-            </p>
-            <div className="mt-4">
-              <Link
-                href={tenantPath(
-                  tenantSlug,
-                  `/administracao/eventos/${eventId}/patrocinadores/novo`,
-                )}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-              >
-                <Plus className="size-3.5" aria-hidden />
-                Cadastrar primeiro patrocinador
-              </Link>
+                        <InlineActionForm
+                          action={deleteTierAction}
+                          submitLabel="Remover"
+                          variant="destructive"
+                          testId={`delete-tier-${tier.id}`}
+                          confirm={{
+                            title: `Remover a cota “${tier.name}”?`,
+                            description:
+                              'A cota deixa de existir neste evento. Patrocinadores que já estão nela precisam ser movidos antes, senão a remoção é recusada.',
+                            confirmLabel: 'Remover cota',
+                          }}
+                        >
+                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                          <input type="hidden" name="eventId" value={eventId} />
+                          <input type="hidden" name="tierId" value={tier.id} />
+                        </InlineActionForm>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div
+              className="rounded-lg border border-dashed border-border p-8 text-center"
+              data-testid="empty-tiers"
+            >
+              <Tags className="mx-auto size-8 text-muted-foreground" aria-hidden />
+              <p className="mt-2 text-sm font-medium">Nenhuma cota cadastrada</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sem cotas, todo patrocinador aparece no agrupamento &quot;Patrocinadores&quot;.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href={`${baseUrl}/cotas/nova`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  Criar primeira cota
+                </Link>
+              </div>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      ) : null}
 
-      {/* ── Leitura por QR e acesso do patrocinador (FASE 42) ─────────────── */}
-      <SponsorExperiencePanel
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        sponsors={board.sponsors.map((sponsor) => ({ id: sponsor.id, name: sponsor.name }))}
-        qrRows={qrPorPatrocinador.flat()}
-        qrSheets={qrSheets}
-        teamRows={board.sponsors.flatMap((sponsor, index) =>
-          (equipePorPatrocinador[index] ?? []).map((line) => ({ ...line, sponsorId: sponsor.id })),
-        )}
-        leads={board.sponsors.flatMap((sponsor, index) =>
-          (contatosPorPatrocinador[index] ?? []).map((lead) => ({ ...lead, sponsorId: sponsor.id })),
-        )}
-        eventOptions={[{ value: eventId, label: event.title }]}
-        cardOptions={cartas}
-        recentExports={recentExports}
-        createdExport={createdExport}
-        returnTo={returnTo}
-        exportError={erro ?? null}
-        /*
-          O segundo passo do QR repetido chega por QUERY STRING (dívida E57): quem
-          navega sem JavaScript confirma por um link, e o servidor reabre o
-          formulário daquele patrocinador já com a confirmação marcada.
-        */
-        confirmarQr={confirmarQr ?? null}
-      />
+      {/* ── Aba 3: Estandes, QRs e leads LGPD ────────────────────────────── */}
+      {activeTab === 'estandes' ? (
+        <SponsorExperiencePanel
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          sponsors={board.sponsors.map((sponsor) => ({
+            id: sponsor.id,
+            name: sponsor.name,
+            contactEmail: sponsor.contactEmail,
+          }))}
+          selectedSponsorId={patrocinador ?? null}
+          clearFilterHref={buildEventSponsorsHref(baseUrl, { aba: 'estandes' })}
+          qrRows={qrRows}
+          qrSheets={qrSheets}
+          teamRows={teamRows}
+          leads={leadRows}
+          eventOptions={[{ value: eventId, label: event.title }]}
+          cardOptions={cardOptions}
+          recentExports={recentExports}
+          createdExport={createdExport}
+          returnTo={buildEventSponsorsHref(baseUrl, {
+            aba: 'estandes',
+            patrocinador: patrocinador ?? null,
+          })}
+          exportError={erro ?? null}
+          confirmarQr={confirmarQr ?? null}
+        />
+      ) : null}
     </main>
   );
 }

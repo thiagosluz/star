@@ -117,6 +117,12 @@ vi.mock('../../src/lib/exports/export-service', () => ({
 }));
 
 vi.mock('../../src/lib/sponsors/sponsor-portal-service', () => ({
+  getEventSponsorExperienceCounts: vi.fn(async () => ({
+    qrCount: 0,
+    activeQrCount: 0,
+    visitCount: 0,
+    leadCount: 0,
+  })),
   listSponsorQrCodes: vi.fn(async () => []),
   listSponsorTeam: vi.fn(async () => []),
   listSponsorLeads: vi.fn(async () => []),

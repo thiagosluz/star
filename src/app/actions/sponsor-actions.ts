@@ -55,8 +55,10 @@ export type SponsorActionState = ActionGuardState;
 
 async function revalidateSponsors(tenantSlug: string, eventId: string): Promise<void> {
   await invalidatePublicEventCacheBySlug({ tenantSlug });
-  revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`));
-  revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores/novo`));
+  revalidatePath(
+    tenantPath(tenantSlug, `/administracao/eventos/${eventId}/patrocinadores`),
+    'layout',
+  );
   revalidatePath(tenantPath(tenantSlug, `/administracao/eventos/${eventId}`));
   revalidatePath(tenantPath(tenantSlug, '/eventos'), 'layout');
 }
@@ -107,7 +109,8 @@ const tierFormSchema = z.object({
 function reaisToCents(raw: FormDataEntryValue | null): number {
   const text = nullable(raw);
   if (!text) return 0;
-  const value = Number(text.replace(/\./g, '').replace(',', '.'));
+  const normalized = text.includes(',') ? text.replace(/\./g, '').replace(',', '.') : text;
+  const value = Number(normalized);
   if (!Number.isFinite(value) || value < 0) return 0;
   return Math.round(value * 100);
 }

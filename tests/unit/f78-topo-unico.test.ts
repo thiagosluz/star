@@ -248,10 +248,12 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * a FASE 113 acrescentou 2 telas (/credenciamento/telao/[pointId] com
      * `eyebrow={TENANT_NAV_GROUPS.operacao}` e /(public)/presenca/[token] com `PageHeader`);
      * a FASE 122 acrescentou a tela de gestão financeira (/administracao/eventos/[eventId]/financeiro)
-     * com `PageHeader` e `eyebrow={TENANT_NAV_GROUPS.operacao}`.
+     * com `PageHeader` e `eyebrow={TENANT_NAV_GROUPS.operacao}`;
+     * a FASE 125 acrescentou 3 telas dedicadas de patrocínio (/cotas/nova,
+     * /cotas/[tierId]/editar e /[sponsorId]/editar), todas com `PageHeader` e `eyebrow={TENANT_NAV_GROUPS.operacao}`.
      */
-    expect(PAGINAS.length).toBe(120);
-    expect(MIGRADAS.length).toBe(105);
+    expect(PAGINAS.length).toBe(123);
+    expect(MIGRADAS.length).toBe(108);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

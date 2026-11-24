@@ -46,7 +46,7 @@ let organizerEmail: string;
 let sponsorId: string;
 let otherSponsorId: string;
 
-const sponsorsUrl = () => `/t/${slug}/administracao/eventos/${eventId}/patrocinadores`;
+const sponsorsUrl = () => `/t/${slug}/administracao/eventos/${eventId}/patrocinadores?aba=estandes`;
 
 test.afterAll(async () => {
   await cleanupRun();
@@ -352,8 +352,8 @@ test.describe('QR repetido do patrocinador', () => {
       const antes = await qrCount();
       expect(antes).toBe(2);
 
-      /** O passo 2 é uma navegação — o mesmo endereço que o link oferece. */
-      await page.goto(`${sponsorsUrl()}?confirmarQr=${sponsorId}`);
+      /** O passo 2 é uma navegação — sem ?aba=, resolveSponsorTab abre `estandes` sozinho. */
+      await page.goto(`/t/${slug}/administracao/eventos/${eventId}/patrocinadores?confirmarQr=${sponsorId}`);
 
       const form = page.getByTestId(`qr-new-${sponsorId}`);
 

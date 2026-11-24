@@ -67,7 +67,8 @@ let contactEmail: string;
 let outroParticipanteEmail: string;
 
 const slug = `${TENANT_LABEL}-${RUN_ID}`;
-const sponsorsUrl = () => `/t/${slug}/administracao/eventos/${eventId}/patrocinadores`;
+const sponsorsUrl = () =>
+  `/t/${slug}/administracao/eventos/${eventId}/patrocinadores?aba=estandes`;
 
 async function signUpVia(
   api: import('@playwright/test').APIRequestContext,

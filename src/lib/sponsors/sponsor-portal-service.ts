@@ -61,6 +61,7 @@ import {
 } from '@/domain/tenancy/invite-token-rules';
 import { awardForEvent, grantCardForTrigger } from '@/lib/gamification/reward-engine';
 import { instantToZonedWallTime } from '@/domain/events/scheduling-rules';
+import type { SponsorExperienceCounts } from '@/domain/events/sponsor-rules';
 import type { CsvValue } from '@/domain/participants/participant-rules';
 import { logger } from '@/lib/observability/logger';
 
@@ -1572,6 +1573,62 @@ export interface SponsorQrPanelRow {
 }
 
 /** Os QRs de um patrocinador, com visita e contato contados (painel da organização). */
+/**
+ * Conta QRs, visitas e leads autorizados do evento em UMA única transação (FASE 125).
+ *
+ * Permite alimentar a faixa executiva do cockpit `/patrocinadores` nas abas
+ * `patrocinadores` e `cotas` sem abrir `3 × N` transações nem gerar imagens SVG de QR.
+ */
+export async function getEventSponsorExperienceCounts(
+  tenantId: string,
+  eventId: string,
+  now = new Date(),
+): Promise<SponsorExperienceCounts> {
+  return withTenant(tenantId, async (tx) => {
+    const rows = await tx.sponsorQrCode.findMany({
+      where: {
+        tenantId,
+        eventId,
+        deletedAt: null,
+        sponsor: { deletedAt: null },
+      },
+      select: {
+        isActive: true,
+        scans: { select: { consentedAt: true, expiresAt: true, revokedAt: true } },
+      },
+    });
+
+    let activeQrCount = 0;
+    let visitCount = 0;
+    let leadCount = 0;
+
+    for (const qr of rows) {
+      if (qr.isActive) activeQrCount += 1;
+      visitCount += qr.scans.length;
+
+      for (const scan of qr.scans) {
+        if (
+          evaluateLeadAccess({
+            consentedAt: scan.consentedAt,
+            expiresAt: scan.expiresAt,
+            revokedAt: scan.revokedAt,
+            now,
+          }) === 'ACTIVE'
+        ) {
+          leadCount += 1;
+        }
+      }
+    }
+
+    return {
+      qrCount: rows.length,
+      activeQrCount,
+      visitCount,
+      leadCount,
+    };
+  });
+}
+
 export async function listSponsorQrCodes(
   tenantId: string,
   sponsorId: string,

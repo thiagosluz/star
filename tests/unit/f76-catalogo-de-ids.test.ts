@@ -234,6 +234,32 @@ const PAGINAS: readonly PaginaEsperada[] = [
   },
   {
     /**
+     * Edição dedicada de patrocinador (FASE 125). Valida `eventId` e `sponsorId`
+     * antes da permissão e da consulta ao banco.
+     */
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/patrocinadores/[sponsorId]/editar/page.tsx',
+    params: ['eventId', 'sponsorId'],
+  },
+  {
+    /**
+     * Edição dedicada de cota de patrocínio (FASE 125). Valida `eventId` e `tierId`
+     * antes da permissão e da consulta ao banco.
+     */
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/patrocinadores/cotas/[tierId]/editar/page.tsx',
+    params: ['eventId', 'tierId'],
+  },
+  {
+    /**
+     * Cadastro dedicado de cota de patrocínio (FASE 125). Valida `eventId`.
+     */
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/patrocinadores/cotas/nova/page.tsx',
+    params: ['eventId'],
+  },
+  {
+    /**
      * A tela de cadastro dedicado de patrocinador (FASE 94 · ADR-401). O segmento é o MESMO
      * `[eventId]` de patrocinadores, e a página valida o id antes da permissão e da
      * consulta do evento.
@@ -721,15 +747,15 @@ describe('FASE 76 · o catálogo das páginas com id na URL', () => {
      * segmentos foi validado" — a igualdade por página já pega, e a contagem
      * torna a regressão visível de relance.
      */
-    expect(PAGINAS).toHaveLength(38);
-    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(41);
+    expect(PAGINAS).toHaveLength(41);
+    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(46);
     expect(PAGINAS_FORA_DA_REGRA).toHaveLength(4);
 
     const paramsEncontrados = PAGINAS_COM_ID.reduce(
       (total, pagina) => total + pagina.params.length,
       0,
     );
-    expect(paramsEncontrados).toBe(45); // 41 positivos + 4 das exceções
+    expect(paramsEncontrados).toBe(50); // 46 positivos + 4 das exceções
   });
 
   it('cada página chama `requireUuidParam` com o MESMO param do segmento', () => {

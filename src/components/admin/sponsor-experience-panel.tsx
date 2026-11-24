@@ -5,9 +5,14 @@ import { InlineActionForm } from '@/components/admin/inline-action-form';
 import { SponsorQrCreateForm } from '@/components/admin/sponsor-qr-create-form';
 import { SponsorQrShare } from '@/components/sponsors/sponsor-qr-share';
 import { ExportPanel } from '@/components/exports/export-panel';
+import { AppLink } from '@/components/ui';
 import type { ExportRecordView } from '@/lib/exports/export-service';
 import type { SponsorQrSheet } from '@/lib/sponsors/sponsor-qr-sheet';
-import type { SponsorQrPanelRow, SponsorPortalLead, SponsorTeamRow } from '@/lib/sponsors/sponsor-portal-service';
+import type {
+  SponsorQrPanelRow,
+  SponsorPortalLead,
+  SponsorTeamRow,
+} from '@/lib/sponsors/sponsor-portal-service';
 import { saveSponsorQrWithConfirmationAction } from '@/app/actions/sponsor-qr-actions';
 import {
   deleteSponsorQrAction,
@@ -19,31 +24,15 @@ import {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PAINEL DA EXPERIÊNCIA DO PATROCINADOR (FASE 42)
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE ESTA SEÇÃO FAZ, E POR QUE ELA FICA AQUI
- *  ─────────────────────────────────────────────────────────────────────────────
- *  É onde a ORGANIZAÇÃO opera o que o patrocinador vê: cria e desativa o QR do
- *  estande, convida (ou vincula) as pessoas que terão acesso e confere os contatos
- *  autorizados — com a exportação em CSV.
- *
- *  Fica junto do cadastro de patrocínio porque é a MESMA decisão comercial: o QR é
- *  parte do que a cota entrega, e quem cuida da cota cuida dele.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O QUE A TELA NÃO MOSTRA
- *  ─────────────────────────────────────────────────────────────────────────────
- *  Contato revogado ou vencido não aparece — e a contagem de VISITAS continua
- *  mostrando o que aconteceu. É a distinção que torna o consentimento visível: o
- *  número de visitas menos o número de contatos é o que as pessoas decidiram não
- *  compartilhar.
+ *  PAINEL DA EXPERIÊNCIA DO PATROCINADOR (FASE 42 · evoluído na FASE 125)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export function SponsorExperiencePanel({
   tenantSlug,
   eventId,
   sponsors,
+  selectedSponsorId = null,
+  clearFilterHref,
   qrRows,
   qrSheets,
   teamRows,
@@ -58,7 +47,9 @@ export function SponsorExperiencePanel({
 }: {
   tenantSlug: string;
   eventId: string;
-  sponsors: { id: string; name: string }[];
+  sponsors: { id: string; name: string; contactEmail?: string | null }[];
+  selectedSponsorId?: string | null;
+  clearFilterHref?: string;
   qrRows: SponsorQrPanelRow[];
   /** A imagem de cada QR (gerada no servidor), por id — ver `sponsor-qr-sheet`. */
   qrSheets: Record<string, SponsorQrSheet>;
@@ -66,30 +57,42 @@ export function SponsorExperiencePanel({
   leads: (SponsorPortalLead & { sponsorId: string })[];
   eventOptions: { value: string; label: string }[];
   cardOptions: { value: string; label: string }[];
-  /** Exportações de contatos recentes (FASE 49) — a lista é filtrada por patrocinador. */
   recentExports: ExportRecordView[];
-  /** Exportação recém-criada, quando a tela volta com `?exportacao=<id>`. */
   createdExport: ExportRecordView | null;
-  /** Caminho interno desta tela, para onde a ação volta depois de criar o pedido. */
   returnTo: string;
-  /** Motivo da recusa do pedido de exportação, quando volta com ?erro=. */
   exportError: string | null;
-  /**
-   * O patrocinador cujo aviso de QR repetido veio aberto (dívida E57), quando a
-   * página volta com `?confirmarQr=<sponsorId>` — o segundo passo de quem navega
-   * SEM JavaScript. `null` no caminho normal.
-   */
   confirmarQr: string | null;
 }) {
-  if (sponsors.length === 0) return null;
+  if (sponsors.length === 0) {
+    return (
+      <section
+        className="rounded-xl border border-border bg-card p-6 text-center shadow-sm"
+        data-testid="sponsor-experience-empty"
+      >
+        <QrCode className="mx-auto size-8 text-muted-foreground" aria-hidden />
+        <p className="mt-2 text-sm font-medium">Nenhum patrocinador cadastrado neste evento</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Cadastre um patrocinador primeiro para gerar QRs de estande, liberar acesso B2B e acompanhar leads.
+        </p>
+      </section>
+    );
+  }
+
+  const activeFilterSponsor = selectedSponsorId
+    ? sponsors.find((sponsor) => sponsor.id === selectedSponsorId) ?? null
+    : null;
+  const visibleSponsors = activeFilterSponsor ? [activeFilterSponsor] : sponsors;
 
   const qrDe = (sponsorId: string) => qrRows.filter((row) => row.sponsorId === sponsorId);
   const equipeDe = (sponsorId: string) => teamRows.filter((row) => row.sponsorId === sponsorId);
   const contatosDe = (sponsorId: string) => leads.filter((row) => row.sponsorId === sponsorId);
 
   return (
-    <section className="space-y-5 rounded-xl border border-border bg-card p-5" data-testid="sponsor-experience">
-      <div className="flex items-center justify-between gap-2">
+    <section
+      className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-sm"
+      data-testid="sponsor-experience"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <QrCode className="size-4" aria-hidden />
           Leitura por QR e acesso do patrocinador
@@ -99,10 +102,31 @@ export function SponsorExperiencePanel({
         </p>
       </div>
 
-      {sponsors.map((sponsor) => {
+      {activeFilterSponsor ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-low px-3 py-2 text-xs"
+          data-testid="sponsor-experience-filter-banner"
+        >
+          <span>
+            Filtrando estande e leads de <strong>{activeFilterSponsor.name}</strong>
+          </span>
+          <AppLink
+            href={clearFilterHref ?? returnTo}
+            className="font-medium underline underline-offset-4"
+            data-testid="sponsor-experience-clear-filter"
+          >
+            Ver todos os patrocinadores ({sponsors.length})
+          </AppLink>
+        </div>
+      ) : null}
+
+      {visibleSponsors.map((sponsor) => {
         const qrCodes = qrDe(sponsor.id);
         const equipe = equipeDe(sponsor.id);
         const contatos = contatosDe(sponsor.id);
+        const totalVisits = qrCodes.reduce((total, qr) => total + qr.visits, 0);
+        const consentPercent =
+          totalVisits > 0 ? Math.min(100, Math.round((contatos.length / totalVisits) * 100)) : null;
 
         return (
           <div key={sponsor.id} className="space-y-4 rounded-lg border border-border p-4">
@@ -111,8 +135,9 @@ export function SponsorExperiencePanel({
                 {sponsor.name}
               </h3>
               <p className="text-xs text-muted-foreground">
-                {qrCodes.length} QR · {qrCodes.reduce((total, qr) => total + qr.visits, 0)} visita(s) ·{' '}
-                {contatos.length} contato(s) autorizado(s)
+                {qrCodes.length} QR · {totalVisits} visita(s) · {contatos.length} contato(s)
+                autorizado(s)
+                {consentPercent !== null ? ` (${consentPercent}% de consentimento)` : ''}
               </p>
             </div>
 
@@ -120,78 +145,76 @@ export function SponsorExperiencePanel({
             {qrCodes.length > 0 ? (
               <ul className="space-y-2" data-testid={`sponsor-qr-${sponsor.id}`}>
                 {qrCodes.map((qr) => {
-                  /** O índice é frouxo: o QR existe, então a imagem dele existe. */
                   const sheet = qrSheets[qr.id];
 
                   return (
-                  <li
-                    key={qr.id}
-                    className="space-y-3 rounded-md border border-border p-3"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 space-y-0.5">
-                        <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                          {qr.label}
-                          {!qr.isActive ? (
-                            <span className="text-xs font-normal text-muted-foreground">desativado</span>
-                          ) : null}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {qr.formattedCode} · {qr.eventTitle} ·{' '}
-                          {qr.xpAmount > 0 ? `${qr.xpAmount} XP` : 'sem XP'}
-                          {qr.cardName ? ` · carta "${qr.cardName}"` : ''} · {qr.consentDays} dia(s) de
-                          autorização
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {qr.visits} visita(s) · {qr.leads} contato(s)
-                        </p>
+                    <li key={qr.id} className="space-y-3 rounded-md border border-border p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                            {qr.label}
+                            {!qr.isActive ? (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                desativado
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {qr.formattedCode} · {qr.eventTitle} ·{' '}
+                            {qr.xpAmount > 0 ? `${qr.xpAmount} XP` : 'sem XP'}
+                            {qr.cardName ? ` · carta "${qr.cardName}"` : ''} · {qr.consentDays}{' '}
+                            dia(s) de autorização
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {qr.visits} visita(s) · {qr.leads} contato(s)
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <InlineActionForm
+                            action={setSponsorQrActiveAction}
+                            submitLabel={qr.isActive ? 'Desativar' : 'Reativar'}
+                            testId={`qr-toggle-${qr.id}`}
+                          >
+                            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                            <input type="hidden" name="eventId" value={eventId} />
+                            <input type="hidden" name="qrId" value={qr.id} />
+                            <input
+                              type="hidden"
+                              name="isActive"
+                              value={qr.isActive ? 'false' : 'true'}
+                            />
+                          </InlineActionForm>
+
+                          <InlineActionForm
+                            action={deleteSponsorQrAction}
+                            submitLabel="Excluir"
+                            variant="destructive"
+                            testId={`qr-delete-${qr.id}`}
+                            confirm={{
+                              title: `Excluir o QR “${qr.label}”?`,
+                              description:
+                                'As leituras deste QR saem junto, e com elas as autorizações dadas por ele. Para apenas parar de creditar, use "Desativar".',
+                              confirmLabel: 'Excluir QR',
+                            }}
+                          >
+                            <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                            <input type="hidden" name="eventId" value={eventId} />
+                            <input type="hidden" name="qrId" value={qr.id} />
+                          </InlineActionForm>
+                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <InlineActionForm
-                          action={setSponsorQrActiveAction}
-                          submitLabel={qr.isActive ? 'Desativar' : 'Reativar'}
-                          testId={`qr-toggle-${qr.id}`}
-                        >
-                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                          <input type="hidden" name="eventId" value={eventId} />
-                          <input type="hidden" name="qrId" value={qr.id} />
-                          <input type="hidden" name="isActive" value={qr.isActive ? 'false' : 'true'} />
-                        </InlineActionForm>
-
-                        <InlineActionForm
-                          action={deleteSponsorQrAction}
-                          submitLabel="Excluir"
-                          variant="destructive"
-                          testId={`qr-delete-${qr.id}`}
-                          confirm={{
-                            title: `Excluir o QR “${qr.label}”?`,
-                            description:
-                              'As leituras deste QR saem junto, e com elas as autorizações dadas por ele. Para apenas parar de creditar, use "Desativar".',
-                            confirmLabel: 'Excluir QR',
-                          }}
-                        >
-                          <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                          <input type="hidden" name="eventId" value={eventId} />
-                          <input type="hidden" name="qrId" value={qr.id} />
-                        </InlineActionForm>
-                      </div>
-                    </div>
-
-                    {/*
-                      A PEÇA QUE VAI PARA O ESTANDE: o endereço em texto não basta —
-                      quem lê é a câmera do participante.
-                    */}
-                    {sheet ? (
-                      <SponsorQrShare
-                        tenantSlug={tenantSlug}
-                        qrId={qr.id}
-                        label={qr.label}
-                        isActive={qr.isActive}
-                        sheet={sheet}
-                      />
-                    ) : null}
-                  </li>
+                      {sheet ? (
+                        <SponsorQrShare
+                          tenantSlug={tenantSlug}
+                          qrId={qr.id}
+                          label={qr.label}
+                          isActive={qr.isActive}
+                          sheet={sheet}
+                        />
+                      ) : null}
+                    </li>
                   );
                 })}
               </ul>
@@ -199,15 +222,7 @@ export function SponsorExperiencePanel({
               <p className="text-xs text-muted-foreground">Nenhum QR deste patrocinador ainda.</p>
             )}
 
-            <details
-              className="rounded-md border border-border p-3"
-              /**
-               * O `<details>` abre sozinho quando a página voltou do passo 2 sem
-               * JavaScript (`?confirmarQr=<sponsorId>`, dívida E57): sem isso, o
-               * aviso que o operador acabou de pedir para ver nasceria FECHADO.
-               */
-              open={confirmarQr === sponsor.id}
-            >
+            <details className="rounded-md border border-border p-3" open={confirmarQr === sponsor.id}>
               <summary className="cursor-pointer text-xs font-medium">Criar QR do estande</summary>
               <div className="pt-3">
                 <SponsorQrCreateForm
@@ -282,6 +297,7 @@ export function SponsorExperiencePanel({
                       name="email"
                       type="email"
                       required
+                      defaultValue={sponsor.contactEmail ?? undefined}
                       hint="O convite só é aceito por uma conta com este endereço"
                     />
                   </AdminForm>
@@ -300,6 +316,7 @@ export function SponsorExperiencePanel({
                       name="email"
                       type="email"
                       required
+                      defaultValue={sponsor.contactEmail ?? undefined}
                       hint="Sem convite: a pessoa já está na instituição"
                     />
                   </AdminForm>
@@ -336,7 +353,9 @@ export function SponsorExperiencePanel({
                           <td className="p-1">{contato.sharedEmail}</td>
                           <td className="p-1 text-muted-foreground">{contato.qrLabel}</td>
                           <td className="p-1 text-muted-foreground">
-                            {contato.expiresAt ? contato.expiresAt.toLocaleDateString('pt-BR') : '—'}
+                            {contato.expiresAt
+                              ? contato.expiresAt.toLocaleDateString('pt-BR')
+                              : '—'}
                           </td>
                         </tr>
                       ))}
@@ -345,15 +364,6 @@ export function SponsorExperiencePanel({
                 </div>
               )}
 
-              {/**
-                * ─────────────────────────────────────────────────────────────────────
-                *  A EXPORTAÇÃO DE CONTATOS PASSOU A TER PRAZO E MARCA D'ÁGUA (FASE 49)
-                * ─────────────────────────────────────────────────────────────────────
-                *  O link direto virou pedido: o arquivo é gerado no download, com autor,
-                *  instituição, data e validade em cada linha, e o link vale 24 horas.
-                *  O painel é POR PATROCINADOR porque a autorização também é: quem entra
-                *  pelo vínculo só exporta os contatos da PRÓPRIA empresa.
-                */}
               <ExportPanel
                 tenantSlug={tenantSlug}
                 kinds={['SPONSOR_CONTACTS_CSV']}
