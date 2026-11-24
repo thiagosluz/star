@@ -111,7 +111,10 @@ test.describe.serial(
         new RegExp(`/t/${tenantSlug}/administracao/eventos/${eventId}/financeiro$`),
       );
 
-      // 1. Importa contrato de patrocínio ativo em 1 clique
+      // 1. Vai para a aba Fontes e editais e importa contrato de patrocínio ativo em 1 clique
+      await page.getByTestId('finance-tab-fontes').click();
+      await expect(page).toHaveURL(/aba=fontes/);
+
       await expect(page.getByTestId('finance-sponsor-import-banner')).toContainText(
         'FUNAPE / Apoio Institucional (R$ 10.000,00)',
       );
@@ -122,9 +125,9 @@ test.describe.serial(
 
       await expect(page.getByTestId('finance-kpi-approved')).toContainText('R$ 10.000,00');
 
-      // 2. Cadastra Edital FAPEG com rubrica carimbada (Passagens, diárias e hospedagem)
-      const createSourceDetails = page.getByTestId('finance-source-create');
-      await createSourceDetails.locator('summary').click();
+      // 2. Cadastra Edital FAPEG na rota dedicada /fontes/nova com rubrica carimbada
+      await page.getByTestId('finance-btn-new-source').click();
+      await expect(page).toHaveURL(/\/financeiro\/fontes\/nova$/);
 
       await page
         .getByTestId('finance-source-name')
@@ -135,14 +138,17 @@ test.describe.serial(
       await page.getByTestId('finance-source-cat-TRAVEL_AND_PER_DIEM').check();
       await page.getByTestId('finance-source-submit').click();
 
+      await expect(page.getByText('Fonte de recurso cadastrada')).toBeVisible();
+      await page.getByTestId('finance-source-back').click();
+
       await expect(page.getByTestId('finance-sources-list')).toContainText(
         'Edital FAPEG 04/2026 — Auxílio a Eventos',
       );
       await expect(page.getByTestId('finance-kpi-approved')).toContainText('R$ 35.000,00');
 
-      // 3. Registra Entrada do repasse FAPEG (R$ 20.000,00 recebidos em conta)
-      const createEntryDetails = page.getByTestId('finance-entry-create');
-      await createEntryDetails.locator('summary').click();
+      // 3. Registra Entrada do repasse FAPEG (R$ 20.000,00) na rota dedicada /lancamentos/novo
+      await page.getByTestId('finance-header-new-entry').click();
+      await expect(page).toHaveURL(/\/financeiro\/lancamentos\/novo$/);
 
       await page.getByTestId('finance-entry-type').selectOption('INCOME');
       await page.getByTestId('finance-entry-status').selectOption('SETTLED');
@@ -155,15 +161,9 @@ test.describe.serial(
       await page.getByTestId('finance-entry-counterparty').fill('FAPEG');
       await page.getByTestId('finance-entry-document').fill('OB-2026-778');
       await page.getByTestId('finance-entry-submit').click();
+      await expect(page.getByText('Lançamento financeiro registrado')).toBeVisible();
 
-      await expect(page.getByTestId('finance-kpi-income')).toContainText('R$ 20.000,00');
-
-      // 4. Registra Saída de Passagens Aéreas (R$ 5.500,00 pagos)
-      const entryOpen = await createEntryDetails.evaluate(
-        (el) => (el as HTMLDetailsElement).open,
-      );
-      if (!entryOpen) await createEntryDetails.locator('summary').click();
-
+      // 4. Registra Saída de Passagens Aéreas (R$ 5.500,00 pagos) na mesma tela em lote
       await page.getByTestId('finance-entry-type').selectOption('EXPENSE');
       await page.getByTestId('finance-entry-status').selectOption('SETTLED');
       await page
@@ -177,8 +177,14 @@ test.describe.serial(
       await page.getByTestId('finance-entry-counterparty').fill('Agência Voar');
       await page.getByTestId('finance-entry-document').fill('NF-e 00912');
       await page.getByTestId('finance-entry-submit').click();
+      await expect(page.getByTestId('finance-entry-title')).toHaveValue('');
+
+      // Volta para a Visão geral para conferir KPIs, gráficos SVG e exportação
+      await page.getByTestId('finance-entry-back').click();
+      await page.getByTestId('finance-tab-resumo').click();
 
       // Saldo líquido em caixa: 20.000,00 - 5.500,00 = R$ 14.500,00
+      await expect(page.getByTestId('finance-kpi-income')).toContainText('R$ 20.000,00');
       await expect(page.getByTestId('finance-kpi-expense')).toContainText('R$ 5.500,00');
       await expect(page.getByTestId('finance-kpi-balance')).toContainText('R$ 14.500,00');
 

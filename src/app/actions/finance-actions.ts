@@ -25,7 +25,9 @@ import {
   deleteFinancialEntry,
   deleteFundingSource,
   importSponsorContractsAsSources,
+  updateFinancialEntry,
   updateFinancialEntryStatus,
+  updateFundingSource,
 } from '@/lib/finance/event-finance-service';
 
 export type FinanceActionState = ActionGuardState;
@@ -263,6 +265,8 @@ export async function updateFinancialEntryStatusAction(
   const eventId = readStr(formData, 'eventId');
   const entryId = readStr(formData, 'entryId');
   const statusRaw = readStr(formData, 'status');
+  const settledOnRaw = readStr(formData, 'settledOn');
+  const documentNumberRaw = readStr(formData, 'documentNumber');
 
   if (!tenantSlug || !isUuid(eventId) || !isUuid(entryId)) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Lançamento inválido.' };
@@ -285,6 +289,8 @@ export async function updateFinancialEntryStatusAction(
     actorId: auth.userId,
     entryId,
     status: statusRaw,
+    settledOn: settledOnRaw || undefined,
+    documentNumber: documentNumberRaw || undefined,
   });
 
   if (!result.ok) {
@@ -328,4 +334,161 @@ export async function deleteFinancialEntryAction(
 
   revalidateFinancePaths(tenantSlug, eventId);
   return { ok: true, message: 'Lançamento financeiro excluído.' };
+}
+
+export async function updateFundingSourceAction(
+  _prev: FinanceActionState | null,
+  formData: FormData,
+): Promise<FinanceActionState> {
+  const tenantSlug = readStr(formData, 'tenantSlug');
+  const eventId = readStr(formData, 'eventId');
+  const sourceId = readStr(formData, 'sourceId');
+
+  if (!tenantSlug || !isUuid(eventId) || !isUuid(sourceId)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Fonte de recurso inválida.' };
+  }
+
+  const auth = await guardAction({
+    tenantSlug,
+    permission: PERMISSIONS.SPONSOR_MANAGE,
+    allowedScopes: ['TENANT', 'EVENT'],
+    eventId,
+  });
+  if (!auth.ok) return auth.state;
+
+  const name = readStr(formData, 'name');
+  const kindRaw = readStr(formData, 'kind') || 'PUBLIC_GRANT';
+  const codeOrProcess = readStr(formData, 'codeOrProcess');
+  const approvedRaw = readStr(formData, 'approvedAmount');
+  const notes = readStr(formData, 'notes');
+  const restrictedRaw = formData
+    .getAll('restrictedCategories')
+    .filter((v): v is string => typeof v === 'string');
+
+  if (!isFundingSourceKind(kindRaw)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione uma natureza de fonte válida.' };
+  }
+
+  const approvedCents = parseBrlToCents(approvedRaw || '0', { allowZero: true });
+  if (approvedCents === null) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe um valor aprovado válido em reais (ex.: 25.000,00).',
+    };
+  }
+
+  const restrictedCategories: FinancialCategory[] = restrictedRaw.filter(isFinancialCategory);
+
+  const result = await updateFundingSource({
+    tenantId: auth.tenantId,
+    eventId,
+    actorId: auth.userId,
+    sourceId,
+    name,
+    kind: kindRaw,
+    codeOrProcess: codeOrProcess || null,
+    approvedCents,
+    restrictedCategories,
+    notes: notes || null,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  revalidateFinancePaths(tenantSlug, eventId);
+  revalidatePath(
+    tenantPath(tenantSlug, `/administracao/eventos/${eventId}/financeiro/fontes/${sourceId}/editar`),
+  );
+  return { ok: true, message: 'Fonte de recurso atualizada com sucesso.' };
+}
+
+export async function updateFinancialEntryAction(
+  _prev: FinanceActionState | null,
+  formData: FormData,
+): Promise<FinanceActionState> {
+  const tenantSlug = readStr(formData, 'tenantSlug');
+  const eventId = readStr(formData, 'eventId');
+  const entryId = readStr(formData, 'entryId');
+
+  if (!tenantSlug || !isUuid(eventId) || !isUuid(entryId)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Lançamento financeiro inválido.' };
+  }
+
+  const auth = await guardAction({
+    tenantSlug,
+    permission: PERMISSIONS.SPONSOR_MANAGE,
+    allowedScopes: ['TENANT', 'EVENT'],
+    eventId,
+  });
+  if (!auth.ok) return auth.state;
+
+  const typeRaw = readStr(formData, 'type') || 'EXPENSE';
+  const statusRaw = readStr(formData, 'status') || 'PLANNED';
+  const categoryRaw = readStr(formData, 'category') || 'OTHER';
+  const sourceIdRaw = readStr(formData, 'sourceId');
+  const title = readStr(formData, 'title');
+  const amountRaw = readStr(formData, 'amount');
+  const occurredOn = readStr(formData, 'occurredOn');
+  const settledOn = readStr(formData, 'settledOn');
+  const counterpartyName = readStr(formData, 'counterpartyName');
+  const counterpartyTaxId = readStr(formData, 'counterpartyTaxId');
+  const documentNumber = readStr(formData, 'documentNumber');
+  const notes = readStr(formData, 'notes');
+
+  if (!isFinancialEntryType(typeRaw)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione o tipo do lançamento.' };
+  }
+  if (!isFinancialEntryStatus(statusRaw)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione a situação do lançamento.' };
+  }
+  if (!isFinancialCategory(categoryRaw)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione a rubrica/categoria.' };
+  }
+
+  const amountCents = parseBrlToCents(amountRaw, { allowZero: false });
+  if (amountCents === null) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe um valor positivo válido em reais (ex.: 1.250,00).',
+    };
+  }
+
+  if (sourceIdRaw && !isUuid(sourceIdRaw)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Fonte pagadora inválida.' };
+  }
+
+  const result = await updateFinancialEntry({
+    tenantId: auth.tenantId,
+    eventId,
+    actorId: auth.userId,
+    entryId,
+    sourceId: sourceIdRaw || null,
+    type: typeRaw,
+    status: statusRaw,
+    category: categoryRaw,
+    title,
+    amountCents,
+    occurredOn,
+    settledOn: settledOn || null,
+    counterpartyName: counterpartyName || null,
+    counterpartyTaxId: counterpartyTaxId || null,
+    documentNumber: documentNumber || null,
+    notes: notes || null,
+  });
+
+  if (!result.ok) {
+    return { ok: false, code: result.code, message: result.message };
+  }
+
+  revalidateFinancePaths(tenantSlug, eventId);
+  revalidatePath(
+    tenantPath(
+      tenantSlug,
+      `/administracao/eventos/${eventId}/financeiro/lancamentos/${entryId}/editar`,
+    ),
+  );
+  return { ok: true, message: 'Lançamento financeiro atualizado com sucesso.' };
 }

@@ -17,6 +17,8 @@ import {
   buildAccountabilityReportCsv,
   buildFinancialEntriesCsv,
   computeEventFinanceSummary,
+  isEntryCategoryViolation,
+  isFinanceComplianceFilter,
   isFinancialCategory,
   isFinancialEntryStatus,
   isFinancialEntryType,
@@ -53,6 +55,7 @@ export interface FinanceLedgerFilters {
   status?: string | null;
   sourceId?: string | null;
   category?: string | null;
+  compliance?: string | null;
   search?: string | null;
 }
 
@@ -140,12 +143,17 @@ function mapEntryRow(row: {
 export function filterFinancialEntries(
   entries: readonly FinancialEntryRuleInput[],
   filters: FinanceLedgerFilters,
+  sources: readonly FundingSourceRuleInput[] = [],
 ): FinancialEntryRuleInput[] {
   const typeFilter = isFinancialEntryType(filters.type) ? filters.type : null;
   const statusFilter = isFinancialEntryStatus(filters.status) ? filters.status : null;
   const categoryFilter = isFinancialCategory(filters.category) ? filters.category : null;
+  const complianceFilter = isFinanceComplianceFilter(filters.compliance)
+    ? filters.compliance
+    : null;
   const sourceFilter = (filters.sourceId ?? '').trim() || null;
   const search = (filters.search ?? '').trim().toLowerCase();
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
 
   return entries.filter((entry) => {
     if (typeFilter && entry.type !== typeFilter) return false;
@@ -155,6 +163,16 @@ export function filterFinancialEntries(
       if (sourceFilter === '__NONE__') {
         if (entry.sourceId !== null) return false;
       } else if (entry.sourceId !== sourceFilter) {
+        return false;
+      }
+    }
+    if (complianceFilter === 'GLOSA') {
+      const src = entry.sourceId ? sourceById.get(entry.sourceId) : null;
+      if (!isEntryCategoryViolation(entry, src)) return false;
+    } else if (complianceFilter === 'MISSING_DOCUMENT') {
+      if (entry.status !== 'SETTLED' || Boolean((entry.documentNumber ?? '').trim())) return false;
+    } else if (complianceFilter === 'UNASSIGNED_SOURCE') {
+      if (entry.status === 'CANCELED' || entry.type !== 'EXPENSE' || entry.sourceId !== null) {
         return false;
       }
     }
@@ -237,7 +255,7 @@ export async function loadEventFinanceDashboard(input: {
         sponsors,
       });
 
-      const filteredEntries = filterFinancialEntries(allEntries, input.filters ?? {});
+      const filteredEntries = filterFinancialEntries(allEntries, input.filters ?? {}, sources);
 
       return {
         ok: true as const,
@@ -703,16 +721,22 @@ export async function updateFinancialEntryStatus(input: {
   entryId: string;
   status: FinancialEntryStatus;
   settledOn?: string | null;
+  documentNumber?: string | null;
 }): Promise<FinanceResult<{ entryId: string }>> {
   if (!isFinancialEntryStatus(input.status)) {
     return { ok: false, code: 'INVALID_INPUT', message: 'Situação financeira inválida.' };
   }
 
+  const trimmedDoc =
+    typeof input.documentNumber === 'string'
+      ? input.documentNumber.trim().slice(0, 80) || null
+      : undefined;
+
   try {
     const result = await withTenant(input.tenantId, async (tx) => {
       const existing = await tx.eventFinancialEntry.findFirst({
         where: { id: input.entryId, tenantId: input.tenantId, eventId: input.eventId },
-        select: { id: true, status: true, settledOn: true },
+        select: { id: true, status: true, settledOn: true, documentNumber: true },
       });
 
       if (!existing) {
@@ -729,11 +753,15 @@ export async function updateFinancialEntryStatus(input: {
             todayIsoKey())
           : null;
 
+      const nextDocumentNumber =
+        trimmedDoc !== undefined && trimmedDoc !== null ? trimmedDoc : existing.documentNumber;
+
       await tx.eventFinancialEntry.update({
         where: { id: existing.id },
         data: {
           status: input.status,
           settledOn: nextSettledOn,
+          documentNumber: nextDocumentNumber,
         },
       });
 
@@ -741,6 +769,8 @@ export async function updateFinancialEntryStatus(input: {
         ok: true as const,
         entryId: existing.id,
         previousStatus: existing.status,
+        previousDocumentNumber: existing.documentNumber,
+        nextDocumentNumber,
       };
     });
 
@@ -753,6 +783,14 @@ export async function updateFinancialEntryStatus(input: {
         entityId: result.entryId,
         changes: {
           status: { from: result.previousStatus, to: input.status },
+          ...(result.previousDocumentNumber !== result.nextDocumentNumber
+            ? {
+                documentNumber: {
+                  from: result.previousDocumentNumber,
+                  to: result.nextDocumentNumber,
+                },
+              }
+            : {}),
         },
       });
       return { ok: true, entryId: result.entryId };
@@ -883,4 +921,346 @@ export async function exportEventFinanceCsv(input: {
   });
 
   return { ok: true, filename, csv };
+}
+
+export async function getFundingSourceForEdit(input: {
+  tenantId: string;
+  eventId: string;
+  sourceId: string;
+}): Promise<
+  FinanceResult<{
+    event: { id: string; title: string };
+    source: FundingSourceRuleInput;
+  }>
+> {
+  try {
+    return await withTenant(input.tenantId, async (tx) => {
+      const [event, sourceRow] = await Promise.all([
+        tx.event.findFirst({
+          where: { id: input.eventId, tenantId: input.tenantId, deletedAt: null },
+          select: { id: true, title: true },
+        }),
+        tx.eventFundingSource.findFirst({
+          where: { id: input.sourceId, tenantId: input.tenantId, eventId: input.eventId },
+        }),
+      ]);
+
+      if (!event) {
+        return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
+      }
+      if (!sourceRow) {
+        return {
+          ok: false as const,
+          code: 'SOURCE_NOT_FOUND' as const,
+          message: 'Fonte de recurso não encontrada.',
+        };
+      }
+
+      return { ok: true as const, event, source: mapSourceRow(sourceRow) };
+    });
+  } catch (error) {
+    logger.error('finance.get_source_for_edit_failed', {
+      tenantId: input.tenantId,
+      eventId: input.eventId,
+      sourceId: input.sourceId,
+      error: errorMessage(error),
+    });
+    return { ok: false, code: 'INTERNAL', message: 'Não foi possível carregar a fonte de recurso.' };
+  }
+}
+
+export async function updateFundingSource(input: {
+  tenantId: string;
+  eventId: string;
+  actorId: string;
+  sourceId: string;
+  name: string;
+  kind: FundingSourceKind;
+  codeOrProcess?: string | null;
+  approvedCents: number;
+  restrictedCategories?: readonly FinancialCategory[];
+  notes?: string | null;
+}): Promise<FinanceResult<{ sourceId: string }>> {
+  const name = input.name.trim();
+  if (name.length < 2 || name.length > 180) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe o nome da fonte ou edital (entre 2 e 180 caracteres).',
+    };
+  }
+  if (!isFundingSourceKind(input.kind)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione uma natureza de fonte válida.' };
+  }
+  if (
+    !Number.isInteger(input.approvedCents) ||
+    input.approvedCents < 0 ||
+    input.approvedCents > MAX_FINANCE_CENTS
+  ) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe um valor aprovado/contratado válido.',
+    };
+  }
+
+  const restrictedCategories = (input.restrictedCategories ?? []).filter(isFinancialCategory);
+  const codeOrProcess = (input.codeOrProcess ?? '').trim().slice(0, 120) || null;
+  const notes = (input.notes ?? '').trim().slice(0, 2000) || null;
+
+  try {
+    const result = await withTenant(input.tenantId, async (tx) => {
+      const existing = await tx.eventFundingSource.findFirst({
+        where: { id: input.sourceId, tenantId: input.tenantId, eventId: input.eventId },
+        select: { id: true, name: true, approvedCents: true },
+      });
+      if (!existing) {
+        return {
+          ok: false as const,
+          code: 'SOURCE_NOT_FOUND' as const,
+          message: 'Fonte de recurso não encontrada.',
+        };
+      }
+
+      await tx.eventFundingSource.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          kind: input.kind,
+          codeOrProcess,
+          approvedCents: input.approvedCents,
+          restrictedCategories,
+          notes,
+        },
+      });
+
+      return {
+        ok: true as const,
+        sourceId: existing.id,
+        previousName: existing.name,
+        previousApprovedCents: existing.approvedCents,
+      };
+    });
+
+    if (result.ok) {
+      await recordAudit({
+        tenantId: input.tenantId,
+        userId: input.actorId,
+        action: 'UPDATE',
+        entityType: 'EventFundingSource',
+        entityId: result.sourceId,
+        changes: {
+          name: { from: result.previousName, to: name },
+          approvedCents: { from: result.previousApprovedCents, to: input.approvedCents },
+        },
+      });
+      return { ok: true, sourceId: result.sourceId };
+    }
+
+    return result;
+  } catch (error) {
+    logger.error('finance.update_source_failed', {
+      tenantId: input.tenantId,
+      eventId: input.eventId,
+      sourceId: input.sourceId,
+      error: errorMessage(error),
+    });
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível atualizar a fonte de recurso.',
+    };
+  }
+}
+
+export async function getFinancialEntryForEdit(input: {
+  tenantId: string;
+  eventId: string;
+  entryId: string;
+}): Promise<
+  FinanceResult<{
+    event: { id: string; title: string };
+    entry: FinancialEntryRuleInput;
+    sources: FundingSourceRuleInput[];
+    summary: EventFinanceSummary;
+  }>
+> {
+  const loaded = await loadEventFinanceDashboard({
+    tenantId: input.tenantId,
+    eventId: input.eventId,
+  });
+  if (!loaded.ok) return loaded;
+
+  const entry = loaded.dashboard.allEntries.find((e) => e.id === input.entryId);
+  if (!entry) {
+    return {
+      ok: false,
+      code: 'NOT_FOUND',
+      message: 'Lançamento financeiro não encontrado.',
+    };
+  }
+
+  return {
+    ok: true,
+    event: { id: loaded.dashboard.event.id, title: loaded.dashboard.event.title },
+    entry,
+    sources: loaded.dashboard.sources,
+    summary: loaded.dashboard.summary,
+  };
+}
+
+export async function updateFinancialEntry(input: {
+  tenantId: string;
+  eventId: string;
+  actorId: string;
+  entryId: string;
+  sourceId?: string | null;
+  type: FinancialEntryType;
+  status: FinancialEntryStatus;
+  category: FinancialCategory;
+  title: string;
+  amountCents: number;
+  occurredOn: string;
+  settledOn?: string | null;
+  counterpartyName?: string | null;
+  counterpartyTaxId?: string | null;
+  documentNumber?: string | null;
+  notes?: string | null;
+}): Promise<FinanceResult<{ entryId: string }>> {
+  const title = input.title.trim();
+  if (title.length < 2 || title.length > 200) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe a descrição do lançamento (entre 2 e 200 caracteres).',
+    };
+  }
+  if (!isFinancialEntryType(input.type)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione o tipo (Entrada ou Saída).' };
+  }
+  if (!isFinancialEntryStatus(input.status)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione uma situação válida.' };
+  }
+  if (!isFinancialCategory(input.category)) {
+    return { ok: false, code: 'INVALID_INPUT', message: 'Selecione uma rubrica/categoria válida.' };
+  }
+  if (
+    !Number.isInteger(input.amountCents) ||
+    input.amountCents <= 0 ||
+    input.amountCents > MAX_FINANCE_CENTS
+  ) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe um valor em reais maior que zero.',
+    };
+  }
+
+  const occurredOn = normalizeDateKey(input.occurredOn);
+  if (!occurredOn) {
+    return {
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'Informe a data de competência no formato AAAA-MM-DD.',
+    };
+  }
+
+  const settledOn =
+    input.status === 'SETTLED'
+      ? (normalizeDateKey(input.settledOn, occurredOn) ?? occurredOn)
+      : null;
+
+  const sourceId = (input.sourceId ?? '').trim() || null;
+
+  try {
+    const result = await withTenant(input.tenantId, async (tx) => {
+      const existing = await tx.eventFinancialEntry.findFirst({
+        where: { id: input.entryId, tenantId: input.tenantId, eventId: input.eventId },
+        select: {
+          id: true,
+          sourceId: true,
+          category: true,
+          status: true,
+          amountCents: true,
+          title: true,
+        },
+      });
+      if (!existing) {
+        return {
+          ok: false as const,
+          code: 'NOT_FOUND' as const,
+          message: 'Lançamento financeiro não encontrado.',
+        };
+      }
+
+      if (sourceId) {
+        const source = await tx.eventFundingSource.findFirst({
+          where: { id: sourceId, tenantId: input.tenantId, eventId: input.eventId },
+          select: { id: true },
+        });
+        if (!source) {
+          return {
+            ok: false as const,
+            code: 'SOURCE_NOT_FOUND' as const,
+            message: 'A fonte pagadora selecionada não pertence a este evento.',
+          };
+        }
+      }
+
+      await tx.eventFinancialEntry.update({
+        where: { id: existing.id },
+        data: {
+          sourceId,
+          type: input.type,
+          status: input.status,
+          category: input.category,
+          title,
+          amountCents: input.amountCents,
+          occurredOn,
+          settledOn,
+          counterpartyName: (input.counterpartyName ?? '').trim().slice(0, 180) || null,
+          counterpartyTaxId: (input.counterpartyTaxId ?? '').trim().slice(0, 32) || null,
+          documentNumber: (input.documentNumber ?? '').trim().slice(0, 80) || null,
+          notes: (input.notes ?? '').trim().slice(0, 2000) || null,
+        },
+      });
+
+      return {
+        ok: true as const,
+        entryId: existing.id,
+        previous: existing,
+      };
+    });
+
+    if (result.ok) {
+      await recordAudit({
+        tenantId: input.tenantId,
+        userId: input.actorId,
+        action: 'UPDATE',
+        entityType: 'EventFinancialEntry',
+        entityId: result.entryId,
+        changes: {
+          sourceId: { from: result.previous.sourceId, to: sourceId },
+          category: { from: result.previous.category, to: input.category },
+          status: { from: result.previous.status, to: input.status },
+          amountCents: { from: result.previous.amountCents, to: input.amountCents },
+        },
+      });
+      return { ok: true, entryId: result.entryId };
+    }
+
+    return result;
+  } catch (error) {
+    logger.error('finance.update_entry_failed', {
+      tenantId: input.tenantId,
+      eventId: input.eventId,
+      entryId: input.entryId,
+      error: errorMessage(error),
+    });
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível atualizar o lançamento financeiro.',
+    };
+  }
 }

@@ -1,4 +1,7 @@
+import Link from 'next/link';
+
 import {
+  buildEventFinanceHref,
   formatBrlCents,
   FUNDING_SOURCE_KIND_SHORT_LABELS,
   type EventFinanceSummary,
@@ -6,9 +9,10 @@ import {
 
 interface FinanceChartsPanelProps {
   summary: EventFinanceSummary;
+  baseHref?: string;
 }
 
-export function FinanceChartsPanel({ summary }: FinanceChartsPanelProps) {
+export function FinanceChartsPanel({ summary, baseHref }: FinanceChartsPanelProps) {
   const maxMonthCents = Math.max(
     1,
     ...summary.monthlyCashflow.flatMap((m) => [m.activeIncomeCents, m.activeExpenseCents]),
@@ -45,12 +49,22 @@ export function FinanceChartsPanel({ summary }: FinanceChartsPanelProps) {
               return (
                 <div key={source.sourceId} className="space-y-1 text-xs">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-medium text-foreground">
-                      {source.name}{' '}
-                      <span className="text-muted-foreground">
-                        ({FUNDING_SOURCE_KIND_SHORT_LABELS[source.kind]})
+                    {baseHref ? (
+                      <Link
+                        href={buildEventFinanceHref(baseHref, {
+                          aba: 'lancamentos',
+                          fonte: source.sourceId,
+                        })}
+                        className="truncate font-medium text-foreground underline-offset-2 hover:underline"
+                        data-testid={`finance-chart-filter-source-${source.sourceId}`}
+                      >
+                        {source.name} ({FUNDING_SOURCE_KIND_SHORT_LABELS[source.kind]})
+                      </Link>
+                    ) : (
+                      <span className="truncate font-medium text-foreground">
+                        {source.name} ({FUNDING_SOURCE_KIND_SHORT_LABELS[source.kind]})
                       </span>
-                    </span>
+                    )}
                     <span
                       className={
                         source.isOverBudget
@@ -114,7 +128,20 @@ export function FinanceChartsPanel({ summary }: FinanceChartsPanelProps) {
               return (
                 <div key={item.category} className="space-y-1 text-xs">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-medium text-foreground">{item.label}</span>
+                    {baseHref ? (
+                      <Link
+                        href={buildEventFinanceHref(baseHref, {
+                          aba: 'lancamentos',
+                          categoria: item.category,
+                        })}
+                        className="truncate font-medium text-foreground underline-offset-2 hover:underline"
+                        data-testid={`finance-chart-filter-category-${item.category}`}
+                      >
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <span className="truncate font-medium text-foreground">{item.label}</span>
+                    )}
                     <span className="shrink-0 text-muted-foreground">
                       {formatBrlCents(item.totalActiveCents)} ({item.sharePercent}%)
                     </span>

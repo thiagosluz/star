@@ -177,6 +177,26 @@ const PAGINAS: readonly PaginaEsperada[] = [
     params: ['eventId'],
   },
   {
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/financeiro/fontes/nova/page.tsx',
+    params: ['eventId'],
+  },
+  {
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/financeiro/fontes/[sourceId]/editar/page.tsx',
+    params: ['eventId', 'sourceId'],
+  },
+  {
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/financeiro/lancamentos/novo/page.tsx',
+    params: ['eventId'],
+  },
+  {
+    arquivo:
+      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/financeiro/lancamentos/[entryId]/editar/page.tsx',
+    params: ['eventId', 'entryId'],
+  },
+  {
     arquivo: 'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/formulario/page.tsx',
     params: ['eventId'],
   },
@@ -701,15 +721,15 @@ describe('FASE 76 · o catálogo das páginas com id na URL', () => {
      * segmentos foi validado" — a igualdade por página já pega, e a contagem
      * torna a regressão visível de relance.
      */
-    expect(PAGINAS).toHaveLength(34);
-    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(35);
+    expect(PAGINAS).toHaveLength(38);
+    expect(PAGINAS.reduce((total, pagina) => total + pagina.params.length, 0)).toBe(41);
     expect(PAGINAS_FORA_DA_REGRA).toHaveLength(4);
 
     const paramsEncontrados = PAGINAS_COM_ID.reduce(
       (total, pagina) => total + pagina.params.length,
       0,
     );
-    expect(paramsEncontrados).toBe(39); // 35 positivos + 4 das exceções
+    expect(paramsEncontrados).toBe(45); // 41 positivos + 4 das exceções
   });
 
   it('cada página chama `requireUuidParam` com o MESMO param do segmento', () => {

@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21 a 25, 29 a 122 concluídas · **F122 entregue** (**gestão financeira, fomento e prestação de contas do evento** — domínio puro em centavos inteiros com 3 estágios (`PLANNED`/`COMMITTED`/`SETTLED`) e carimbo de rubricas por edital (`ADR-489`), tabelas `event_funding_sources` e `event_financial_entries` sob RLS + FORCE (`63 → 65` tabelas) com importação de contratos de patrocínio em 1 clique (`ADR-490`), cartão `"Finanças e fomento"` em `EVENT_AREAS`, 6 Server Actions e exportação auditada em `/api/t/[tenantSlug]/financeiro/exportar` (`ADR-491`), e cockpit `/administracao/eventos/[eventId]/financeiro` com 3 gráficos SVG vetoriais SSR (`ADR-492`); **39 dívidas abertas**; ADR-489 a ADR-492) · **4990 testes** unitários/integração (306 arquivos) · **566 testes E2E** (+ 1 skip)
+> **Estado:** FASES 1 a 17, 21 a 25, 29 a 124 concluídas · **F124 entregue** (**abas por intenção, rotas dedicadas de edição e checklist de conformidade financeira** — 3 abas por URL (`?aba=resumo|lancamentos|fontes` com `resolveFinanceTab`), filtros de pendência (`GLOSA`, `MISSING_DOCUMENT`, `UNASSIGNED_SOURCE`) e paginação (`20`/página) (`ADR-497`), edição de fontes (`updateFundingSource`) e lançamentos (`updateFinancialEntry` para reatribuir glosas) (`ADR-498`), 4 rotas `/novo` e `/editar` dedicadas com `requireUuidParam` + `<PageHeader>`, checklist documental clicável, exportação colada ao filtro e menu `Mais` na linha (`ADR-499`), e suítes F124 (`ADR-500`); **39 dívidas abertas**; ADR-497 a ADR-500) · **4999 testes** unitários/integração (308 arquivos) · **568 testes E2E** (+ 1 skip)
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -454,8 +454,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 4990 testes (306 arquivos) — unit + integração com banco real
-npm run test:e2e          # 566 testes E2E (+1 skip) contra o container de produção
+npm test                  # 4999 testes (308 arquivos) — unit + integração com banco real
+npm run test:e2e          # 568 testes E2E (+1 skip) contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas, partições e tabelas de plataforma
@@ -499,6 +499,8 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 
 | Documento | Conteúdo | ADRs |
 |---|---|---|
+| [`docs/fase-124-abas-edicao-e-conformidade-financeira.md`](docs/fase-124-abas-edicao-e-conformidade-financeira.md) | **Abas por Intenção, Rotas Dedicadas de Edição e Checklist de Conformidade Financeira:** 3 abas por URL (`?aba=resumo\|lancamentos\|fontes`), filtros de pendência (`GLOSA`, `MISSING_DOCUMENT`, `UNASSIGNED_SOURCE`) e paginação (`20`/página, `ADR-497`), edição de fontes e lançamentos (`ADR-498`), 4 rotas dedicadas `/novo` e `/editar`, checklist documental clicável, exportação colada ao filtro e menu `Mais` (`ADR-499`), e catracas + testes F124 (`ADR-500`) | ADR-497 … 500 |
+| [`docs/fase-123-ux-financeiro-glosa-e-ciclo-execucao.md`](docs/fase-123-ux-financeiro-glosa-e-ciclo-execucao.md) | **Refinamento de UX Operacional, Prevenção Proativa de Glosa e Ciclo Completo de Execução Financeira:** prevenção prévia de glosa e teto (`evaluateEntryCompliance`), datas PT-BR (`formatIsoDatePtBr`) e subtotais do filtro (`computeFilteredLedgerTotals`, `ADR-493`), ciclo completo no livro-razão (`Empenhar`, `Liquidar com Nº NF`, `Cancelar`) e badge de glosa na linha (`ADR-494`), reset automático de formulários em lote e campos adaptativos `INCOME` × `EXPENSE` (`ADR-495`), e onboarding inicial, escopo de exportação e *drill-down* clicável nos gráficos (`ADR-496`) | ADR-493 … 496 |
 | [`docs/fase-122-gestao-financeira-fomento-e-prestacao-de-contas.md`](docs/fase-122-gestao-financeira-fomento-e-prestacao-de-contas.md) | **Gestão Financeira, Fomento e Prestação de Contas do Evento:** domínio puro em centavos inteiros com 3 estágios (`PLANNED`/`COMMITTED`/`SETTLED`) e carimbo de rubricas por edital (`ADR-489`), tabelas `event_funding_sources` e `event_financial_entries` sob RLS + FORCE (`65` tabelas) com importação de patrocínios em 1 clique (`ADR-490`), cartão `"Finanças e fomento"` em `EVENT_AREAS`, 6 Server Actions e exportação auditada em `/api/t/[tenantSlug]/financeiro/exportar` (`ADR-491`), e cockpit `/administracao/eventos/[eventId]/financeiro` com 3 gráficos SVG vetoriais SSR (`ADR-492`) | ADR-489 … 492 |
 | [`docs/fase-121-modularizacao-srp-client-e-server-pages.md`](docs/fase-121-modularizacao-srp-client-e-server-pages.md) | **Modularização SRP das Frentes 2 (Client) e 3 (Server Pages & God Modules):** decomposição de `RaffleHistory` (`1094 → 182`), `SelfCheckinManager` (`843 → 154`) e `BlockContentFields` (`513 → 66`) (`ADR-485`), fatiamento de `BlockRenderer` (`1439 → 109`) e da página da atividade (`755 → 211`) sob `events/` (`ADR-486`), extração dos painéis de `comunicacao/page.tsx` (`1364 → 129`) e `demandas/page.tsx` (`907 → 331`) (`ADR-487`), e catraca AST + testes SSR em `f121-*.test.ts` (`ADR-488`) | ADR-485 … 488 |
 | [`docs/fase-120-modularizacao-srp-client-components.md`](docs/fase-120-modularizacao-srp-client-components.md) | **Modularização SRP de Client Components Críticos e Redução de Profundidade JSX:** fatiamento de `CertificateTemplateEditor` (`1381 → 250` linhas, `jsxDepth 13 → 7`, `ADR-481`), extração dos hooks `useRaffleLiveStream`/`useRaffleRoulette` e views em `RaffleStage` (`722 → 181`, `ADR-482`), isolamento de câmera em `useQrCameraScanner` (`qr-camera-reader.tsx` `511 → 120`) e painéis em `MonitorConsole` (`602 → 341`, `ADR-483`), e catraca AST da FASE 120 (`ADR-484`) | ADR-481 … 484 |
@@ -681,7 +683,7 @@ prisma/
 tests/
 ├── unit/              regras puras e de formato (sem banco)
 ├── integration/       com banco, Redis e storage reais
-└── e2e/               566 testes Playwright contra o container
+└── e2e/               568 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**

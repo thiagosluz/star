@@ -1,22 +1,30 @@
+import Link from 'next/link';
+
+import { EntryRowActions } from '@/components/finance/financial-entry-row-actions';
 import {
-  deleteFinancialEntryAction,
-  updateFinancialEntryStatusAction,
-} from '@/app/actions/finance-actions';
-import { InlineActionForm } from '@/components/admin/inline-action-form';
-import {
+  buildEventFinanceHref,
+  computeFilteredLedgerTotals,
   FINANCIAL_CATEGORY_LABELS,
   FINANCIAL_ENTRY_STATUS_LABELS,
   FINANCIAL_ENTRY_TYPE_LABELS,
   formatBrlCents,
+  formatIsoDatePtBr,
+  isEntryCategoryViolation,
+  paginateFinancialEntries,
   type FinancialEntryRuleInput,
   type FundingSourceRuleInput,
 } from '@/domain/finance/event-finance-rules';
+import { tenantPath } from '@/domain/tenancy/resolution';
+import type { FinanceLedgerFilters } from '@/lib/finance/event-finance-service';
 
 interface FinancialEntriesLedgerProps {
   tenantSlug: string;
   eventId: string;
   entries: readonly FinancialEntryRuleInput[];
   sources: readonly FundingSourceRuleInput[];
+  page?: number;
+  baseHref?: string;
+  filters?: FinanceLedgerFilters;
 }
 
 export function FinancialEntriesLedger({
@@ -24,8 +32,27 @@ export function FinancialEntriesLedger({
   eventId,
   entries,
   sources,
+  page = 1,
+  baseHref,
+  filters = {},
 }: FinancialEntriesLedgerProps) {
   const sourceById = new Map(sources.map((s) => [s.id, s]));
+  const subtotals = computeFilteredLedgerTotals(entries);
+  const pagination = paginateFinancialEntries(entries, page);
+  const financeBase =
+    baseHref ?? tenantPath(tenantSlug, `/administracao/eventos/${eventId}/financeiro`);
+
+  const pageHref = (target: number) =>
+    buildEventFinanceHref(financeBase, {
+      aba: 'lancamentos',
+      tipo: filters.type,
+      situacao: filters.status,
+      fonte: filters.sourceId,
+      categoria: filters.category,
+      conformidade: filters.compliance,
+      busca: filters.search,
+      pagina: target,
+    });
 
   if (entries.length === 0) {
     return (
@@ -43,14 +70,34 @@ export function FinancialEntriesLedger({
       className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm"
       data-testid="finance-entries-ledger"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-foreground">
           Livro-razão de entradas e saídas ({entries.length})
         </h2>
+
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-low px-3 py-1.5 text-xs"
+          data-testid="finance-ledger-subtotals"
+        >
+          <span className="text-muted-foreground">
+            Entradas no recorte:{' '}
+            <strong className="text-success-strong">{formatBrlCents(subtotals.activeIncomeCents)}</strong>
+          </span>
+          <span className="text-muted-foreground">
+            Saídas no recorte:{' '}
+            <strong className="text-foreground">{formatBrlCents(subtotals.activeExpenseCents)}</strong>
+          </span>
+          <span className="text-muted-foreground">
+            Saldo do recorte:{' '}
+            <strong className={subtotals.netActiveCents < 0 ? 'text-destructive' : 'text-foreground'}>
+              {formatBrlCents(subtotals.netActiveCents)}
+            </strong>
+          </span>
+        </div>
       </div>
 
       <div className="divide-y divide-border">
-        {entries.map((entry) => {
+        {pagination.items.map((entry) => {
           const source = entry.sourceId ? sourceById.get(entry.sourceId) : undefined;
           const isIncome = entry.type === 'INCOME';
           const isCanceled = entry.status === 'CANCELED';
@@ -80,6 +127,14 @@ export function FinancialEntriesLedger({
                   <span className="rounded-md border border-border bg-surface-low px-2 py-0.5 text-foreground">
                     {FINANCIAL_CATEGORY_LABELS[entry.category]}
                   </span>
+                  {isEntryCategoryViolation(entry, source) ? (
+                    <span
+                      className="rounded-md border border-warning/40 bg-warning-soft px-2 py-0.5 font-medium text-foreground"
+                      data-testid={`finance-entry-glosa-${entry.id}`}
+                    >
+                      Rubrica fora do edital
+                    </span>
+                  ) : null}
                   {source ? (
                     <span className="font-medium text-foreground">· Fonte: {source.name}</span>
                   ) : (
@@ -90,8 +145,8 @@ export function FinancialEntriesLedger({
                 <p className="text-sm font-medium text-foreground">{entry.title}</p>
 
                 <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-                  <span>Competência: {entry.occurredOn}</span>
-                  {entry.settledOn ? <span>Liquidação: {entry.settledOn}</span> : null}
+                  <span>Competência: {formatIsoDatePtBr(entry.occurredOn)}</span>
+                  {entry.settledOn ? <span>Liquidação: {formatIsoDatePtBr(entry.settledOn)}</span> : null}
                   {entry.counterpartyName ? <span>Favorecido: {entry.counterpartyName}</span> : null}
                   {entry.counterpartyTaxId ? <span>Doc. fiscal: {entry.counterpartyTaxId}</span> : null}
                   {entry.documentNumber ? <span>Comprovante/NF/NE: {entry.documentNumber}</span> : null}
@@ -114,43 +169,49 @@ export function FinancialEntriesLedger({
                   {isIncome ? '+' : '-'} {formatBrlCents(entry.amountCents)}
                 </p>
 
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {entry.status !== 'SETTLED' && entry.status !== 'CANCELED' ? (
-                    <InlineActionForm
-                      action={updateFinancialEntryStatusAction}
-                      submitLabel={isIncome ? 'Confirmar recebimento' : 'Marcar como pago'}
-                      testId={`finance-entry-settle-${entry.id}`}
-                      variant="primary"
-                    >
-                      <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                      <input type="hidden" name="eventId" value={eventId} />
-                      <input type="hidden" name="entryId" value={entry.id} />
-                      <input type="hidden" name="status" value="SETTLED" />
-                    </InlineActionForm>
-                  ) : null}
-
-                  <InlineActionForm
-                    action={deleteFinancialEntryAction}
-                    submitLabel="Excluir"
-                    testId={`finance-entry-delete-${entry.id}`}
-                    variant="destructive"
-                    confirm={{
-                      title: `Excluir o lançamento "${entry.title}"?`,
-                      description:
-                        'O lançamento será removido permanentemente do livro-razão deste evento e a exclusão ficará registrada na trilha de auditoria.',
-                      confirmLabel: 'Excluir lançamento',
-                    }}
-                  >
-                    <input type="hidden" name="tenantSlug" value={tenantSlug} />
-                    <input type="hidden" name="eventId" value={eventId} />
-                    <input type="hidden" name="entryId" value={entry.id} />
-                  </InlineActionForm>
-                </div>
+                <EntryRowActions
+                  tenantSlug={tenantSlug}
+                  eventId={eventId}
+                  entry={entry}
+                  editHref={`${financeBase}/lancamentos/${encodeURIComponent(entry.id)}/editar`}
+                />
               </div>
             </article>
           );
         })}
       </div>
+
+      {pagination.totalPages > 1 ? (
+        <nav
+          className="flex items-center justify-between border-t border-border pt-3 text-xs"
+          aria-label="Paginação do livro-razão"
+          data-testid="finance-ledger-pagination"
+        >
+          <span className="text-muted-foreground">
+            Página {pagination.currentPage} de {pagination.totalPages} ({pagination.totalItems} lançamentos)
+          </span>
+          <div className="flex items-center gap-2">
+            {pagination.hasPrev ? (
+              <Link
+                href={pageHref(pagination.currentPage - 1)}
+                className="rounded-md border border-border bg-background px-2.5 py-1 hover:bg-accent"
+                data-testid="finance-ledger-prev"
+              >
+                ← Anterior
+              </Link>
+            ) : null}
+            {pagination.hasNext ? (
+              <Link
+                href={pageHref(pagination.currentPage + 1)}
+                className="rounded-md border border-border bg-background px-2.5 py-1 hover:bg-accent"
+                data-testid="finance-ledger-next"
+              >
+                Próxima →
+              </Link>
+            ) : null}
+          </div>
+        </nav>
+      ) : null}
     </section>
   );
 }

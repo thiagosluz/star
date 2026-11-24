@@ -250,8 +250,8 @@ describe('catraca — todo `page.tsx` do produto usa o topo único (FASE 78)', (
      * a FASE 122 acrescentou a tela de gestão financeira (/administracao/eventos/[eventId]/financeiro)
      * com `PageHeader` e `eyebrow={TENANT_NAV_GROUPS.operacao}`.
      */
-    expect(PAGINAS.length).toBe(116);
-    expect(MIGRADAS.length).toBe(101);
+    expect(PAGINAS.length).toBe(120);
+    expect(MIGRADAS.length).toBe(105);
     expect(Object.keys(ALLOWLIST)).toHaveLength(15);
     expect(Object.keys(TOPO_COMPARTILHADO)).toHaveLength(1);
   });

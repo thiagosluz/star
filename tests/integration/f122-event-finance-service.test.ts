@@ -10,9 +10,14 @@ import {
   deleteFinancialEntry,
   deleteFundingSource,
   exportEventFinanceCsv,
+  filterFinancialEntries,
+  getFinancialEntryForEdit,
+  getFundingSourceForEdit,
   importSponsorContractsAsSources,
   loadEventFinanceDashboard,
+  updateFinancialEntry,
   updateFinancialEntryStatus,
+  updateFundingSource,
 } from '@/lib/finance/event-finance-service';
 
 const RUN = randomUUID().slice(0, 8);
@@ -176,7 +181,16 @@ describe('FASE 122 — Integração: Serviço Financeiro, Fomento, Importação 
     expect(blockedDelete.ok).toBe(false);
     if (!blockedDelete.ok) expect(blockedDelete.code).toBe('SOURCE_HAS_ENTRIES');
 
-    // 5. Liquida a despesa planejada e confere o painel consolidado + selo de contagem da área
+    // 5. Ciclo completo PLANNED -> COMMITTED -> SETTLED (anexando Nº NF) -> CANCELED + painel consolidado
+    const commitRes = await updateFinancialEntryStatus({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      actorId,
+      entryId: expenseRes.entryId,
+      status: 'COMMITTED',
+    });
+    expect(commitRes.ok).toBe(true);
+
     const settleRes = await updateFinancialEntryStatus({
       tenantId: tenantAId,
       eventId: eventAId,
@@ -184,6 +198,7 @@ describe('FASE 122 — Integração: Serviço Financeiro, Fomento, Importação 
       entryId: expenseRes.entryId,
       status: 'SETTLED',
       settledOn: '2026-11-12',
+      documentNumber: 'NF-e 881-A',
     });
     expect(settleRes.ok).toBe(true);
 
@@ -244,5 +259,117 @@ describe('FASE 122 — Integração: Serviço Financeiro, Fomento, Importação 
       entryId: expenseRes.entryId,
     });
     expect(crossDelete.ok).toBe(false);
+  });
+
+  it('FASE 124: edita fonte (aditivo), reatribui lançamento para corrigir glosa e filtra pendências documentais', async () => {
+    const srcRestrita = await createFundingSource({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      actorId,
+      name: 'Edital CAPES Restrito',
+      kind: 'PUBLIC_GRANT',
+      approvedCents: 1_000_000,
+      restrictedCategories: ['TRAVEL_AND_PER_DIEM'],
+    });
+    const srcLivre = await createFundingSource({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      actorId,
+      name: 'Recurso Próprio Livre',
+      kind: 'OWN_REVENUE',
+      approvedCents: 500_000,
+      restrictedCategories: [],
+    });
+    if (!srcRestrita.ok || !srcLivre.ok) throw new Error('Falha ao criar fontes F124');
+
+    const loadedSrc = await getFundingSourceForEdit({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      sourceId: srcLivre.sourceId,
+    });
+    expect(loadedSrc.ok).toBe(true);
+
+    const updSrc = await updateFundingSource({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      actorId,
+      sourceId: srcLivre.sourceId,
+      name: 'Recurso Próprio Livre (Aditivado)',
+      kind: 'OWN_REVENUE',
+      approvedCents: 800_000,
+      restrictedCategories: [],
+    });
+    expect(updSrc.ok).toBe(true);
+
+    const badExpense = await createFinancialEntry({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      actorId,
+      sourceId: srcRestrita.sourceId,
+      type: 'EXPENSE',
+      status: 'SETTLED',
+      category: 'CATERING',
+      title: 'Coffee-break lançado errado na CAPES',
+      amountCents: 150_000,
+      occurredOn: '2026-11-15',
+      settledOn: '2026-11-15',
+      documentNumber: null,
+    });
+    expect(badExpense.ok).toBe(true);
+    if (!badExpense.ok) return;
+
+    const dashBefore = await loadEventFinanceDashboard({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      filters: { compliance: 'GLOSA' },
+    });
+    expect(dashBefore.ok).toBe(true);
+    if (dashBefore.ok) {
+      expect(dashBefore.dashboard.filteredEntries.some((e) => e.id === badExpense.entryId)).toBe(true);
+      expect(
+        filterFinancialEntries(
+          dashBefore.dashboard.allEntries,
+          { compliance: 'MISSING_DOCUMENT' },
+          dashBefore.dashboard.sources,
+        ).some((e) => e.id === badExpense.entryId),
+      ).toBe(true);
+    }
+
+    const editLoaded = await getFinancialEntryForEdit({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      entryId: badExpense.entryId,
+    });
+    expect(editLoaded.ok).toBe(true);
+
+    // Reatribui para a fonte livre e preenche NF-e
+    const updEntry = await updateFinancialEntry({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      actorId,
+      entryId: badExpense.entryId,
+      sourceId: srcLivre.sourceId,
+      type: 'EXPENSE',
+      status: 'SETTLED',
+      category: 'CATERING',
+      title: 'Coffee-break corrigido para Recurso Próprio',
+      amountCents: 150_000,
+      occurredOn: '2026-11-15',
+      settledOn: '2026-11-15',
+      documentNumber: 'NF-e 999',
+    });
+    expect(updEntry.ok).toBe(true);
+
+    const dashAfter = await loadEventFinanceDashboard({
+      tenantId: tenantAId,
+      eventId: eventAId,
+      filters: { compliance: 'GLOSA' },
+    });
+    expect(dashAfter.ok).toBe(true);
+    if (dashAfter.ok) {
+      expect(dashAfter.dashboard.filteredEntries.some((e) => e.id === badExpense.entryId)).toBe(
+        false,
+      );
+    }
   });
 });

@@ -1,28 +1,27 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Landmark, Search } from 'lucide-react';
+import { Landmark, Plus } from 'lucide-react';
 
 import { FinanceChartsPanel } from '@/components/finance/finance-charts-panel';
 import { FinanceKpiCards } from '@/components/finance/finance-kpi-cards';
+import { FinanceLedgerFilters } from '@/components/finance/finance-ledger-filters';
 import { FinancialEntriesLedger } from '@/components/finance/financial-entries-ledger';
-import { FinancialEntryCreateForm } from '@/components/finance/financial-entry-create-form';
 import { FundingSourcesPanel } from '@/components/finance/funding-sources-panel';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
-import { GetSearchForm, PageHeader } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
 import {
-  FINANCIAL_CATEGORIES,
-  FINANCIAL_CATEGORY_LABELS,
-  FINANCIAL_ENTRY_STATUS_LABELS,
-  FINANCIAL_ENTRY_STATUSES,
-  FINANCIAL_ENTRY_TYPE_LABELS,
-  FINANCIAL_ENTRY_TYPES,
+  buildEventFinanceHref,
+  FINANCE_TAB_LABELS,
+  FINANCE_TABS,
+  parseFinancePage,
+  resolveFinanceTab,
 } from '@/domain/finance/event-finance-rules';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import {
   loadEventFinanceDashboard,
-  type FinanceLedgerFilters,
+  type FinanceLedgerFilters as FinanceFiltersInput,
 } from '@/lib/finance/event-finance-service';
 import { requireUuidParam } from '@/lib/validation/id';
 
@@ -31,11 +30,12 @@ export const dynamic = 'force-dynamic';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  GESTÃO FINANCEIRA, FOMENTO E PRESTAÇÃO DE CONTAS DO EVENTO (FASE 122)
+ *  GESTÃO FINANCEIRA, FOMENTO E PRESTAÇÃO DE CONTAS DO EVENTO (FASE 122 · F124)
  *
- *  Consolida fontes de recurso (editais FAPEG/CNPq/CAPES, FUNAPE, UF/IF e
- *  patrocínio privado), entradas e saídas por rubrica, gráficos vetoriais SSR e
- *  exportação auditada em CSV para prestação de contas.
+ *  Separa os 3 modos mentais em abas reais por URL (`?aba=resumo|lancamentos|fontes`)
+ *  e move os formulários densos para rotas dedicadas (`/lancamentos/novo`,
+ *  `/lancamentos/[entryId]/editar`, `/fontes/nova`, `/fontes/[sourceId]/editar`),
+ *  mantendo a faixa executiva fixa no topo com zero JS de formulário nas abas.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export default async function EventFinancePage({
@@ -44,17 +44,20 @@ export default async function EventFinancePage({
 }: {
   params: Promise<{ tenantSlug: string; eventId: string }>;
   searchParams: Promise<{
+    aba?: string;
     tipo?: string;
     situacao?: string;
     fonte?: string;
     categoria?: string;
+    conformidade?: string;
     busca?: string;
+    pagina?: string;
   }>;
 }) {
   const resolvedParams = await params;
   const eventId = requireUuidParam(resolvedParams, 'eventId');
   const { tenantSlug } = resolvedParams;
-  const { tipo, situacao, fonte, categoria, busca } = await searchParams;
+  const { aba, tipo, situacao, fonte, categoria, conformidade, busca, pagina } = await searchParams;
 
   const { tenantId } = await requirePagePermission({
     tenantSlug,
@@ -62,13 +65,26 @@ export default async function EventFinancePage({
     allowedScopes: ['TENANT', 'EVENT'],
   });
 
-  const filters: FinanceLedgerFilters = {
+  const filters: FinanceFiltersInput = {
     type: tipo ?? null,
     status: situacao ?? null,
     sourceId: fonte ?? null,
     category: categoria ?? null,
+    compliance: conformidade ?? null,
     search: busca ?? null,
   };
+
+  const hasLedgerFilter = Boolean(
+    filters.type ||
+      filters.status ||
+      filters.sourceId ||
+      filters.category ||
+      filters.compliance ||
+      filters.search ||
+      pagina,
+  );
+  const activeTab = resolveFinanceTab(aba, hasLedgerFilter);
+  const currentPage = parseFinancePage(pagina);
 
   const loaded = await loadEventFinanceDashboard({
     tenantId,
@@ -80,10 +96,15 @@ export default async function EventFinancePage({
 
   const { dashboard } = loaded;
   const financePath = tenantPath(tenantSlug, `/administracao/eventos/${eventId}/financeiro`);
-  const defaultDate = new Date().toISOString().slice(0, 10);
+
+  const tabCount = (tab: (typeof FINANCE_TABS)[number]) => {
+    if (tab === 'lancamentos') return dashboard.allEntries.length;
+    if (tab === 'fontes') return dashboard.sources.length;
+    return null;
+  };
 
   return (
-    <main className="space-y-8">
+    <main className="space-y-6">
       <PageHeader
         title="Finanças e fomento"
         eyebrow={TENANT_NAV_GROUPS.operacao}
@@ -99,6 +120,26 @@ export default async function EventFinancePage({
           },
           { label: 'Finanças e fomento' },
         ]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`${financePath}/fontes/nova`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+              data-testid="finance-header-new-source"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Nova fonte
+            </Link>
+            <Link
+              href={`${financePath}/lancamentos/novo`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-95"
+              data-testid="finance-header-new-entry"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Novo lançamento
+            </Link>
+          </div>
+        }
       />
 
       <FinanceKpiCards
@@ -107,142 +148,70 @@ export default async function EventFinancePage({
         sourcesCount={dashboard.sources.length}
         summary={dashboard.summary}
         filters={filters}
+        compact={activeTab !== 'resumo'}
+        baseHref={financePath}
       />
 
-      <FinanceChartsPanel summary={dashboard.summary} />
-
-      <FundingSourcesPanel
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        summary={dashboard.summary}
-      />
-
-      <FinancialEntryCreateForm
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        sources={dashboard.sources}
-        defaultDate={defaultDate}
-      />
-
-      <GetSearchForm
-        action={financePath}
-        className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-card p-4 shadow-sm"
-        data-testid="finance-filters"
+      <nav
+        aria-label="Seções do módulo financeiro"
+        className="flex flex-wrap gap-2 border-b border-border pb-3"
+        data-testid="finance-tabs"
       >
-        <label className="space-y-1 text-xs">
-          <span className="block text-muted-foreground">Buscar</span>
-          <input
-            type="search"
-            name="busca"
-            defaultValue={busca ?? ''}
-            placeholder="descrição, favorecido, NF ou CNPJ"
-            className="w-56 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            data-testid="finance-filter-search"
+        {FINANCE_TABS.map((tab) => {
+          const isCurrent = tab === activeTab;
+          const count = tabCount(tab);
+          return (
+            <Link
+              key={tab}
+              href={buildEventFinanceHref(financePath, { aba: tab })}
+              aria-current={isCurrent ? 'page' : undefined}
+              className={`rounded-lg px-3.5 py-2 text-xs font-medium transition-colors ${
+                isCurrent
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-card text-foreground hover:bg-accent'
+              }`}
+              data-testid={`finance-tab-${tab}`}
+            >
+              {FINANCE_TAB_LABELS[tab]}
+              {count !== null ? ` (${count})` : ''}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {activeTab === 'resumo' ? (
+        <FinanceChartsPanel summary={dashboard.summary} baseHref={financePath} />
+      ) : null}
+
+      {activeTab === 'lancamentos' ? (
+        <div className="space-y-4">
+          <FinanceLedgerFilters
+            tenantSlug={tenantSlug}
+            eventId={eventId}
+            financePath={financePath}
+            sources={dashboard.sources}
+            filters={filters}
           />
-        </label>
+          <FinancialEntriesLedger
+            tenantSlug={tenantSlug}
+            eventId={eventId}
+            entries={dashboard.filteredEntries}
+            sources={dashboard.sources}
+            page={currentPage}
+            baseHref={financePath}
+            filters={filters}
+          />
+        </div>
+      ) : null}
 
-        <label className="space-y-1 text-xs">
-          <span className="block text-muted-foreground">Tipo</span>
-          <select
-            name="tipo"
-            defaultValue={tipo ?? ''}
-            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            data-testid="finance-filter-type"
-          >
-            <option value="">todos</option>
-            {FINANCIAL_ENTRY_TYPES.map((item) => (
-              <option key={item} value={item}>
-                {FINANCIAL_ENTRY_TYPE_LABELS[item]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="space-y-1 text-xs">
-          <span className="block text-muted-foreground">Situação</span>
-          <select
-            name="situacao"
-            defaultValue={situacao ?? ''}
-            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            data-testid="finance-filter-status"
-          >
-            <option value="">todas</option>
-            {FINANCIAL_ENTRY_STATUSES.map((item) => (
-              <option key={item} value={item}>
-                {FINANCIAL_ENTRY_STATUS_LABELS[item]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="space-y-1 text-xs">
-          <span className="block text-muted-foreground">Fonte</span>
-          <select
-            name="fonte"
-            defaultValue={fonte ?? ''}
-            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            data-testid="finance-filter-source"
-          >
-            <option value="">todas</option>
-            <option value="__NONE__">sem fonte vinculada</option>
-            {dashboard.sources.map((source) => (
-              <option key={source.id} value={source.id}>
-                {source.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="space-y-1 text-xs">
-          <span className="block text-muted-foreground">Rubrica</span>
-          <select
-            name="categoria"
-            defaultValue={categoria ?? ''}
-            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            data-testid="finance-filter-category"
-          >
-            <option value="">todas</option>
-            {FINANCIAL_CATEGORIES.map((item) => (
-              <option key={item} value={item}>
-                {FINANCIAL_CATEGORY_LABELS[item]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button
-          type="submit"
-          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-          data-testid="finance-filter-submit"
-        >
-          <Search className="mr-1 inline size-3.5" aria-hidden />
-          Filtrar
-        </button>
-
-        <Link
-          href={financePath}
-          className="text-xs text-muted-foreground underline"
-          data-testid="finance-filter-clear"
-        >
-          limpar
-        </Link>
-      </GetSearchForm>
-
-      <FinancialEntriesLedger
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        entries={dashboard.filteredEntries}
-        sources={dashboard.sources}
-      />
-
-      <p className="text-xs text-muted-foreground">
-        <Link
-          href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
-          className="underline"
-        >
-          Voltar ao painel do evento
-        </Link>
-      </p>
+      {activeTab === 'fontes' ? (
+        <FundingSourcesPanel
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          summary={dashboard.summary}
+          baseHref={financePath}
+        />
+      ) : null}
     </main>
   );
 }

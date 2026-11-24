@@ -101,6 +101,42 @@ export const FINANCIAL_CATEGORY_LABELS: Readonly<Record<FinancialCategory, strin
   OTHER: 'Outras receitas ou despesas',
 };
 
+export const INCOME_FINANCIAL_CATEGORIES: readonly FinancialCategory[] = [
+  'GRANT_DISBURSEMENT',
+  'SPONSORSHIP_REVENUE',
+  'INSTITUTIONAL_CONTRIBUTION',
+  'OTHER',
+] as const;
+
+export const EXPENSE_FINANCIAL_CATEGORIES: readonly FinancialCategory[] = [
+  'TRAVEL_AND_PER_DIEM',
+  'CATERING',
+  'PRINTING_AND_BADGES',
+  'INFRASTRUCTURE_AND_AV',
+  'THIRD_PARTY_SERVICES',
+  'AWARDS_AND_SCHOLARSHIPS',
+  'OTHER',
+] as const;
+
+/**
+ * Ordena as rubricas priorizando as naturais ao tipo do lançamento (`INCOME` × `EXPENSE`),
+ * mantendo todas acessíveis no `<select>` sem duplicar chaves.
+ */
+export function categoriesForEntryType(type: FinancialEntryType): FinancialCategory[] {
+  const primary = type === 'INCOME' ? INCOME_FINANCIAL_CATEGORIES : EXPENSE_FINANCIAL_CATEGORIES;
+  const primarySet = new Set<FinancialCategory>(primary);
+  const secondary = FINANCIAL_CATEGORIES.filter((cat) => !primarySet.has(cat));
+  return [...primary, ...secondary];
+}
+
+/** Formata data ISO `AAAA-MM-DD` para `DD/MM/AAAA` sem desvio de fuso horário. */
+export function formatIsoDatePtBr(isoDate: string | null | undefined): string {
+  const trimmed = (isoDate ?? '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) return trimmed.length > 0 ? trimmed : '—';
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 /** Limite superior defensivo: R$ 100 milhões em centavos. */
 export const MAX_FINANCE_CENTS = 10_000_000_000;
 
@@ -285,6 +321,12 @@ export interface SponsorshipPipelineSummary {
   unimportedSponsors: EventSponsorContractInput[];
 }
 
+export interface FinanceComplianceCounts {
+  glosaEntriesCount: number;
+  missingDocumentSettledCount: number;
+  unassignedExpenseEntriesCount: number;
+}
+
 export interface EventFinanceSummary {
   totalApprovedSourcesCents: number;
   settledIncomeCents: number;
@@ -310,6 +352,7 @@ export interface EventFinanceSummary {
   expensesByCategory: CategoryBreakdownItem[];
   monthlyCashflow: MonthlyCashflowItem[];
   sponsorshipPipeline: SponsorshipPipelineSummary;
+  complianceCounts: FinanceComplianceCounts;
   alerts: string[];
 }
 
@@ -335,6 +378,9 @@ export function computeEventFinanceSummary(input: {
   let committedExpenseCents = 0;
   let plannedExpenseCents = 0;
   let unassignedExpenseCents = 0;
+  let unassignedExpenseEntriesCount = 0;
+  let missingDocumentSettledCount = 0;
+  let glosaEntriesCount = 0;
   let activeEntriesCount = 0;
   let canceledEntriesCount = 0;
 
@@ -368,6 +414,11 @@ export function computeEventFinanceSummary(input: {
       entriesBySource.set(entry.sourceId, bucket);
     } else if (entry.type === 'EXPENSE') {
       unassignedExpenseCents += amount;
+      unassignedExpenseEntriesCount += 1;
+    }
+
+    if (entry.status === 'SETTLED' && !(entry.documentNumber ?? '').trim()) {
+      missingDocumentSettledCount += 1;
     }
 
     const monthKey = /^\d{4}-\d{2}/.test(entry.occurredOn)
@@ -449,6 +500,7 @@ export function computeEventFinanceSummary(input: {
         else if (entry.status === 'PLANNED') srcPlannedExpense += amount;
 
         if (allowedSet && !allowedSet.has(entry.category)) {
+          glosaEntriesCount += 1;
           policyWarnings.push(
             `Despesa "${entry.title}" (${FINANCIAL_CATEGORY_LABELS[entry.category]}) fora das rubricas permitidas da fonte "${source.name}".`,
           );
@@ -601,6 +653,11 @@ export function computeEventFinanceSummary(input: {
       linkedSponsorsCount: activeValuedSponsors.length - unimportedSponsors.length,
       unimportedSponsors,
     },
+    complianceCounts: {
+      glosaEntriesCount,
+      missingDocumentSettledCount,
+      unassignedExpenseEntriesCount,
+    },
     alerts,
   };
 }
@@ -707,4 +764,266 @@ export function buildAccountabilityReportCsv(summary: EventFinanceSummary): stri
   ].join(';'));
 
   return `\uFEFF${[header, ...rows].join('\r\n')}\r\n`;
+}
+
+/**
+ * Verifica se um lançamento específico viola as rubricas carimbadas da sua fonte pagadora.
+ */
+export function isEntryCategoryViolation(
+  entry: Pick<FinancialEntryRuleInput, 'type' | 'status' | 'category'>,
+  source: Pick<FundingSourceRuleInput, 'restrictedCategories'> | null | undefined,
+): boolean {
+  if (entry.type !== 'EXPENSE' || entry.status === 'CANCELED') return false;
+  if (!source || source.restrictedCategories.length === 0) return false;
+  return !source.restrictedCategories.includes(entry.category);
+}
+
+export interface EntryCompliancePreview {
+  isCategoryRestrictedViolation: boolean;
+  isOverSourceRemainingBudget: boolean;
+  projectedRemainingCents: number | null;
+  allowedCategoryLabels: string[];
+  warnings: string[];
+}
+
+/**
+ * Avalia em tempo real (antes do envio do formulário) se o rascunho de lançamento
+ * viola as rubricas permitidas pelo edital selecionado ou estoura o saldo do teto.
+ */
+export function evaluateEntryCompliance(input: {
+  type: FinancialEntryType;
+  category: FinancialCategory;
+  amountCents: number | null;
+  source:
+    | (Pick<FundingSourceRuleInput, 'name' | 'approvedCents' | 'restrictedCategories'> & {
+        activeExpenseCents?: number;
+        remainingApprovedCents?: number;
+      })
+    | null
+    | undefined;
+}): EntryCompliancePreview {
+  const source = input.source;
+  if (!source) {
+    return {
+      isCategoryRestrictedViolation: false,
+      isOverSourceRemainingBudget: false,
+      projectedRemainingCents: null,
+      allowedCategoryLabels: [],
+      warnings: [],
+    };
+  }
+
+  const allowedCategoryLabels = source.restrictedCategories.map(
+    (cat) => FINANCIAL_CATEGORY_LABELS[cat],
+  );
+  const currentRemaining =
+    typeof source.remainingApprovedCents === 'number'
+      ? source.remainingApprovedCents
+      : source.approvedCents - (source.activeExpenseCents ?? 0);
+
+  if (input.type !== 'EXPENSE') {
+    return {
+      isCategoryRestrictedViolation: false,
+      isOverSourceRemainingBudget: false,
+      projectedRemainingCents: currentRemaining,
+      allowedCategoryLabels,
+      warnings: [],
+    };
+  }
+
+  const warnings: string[] = [];
+  const isCategoryRestrictedViolation =
+    source.restrictedCategories.length > 0 &&
+    !source.restrictedCategories.includes(input.category);
+
+  if (isCategoryRestrictedViolation) {
+    warnings.push(
+      `A rubrica "${FINANCIAL_CATEGORY_LABELS[input.category]}" não está entre as rubricas permitidas pela fonte "${source.name}" (${allowedCategoryLabels.join(', ')}) — risco de glosa na prestação de contas.`,
+    );
+  }
+
+  const draftAmount = Math.max(0, input.amountCents ?? 0);
+  const projectedRemainingCents = currentRemaining - draftAmount;
+  const isOverSourceRemainingBudget =
+    source.approvedCents > 0 && draftAmount > 0 && projectedRemainingCents < 0;
+
+  if (isOverSourceRemainingBudget) {
+    warnings.push(
+      `O valor informado excede o saldo disponível do teto da fonte "${source.name}" em ${formatBrlCents(Math.abs(projectedRemainingCents))}.`,
+    );
+  }
+
+  return {
+    isCategoryRestrictedViolation,
+    isOverSourceRemainingBudget,
+    projectedRemainingCents,
+    allowedCategoryLabels,
+    warnings,
+  };
+}
+
+export interface FilteredLedgerTotals {
+  totalCount: number;
+  activeCount: number;
+  canceledCount: number;
+  activeIncomeCents: number;
+  settledIncomeCents: number;
+  activeExpenseCents: number;
+  settledExpenseCents: number;
+  netActiveCents: number;
+  netSettledCents: number;
+}
+
+/**
+ * Calcula os subtotais do recorte filtrado no livro-razão (Entradas, Saídas e Saldo do filtro).
+ */
+export function computeFilteredLedgerTotals(
+  entries: readonly FinancialEntryRuleInput[],
+): FilteredLedgerTotals {
+  let activeCount = 0;
+  let canceledCount = 0;
+  let activeIncomeCents = 0;
+  let settledIncomeCents = 0;
+  let activeExpenseCents = 0;
+  let settledExpenseCents = 0;
+
+  for (const entry of entries) {
+    if (entry.status === 'CANCELED') {
+      canceledCount += 1;
+      continue;
+    }
+    activeCount += 1;
+    const amount = Math.max(0, entry.amountCents);
+    if (entry.type === 'INCOME') {
+      activeIncomeCents += amount;
+      if (entry.status === 'SETTLED') settledIncomeCents += amount;
+    } else {
+      activeExpenseCents += amount;
+      if (entry.status === 'SETTLED') settledExpenseCents += amount;
+    }
+  }
+
+  return {
+    totalCount: entries.length,
+    activeCount,
+    canceledCount,
+    activeIncomeCents,
+    settledIncomeCents,
+    activeExpenseCents,
+    settledExpenseCents,
+    netActiveCents: activeIncomeCents - activeExpenseCents,
+    netSettledCents: settledIncomeCents - settledExpenseCents,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  FASE 124 — Abas por intenção, filtro de pendências documentais e paginação
+// ───────────────────────────────────────────────────────────────────────────────
+
+export const FINANCE_TABS = ['resumo', 'lancamentos', 'fontes'] as const;
+export type FinanceTab = (typeof FINANCE_TABS)[number];
+
+export const FINANCE_TAB_LABELS: Readonly<Record<FinanceTab, string>> = {
+  resumo: 'Visão geral e prestação',
+  lancamentos: 'Livro-razão',
+  fontes: 'Fontes e editais',
+};
+
+export const FINANCE_COMPLIANCE_FILTERS = [
+  'GLOSA',
+  'MISSING_DOCUMENT',
+  'UNASSIGNED_SOURCE',
+] as const;
+export type FinanceComplianceFilter = (typeof FINANCE_COMPLIANCE_FILTERS)[number];
+
+export const FINANCE_COMPLIANCE_FILTER_LABELS: Readonly<Record<FinanceComplianceFilter, string>> = {
+  GLOSA: 'Rubrica fora do edital (risco de glosa)',
+  MISSING_DOCUMENT: 'Realizado sem Nº NF / OB / Recibo',
+  UNASSIGNED_SOURCE: 'Saída sem fonte pagadora vinculada',
+};
+
+export function isFinanceComplianceFilter(value: unknown): value is FinanceComplianceFilter {
+  return (
+    typeof value === 'string' &&
+    (FINANCE_COMPLIANCE_FILTERS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Resolve a aba ativa pela URL. Quando `aba` está ausente mas há filtro de livro-razão
+ * ativo (`?fonte=`, `?categoria=`, `?conformidade=` etc.), abre direto `'lancamentos'`
+ * para eliminar rolagem e clique extra.
+ */
+export function resolveFinanceTab(
+  raw: string | null | undefined,
+  hasLedgerFilter = false,
+): FinanceTab {
+  if (raw === 'resumo' || raw === 'lancamentos' || raw === 'fontes') return raw;
+  return hasLedgerFilter ? 'lancamentos' : 'resumo';
+}
+
+export function buildEventFinanceHref(
+  basePath: string,
+  params: {
+    aba?: FinanceTab | null;
+    tipo?: string | null;
+    situacao?: string | null;
+    fonte?: string | null;
+    categoria?: string | null;
+    conformidade?: string | null;
+    busca?: string | null;
+    pagina?: number | null;
+  },
+): string {
+  const sp = new URLSearchParams();
+  if (params.aba && params.aba !== 'resumo') sp.set('aba', params.aba);
+  if (params.tipo) sp.set('tipo', params.tipo);
+  if (params.situacao) sp.set('situacao', params.situacao);
+  if (params.fonte) sp.set('fonte', params.fonte);
+  if (params.categoria) sp.set('categoria', params.categoria);
+  if (params.conformidade) sp.set('conformidade', params.conformidade);
+  if (params.busca) sp.set('busca', params.busca);
+  if (params.pagina && params.pagina > 1) sp.set('pagina', String(params.pagina));
+  const qs = sp.toString();
+  return qs.length > 0 ? `${basePath}?${qs}` : basePath;
+}
+
+export const FINANCE_LEDGER_PAGE_SIZE = 20;
+
+export function parseFinancePage(raw: string | null | undefined): number {
+  const parsed = Number.parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+}
+
+export interface PaginatedFinancialEntries<T> {
+  items: T[];
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+}
+
+export function paginateFinancialEntries<T>(
+  entries: readonly T[],
+  page: number,
+  pageSize = FINANCE_LEDGER_PAGE_SIZE,
+): PaginatedFinancialEntries<T> {
+  const safeSize = Math.max(1, Math.trunc(pageSize));
+  const totalItems = entries.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / safeSize));
+  const currentPage = Math.min(totalPages, Math.max(1, Math.trunc(page)));
+  const start = (currentPage - 1) * safeSize;
+  const items = entries.slice(start, start + safeSize);
+
+  return {
+    items,
+    currentPage,
+    totalPages,
+    totalItems,
+    pageSize: safeSize,
+    hasPrev: currentPage > 1,
+    hasNext: currentPage < totalPages,
+  };
 }

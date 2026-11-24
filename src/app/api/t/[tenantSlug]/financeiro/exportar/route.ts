@@ -66,6 +66,7 @@ export async function GET(
       status: url.searchParams.get('situacao'),
       sourceId: url.searchParams.get('fonte'),
       category: url.searchParams.get('categoria'),
+      compliance: url.searchParams.get('conformidade'),
       search: url.searchParams.get('busca'),
     },
   });
