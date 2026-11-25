@@ -1,11 +1,18 @@
 import Link from 'next/link';
-import { Award, CalendarDays, Clock, Download, Mic, ShieldCheck, UserRound } from 'lucide-react';
+import { Award, CalendarDays, Clock, Download, ExternalLink, MapPin, Mic, ShieldCheck, UserRound } from 'lucide-react';
 
 import { requirePersonalPage } from '@/lib/auth/guard-page';
-import { withTenant } from '@/lib/db/tenant-client';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { formatDuration } from '@/domain/events/event-rules';
+import { formatDuration, formatEventPeriod } from '@/domain/events/event-rules';
+import {
+  buildSpeakerPortalHref,
+  computeSpeakerPortalKpis,
+  resolveSpeakerPortalTab,
+  SPEAKER_PORTAL_TAB_LABELS,
+  SPEAKER_PORTAL_TABS,
+  type SpeakerPortalTab,
+} from '@/domain/speakers/speaker-portal-rules';
 import { loadSpeakerPortal, hasPendingSpeakerInvite } from '@/lib/speakers/speaker-portal-service';
 import {
   claimSpeakerInviteAction,
@@ -27,6 +34,7 @@ import {
   SpeakerNotesForm,
   SpeakerProfileForm,
 } from '@/components/speakers/portal-forms';
+import { SpeakerPortalKpiCards } from '@/components/speakers/speaker-portal-kpi-cards';
 import { CertificateRequestButton } from '@/components/certificates/request-button';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
@@ -68,39 +76,38 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default async function SpeakerPortalPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tenantSlug: string }>;
+  searchParams?: Promise<{ aba?: string }>;
 }) {
   const { tenantSlug } = await params;
+  const { aba } = (await searchParams) ?? {};
+  const activeTab = resolveSpeakerPortalTab(aba);
 
   const { tenantId, userId, userEmail } = await requirePersonalPage({
     tenantSlug,
     permission: PERMISSIONS.SPEAKER_PROFILE_UPDATE_OWN,
-    /**
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  A SEGUNDA PORTA: QUEM FOI CONVIDADO E AINDA NÃO ACEITOU
-     * ─────────────────────────────────────────────────────────────────────────────
-     *  O papel `SPEAKER` nasce COM o aceite. Exigir o papel para abrir o portal
-     *  deixava o convite inalcançável justamente para quem precisa aceitá-lo — e o
-     *  caminho virava "achar o link com o código". Quem tem convite pendente no
-     *  e-mail da própria conta entra, vê a lista e aceita dali.
-     *
-     *  A porta é estreita de propósito: `hasPendingSpeakerInvite` casa perfil sem
-     *  dono + convite gravado + MESMO e-mail da conta. Quem não tem convite continua
-     *  sendo redirecionado ao painel.
-     */
     allowWhen: ({ tenantId: invitedTenantId, userEmail: invitedEmail }) =>
       hasPendingSpeakerInvite({ tenantId: invitedTenantId, userEmail: invitedEmail }),
   });
 
   const portal = await loadSpeakerPortal({ tenantId, userId, userEmail });
-  const fallbackEvent = await withTenant(tenantId, (tx) =>
-    tx.event.findFirst({
-      where: { tenantId, deletedAt: null },
-      orderBy: { startsAt: 'desc' },
-      select: { id: true },
-    }),
-  );
+  const portalHref = tenantPath(tenantSlug, '/palestrante');
+  const kpis = computeSpeakerPortalKpis({
+    profiles: portal.profiles,
+    certificates: portal.certificates,
+  });
+
+  const showProfile = activeTab === 'visao-geral' || activeTab === 'perfil';
+  const showActivities = activeTab === 'visao-geral' || activeTab === 'atividades';
+  const showCertificates = activeTab === 'visao-geral' || activeTab === 'certificados';
+
+  const tabCount = (tab: SpeakerPortalTab): number | null => {
+    if (tab === 'atividades') return kpis.activitiesSummary.totalActivities;
+    if (tab === 'certificados') return portal.certificates.length;
+    return null;
+  };
 
   return (
     <main className="max-w-5xl space-y-8">
@@ -151,149 +158,254 @@ export default async function SpeakerPortalPage({
         </section>
       ) : null}
 
-      {portal.profiles.map((profile) => {
-        const firstEventId = profile.activities[0]?.eventId ?? fallbackEvent?.id ?? '';
+      {portal.profiles.length > 0 ? (
+        <>
+          <SpeakerPortalKpiCards tenantSlug={tenantSlug} portalHref={portalHref} kpis={kpis} />
 
-        return (
-          <section
-            key={profile.speakerProfileId}
-            className="space-y-5"
-            aria-labelledby={`perfil-${profile.speakerProfileId}`}
-            data-testid={`speaker-profile-${profile.speakerProfileId}`}
+          <nav
+            aria-label="Seções do portal do palestrante"
+            className="flex flex-wrap gap-2 border-b border-border pb-3"
+            data-testid="speaker-portal-tabs"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2
-                id={`perfil-${profile.speakerProfileId}`}
-                className="flex items-center gap-2 text-lg font-semibold tracking-tight"
-              >
-                <UserRound className="size-5" aria-hidden />
-                Meu perfil público
-              </h2>
-              <span
-                className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
-                data-testid={`profile-visibility-${profile.speakerProfileId}`}
-                data-confirmed={String(profile.isConfirmed)}
-              >
-                {profile.isPublic ? 'Visível na vitrine' : 'Oculto na vitrine'}
-              </span>
-            </div>
+            {SPEAKER_PORTAL_TABS.map((tab) => {
+              const isCurrent = tab === activeTab;
+              const count = tabCount(tab);
 
-            <SpeakerProfileForm
-              tenantSlug={tenantSlug}
-              speakerProfileId={profile.speakerProfileId}
-              eventId={firstEventId}
-              initial={{
-                name: profile.name,
-                email: profile.email,
-                institution: profile.institution,
-                company: profile.company,
-                roleTitle: profile.roleTitle,
-                bio: profile.bio,
-                avatarUrl: profile.avatarUrl,
-                avatarSource: profile.avatarSource,
-                socialLinks: profile.socialLinks,
-              }}
-              updateAction={updateMySpeakerProfileAction}
-              requestAvatarAction={requestSpeakerAvatarUploadAction}
-              confirmAvatarAction={confirmSpeakerAvatarUploadAction}
-            />
-
-            <section className="space-y-3" aria-labelledby={`atividades-${profile.speakerProfileId}`}>
-              <h3
-                id={`atividades-${profile.speakerProfileId}`}
-                className="text-base font-semibold tracking-tight"
-              >
-                Minhas atividades ({profile.activities.length})
-              </h3>
-
-              {profile.activities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Você ainda não está vinculado a nenhuma atividade nesta instituição.
-                </p>
-              ) : null}
-
-              {profile.activities.map((activity) => (
-                <article
-                  key={activity.linkId}
-                  className="space-y-4 rounded-lg border border-border bg-card p-5"
-                  data-testid={`portal-activity-${activity.activityId}`}
+              return (
+                <Link
+                  key={tab}
+                  href={buildSpeakerPortalHref(portalHref, { aba: tab })}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  className={`rounded-lg px-3.5 py-2 text-xs font-medium transition-colors ${
+                    isCurrent
+                      ? 'bg-primary text-primary-foreground'
+                      : 'border border-border bg-card text-foreground hover:bg-accent'
+                  }`}
+                  data-testid={`speaker-tab-${tab}`}
                 >
-                  <header className="space-y-1">
-                    <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                      <CalendarDays className="size-3.5" aria-hidden />
-                      {activity.eventTitle}
-                    </p>
-                    <p className="font-medium">{activity.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {activity.roleTitle ?? 'Palestrante'}
-                      {activity.isKeynote ? ' · keynote' : ''} · {STATUS_LABEL[activity.status] ?? activity.status} ·{' '}
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="size-3" aria-hidden />
-                        {formatDuration(activity.workloadMinutes)}
+                  {SPEAKER_PORTAL_TAB_LABELS[tab]}
+                  {count !== null ? ` (${count})` : ''}
+                </Link>
+              );
+            })}
+          </nav>
+        </>
+      ) : null}
+
+      {(showProfile || showActivities)
+        ? portal.profiles.map((profile) => {
+            const firstEventId = profile.activities[0]?.eventId ?? portal.fallbackEventId;
+
+            return (
+              <section
+                key={profile.speakerProfileId}
+                className="space-y-5"
+                aria-labelledby={`perfil-${profile.speakerProfileId}`}
+                data-testid={`speaker-profile-${profile.speakerProfileId}`}
+              >
+                {showProfile ? (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h2
+                        id={`perfil-${profile.speakerProfileId}`}
+                        className="flex items-center gap-2 text-lg font-semibold tracking-tight"
+                      >
+                        <UserRound className="size-5" aria-hidden />
+                        Meu perfil público
+                      </h2>
+                      <span
+                        className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                        data-testid={`profile-visibility-${profile.speakerProfileId}`}
+                        data-confirmed={String(profile.isConfirmed)}
+                      >
+                        {profile.isPublic ? 'Visível na vitrine' : 'Oculto na vitrine'}
                       </span>
-                    </p>
-                  </header>
+                    </div>
 
-                  <SpeakerNotesForm
-                    tenantSlug={tenantSlug}
-                    linkId={activity.linkId}
-                    activityId={activity.activityId}
-                    activityTitle={activity.title}
-                    initial={{
-                      syllabus: activity.syllabus,
-                      requirements: activity.requirements,
-                      bibliography: activity.bibliography,
-                    }}
-                    action={updateSpeakerNotesAction}
-                  />
-
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-medium">Materiais de apoio</h4>
-
-                    {activity.materials.length === 0 ? (
-                      <p className="text-sm text-muted-foreground" data-testid={`no-materials-${activity.activityId}`}>
-                        Nenhum material publicado nesta atividade ainda.
-                      </p>
-                    ) : (
-                      <ul className="space-y-3" data-testid={`portal-materials-${activity.activityId}`}>
-                        {activity.materials.map((material) => (
-                          <SpeakerMaterialRow
-                            key={material.id}
-                            tenantSlug={tenantSlug}
-                            material={{
-                              id: material.id,
-                              title: material.title,
-                              kind: material.kind,
-                              visibility: material.visibility,
-                              fileName: material.fileName,
-                              sizeBytes: material.sizeBytes,
-                              isFile: material.isFile,
-                            }}
-                            updateAction={updateSpeakerMaterialAction}
-                            deleteAction={deleteSpeakerMaterialAction}
-                          />
-                        ))}
-                      </ul>
-                    )}
-
-                    <SpeakerMaterialUploader
+                    <SpeakerProfileForm
                       tenantSlug={tenantSlug}
-                      eventId={activity.eventId}
-                      activityId={activity.activityId}
                       speakerProfileId={profile.speakerProfileId}
-                      requestUploadAction={requestSpeakerMaterialUploadAction}
-                      confirmUploadAction={confirmSpeakerMaterialUploadAction}
-                      saveLinkAction={saveSpeakerMaterialLinkAction}
+                      eventId={firstEventId}
+                      initial={{
+                        name: profile.name,
+                        email: profile.email,
+                        institution: profile.institution,
+                        company: profile.company,
+                        roleTitle: profile.roleTitle,
+                        bio: profile.bio,
+                        avatarUrl: profile.avatarUrl,
+                        avatarSource: profile.avatarSource,
+                        socialLinks: profile.socialLinks,
+                      }}
+                      updateAction={updateMySpeakerProfileAction}
+                      requestAvatarAction={requestSpeakerAvatarUploadAction}
+                      confirmAvatarAction={confirmSpeakerAvatarUploadAction}
                     />
-                  </div>
-                </article>
-              ))}
-            </section>
-          </section>
-        );
-      })}
+                  </>
+                ) : (
+                  <h2 id={`perfil-${profile.speakerProfileId}`} className="sr-only">
+                    {profile.name}
+                  </h2>
+                )}
 
-      {portal.certificates.length > 0 ? (
+                {showActivities ? (
+                  <section className="space-y-3" aria-labelledby={`atividades-${profile.speakerProfileId}`}>
+                    <h3
+                      id={`atividades-${profile.speakerProfileId}`}
+                      className="text-base font-semibold tracking-tight"
+                    >
+                      Minhas atividades ({profile.activities.length})
+                    </h3>
+
+                    {profile.activities.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Você ainda não está vinculado a nenhuma atividade nesta instituição.
+                      </p>
+                    ) : null}
+
+                    {profile.activities.map((activity) => {
+                      const hasSyllabus = Boolean(activity.syllabus && activity.syllabus.trim().length > 0);
+                      const publicActivityHref =
+                        activity.eventSlug && activity.activitySlug
+                          ? tenantPath(
+                              tenantSlug,
+                              `/eventos/${activity.eventSlug}/atividades/${activity.activitySlug}`,
+                            )
+                          : null;
+
+                      return (
+                        <article
+                          key={activity.linkId}
+                          className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+                          data-testid={`portal-activity-${activity.activityId}`}
+                        >
+                          <header className="space-y-1.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                                <CalendarDays className="size-3.5" aria-hidden />
+                                {activity.eventTitle}
+                              </p>
+                              {publicActivityHref ? (
+                                <Link
+                                  href={publicActivityHref}
+                                  className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+                                  data-testid={`portal-activity-public-${activity.activityId}`}
+                                >
+                                  Ver página da atividade
+                                  <ExternalLink className="size-3" aria-hidden />
+                                </Link>
+                              ) : null}
+                            </div>
+
+                            <p className="font-medium">{activity.title}</p>
+
+                            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                              <span>
+                                {activity.roleTitle ?? 'Palestrante'}
+                                {activity.isKeynote ? ' · keynote' : ''}
+                              </span>
+                              <span>· {STATUS_LABEL[activity.status] ?? activity.status}</span>
+                              <span>
+                                ·{' '}
+                                {formatEventPeriod(
+                                  { startsAt: activity.startsAt, endsAt: activity.endsAt },
+                                  activity.eventTimezone,
+                                )}
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                · <Clock className="size-3" aria-hidden />
+                                {formatDuration(activity.workloadMinutes)}
+                              </span>
+                              {activity.roomName ? (
+                                <span className="inline-flex items-center gap-1">
+                                  · <MapPin className="size-3" aria-hidden />
+                                  {activity.roomName}
+                                </span>
+                              ) : null}
+                            </p>
+
+                            <div className="flex flex-wrap gap-2 pt-0.5 text-xs">
+                              <span
+                                className={
+                                  hasSyllabus
+                                    ? 'rounded-md bg-success-soft px-2 py-0.5 font-medium text-success-strong'
+                                    : 'rounded-md bg-surface-low px-2 py-0.5 text-muted-foreground'
+                                }
+                              >
+                                {hasSyllabus ? 'Ementa preenchida' : 'Ementa pendente'}
+                              </span>
+                              <span className="rounded-md bg-surface-low px-2 py-0.5 text-muted-foreground">
+                                {activity.materials.length}{' '}
+                                {activity.materials.length === 1
+                                  ? 'material publicado'
+                                  : 'materiais publicados'}
+                              </span>
+                            </div>
+                          </header>
+
+                          <SpeakerNotesForm
+                            tenantSlug={tenantSlug}
+                            linkId={activity.linkId}
+                            activityId={activity.activityId}
+                            activityTitle={activity.title}
+                            initial={{
+                              syllabus: activity.syllabus,
+                              requirements: activity.requirements,
+                              bibliography: activity.bibliography,
+                            }}
+                            action={updateSpeakerNotesAction}
+                          />
+
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-medium">Materiais de apoio</h4>
+
+                            {activity.materials.length === 0 ? (
+                              <p className="text-sm text-muted-foreground" data-testid={`no-materials-${activity.activityId}`}>
+                                Nenhum material publicado nesta atividade ainda.
+                              </p>
+                            ) : (
+                              <ul className="space-y-3" data-testid={`portal-materials-${activity.activityId}`}>
+                                {activity.materials.map((material) => (
+                                  <SpeakerMaterialRow
+                                    key={material.id}
+                                    tenantSlug={tenantSlug}
+                                    material={{
+                                      id: material.id,
+                                      title: material.title,
+                                      kind: material.kind,
+                                      visibility: material.visibility,
+                                      fileName: material.fileName,
+                                      sizeBytes: material.sizeBytes,
+                                      isFile: material.isFile,
+                                    }}
+                                    updateAction={updateSpeakerMaterialAction}
+                                    deleteAction={deleteSpeakerMaterialAction}
+                                  />
+                                ))}
+                              </ul>
+                            )}
+
+                            <SpeakerMaterialUploader
+                              tenantSlug={tenantSlug}
+                              eventId={activity.eventId}
+                              activityId={activity.activityId}
+                              speakerProfileId={profile.speakerProfileId}
+                              requestUploadAction={requestSpeakerMaterialUploadAction}
+                              confirmUploadAction={confirmSpeakerMaterialUploadAction}
+                              saveLinkAction={saveSpeakerMaterialLinkAction}
+                            />
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </section>
+                ) : null}
+              </section>
+            );
+          })
+        : null}
+
+      {showCertificates && portal.certificates.length > 0 ? (
         <section className="space-y-4" aria-labelledby="certificado">
           <h2 id="certificado" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
             <Award className="size-5" aria-hidden />
@@ -304,7 +416,7 @@ export default async function SpeakerPortalPage({
             {portal.certificates.map((status) => (
               <li
                 key={status.eventId}
-                className="space-y-3 rounded-lg border border-border bg-card p-5"
+                className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm"
                 data-testid={`speaker-certificate-${status.eventId}`}
                 data-eligible={String(status.eligible)}
               >
@@ -373,6 +485,19 @@ export default async function SpeakerPortalPage({
               </li>
             ))}
           </ul>
+        </section>
+      ) : activeTab === 'certificados' && portal.profiles.length > 0 ? (
+        <section
+          className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground shadow-sm"
+          aria-labelledby="certificado-vazio"
+          data-testid="speaker-certificates-empty"
+        >
+          <h2 id="certificado-vazio" className="text-base font-semibold text-foreground">
+            Certificado de palestrante
+          </h2>
+          <p className="mt-1">
+            Nenhum certificado disponível ainda porque você ainda não está vinculado a atividades concluídas neste evento.
+          </p>
         </section>
       ) : null}
 

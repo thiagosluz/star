@@ -112,7 +112,11 @@ export function SpeakerProfileForm({
   useUnsavedChanges(isDirty);
 
   return (
-    <form action={formAction} className="space-y-4" data-testid={`speaker-profile-form-${speakerProfileId}`}>
+    <form
+      action={formAction}
+      className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+      data-testid={`speaker-profile-form-${speakerProfileId}`}
+    >
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="speakerProfileId" value={speakerProfileId} />
 
@@ -353,6 +357,13 @@ export function SpeakerNotesForm({
           const [busy, setBusy] = useState(false);
           const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
           const [linkState, linkFormAction, linkPending] = useActionState(saveLinkAction, null);
+          const [lastSyncedLinkState, setLastSyncedLinkState] = useState<SpeakerActionState | null>(null);
+          if (linkState?.ok && linkState !== lastSyncedLinkState) {
+            setLastSyncedLinkState(linkState);
+            setUrl('');
+            setTitle('');
+            setDescription('');
+          }
           const fileRef = useRef<HTMLInputElement>(null);
 
             async function handleFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -481,7 +492,11 @@ export function SpeakerNotesForm({
                   <input type="hidden" name="visibility" value={visibility} />
 
                   <div className="min-w-56 flex-1">
-                    <Field name={`material-url-${activityId}`} label="Ou aponte um link" hint="Material que já está publicado em outro lugar.">
+                    <Field
+                      name={`material-url-${activityId}`}
+                      label="Ou aponte um link externo"
+                      hint="Usa o título e a visibilidade selecionados acima."
+                    >
                       <Input
                         id={`material-url-${activityId}`}
                         name="url"
@@ -530,9 +545,16 @@ export function SpeakerNotesForm({
               deleteAction: SpeakerUploadAction;
 }) {
   const [updateState, updateFormAction, updating] = useActionState(updateAction, null);
-              const [deleteState, deleteFormAction, deleting] = useActionState(deleteAction, null);
-              const [deletingMaterial, setDeletingMaterial] = useState(false);
-              const deleteFormRef = useRef<HTMLFormElement>(null);
+  const [deleteState, deleteFormAction, deleting] = useActionState(deleteAction, null);
+  const [deletingMaterial, setDeletingMaterial] = useState(false);
+  const [selectedVisibility, setSelectedVisibility] = useState(material.visibility);
+  const [syncedVisibility, setSyncedVisibility] = useState(material.visibility);
+  if (material.visibility !== syncedVisibility) {
+    setSyncedVisibility(material.visibility);
+    setSelectedVisibility(material.visibility);
+  }
+  const visibilityDirty = selectedVisibility !== material.visibility;
+  const deleteFormRef = useRef<HTMLFormElement>(null);
 
                 return (
                   <li className="space-y-3 rounded-lg border border-border bg-card p-4" data-testid={`portal-material-${material.id}`}>
@@ -565,7 +587,8 @@ export function SpeakerNotesForm({
                           <Select
                             id={`visibility-${material.id}`}
                             name="visibility"
-                            defaultValue={material.visibility}
+                            value={selectedVisibility}
+                            onChange={(event) => setSelectedVisibility(event.target.value)}
                             aria-label={`Visibilidade de ${material.title}`}
                           >
                             {MATERIAL_VISIBILITIES.map((option) => (
@@ -576,7 +599,13 @@ export function SpeakerNotesForm({
                           </Select>
                         </Field>
 
-                        <Button type="submit" variant="outline" size="sm" disabled={updating} data-testid={`save-material-${material.id}`}>
+                        <Button
+                          type="submit"
+                          variant={visibilityDirty ? 'primary' : 'outline'}
+                          size="sm"
+                          disabled={updating}
+                          data-testid={`save-material-${material.id}`}
+                        >
                           {updating ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <CheckCircle2 className="size-3.5" aria-hidden />}
                           Aplicar
                         </Button>

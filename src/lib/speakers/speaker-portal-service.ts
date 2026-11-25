@@ -54,14 +54,19 @@ export interface PortalMaterial {
 export interface PortalActivity {
   linkId: string;
   activityId: string;
+  activitySlug: string;
   eventId: string;
   eventTitle: string;
   eventSlug: string;
+  eventTimezone: string;
   eventEndsAt: Date;
   title: string;
   startsAt: Date;
   endsAt: Date;
   status: string;
+  modality: string;
+  roomName: string | null;
+  onlineUrl: string | null;
   roleTitle: string | null;
   isKeynote: boolean;
   workloadMinutes: number;
@@ -229,6 +234,8 @@ export interface SpeakerPortalData {
   /** A pessoa não consta como palestrante em lugar nenhum (tela explicativa). */
   isEmpty: boolean;
   certificates: SpeakerCertificateStatus[];
+  /** Evento de referência para upload de foto quando o perfil ainda não tem atividade (FASE 127). */
+  fallbackEventId: string;
 }
 
 /**
@@ -263,6 +270,21 @@ export async function loadSpeakerPortal(input: {
         socialLinks: true,
         isConfirmed: true,
         isPublic: true,
+        materials: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            activityId: true,
+            title: true,
+            kind: true,
+            visibility: true,
+            storageKey: true,
+            fileName: true,
+            sizeBytes: true,
+            createdAt: true,
+          },
+        },
         activityLinks: {
           orderBy: { displayOrder: 'asc' },
           select: {
@@ -276,16 +298,19 @@ export async function loadSpeakerPortal(input: {
             bibliography: true,
             activity: {
               select: {
+                slug: true,
                 title: true,
                 startsAt: true,
                 endsAt: true,
                 status: true,
+                modality: true,
+                onlineUrl: true,
                 workloadMinutes: true,
                 eventId: true,
-                event: { select: { title: true, slug: true, endsAt: true } },
+                room: { select: { name: true } },
+                event: { select: { title: true, slug: true, endsAt: true, timezone: true } },
               },
             },
-            speakerProfile: { select: { materials: { where: { deletedAt: null } } } },
           },
         },
       },
@@ -297,21 +322,26 @@ export async function loadSpeakerPortal(input: {
         .map((link) => ({
           linkId: link.id,
           activityId: link.activityId,
+          activitySlug: link.activity!.slug,
           eventId: link.activity!.eventId,
           eventTitle: link.activity!.event?.title ?? 'Evento',
           eventSlug: link.activity!.event?.slug ?? '',
+          eventTimezone: link.activity!.event?.timezone ?? 'America/Sao_Paulo',
           eventEndsAt: link.activity!.event?.endsAt ?? link.activity!.endsAt,
           title: link.activity!.title,
           startsAt: link.activity!.startsAt,
           endsAt: link.activity!.endsAt,
           status: link.activity!.status,
+          modality: link.activity!.modality,
+          roomName: link.activity!.room?.name ?? null,
+          onlineUrl: link.activity!.onlineUrl ?? null,
           roleTitle: link.roleTitle,
           isKeynote: link.isKeynote,
           workloadMinutes: link.workloadMinutes ?? link.activity!.workloadMinutes,
           syllabus: link.syllabus,
           requirements: link.requirements,
           bibliography: link.bibliography,
-          materials: (link.speakerProfile?.materials ?? [])
+          materials: profile.materials
             .filter((material) => material.activityId === link.activityId)
             .map((material) => ({
               id: material.id,
@@ -356,24 +386,37 @@ export async function loadSpeakerPortal(input: {
       };
     });
 
-    const pendingInvites = await queryPendingInvites(tx, {
-      tenantId: input.tenantId,
-      userEmail: input.userEmail,
-      now,
-    });
+    const firstActivityEventId =
+      portalProfiles.find((profile) => profile.activities.length > 0)?.activities[0]?.eventId ??
+      null;
 
-    const certificates = await loadSpeakerCertificateStatus(tx, {
-      tenantId: input.tenantId,
-      userId: input.userId,
-      now,
-      profiles: portalProfiles,
-    });
+    const [pendingInvites, certificates, fallbackEvent] = await Promise.all([
+      queryPendingInvites(tx, {
+        tenantId: input.tenantId,
+        userEmail: input.userEmail,
+        now,
+      }),
+      loadSpeakerCertificateStatus(tx, {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        now,
+        profiles: portalProfiles,
+      }),
+      firstActivityEventId === null
+        ? tx.event.findFirst({
+            where: { tenantId: input.tenantId, deletedAt: null },
+            orderBy: { startsAt: 'desc' },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+    ]);
 
     return {
       profiles: portalProfiles,
       pendingInvites,
       isEmpty: portalProfiles.length === 0 && pendingInvites.length === 0,
       certificates,
+      fallbackEventId: firstActivityEventId ?? fallbackEvent?.id ?? '',
     };
   });
 }
