@@ -263,10 +263,10 @@ describe('FASE 122 — Contratos SSR dos componentes financeiros e gráficos SVG
       kpiDom.querySelector('[data-testid="finance-export-entries"]')?.getAttribute('href'),
     ).toContain('formato=lancamentos&tipo=EXPENSE');
 
-    const chartsDom = new JSDOM(
-      renderToStaticMarkup(createElement(FinanceChartsPanel, { summary })),
-    ).window.document;
+    const chartsHtml = renderToStaticMarkup(createElement(FinanceChartsPanel, { summary }));
+    const chartsDom = new JSDOM(chartsHtml).window.document;
 
+    expect(chartsHtml).not.toContain('viewBox="0 0 200');
     expect(chartsDom.querySelector('[data-testid="finance-chart-sources"] svg')).not.toBeNull();
     expect(chartsDom.querySelector('[data-testid="finance-chart-categories"] svg')).not.toBeNull();
     expect(chartsDom.querySelector('[data-testid="finance-chart-monthly"] svg')).not.toBeNull();

@@ -4,7 +4,7 @@ Plataforma SaaS multi-tenant para gestão de **eventos acadêmicos, corporativos
 comunitários** — da inscrição ao certificado, passando por submissão de trabalhos,
 avaliação por pares e gamificação.
 
-> **Estado:** FASES 1 a 17, 21 a 25, 29 a 125 concluídas · **F125 entregue** (**cockpit de patrocinadores por intenção, rotas dedicadas de cotas/edição e ergonomia de estandes & leads** — 3 abas por URL (`?aba=patrocinadores|cotas|estandes` com promoção automática de `?confirmarQr=`/`?exportacao=`/`?erro=` em `resolveSponsorTab`) + faixa executiva com ponte `/financeiro` (`computeSponsorKpiSummary`, `ADR-501`), leituras unitárias `getSponsorTierForEdit`/`getSponsorForEdit`, contagem única `getEventSponsorExperienceCounts` em vez de `3N` e `revalidatePath(..., 'layout')` (`ADR-502`), 3 rotas `/cotas/nova`, `/cotas/[tierId]/editar` e `/[sponsorId]/editar` + `<AssetUploader>` recolhido após envio + filtro `?patrocinador=` e pré-preenchimento de `contactEmail` (`ADR-503`), e catracas + suítes F125 (`ADR-504`); **39 dívidas abertas**; ADR-501 a ADR-504) · **5006 testes** unitários/integração (309 arquivos) · **569 testes E2E** (+ 1 skip)
+> **Estado:** FASES 1 a 17, 21 a 25, 29 a 126 concluídas · **F126 entregue** (**panorama executivo e painel gráfico na raiz do evento** — 4 cartões executivos no topo de `/administracao/eventos/[eventId]` com escopo estrito no evento atual (`Inscrições & Lotação`, `Comparecimento`, `Produção & Certificados` e `Caixa & Fomento` / `Operação & Equipes`) + 3 painéis gráficos vetoriais SSR sem Client JS (`Funil de participação`, `Ocupação da programação` com teto efetivo da atividade/sala e `Termômetro financeiro & pulso`) alimentados na mesma transação `withTenant` de `getEventAreaCounts` (`ADR-505` … `507`); **39 dívidas abertas**; ADR-505 a ADR-507) · **5011 testes** unitários/integração (310 arquivos) · **570 testes E2E** (+ 1 skip)
 > · ESLint e `tsc` sem erros · isolamento multi-tenant provado contra o banco real
 > (inclusive sob PgBouncer em modo transação) · métricas em `/api/metrics`, `audit_logs`
 > particionada por mês · **quotas de plano aplicadas** (eventos, membros da equipe e
@@ -454,8 +454,8 @@ sem `FORCE ROW LEVEL SECURITY`, e o runtime **nunca** pode ter esse privilégio.
 ## 10. Testes
 
 ```bash
-npm test                  # 5006 testes (309 arquivos) — unit + integração com banco real
-npm run test:e2e          # 569 testes E2E (+1 skip) contra o container de produção
+npm test                  # 5011 testes (310 arquivos) — unit + integração com banco real
+npm run test:e2e          # 570 testes E2E (+1 skip) contra o container de produção
 npm run typecheck         # 0 erros
 npm run lint              # 0 erros / 0 warnings
 npm run db:verify         # contrato de RLS íntegro (tabelas, partições e tabelas de plataforma
@@ -499,6 +499,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 
 | Documento | Conteúdo | ADRs |
 |---|---|---|
+| [`docs/fase-126-panorama-executivo-do-evento.md`](docs/fase-126-panorama-executivo-do-evento.md) | **Panorama Executivo e Painel Gráfico na Raiz do Evento:** projeção pura `computeEventOverviewSummary` com semântica `null !== 0` e teto efetivo da atividade/sala, consolidação na transação única de `getEventAreaCounts` (`ADR-505`), painel Server Component puro `<EventOverviewPanel>` sem `<section>`/`<details>` com guarda RBAC `SPONSOR_MANAGE` (`ADR-506`), 4 KPIs executivos e 3 gráficos vetoriais SVG (`Funil de participação`, `Ocupação da programação` e `Termômetro financeiro & pulso`, `ADR-507`) | ADR-505 … 507 |
 | [`docs/fase-125-cockpit-patrocinadores-abas-e-rotas.md`](docs/fase-125-cockpit-patrocinadores-abas-e-rotas.md) | **Cockpit de Patrocinadores por Intenção, Rotas Dedicadas de Cotas/Edição e Ergonomia de Estandes & Leads:** 3 abas por URL (`?aba=patrocinadores\|cotas\|estandes` com promoção automática de parâmetros No-JS em `resolveSponsorTab`) e faixa executiva fixa (`SponsorKpiCards`) com ponte para `/financeiro` (`ADR-501`), leituras unitárias `getSponsorTierForEdit`/`getSponsorForEdit`, contagem agregada única `getEventSponsorExperienceCounts` e `revalidatePath(..., 'layout')` (`ADR-502`), 3 rotas `/cotas/nova`, `/cotas/[tierId]/editar` e `/[sponsorId]/editar` + filtro `?patrocinador=` e pré-preenchimento de `contactEmail` (`ADR-503`), e catracas + suítes F125 (`ADR-504`) | ADR-501 … 504 |
 | [`docs/fase-124-abas-edicao-e-conformidade-financeira.md`](docs/fase-124-abas-edicao-e-conformidade-financeira.md) | **Abas por Intenção, Rotas Dedicadas de Edição e Checklist de Conformidade Financeira:** 3 abas por URL (`?aba=resumo\|lancamentos\|fontes`), filtros de pendência (`GLOSA`, `MISSING_DOCUMENT`, `UNASSIGNED_SOURCE`) e paginação (`20`/página, `ADR-497`), edição de fontes e lançamentos (`ADR-498`), 4 rotas dedicadas `/novo` e `/editar`, checklist documental clicável, exportação colada ao filtro e menu `Mais` (`ADR-499`), e catracas + testes F124 (`ADR-500`) | ADR-497 … 500 |
 | [`docs/fase-123-ux-financeiro-glosa-e-ciclo-execucao.md`](docs/fase-123-ux-financeiro-glosa-e-ciclo-execucao.md) | **Refinamento de UX Operacional, Prevenção Proativa de Glosa e Ciclo Completo de Execução Financeira:** prevenção prévia de glosa e teto (`evaluateEntryCompliance`), datas PT-BR (`formatIsoDatePtBr`) e subtotais do filtro (`computeFilteredLedgerTotals`, `ADR-493`), ciclo completo no livro-razão (`Empenhar`, `Liquidar com Nº NF`, `Cancelar`) e badge de glosa na linha (`ADR-494`), reset automático de formulários em lote e campos adaptativos `INCOME` × `EXPENSE` (`ADR-495`), e onboarding inicial, escopo de exportação e *drill-down* clicável nos gráficos (`ADR-496`) | ADR-493 … 496 |
@@ -624,7 +625,7 @@ reais encontrados por testes), **evidências de verificação** e **comandos**.
 | [`docs/fases-historico.md`](docs/fases-historico.md) | **Registro das fases 1 a 25, 29 a 30, 31 a 35, 36 a 42, 43 a 49, 50 a 59 e 60 a 93**: o histórico que saiu da tabela da §9 do `AGENTS.md` — até as fases **92 e 93** movidas na FASE 110 —, movido **como estava** (inclusive as reticências das condensações) para o arquivo do estado corrente não bater no teto de ~64.800 bytes; o registro completo de cada fase continua em `docs/fase-NN-*.md` | — |
 
 > A numeração de ADRs é **sequencial e global** ao projeto (não reinicia por fase):
-> são **504 decisões** registradas até aqui.
+> são **507 decisões** registradas até aqui.
 
 ### Convenções da documentação
 
@@ -684,7 +685,7 @@ prisma/
 tests/
 ├── unit/              regras puras e de formato (sem banco)
 ├── integration/       com banco, Redis e storage reais
-└── e2e/               569 testes Playwright contra o container
+└── e2e/               570 testes Playwright contra o container
 ```
 
 **Cinco decisões que explicam o resto:**

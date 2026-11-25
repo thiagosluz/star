@@ -31,10 +31,11 @@ import { readEventApiKeyState } from '@/domain/api/event-api-organizer-rules';
 import { readEventApiConfig } from '@/domain/api/event-api-key-rules';
 
 import type { EventAreaCounts } from '@/domain/events/event-areas';
+import type { EventOverviewDbMetrics } from '@/domain/events/event-overview-rules';
 import { logger } from '@/lib/observability/logger';
 
 export type EventAreaCountsResult =
-  | { ok: true; counts: EventAreaCounts }
+  | { ok: true; counts: EventAreaCounts; overview: EventOverviewDbMetrics }
   | { ok: false; code: 'READ_FAILED'; message: string };
 
 /**
@@ -52,8 +53,27 @@ export async function getEventAreaCounts(input: {
     return await withTenant(input.tenantId, async (tx) => {
       const escopo = { tenantId: input.tenantId, eventId: input.eventId };
 
-      const [calls, rooms, activities, teams, sponsors, credentials, certificates, proceedingsEntries, financialEntries, openDemands, speakers, page, estadoDoEvento] =
-        await Promise.all([
+      const [
+        calls,
+        rooms,
+        activities,
+        teams,
+        sponsors,
+        credentials,
+        certificates,
+        proceedingsEntries,
+        financialEntries,
+        openDemands,
+        speakers,
+        page,
+        estadoDoEvento,
+        registrationGroups,
+        attendanceByUser,
+        submissionsCount,
+        completedDemandsCount,
+        fundingAgg,
+        settledFinanceGroups,
+      ] = await Promise.all([
           tx.callForProposals.count({ where: { ...escopo, deletedAt: null } }),
           tx.room.count({ where: escopo }),
           tx.activity.count({ where: escopo }),
@@ -123,7 +143,74 @@ export async function getEventAreaCounts(input: {
                 apiKey: readEventApiKeyState(api),
               };
             }),
+          /** Inscrições no evento (`activityId: null`) agrupadas por estado para o painel executivo (FASE 126). */
+          tx.registration.groupBy({
+            by: ['status'],
+            where: { ...escopo, activityId: null, deletedAt: null },
+            _count: { _all: true },
+          }),
+          /** Frequência distinta por pessoa e minutos acumulados no evento (FASE 126). */
+          tx.attendance.groupBy({
+            by: ['userId'],
+            where: escopo,
+            _count: { _all: true },
+            _sum: { minutesAttended: true },
+          }),
+          /** Trabalhos/propostas já submetidos (rascunhos ficam de fora) (FASE 126). */
+          tx.submission.count({
+            where: { ...escopo, deletedAt: null, status: { not: 'DRAFT' } },
+          }),
+          tx.demand.count({
+            where: { ...escopo, completedAt: { not: null } },
+          }),
+          tx.eventFundingSource.aggregate({
+            where: escopo,
+            _sum: { approvedCents: true },
+          }),
+          tx.eventFinancialEntry.groupBy({
+            by: ['type'],
+            where: { ...escopo, status: 'SETTLED' },
+            _sum: { amountCents: true },
+          }),
         ]);
+
+      let confirmedRegistrations = 0;
+      let pendingEventRegistrations = 0;
+      let waitlistedRegistrations = 0;
+      let attendedRegistrations = 0;
+
+      for (const row of registrationGroups) {
+        if (row.status === 'CONFIRMED' || row.status === 'ATTENDED') {
+          confirmedRegistrations += row._count._all;
+        }
+        if (row.status === 'ATTENDED') {
+          attendedRegistrations += row._count._all;
+        }
+        if (row.status === 'PENDING') {
+          pendingEventRegistrations += row._count._all;
+        }
+        if (row.status === 'WAITLISTED') {
+          waitlistedRegistrations += row._count._all;
+        }
+      }
+
+      let attendanceVisitsCount = 0;
+      let attendanceMinutesTotal = 0;
+      for (const row of attendanceByUser) {
+        attendanceVisitsCount += row._count._all;
+        attendanceMinutesTotal += row._sum.minutesAttended ?? 0;
+      }
+
+      let settledIncomeCents = 0;
+      let settledExpenseCents = 0;
+      for (const row of settledFinanceGroups) {
+        if (row.type === 'INCOME') {
+          settledIncomeCents += row._sum.amountCents ?? 0;
+        }
+        if (row.type === 'EXPENSE') {
+          settledExpenseCents += row._sum.amountCents ?? 0;
+        }
+      }
 
       return {
         ok: true as const,
@@ -148,6 +235,19 @@ export async function getEventAreaCounts(input: {
           formFields: estadoDoEvento.formFields,
           pagePublished: page?.isPublished ?? null,
           apiKey: estadoDoEvento.apiKey,
+        },
+        overview: {
+          confirmedRegistrations,
+          pendingEventRegistrations,
+          waitlistedRegistrations,
+          attendedUsersCount: Math.max(attendanceByUser.length, attendedRegistrations),
+          attendanceVisitsCount,
+          attendanceMinutesTotal,
+          submissionsCount,
+          completedDemandsCount,
+          approvedFundingCents: fundingAgg._sum.approvedCents ?? 0,
+          settledIncomeCents,
+          settledExpenseCents,
         },
       };
     });

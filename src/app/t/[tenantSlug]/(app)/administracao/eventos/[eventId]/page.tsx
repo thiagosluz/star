@@ -43,6 +43,11 @@ import {
   eventLaunchPath,
 } from '@/domain/events/event-launch-path';
 import { getEventAreaCounts } from '@/lib/events/event-area-counts';
+import {
+  computeEventOverviewSummary,
+  EMPTY_EVENT_OVERVIEW_DB_METRICS,
+} from '@/domain/events/event-overview-rules';
+import { EventOverviewPanel } from '@/components/admin/event-overview-panel';
 import { eventReadiness } from '@/domain/events/event-readiness';
 import { canExportEventData } from '@/domain/exports/export-rules';
 import { getDataExport, listRecentDataExports, RECENT_EXPORTS_LIMIT, type ExportRecordView } from '@/lib/exports/export-service';
@@ -189,6 +194,29 @@ export default async function AdminEventDetailPage({
     registrationHasDeadline: event.registrationClosesAt !== null,
     activityCount: event.activityCount,
     pagePublished: contagens.pagePublished,
+  });
+
+  const overviewMetrics = contagensLidas.ok
+    ? contagensLidas.overview
+    : EMPTY_EVENT_OVERVIEW_DB_METRICS;
+
+  const podeVerFinanceiro = can(principal, PERMISSIONS.SPONSOR_MANAGE, {
+    scope: 'TENANT',
+  });
+
+  const overviewSummary = computeEventOverviewSummary({
+    eventCapacity: event.capacity,
+    eventConfirmedCount: event.confirmedCount,
+    activities: event.activities,
+    areaCounts: contagens,
+    overviewMetrics,
+    pendingConfirmationsTotal: pendingConfirmations,
+    canViewFinance: podeVerFinanceiro,
+    readiness: {
+      doneCount: caminhoDePartida.steps.filter((step) => step.state === 'DONE').length,
+      totalCount: caminhoDePartida.steps.length,
+      allReady: pendencias.length === 0,
+    },
   });
 
   /**
@@ -373,6 +401,12 @@ export default async function AdminEventDetailPage({
           { label: 'Eventos', href: tenantPath(tenantSlug, '/administracao/eventos') },
           { label: event.title },
         ]}
+      />
+
+      <EventOverviewPanel
+        tenantSlug={tenantSlug}
+        eventId={event.id}
+        summary={overviewSummary}
       />
 
       {/**

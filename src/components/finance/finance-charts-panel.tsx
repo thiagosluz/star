@@ -44,7 +44,10 @@ export function FinanceChartsPanel({ summary, baseHref }: FinanceChartsPanelProp
           <div className="space-y-3">
             {summary.bySource.map((source) => {
               const pct = source.utilizationPercent ?? 0;
-              const barWidth = Math.min(100, Math.max(0, pct));
+              const barWidth = Math.min(
+                100,
+                Math.max(source.activeExpenseCents > 0 ? 3 : 0, pct),
+              );
 
               return (
                 <div key={source.sourceId} className="space-y-1 text-xs">
@@ -77,16 +80,15 @@ export function FinanceChartsPanel({ summary, baseHref }: FinanceChartsPanelProp
                   </div>
 
                   <svg
-                    viewBox="0 0 200 10"
-                    className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
+                    className="block h-2.5 w-full overflow-hidden rounded-full bg-muted"
                     role="img"
                     aria-label={`Execução da fonte ${source.name}: ${formatBrlCents(source.activeExpenseCents)} de ${formatBrlCents(source.approvedCents)}`}
                   >
                     <rect
-                      x={0}
-                      y={0}
-                      width={barWidth * 2}
-                      height={10}
+                      x="0"
+                      y="0"
+                      width={`${barWidth}%`}
+                      height="100%"
                       rx={5}
                       fill="currentColor"
                       className={source.isOverBudget ? 'text-destructive' : 'text-primary'}
@@ -148,16 +150,15 @@ export function FinanceChartsPanel({ summary, baseHref }: FinanceChartsPanelProp
                   </div>
 
                   <svg
-                    viewBox="0 0 200 8"
-                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                    className="block h-2 w-full overflow-hidden rounded-full bg-muted"
                     role="img"
                     aria-label={`${item.label}: ${formatBrlCents(item.totalActiveCents)} (${item.sharePercent}%)`}
                   >
                     <rect
-                      x={0}
-                      y={0}
-                      width={barWidth * 2}
-                      height={8}
+                      x="0"
+                      y="0"
+                      width={`${barWidth}%`}
+                      height="100%"
                       rx={4}
                       fill="currentColor"
                       className="text-primary"
@@ -189,8 +190,14 @@ export function FinanceChartsPanel({ summary, baseHref }: FinanceChartsPanelProp
         ) : (
           <div className="space-y-3">
             {summary.monthlyCashflow.map((month) => {
-              const incomeWidth = Math.round((month.activeIncomeCents / maxMonthCents) * 200);
-              const expenseWidth = Math.round((month.activeExpenseCents / maxMonthCents) * 200);
+              const incomePct =
+                month.activeIncomeCents > 0
+                  ? Math.min(100, Math.max(2, Math.round((month.activeIncomeCents / maxMonthCents) * 100)))
+                  : 0;
+              const expensePct =
+                month.activeExpenseCents > 0
+                  ? Math.min(100, Math.max(2, Math.round((month.activeExpenseCents / maxMonthCents) * 100)))
+                  : 0;
 
               return (
                 <div key={month.monthKey} className="space-y-1 text-xs">
@@ -208,29 +215,50 @@ export function FinanceChartsPanel({ summary, baseHref }: FinanceChartsPanelProp
                   </div>
 
                   <svg
-                    viewBox="0 0 200 18"
-                    className="h-4 w-full"
+                    className="block h-4 w-full"
                     role="img"
                     aria-label={`Mês ${month.monthKey}: entradas ${formatBrlCents(month.activeIncomeCents)}, saídas ${formatBrlCents(month.activeExpenseCents)}`}
                   >
                     <rect
-                      x={0}
+                      x="0"
                       y={1}
-                      width={Math.max(2, incomeWidth)}
+                      width="100%"
                       height={6}
                       rx={3}
                       fill="currentColor"
-                      className="text-success-strong"
+                      className="text-muted"
                     />
+                    {incomePct > 0 ? (
+                      <rect
+                        x="0"
+                        y={1}
+                        width={`${incomePct}%`}
+                        height={6}
+                        rx={3}
+                        fill="currentColor"
+                        className="text-success-strong"
+                      />
+                    ) : null}
                     <rect
-                      x={0}
+                      x="0"
                       y={10}
-                      width={Math.max(2, expenseWidth)}
+                      width="100%"
                       height={6}
                       rx={3}
                       fill="currentColor"
-                      className="text-destructive"
+                      className="text-muted"
                     />
+                    {expensePct > 0 ? (
+                      <rect
+                        x="0"
+                        y={10}
+                        width={`${expensePct}%`}
+                        height={6}
+                        rx={3}
+                        fill="currentColor"
+                        className="text-destructive"
+                      />
+                    ) : null}
                   </svg>
 
                   <div className="flex justify-between text-xs text-muted-foreground">
