@@ -399,6 +399,7 @@ export interface AdminEventRow {
   slug: string;
   title: string;
   status: string;
+  timezone?: string;
   startsAt: Date;
   endsAt: Date;
   capacity: number | null;
@@ -423,6 +424,7 @@ export async function listAdminEvents(
         slug: true,
         title: true,
         status: true,
+        timezone: true,
         startsAt: true,
         endsAt: true,
         capacity: true,
@@ -438,6 +440,7 @@ export async function listAdminEvents(
     slug: row.slug,
     title: row.title,
     status: row.status,
+    timezone: row.timezone,
     startsAt: row.startsAt,
     endsAt: row.endsAt,
     capacity: row.capacity,
