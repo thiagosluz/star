@@ -25,6 +25,11 @@
  *  runtime não tem — nem deve ter — esse privilégio (invariante nº 1).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import {
+  evaluatePartitionRetention,
+  isMonthlyAuditPartitionName,
+  type PartitionRetentionCandidate,
+} from '@/domain/platform/partition-retention-rules';
 import { adminPrisma } from '@/lib/db/admin-client';
 import { errorMessage } from '@/lib/db/prisma-errors';
 import { logger } from '@/lib/observability/logger';
@@ -259,4 +264,86 @@ export async function readPartitionState(): Promise<PartitionInfo[]> {
   }
 
   return state;
+}
+
+export interface PartitionPruneResult {
+  enabled: boolean;
+  dryRun: boolean;
+  retentionMonths: number | null;
+  cutoffMonth: string | null;
+  eligible: readonly PartitionRetentionCandidate[];
+  dropped: readonly string[];
+  reclaimableRows: number;
+  reclaimableBytes: number;
+}
+
+export type PartitionPruneOutcome =
+  | { ok: true; result: PartitionPruneResult }
+  | { ok: false; code: 'RETENTION_TOO_SHORT' | 'RETENTION_INVALID' | 'INTERNAL'; message: string };
+
+/**
+ * Descarta partições mensais de `audit_logs` além da janela de retenção (FASE 130 · B8).
+ *
+ * `dryRun` nasce `true`: sem confirmação explícita (`dryRun: false`), apenas devolve o
+ * plano de descarte. `audit_logs_default`, o mês atual e meses futuros são preservados.
+ */
+export async function pruneAuditPartitions(input: {
+  retentionMonths: number | null;
+  dryRun?: boolean;
+  now?: Date;
+}): Promise<PartitionPruneOutcome> {
+  const dryRun = input.dryRun ?? true;
+
+  try {
+    const partitions = await readPartitionState();
+    const decision = evaluatePartitionRetention({
+      partitions,
+      retentionMonths: input.retentionMonths,
+      now: input.now,
+    });
+
+    if (!decision.ok) {
+      return { ok: false, code: decision.code, message: decision.message };
+    }
+
+    const dropped: string[] = [];
+
+    if (decision.enabled && !dryRun) {
+      for (const partition of decision.eligible) {
+        if (!isMonthlyAuditPartitionName(partition.name)) continue;
+        await adminPrisma.$executeRawUnsafe(`DROP TABLE IF EXISTS public.${partition.name}`);
+        dropped.push(partition.name);
+      }
+
+      if (dropped.length > 0) {
+        logger.info('audit_partitions.pruned', {
+          retentionMonths: decision.retentionMonths,
+          cutoffMonth: decision.cutoffMonth,
+          droppedCount: dropped.length,
+          dropped,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      result: {
+        enabled: decision.enabled,
+        dryRun,
+        retentionMonths: decision.retentionMonths,
+        cutoffMonth: decision.cutoffMonth,
+        eligible: decision.eligible,
+        dropped,
+        reclaimableRows: decision.reclaimableRows,
+        reclaimableBytes: decision.reclaimableBytes,
+      },
+    };
+  } catch (error) {
+    logger.error(`[partitions] falha na retenção: ${errorMessage(error)}`);
+    return {
+      ok: false,
+      code: 'INTERNAL',
+      message: 'Não foi possível aplicar a retenção das partições da auditoria.',
+    };
+  }
 }

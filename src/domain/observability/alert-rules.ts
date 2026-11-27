@@ -96,3 +96,152 @@ export function evaluateOperationalAlerts(
     },
   ];
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+//  Apresentação operacional para o painel `/superadmin/metricas` (FASE 129)
+// ───────────────────────────────────────────────────────────────────────────────
+export type OperationalAlertCategory = 'queue' | 'web';
+
+export const OPERATIONAL_ALERT_CATEGORY_LABELS: Record<OperationalAlertCategory, string> = {
+  queue: 'Filas & Workers',
+  web: 'Aplicação & Segurança',
+};
+
+export interface OperationalAlertPresentation {
+  readonly name: string;
+  readonly title: string;
+  readonly category: OperationalAlertCategory;
+  readonly severity: AlertSeverity;
+  readonly severityLabel: string;
+  readonly firing: boolean;
+  readonly statusLabel: string;
+  readonly summary: string;
+  readonly observedLabel: string;
+  readonly thresholdDescription: string;
+  readonly observedValue: number;
+  readonly actionHref?: string;
+  readonly actionLabel?: string;
+  readonly guidance: string;
+}
+
+export interface OperationalAlertGroup {
+  readonly category: OperationalAlertCategory;
+  readonly label: string;
+  readonly firingCount: number;
+  readonly items: readonly OperationalAlertPresentation[];
+}
+
+interface AlertMetadata {
+  readonly title: string;
+  readonly category: OperationalAlertCategory;
+  readonly actionHref?: string;
+  readonly actionLabel?: string;
+  readonly guidance: string;
+  readonly formatObserved: (snapshot: OperationalMetricsSnapshot, observedValue: number) => string;
+}
+
+const ALERT_METADATA: Record<string, AlertMetadata> = {
+  BullMQQueueDown: {
+    title: 'Conexão da fila com Redis',
+    category: 'queue',
+    actionHref: '/superadmin/rotinas',
+    actionLabel: 'Ver fila',
+    guidance: 'Verifique a saúde do container Redis e a variável REDIS_URL.',
+    formatObserved: (s) => (s.queueUp ? 'Conectado' : 'Indisponível'),
+  },
+  BullMQNoWorkers: {
+    title: 'Workers ativos na fila de certificados',
+    category: 'queue',
+    actionHref: '/superadmin/rotinas',
+    actionLabel: 'Painel do worker',
+    guidance: 'Confirme se o processo/container worker está em execução para drenar jobs pendentes.',
+    formatObserved: (s) =>
+      `${s.queueWorkers} worker(s) · ${s.waitingJobs} na fila`,
+  },
+  BullMQFailedJobsBacklog: {
+    title: 'Jobs com falha na fila de certificados',
+    category: 'queue',
+    actionHref: '/superadmin/rotinas',
+    actionLabel: 'Inspecionar jobs',
+    guidance: 'Revise os logs do worker para identificar falhas de PDF, storage ou assinatura.',
+    formatObserved: (s) => (s.failedJobs === 0 ? '0 falhas' : `${s.failedJobs} falha(s)`),
+  },
+  Http5xxSpike: {
+    title: 'Erros HTTP 5xx (processo web)',
+    category: 'web',
+    guidance: 'Contador em memória do processo atual do Next.js; consulte os logs do servidor se subir.',
+    formatObserved: (s) => `${s.http5xxTotal} / ${ALERT_HTTP_5XX_THRESHOLD}`,
+  },
+  MetricsScrapeDeniedSpike: {
+    title: 'Acessos bloqueados em /api/metrics',
+    category: 'web',
+    guidance: 'Indica tentativas sem token válido ou com token divergente de METRICS_TOKEN.',
+    formatObserved: (s) => `${s.scrapeDeniedTotal} / ${ALERT_SCRAPE_DENIED_THRESHOLD}`,
+  },
+};
+
+const SEVERITY_RANK: Record<AlertSeverity, number> = {
+  critical: 0,
+  warning: 1,
+};
+
+export function presentOperationalAlerts(
+  snapshot: OperationalMetricsSnapshot,
+  alerts: readonly OperationalAlert[],
+): readonly OperationalAlertPresentation[] {
+  return alerts
+    .map((alert, index) => {
+      const meta = ALERT_METADATA[alert.name];
+      return {
+        index,
+        item: {
+          name: alert.name,
+          title: meta?.title ?? alert.name,
+          category: meta?.category ?? 'web',
+          severity: alert.severity,
+          severityLabel: alert.severity === 'critical' ? 'Crítico' : 'Aviso',
+          firing: alert.firing,
+          statusLabel: alert.firing ? 'Ativo' : 'Operacional',
+          summary: alert.summary,
+          observedLabel: meta
+            ? meta.formatObserved(snapshot, alert.observedValue)
+            : String(alert.observedValue),
+          thresholdDescription: alert.thresholdDescription,
+          observedValue: alert.observedValue,
+          actionHref: meta?.actionHref,
+          actionLabel: meta?.actionLabel,
+          guidance: meta?.guidance ?? 'Consulte /api/metrics para o valor bruto do sensor.',
+        } satisfies OperationalAlertPresentation,
+      };
+    })
+    .sort((a, b) => {
+      if (a.item.firing !== b.item.firing) return a.item.firing ? -1 : 1;
+      if (a.item.severity !== b.item.severity) {
+        return SEVERITY_RANK[a.item.severity] - SEVERITY_RANK[b.item.severity];
+      }
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
+const CATEGORY_ORDER: readonly OperationalAlertCategory[] = ['queue', 'web'];
+
+export function groupOperationalAlerts(
+  items: readonly OperationalAlertPresentation[],
+): readonly OperationalAlertGroup[] {
+  const groups = CATEGORY_ORDER.map((category) => {
+    const groupItems = items.filter((item) => item.category === category);
+    const firingCount = groupItems.filter((item) => item.firing).length;
+    return {
+      category,
+      label: OPERATIONAL_ALERT_CATEGORY_LABELS[category],
+      firingCount,
+      items: groupItems,
+    } satisfies OperationalAlertGroup;
+  }).filter((group) => group.items.length > 0);
+
+  return groups.sort((a, b) => {
+    if (a.firingCount > 0 !== b.firingCount > 0) return a.firingCount > 0 ? -1 : 1;
+    return CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category);
+  });
+}

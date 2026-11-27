@@ -31,7 +31,6 @@ export default defineConfig(({ mode }) => ({
   test: {
     environment: 'node',
     globals: true,
-    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'tests/e2e/**'],
 
     // Carrega o .env para os testes de integração que falam com o banco real.
@@ -45,11 +44,30 @@ export default defineConfig(({ mode }) => ({
       },
     },
 
-    // Testes de integração compartilham o mesmo banco: sem paralelismo entre
-    // arquivos para evitar interferência entre fixtures.
-    fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,
+
+    // FASE 130: unitários puros rodam em paralelo entre arquivos (`test:unit`);
+    // integração permanece sequencial (`fileParallelism: false`) porque compartilha
+    // o mesmo banco real. `npm test` (`vitest run`) continua rodando ambos.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          include: ['tests/unit/**/*.test.ts'],
+          fileParallelism: true,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'integration',
+          include: ['tests/integration/**/*.test.ts'],
+          fileParallelism: false,
+        },
+      },
+    ],
 
     coverage: {
       provider: 'v8',

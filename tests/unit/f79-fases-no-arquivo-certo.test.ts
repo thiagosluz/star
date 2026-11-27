@@ -252,23 +252,25 @@ const FASES_HISTORICAS = [
   '110',
   // Movida na FASE 128: 111 desceu como estava, e a tabela passou a começar na 112.
   '111',
+  // Movida na FASE 130: 112 desceu como estava, e a tabela passou a começar na 113.
+  '112',
 ];
 
 /**
- * A tabela corrente começa na F112 — a 26, a 27 e a 28 nunca existiram; a 29 e a
+ * A tabela corrente começa na F113 — a 26, a 27 e a 28 nunca existiram; a 29 e a
  * 30 desceram na F82, a 31 a 35 na F83, a 36 a 42 na F84, a 43 a 49 na F85, a
- * 50 a 59 na F86, a 60 na F87, a 61 a 62 na F89, a 63 a 65 na F91, a 66 a 67 na F92, a 68 a 69 na F93, a 70 a 71 na F94, a 72 a 74 na F95, a 75 a 76 na F96, a 77 a 78 na F97, a 79 a 80 na F98, a 81 a 82 na F99, a 83 na F101, a 84 na F102, a 85 na F103, a 86 na F104, a 87 na F106, a 88 na F107, a 89 na F108, a 90 a 91 na F109, a 92 a 93 na F110, a 94 a 95 na F111, a 96 a 97 na F113, a 98 a 99 na F114, a 100 na F115, a 101 na F116, a 102 na F117, a 103 na F118, a 104 na F119, a 105 na F122, a 106 na F123, a 107 na F124, a 108 na F125, a 109 na F126, a 110 na F127 e a 111 na F128.
+ * 50 a 59 na F86, a 60 na F87, a 61 a 62 na F89, a 63 a 65 na F91, a 66 a 67 na F92, a 68 a 69 na F93, a 70 a 71 na F94, a 72 a 74 na F95, a 75 a 76 na F96, a 77 a 78 na F97, a 79 a 80 na F98, a 81 a 82 na F99, a 83 na F101, a 84 na F102, a 85 na F103, a 86 na F104, a 87 na F106, a 88 na F107, a 89 na F108, a 90 a 91 na F109, a 92 a 93 na F110, a 94 a 95 na F111, a 96 a 97 na F113, a 98 a 99 na F114, a 100 na F115, a 101 na F116, a 102 na F117, a 103 na F118, a 104 na F119, a 105 na F122, a 106 na F123, a 107 na F124, a 108 na F125, a 109 na F126, a 110 na F127, a 111 na F128 e a 112 na F130.
  *
  * A lista é DECLARADA, não derivada do `AGENTS.md`: é o gesto de declarar a fase
  * nova que mantém a catraca honesta (o comentário do cabeçalho explica).
  */
-const FASES_CORRENTES = Array.from({ length: 17 }, (_, indice) => String(112 + indice));
+const FASES_CORRENTES = Array.from({ length: 18 }, (_, indice) => String(113 + indice));
 
 /** A ordem da tabela histórica é a CRONOLÓGICA, não a numérica. */
 const ORDEM_CRONOLOGICA = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11A', '11B', '12',
   '13', '14', '15', '16', '17', '23', '24', '25', '21', '22', '29', '30', '31', '32', '33', '34',
   '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47', '48', '49', '50',
-  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76', '77', '78', '79', '80', '81', '82', '83', '84', '85', '86', '87', '88', '89', '90', '91', '92', '93', '94', '95', '96', '97', '98', '99', '100', '101', '102', '103', '104', '105', '106', '107', '108', '109', '110', '111'];
+  '51', '52', '53', '54', '55', '56', '57', '58', '59', '60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72', '73', '74', '75', '76', '77', '78', '79', '80', '81', '82', '83', '84', '85', '86', '87', '88', '89', '90', '91', '92', '93', '94', '95', '96', '97', '98', '99', '100', '101', '102', '103', '104', '105', '106', '107', '108', '109', '110', '111', '112'];
 
 function ler(caminho: string): string {
   return readFileSync(join(RAIZ, caminho), 'utf8');

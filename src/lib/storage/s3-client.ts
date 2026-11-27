@@ -39,6 +39,7 @@ import {
   DeleteObjectCommand,
   PutObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -542,4 +543,45 @@ export function buildPublicAssetUrl(bucket: string, objectKey: string): string {
   ).replace(/\/+$/, '');
 
   return `${base}/${bucket}/${objectKey}`;
+}
+
+export interface ListedBucketObject {
+  key: string;
+  sizeBytes: number;
+  lastModified: Date;
+}
+
+/**
+ * Lista todos os objetos de um bucket com paginação S3 (`ListObjectsV2`).
+ * Usado exclusivamente pela reconciliação de plataforma (`C6`).
+ */
+export async function listBucketObjects(
+  bucket: string,
+  prefix?: string,
+): Promise<ListedBucketObject[]> {
+  const objects: ListedBucketObject[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const response = await internalClient().send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    for (const item of response.Contents ?? []) {
+      if (!item.Key) continue;
+      objects.push({
+        key: item.Key,
+        sizeBytes: item.Size ?? 0,
+        lastModified: item.LastModified ?? new Date(0),
+      });
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return objects;
 }

@@ -28,8 +28,7 @@
  *  uma consulta por página.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { unstable_cache } from 'next/cache';
-
+import { getOrSetVersionedPublicCache } from '@/lib/cache/public-read-cache';
 import {
   buildDirectory,
   type DirectoryEntry,
@@ -46,34 +45,41 @@ import { selectDirectoryTenants, selectOpenEventCounts } from '@/lib/platform/gl
  */
 export const PUBLIC_TENANTS_TAG = 'public-tenants';
 
-/** Teto do cache em segundos — a tag é o caminho normal; isto é a rede de segurança. */
+/** Teto do cache em segundos — a invalidação O(1) no Redis é o caminho normal; isto é a rede de segurança. */
 const DIRECTORY_REVALIDATE_SECONDS = 300;
 
 /**
- * Contagem de eventos abertos, cacheada.
+ * Contagem de eventos abertos, cacheada no Redis versionado (`public-directory:global`, FASE 130 · quita B5).
  *
- * ARMADILHA: o cache serializa o valor, e uma `Date` pode voltar como string (ou
- * sobreviver, dependendo do runtime). A conversão para número aceita os dois
- * formatos — sem ela, `nextEventStartsAt.getTime()` estouraria apenas em produção,
- * no pior momento possível.
+ * Substitui `unstable_cache` (legado e preso à instância local) pelo cache JSON distribuído
+ * da FASE 116 — compartilhado entre réplicas, com invalidação O(1) em `invalidatePublicDirectoryCache`
+ * e fallback direto ao PostgreSQL se o Redis ficar indisponível.
  */
-const cachedOpenEventCounts = unstable_cache(
-  async () => {
-    const counts = await selectOpenEventCounts(new Date());
+async function cachedOpenEventCounts(): Promise<
+  Record<string, { openEventCount: number; nextEventStartsAt: number | null }>
+> {
+  const { value } = await getOrSetVersionedPublicCache({
+    namespace: 'public-directory',
+    scopeId: 'global',
+    suffix: 'tenant-open-events',
+    ttlSeconds: DIRECTORY_REVALIDATE_SECONDS,
+    loader: async () => {
+      const counts = await selectOpenEventCounts(new Date());
 
-    return Object.fromEntries(
-      Object.entries(counts).map(([tenantId, value]) => [
-        tenantId,
-        {
-          openEventCount: value.openEventCount,
-          nextEventStartsAt: value.nextEventStartsAt ? value.nextEventStartsAt.getTime() : null,
-        },
-      ]),
-    );
-  },
-  ['public-tenant-open-events'],
-  { tags: [PUBLIC_TENANTS_TAG], revalidate: DIRECTORY_REVALIDATE_SECONDS },
-);
+      return Object.fromEntries(
+        Object.entries(counts).map(([tenantId, item]) => [
+          tenantId,
+          {
+            openEventCount: item.openEventCount,
+            nextEventStartsAt: item.nextEventStartsAt ? item.nextEventStartsAt.getTime() : null,
+          },
+        ]),
+      );
+    },
+  });
+
+  return value;
+}
 
 export interface PublicDirectory {
   entries: DirectoryEntry[];
