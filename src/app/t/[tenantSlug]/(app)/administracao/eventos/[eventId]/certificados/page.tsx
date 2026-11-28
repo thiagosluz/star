@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Award, ExternalLink } from 'lucide-react';
@@ -20,7 +21,7 @@ import { certificateDurationSample, certificateQueueStats } from '@/lib/certific
 import { IssueBatchPanel } from '@/components/certificates/issue-panel';
 import { CertificatePolicyPanel } from '@/components/certificates/certificate-policy-panel';
 import { EventTemplateSummary } from '@/components/certificates/event-template-summary';
-import { PageHeader } from '@/components/ui';
+import { PageHeader, Skeleton } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
 import {
   issueEventCertificatesAction,
@@ -103,44 +104,11 @@ export default async function EventCertificatesPage({
    *  duração (quanto custa cada PDF). Redis fora do ar devolve `null` nos dois
    *  últimos — e a tela diz isso, em vez de inventar número.
    */
-  const [previewResult, queue, durationSample, templateResolutions] = await Promise.all([
-    previewEventCertificates({ tenantId, eventId, kinds: DEFAULT_BATCH_KINDS }),
-    certificateQueueStats(),
-    certificateDurationSample(),
-    /**
-     * ─── QUAL DESENHO VALE PARA CADA TIPO (FASE 86 · fatia 4) ─────────────────
-     *
-     *  A emissão resolve o modelo por dentro e, quando o layout é ilegível, cai no
-     *  padrão sem contar a ninguém. Esta leitura usa a MESMA precedência do domínio
-     *  e separa os três estados (modelo do evento, modelo padrão, desenho padrão) —
-     *  é o que a seção "Modelo deste evento" mostra. É leitura, não decisão: o
-     *  caminho de emissão continua intacto.
-     */
-    resolveEventTemplateKinds({
-      tenantId,
-      eventId,
-      kinds: kindOptions.map((option) => option.value),
-    }),
-  ]);
-
-  const simulation = previewResult.ok
-    ? summarizeEventPreview({
-        scope: previewResult.preview.scope,
-        people: previewResult.preview.people,
-      })
-    : null;
-
-  /**
-   * `null` aqui significa "não há base para estimar" (menos de 5 PDFs medidos, ou
-   * fila indisponível). A tela NÃO cai para uma constante: mostra "ainda sem
-   * medição". O estimado é a soma do trabalho, não o relógio.
-   */
-  const estimate = simulation
-    ? estimateGenerationTime({
-        certificates: simulation.certificatesToIssue,
-        sample: durationSample,
-      })
-    : null;
+  const templateResolutions = await resolveEventTemplateKinds({
+    tenantId,
+    eventId,
+    kinds: kindOptions.map((option) => option.value),
+  });
 
   /**
    * O filtro do inventário é `?evento=<uuid>` e ele EXISTE de verdade (a F76 só
@@ -219,37 +187,78 @@ export default async function EventCertificatesPage({
         qual documento sai — e se o modelo configurado está legível. O link de
         edição só existe para quem `can()` abriria a tela de modelos.
       */}
+      <ol
+        className="grid gap-3 sm:grid-cols-3"
+        aria-label="Etapas da certificação do evento"
+        data-testid="certificates-journey-steps"
+      >
+        <li className="rounded-lg border border-border bg-card p-3.5 text-xs">
+          <p className="font-semibold text-foreground">1. Aparência do certificado</p>
+          <p className="mt-1 text-muted-foreground">
+            Escolha ou personalize o modelo visual com arte de fundo e variáveis.
+          </p>
+          {canManageModels ? (
+            <Link
+              href={modelsHref}
+              className="mt-2 inline-flex font-medium text-brand underline-offset-4 hover:underline"
+            >
+              Abrir estúdio de modelos →
+            </Link>
+          ) : null}
+        </li>
+        <li className="rounded-lg border border-border bg-card p-3.5 text-xs">
+          <p className="font-semibold text-foreground">2. Regras de presença</p>
+          <p className="mt-1 text-muted-foreground">
+            Defina a carga mínima e como a presença nas atividades é apurada.
+          </p>
+          <a
+            href="#politica-certificados"
+            className="mt-2 inline-flex font-medium text-brand underline-offset-4 hover:underline"
+          >
+            Revisar regras ↓
+          </a>
+        </li>
+        <li className="rounded-lg border border-border bg-card p-3.5 text-xs">
+          <p className="font-semibold text-foreground">3. Simular e emitir</p>
+          <p className="mt-1 text-muted-foreground">
+            Confira quem está elegível e dispare a geração em lote com rastreio.
+          </p>
+          <a
+            href="#emissao-lote"
+            className="mt-2 inline-flex font-medium text-brand underline-offset-4 hover:underline"
+          >
+            Ir para emissão ↓
+          </a>
+        </li>
+      </ol>
+
       <EventTemplateSummary
         resolutions={templateResolutions}
         modelsHref={modelsHref}
         canManage={canManageModels}
       />
 
-      {/*
-        A REGRA ANTES DOS NÚMEROS (FASE 86 · fatia 5): os quatro contadores abaixo
-        são o resultado desta régua. Quem lê a simulação precisa poder ver — e, com
-        `event:manage`, mudar — o critério que a produziu. A política vem de
-        `getAdminEvent` (o mesmo `settings` já lido), sem consulta nova.
-      */}
-      <CertificatePolicyPanel
-        tenantSlug={tenantSlug}
-        eventId={eventId}
-        policy={event.certificatePolicy.policy}
-        problems={event.certificatePolicy.problems}
-        canManage={canManagePolicy}
-        action={saveCertificatePolicyAction}
-      />
+      <div id="politica-certificados">
+        <CertificatePolicyPanel
+          tenantSlug={tenantSlug}
+          eventId={eventId}
+          policy={event.certificatePolicy.policy}
+          problems={event.certificatePolicy.problems}
+          canManage={canManagePolicy}
+          action={saveCertificatePolicyAction}
+        />
+      </div>
 
-      <IssueBatchPanel
-        tenantSlug={tenantSlug}
-        event={{ id: event.id, title: event.title }}
-        kinds={kindOptions}
-        action={issueEventCertificatesAction}
-        simulation={simulation}
-        simulationProblem={previewResult.ok ? null : previewResult.message}
-        estimate={estimate}
-        queue={queue}
-      />
+      <div id="emissao-lote">
+        <Suspense fallback={<IssueBatchSkeleton />}>
+          <EventCertificatesIssueSection
+            tenantId={tenantId}
+            tenantSlug={tenantSlug}
+            event={{ id: event.id, title: event.title }}
+            kinds={kindOptions}
+          />
+        </Suspense>
+      </div>
 
       <nav className="flex flex-wrap items-center gap-4 text-sm">
         <Link
@@ -262,5 +271,69 @@ export default async function EventCertificatesPage({
         </Link>
       </nav>
     </main>
+  );
+}
+
+async function EventCertificatesIssueSection({
+  tenantId,
+  tenantSlug,
+  event,
+  kinds,
+}: {
+  tenantId: string;
+  tenantSlug: string;
+  event: { id: string; title: string };
+  kinds: { value: string; label: string }[];
+}) {
+  const [previewResult, queue, durationSample] = await Promise.all([
+    previewEventCertificates({ tenantId, eventId: event.id, kinds: DEFAULT_BATCH_KINDS }),
+    certificateQueueStats(),
+    certificateDurationSample(),
+  ]);
+
+  const simulation = previewResult.ok
+    ? summarizeEventPreview({
+        scope: previewResult.preview.scope,
+        people: previewResult.preview.people,
+      })
+    : null;
+
+  const estimate = simulation
+    ? estimateGenerationTime({
+        certificates: simulation.certificatesToIssue,
+        sample: durationSample,
+      })
+    : null;
+
+  return (
+    <IssueBatchPanel
+      tenantSlug={tenantSlug}
+      event={event}
+      kinds={kinds}
+      action={issueEventCertificatesAction}
+      simulation={simulation}
+      simulationProblem={previewResult.ok ? null : previewResult.message}
+      estimate={estimate}
+      queue={queue}
+    />
+  );
+}
+
+function IssueBatchSkeleton() {
+  return (
+    <section
+      className="space-y-4 rounded-xl border border-border bg-card p-6"
+      aria-busy="true"
+      aria-label="Calculando simulação de certificados"
+    >
+      <Skeleton className="h-5 w-52" />
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Skeleton className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-20 w-full rounded-lg" />
+      </div>
+      <Skeleton className="h-10 w-48 rounded-md" />
+    </section>
   );
 }

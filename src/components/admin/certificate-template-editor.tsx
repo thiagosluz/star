@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { AlertCircle, CheckCircle2, Loader2, RotateCcw, Save } from 'lucide-react';
 
@@ -12,6 +12,7 @@ import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import { BackgroundAssetPanel } from '@/components/admin/certificate-template/background-asset-panel';
 import { TemplateElementsFieldset } from '@/components/admin/certificate-template/elements-fieldset';
 import { TemplateWorkbench } from '@/components/admin/certificate-template/template-workbench';
+import { useTemplateStudio } from '@/components/admin/certificate-template/use-template-studio';
 import {
   emptyElement,
   type EditorElement,
@@ -75,8 +76,8 @@ export function CertificateTemplateEditor({
   clearBackgroundAction,
 }: TemplateEditorProps) {
   const interactive = useIsInteractive();
-  const [elements, setElements] = useState<EditorElement[]>(model.elements);
-  const [selected, setSelected] = useState<number | null>(model.elements.length > 0 ? 0 : null);
+  const studio = useTemplateStudio(model.elements, model.page);
+  const { elements, selected, setSelected, update, addElement, removeElement } = studio;
 
   const [saveState, saveFormAction] = useActionState<CertificateTemplateActionState | null, FormData>(
     saveAction,
@@ -110,24 +111,6 @@ export function CertificateTemplateEditor({
 
   const rowCount = interactive ? Math.min(Math.max(elements.length + 1, 8), MAX_LAYOUT_ELEMENTS) : MAX_LAYOUT_ELEMENTS;
   const rows = Array.from({ length: rowCount }, (_, index) => elements[index] ?? emptyElement(index));
-
-  const update = (index: number, patch: Partial<EditorElement>) => {
-    setElements((current) => current.map((element, position) => (position === index ? { ...element, ...patch } : element)));
-  };
-
-  const addElement = () => {
-    setElements((current) => {
-      if (current.length >= MAX_LAYOUT_ELEMENTS) return current;
-      const next = [...current, emptyElement(current.length)];
-      setSelected(next.length - 1);
-      return next;
-    });
-  };
-
-  const removeElement = (index: number) => {
-    setElements((current) => current.filter((_, position) => position !== index));
-    setSelected((current) => (current === index ? null : current));
-  };
 
   return (
     <div className="space-y-6" data-testid="template-editor">
@@ -165,9 +148,18 @@ export function CertificateTemplateEditor({
         interactive={interactive}
         previewFull={previewFull}
         previewWorst={previewWorst}
+        canUndo={studio.canUndo}
+        canRedo={studio.canRedo}
         onSelect={setSelected}
         onMove={(index, xMm, yMm) => update(index, { xMm, yMm })}
         onResize={(index, widthMm, heightMm) => update(index, { widthMm, heightMm })}
+        onUpdate={update}
+        onAddQuickBlock={studio.addQuickBlock}
+        onAlignSelected={studio.alignSelected}
+        onDuplicateSelected={studio.duplicateSelected}
+        onRemoveSelected={() => selected !== null && removeElement(selected)}
+        onUndo={studio.undo}
+        onRedo={studio.redo}
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">

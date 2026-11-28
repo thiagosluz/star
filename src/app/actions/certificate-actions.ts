@@ -35,6 +35,7 @@ import {
 } from '@/domain/certificates/certificate-layout-rules';
 import {
   clearTemplateBackground,
+  cloneInstitutionalTemplateToEvent,
   deleteCertificateTemplate,
   getCertificateTemplate,
   readTemplateBackground,
@@ -749,4 +750,47 @@ async function deleteCertificateTemplateAction(
  */
 export async function deleteCertificateTemplateFormAction(formData: FormData): Promise<void> {
   await deleteCertificateTemplateAction(null, formData);
+}
+
+/**
+ * Clona um modelo padrão da instituição (`eventId = null`) para o evento atual em 1 clique
+ * e já abre o estúdio de edição da cópia (FASE 132 · ADR-522).
+ */
+export async function cloneInstitutionalTemplateFormAction(formData: FormData): Promise<void> {
+  const parsed = z
+    .object({
+      tenantSlug: z.string().trim().min(1).max(63),
+      sourceTemplateId: z.string().uuid(),
+      eventId: z.string().uuid(),
+    })
+    .safeParse({
+      tenantSlug: formData.get('tenantSlug'),
+      sourceTemplateId: formData.get('sourceTemplateId'),
+      eventId: formData.get('eventId'),
+    });
+
+  if (!parsed.success) return;
+
+  const auth = await guardAction<CertificateActionState>({
+    tenantSlug: parsed.data.tenantSlug,
+    permission: PERMISSIONS.EVENT_MANAGE,
+  });
+  if (!auth.ok) return;
+
+  const cloned = await cloneInstitutionalTemplateToEvent({
+    tenantId: auth.tenantId,
+    actorId: auth.userId,
+    sourceTemplateId: parsed.data.sourceTemplateId,
+    targetEventId: parsed.data.eventId,
+  });
+
+  if (!cloned.ok) return;
+
+  const targetModelsPath = templatesPath(parsed.data.tenantSlug, parsed.data.eventId);
+  revalidatePath(targetModelsPath);
+  revalidatePath(
+    tenantPath(parsed.data.tenantSlug, `/administracao/eventos/${parsed.data.eventId}/certificados`),
+  );
+
+  redirect(`${targetModelsPath}?modelo=${cloned.templateId}&salvo=1`);
 }

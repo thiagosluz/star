@@ -33,6 +33,7 @@ import {
 import { Alert, Card, CardContent, SectionHeading } from '@/components/ui';
 import {
   clearTemplateBackgroundAction,
+  cloneInstitutionalTemplateFormAction,
   deleteCertificateTemplateFormAction,
   previewCertificateTemplateAction,
   saveCertificateTemplateAction,
@@ -337,30 +338,48 @@ export function CertificateTemplatesScreen({ data }: { data: CertificateTemplate
           description="Cinco pontos de partida. Todos deixam o topo livre para o logotipo e o rodapé para as chancelas da arte."
         />
 
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="preset-list">
-          {CERTIFICATE_TEMPLATE_PRESETS.map((item) => (
-            <li key={item.id}>
-              <Card className="h-full">
-                <CardContent className="flex h-full flex-col justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="flex items-center gap-2 font-medium">
-                      <Sparkles className="size-4 text-brand" aria-hidden />
-                      {item.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{item.description}</p>
-                  </div>
+        <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="preset-list">
+          {CERTIFICATE_TEMPLATE_PRESETS.map((item) => {
+            const thumbSvg = renderPreview({
+              layout: item.layout,
+              backgroundBytes: null,
+              variant: 'FULL',
+            });
+            const aspect = item.layout.page === 'A4_PORTRAIT' ? '210 / 297' : '297 / 210';
 
-                  <Link
-                    href={`${basePath}?novo=${item.id}`}
-                    className="inline-flex w-fit items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-                    data-testid={`preset-use-${item.id}`}
-                  >
-                    <Plus className="size-3.5" aria-hidden /> Usar este modelo
-                  </Link>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
+            return (
+              <li key={item.id}>
+                <Card className="h-full overflow-hidden">
+                  <CardContent className="flex h-full flex-col justify-between gap-3">
+                    <div className="space-y-2.5">
+                      <div
+                        className="w-full overflow-hidden rounded-md border border-border bg-surface-low"
+                        style={{ aspectRatio: aspect }}
+                        data-testid={`preset-thumbnail-${item.id}`}
+                        // SVG gerado no servidor por `renderCertificateLayoutSvg` a partir dos presets puros.
+                        dangerouslySetInnerHTML={{ __html: thumbSvg }}
+                      />
+                      <div className="space-y-1">
+                        <p className="flex items-center gap-2 font-medium">
+                          <Sparkles className="size-4 text-brand" aria-hidden />
+                          {item.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{item.description}</p>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`${basePath}?novo=${item.id}`}
+                      className="inline-flex w-fit items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+                      data-testid={`preset-use-${item.id}`}
+                    >
+                      <Plus className="size-3.5" aria-hidden /> Usar este modelo
+                    </Link>
+                  </CardContent>
+                </Card>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -486,9 +505,26 @@ function TemplateCard({
             </form>
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground" data-testid={`template-readonly-${template.id}`}>
-            Somente leitura aqui — o alvo do modelo não muda.
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground" data-testid={`template-readonly-${template.id}`}>
+              Somente leitura aqui — o alvo do modelo não muda.
+            </p>
+            {eventId ? (
+              <form action={cloneInstitutionalTemplateFormAction}>
+                <input type="hidden" name="tenantSlug" value={tenantSlug} />
+                <input type="hidden" name="sourceTemplateId" value={template.id} />
+                <input type="hidden" name="eventId" value={eventId} />
+                <button
+                  type="submit"
+                  data-testid={`template-clone-to-event-${template.id}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                >
+                  <Plus className="size-3.5" aria-hidden="true" />
+                  Personalizar cópia neste evento
+                </button>
+              </form>
+            ) : null}
+          </div>
         )}
       </CardContent>
     </Card>

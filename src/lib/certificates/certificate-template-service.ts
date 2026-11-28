@@ -29,6 +29,8 @@
  *  apagando objetos: quem manda no passado é o snapshot.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+import sharp from 'sharp';
+import { randomUUID } from 'node:crypto';
 import {
   buildLayoutFromRows,
   backgroundFitNotice,
@@ -461,6 +463,54 @@ export async function saveCertificateTemplate(input: {
  * feita AQUI e sobre eles: tipo detectado pela assinatura, formato que o PDF sabe
  * embutir e resolução mínima para a página do modelo.
  */
+function isPngBytes(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  );
+}
+
+function isWebpBytes(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  );
+}
+
+/**
+ * Converte automaticamente PNG e WebP (ex.: exportados do Canva) para JPEG RGB baseline
+ * com fundo branco achatado (FASE 132 · ADR-521). Arquivos que já são JPEG seguem
+ * intocados para preservar a validação estrita de CMYK/progressivo e o checksum original.
+ */
+export async function normalizeCertificateBackgroundBytes(bytes: Uint8Array): Promise<Uint8Array> {
+  if (!isPngBytes(bytes) && !isWebpBytes(bytes)) {
+    return bytes;
+  }
+
+  try {
+    const converted = await sharp(Buffer.from(bytes))
+      .rotate()
+      .flatten({ background: { r: 255, g: 255, b: 255 } })
+      .toColorspace('srgb')
+      .jpeg({ quality: 92, progressive: false })
+      .toBuffer();
+
+    return new Uint8Array(converted);
+  } catch {
+    return bytes;
+  }
+}
+
 export async function setTemplateBackground(input: {
   tenantId: string;
   templateId: string;
@@ -483,7 +533,8 @@ export async function setTemplateBackground(input: {
     return { ok: false, code: 'NOT_FOUND', message: 'Modelo não encontrado.' };
   }
 
-  const validation = validateCertificateBackground({ bytes: input.bytes, page: record.layout.page });
+  const preparedBytes = await normalizeCertificateBackgroundBytes(input.bytes);
+  const validation = validateCertificateBackground({ bytes: preparedBytes, page: record.layout.page });
 
   if (!validation.ok) {
     return {
@@ -534,7 +585,7 @@ export async function setTemplateBackground(input: {
     await putObjectBuffer({
       bucket: BUCKETS.certificates(),
       objectKey,
-      body: Buffer.from(input.bytes),
+      body: Buffer.from(preparedBytes),
       contentType: 'image/jpeg',
       metadata: { checksum: validation.checksum, 'template-id': input.templateId },
     });
@@ -787,6 +838,114 @@ export async function readTemplateBackground(layout: CertificateLayout): Promise
   if (!layout.background) return null;
 
   return getObjectBuffer(BUCKETS.certificates(), layout.background.objectKey);
+}
+
+/**
+ * Clona um modelo padrão da instituição (`eventId = null`) para um evento específico,
+ * permitindo personalização sem alterar o fallback institucional (FASE 132 · ADR-522).
+ */
+export async function cloneInstitutionalTemplateToEvent(input: {
+  tenantId: string;
+  actorId: string;
+  sourceTemplateId: string;
+  targetEventId: string;
+}): Promise<TemplateResult<{ templateId: string }>> {
+  const source = await getCertificateTemplate(input.tenantId, input.sourceTemplateId, {
+    eventId: null,
+  });
+
+  if (!source) {
+    return {
+      ok: false,
+      code: 'NOT_FOUND',
+      message: 'Modelo padrão da instituição não encontrado.',
+    };
+  }
+
+  const newTemplateId = randomUUID();
+  let nextLayout: CertificateLayout = normalizeLayout({
+    page: source.layout.page,
+    background: null,
+    elements: source.layout.elements.map((el) => ({ ...el })),
+  });
+
+  if (source.layout.background) {
+    const room = await ensureStorageRoom({
+      tenantId: input.tenantId,
+      incomingBytes: source.layout.background.sizeBytes,
+      replacingBytes: 0,
+    });
+    if (!room.ok) {
+      return { ok: false, code: 'QUOTA_EXCEEDED', message: room.message };
+    }
+
+    const bytes = await readTemplateBackground(source.layout).catch(() => null);
+    if (bytes) {
+      const clonedKey = templateBackgroundKey(input.tenantId, newTemplateId);
+      await putObjectBuffer({
+        bucket: BUCKETS.certificates(),
+        objectKey: clonedKey,
+        body: bytes,
+        contentType: 'image/jpeg',
+        metadata: {
+          checksum: source.layout.background.checksum,
+          'template-id': newTemplateId,
+        },
+      });
+      nextLayout = normalizeLayout({
+        ...nextLayout,
+        background: { ...source.layout.background, objectKey: clonedKey },
+      });
+    }
+  }
+
+  const suffix = ' (Evento)';
+  const baseName = source.name.trim();
+  const clonedName =
+    baseName.length + suffix.length > 120
+      ? `${baseName.slice(0, 120 - suffix.length).trim()}${suffix}`
+      : `${baseName}${suffix}`;
+
+  return withTenant(input.tenantId, async (tx) => {
+    const event = await tx.event.findFirst({
+      where: { id: input.targetEventId, tenantId: input.tenantId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!event) {
+      return { ok: false as const, code: 'NOT_FOUND' as const, message: 'Evento não encontrado.' };
+    }
+
+    await tx.certificateTemplate.create({
+      data: {
+        id: newTemplateId,
+        tenantId: input.tenantId,
+        eventId: event.id,
+        kind: source.kind as CertificateKind | null,
+        name: clonedName,
+        layout: nextLayout as unknown as object,
+        backgroundBytes: nextLayout.background ? BigInt(nextLayout.background.sizeBytes) : null,
+        createdById: input.actorId,
+      },
+    });
+
+    return { ok: true as const, templateId: newTemplateId };
+  }).catch((error: unknown) => {
+    if (isUniqueViolation(error)) {
+      return {
+        ok: false as const,
+        code: 'INVALID_INPUT' as const,
+        message: 'Este evento já possui um modelo próprio para o mesmo tipo de certificado.',
+      };
+    }
+
+    logger.error(`[certificate-templates] falha ao clonar modelo institucional: ${describe(error)}`);
+    return {
+      ok: false as const,
+      code: 'INTERNAL' as const,
+      message: 'Não foi possível clonar o modelo para este evento.',
+    };
+  });
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

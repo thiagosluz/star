@@ -1,13 +1,21 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { QrCode } from 'lucide-react';
 
 import {
   ELEMENT_NUDGE_FAST_MM,
   ELEMENT_NUDGE_MM,
   nudgeElementPosition,
   type CertificatePageFormat,
+  type CertificatePreviewVariant,
 } from '@/domain/certificates/certificate-layout-rules';
+import {
+  ensureStageReadableColor,
+  resolveStageElementPreviewText,
+  resolveStageFontStyle,
+  snapElementPosition,
+} from '@/domain/certificates/certificate-studio-rules';
 import {
   STAGE_HINT_ID,
   clampMm,
@@ -20,23 +28,32 @@ export interface TemplateStageProps {
   elements: EditorElement[];
   selected: number | null;
   backgroundHref: string | null;
+  previewVariant?: CertificatePreviewVariant;
   onSelect: (index: number) => void;
   onMove: (index: number, xMm: number, yMm: number) => void;
   onResize: (index: number, widthMm: number, heightMm: number) => void;
 }
 
-/** Palco esquemático e proporcional para arrastar, redimensionar e mover por teclado (mm). */
+const PT_TO_MM = 0.3528;
+
+/** Palco WYSIWYG proporcional para arrastar, redimensionar, encaixar no centro e mover por teclado (mm). */
 export function TemplateStage({
   page,
   elements,
   selected,
   backgroundHref,
+  previewVariant = 'FULL',
   onSelect,
   onMove,
   onResize,
 }: TemplateStageProps) {
   const [widthMm, heightMm] = page === 'A4_PORTRAIT' ? [210, 297] : [297, 210];
   const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [stageWidthPx, setStageWidthPx] = useState(560);
+  const [guides, setGuides] = useState<{ centerX: boolean; centerY: boolean }>({
+    centerX: false,
+    centerY: false,
+  });
   const stageRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{
     index: number;
@@ -47,6 +64,21 @@ export function TemplateStage({
     mmPerPxX: number;
     mmPerPxY: number;
   } | null>(null);
+
+  useEffect(() => {
+    const node = stageRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const sync = () => {
+      const next = node.getBoundingClientRect().width;
+      if (next > 0) setStageWidthPx(next);
+    };
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const pxPerMm = stageWidthPx / widthMm;
 
   const beginDrag = (event: React.PointerEvent, index: number, mode: 'move' | 'resize') => {
     const element = elements[index];
@@ -77,18 +109,27 @@ export function TemplateStage({
     const deltaYMm = (event.clientY - state.startY) * state.mmPerPxY;
 
     if (state.mode === 'move') {
-      // Usa a mesma régua do teclado (`nudgeElementPosition`) para manter a caixa dentro da página.
-      const next = nudgeElementPosition({
+      const nudged = nudgeElementPosition({
         element: state.origin,
         page,
         dxMm: roundMm(state.origin.xMm + deltaXMm) - state.origin.xMm,
         dyMm: roundMm(state.origin.yMm + deltaYMm) - state.origin.yMm,
       });
 
-      onMove(state.index, next.xMm, next.yMm);
+      const snapped = snapElementPosition({
+        xMm: nudged.xMm,
+        yMm: nudged.yMm,
+        widthMm: state.origin.widthMm,
+        heightMm: state.origin.heightMm,
+        page,
+      });
+
+      setGuides({ centerX: snapped.snapCenterX, centerY: snapped.snapCenterY });
+      onMove(state.index, snapped.xMm, snapped.yMm);
       return;
     }
 
+    setGuides({ centerX: false, centerY: false });
     onResize(
       state.index,
       clampMm(roundMm(state.origin.widthMm + deltaXMm), 12, widthMm - state.origin.xMm),
@@ -98,6 +139,7 @@ export function TemplateStage({
 
   const endDrag = () => {
     drag.current = null;
+    setGuides({ centerX: false, centerY: false });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
@@ -133,18 +175,35 @@ export function TemplateStage({
   return (
     <div className="space-y-2">
       {/* O palco simula papel branco nos dois modos; exceção declarada em tests/unit/f61-varredura-escuro.test.ts. */}
-      <div
-        ref={stageRef}
-        onPointerMove={handleMove}
-        onPointerUp={endDrag}
-        onPointerLeave={endDrag}
-        data-testid="template-stage"
-        className="relative w-full overflow-hidden rounded-md border border-border bg-white shadow-sm"
-        style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
-      >
+      <div className="overflow-x-auto">
+        <div
+          ref={stageRef}
+          onPointerMove={handleMove}
+          onPointerUp={endDrag}
+          onPointerLeave={endDrag}
+          data-testid="template-stage"
+          className="relative w-full min-w-[1200px] overflow-hidden rounded-md border border-border bg-white shadow-sm"
+          style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
+        >
         {backgroundHref ? (
           // eslint-disable-next-line @next/next/no-img-element -- a arte é um data: URI do bucket privado
           <img src={backgroundHref} alt="" className="pointer-events-none absolute inset-0 size-full object-fill" />
+        ) : null}
+
+        {guides.centerX ? (
+          <div
+            aria-hidden="true"
+            data-testid="stage-guide-center-x"
+            className="pointer-events-none absolute inset-y-0 left-1/2 w-px border-l border-dashed border-primary"
+          />
+        ) : null}
+
+        {guides.centerY ? (
+          <div
+            aria-hidden="true"
+            data-testid="stage-guide-center-y"
+            className="pointer-events-none absolute inset-x-0 top-1/2 h-px border-t border-dashed border-primary"
+          />
         ) : null}
 
         {elements.map((element, index) => {
@@ -155,13 +214,23 @@ export function TemplateStage({
               : element.kind === 'VARIABLE'
                 ? element.variable || 'variável'
                 : element.text || 'texto';
+          const liveText = resolveStageElementPreviewText(element, previewVariant);
+          const fontStyle = resolveStageFontStyle(element.font);
+          const fontSizePx = Math.max(7, element.sizePt * PT_TO_MM * pxPerMm);
+          const textAlign =
+            element.align === 'LEFT' ? 'left' : element.align === 'RIGHT' ? 'right' : 'center';
+
+          const accessibleLabel =
+            element.kind === 'QR'
+              ? `Elemento ${index + 1}: QR`
+              : `Elemento ${index + 1}: ${label} — ${liveText}`;
 
           return (
             <div
               key={`${element.id}-${index}`}
               role="button"
               tabIndex={0}
-              aria-label={`Elemento ${index + 1}: ${label}`}
+              aria-label={accessibleLabel}
               aria-describedby={STAGE_HINT_ID}
               title={`Elemento ${index + 1}: ${label}`}
               data-testid={`stage-element-${index}`}
@@ -171,9 +240,10 @@ export function TemplateStage({
               }}
               onKeyDown={(event) => handleKeyDown(event, index)}
               onFocus={() => onSelect(index)}
-              className={`absolute cursor-move overflow-hidden rounded-sm border text-xs leading-tight ${
-                isSelected ? 'border-primary bg-primary/10' : 'border-dashed border-border bg-foreground/5'
-              }`}
+              className={`absolute cursor-move overflow-hidden rounded-xs border transition-colors ${isSelected
+                ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
+                : 'border-dashed border-border/80 hover:border-primary/60'
+                }`}
               style={{
                 left: `${(element.xMm / widthMm) * 100}%`,
                 top: `${(element.yMm / heightMm) * 100}%`,
@@ -181,9 +251,27 @@ export function TemplateStage({
                 height: `${(element.heightMm / heightMm) * 100}%`,
               }}
             >
-              <span className="pointer-events-none block truncate px-1 text-foreground">
-                {index + 1}. {label}
-              </span>
+              {element.kind === 'QR' ? (
+                <div className="pointer-events-none flex size-full flex-col items-center justify-center gap-0.5 bg-card/80 text-foreground">
+                  <QrCode className="size-1/2 max-h-10 max-w-10" aria-hidden="true" />
+                  <span className="text-xs font-medium">QR</span>
+                </div>
+              ) : (
+                <span
+                  className="pointer-events-none block size-full whitespace-pre-wrap break-words px-0.5"
+                  style={{
+                    fontFamily: fontStyle.fontFamily,
+                    fontWeight: fontStyle.fontWeight,
+                    fontStyle: fontStyle.fontStyle,
+                    fontSize: `${fontSizePx}px`,
+                    lineHeight: element.lineHeight || 1.35,
+                    color: ensureStageReadableColor(element.color),
+                    textAlign,
+                  }}
+                >
+                  {liveText}
+                </span>
+              )}
 
               {isSelected ? (
                 <span
@@ -193,17 +281,18 @@ export function TemplateStage({
                     event.stopPropagation();
                     beginDrag(event, index, 'resize');
                   }}
-                  className="absolute right-0 bottom-0 size-3 cursor-nwse-resize rounded-sm bg-primary"
+                  className="absolute right-0 bottom-0 size-3 cursor-nwse-resize rounded-xs bg-primary"
                 />
               ) : null}
             </div>
           );
         })}
+        </div>
       </div>
 
       <p id={STAGE_HINT_ID} className="text-xs text-muted-foreground">
-        No palco, a caixa focada anda com as <strong>setas</strong> (1 mm) e com{' '}
-        <strong>Shift + setas</strong> (10 mm). As medidas aparecem nos campos ao lado.
+        Arraste para mover (com encaixe automático no centro) ou use as <strong>setas</strong> (1 mm) e{' '}
+        <strong>Shift + setas</strong> (10 mm).
       </p>
 
       <p

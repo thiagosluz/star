@@ -33,15 +33,16 @@ export function BackgroundAssetPanel({
               <input
                 type="file"
                 name="background"
-                accept="image/jpeg"
+                accept="image/jpeg,image/png,image/webp"
                 required
-                aria-label="Arquivo da arte de fundo (JPEG)"
+                aria-label="Arquivo da arte de fundo (JPEG, PNG ou WebP)"
                 data-testid="background-file"
                 className="block w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground"
               />
               <p className="text-xs text-muted-foreground">
-                JPEG em RGB, no mínimo 150 dpi para a página escolhida. CMYK e JPEG progressivo são recusados:
-                o PDF embute o arquivo como está, e converter mudaria as cores sem ninguém perceber.
+                Aceita <strong>PNG, WebP ou JPEG em RGB</strong> (mínimo 150 dpi; recomendado 3508 × 2480 px para A4
+                paisagem). Arquivos PNG/WebP (como exportados do Canva) são convertidos automaticamente para JPEG RGB;
+                CMYK e JPEG progressivo são recusados.
               </p>
               <button
                 type="submit"
