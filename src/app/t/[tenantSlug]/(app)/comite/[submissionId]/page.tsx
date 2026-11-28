@@ -6,6 +6,13 @@ import { requireUuidParam } from '@/lib/validation/id';
 import { can } from '@/domain/rbac/authorization';
 import { buildAssignmentBoard, getSubmissionReviewPanel } from '@/lib/review/review-service';
 import { AFFINITY_BAND_LABELS } from '@/domain/review/affinity';
+import {
+  formatAssignmentStatusLabel,
+  formatRecommendationLabel,
+  formatSubmissionStatusLabel,
+  submissionStatusTone,
+  type SubmissionStatusTone,
+} from '@/domain/review/review-ux-rules';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from '@/domain/events/activity-rules';
@@ -18,6 +25,14 @@ import { AssignReviewerButton } from '@/components/review/assign-reviewer-button
 import { ProposalAcceptancePanel } from '@/components/proposals/proposal-acceptance-panel';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
+
+const STATUS_TONE_CLASS: Record<SubmissionStatusTone, string> = {
+  success: 'border-success/40 bg-success-soft/60 text-success-strong',
+  warning: 'border-warning/40 bg-warning-soft/60 text-warning-strong',
+  info: 'border-secondary/50 bg-secondary-soft/60 text-secondary-strong',
+  destructive: 'border-destructive/40 bg-destructive/10 text-destructive',
+  neutral: 'border-border text-muted-foreground',
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -116,6 +131,12 @@ export default async function ChairSubmissionPage({
               {board.protocol}
             </span>
             <span
+              className={`rounded border px-2 py-0.5 text-xs font-medium ${STATUS_TONE_CLASS[submissionStatusTone(panel.status)]}`}
+              data-testid="panel-submission-status"
+            >
+              {formatSubmissionStatusLabel(panel.status)}
+            </span>
+            <span
               className={`rounded border px-2 py-0.5 text-xs ${
                 panel.quorum.satisfied
                   ? 'border-success/40 text-success-strong'
@@ -157,7 +178,9 @@ export default async function ChairSubmissionPage({
                   className="flex items-center justify-between rounded-lg border border-success/30 bg-card p-3 text-sm"
                 >
                   <span>{assignment.reviewerName}</span>
-                  <span className="text-xs text-muted-foreground">{assignment.status}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatAssignmentStatusLabel(assignment.status)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -275,7 +298,7 @@ export default async function ChairSubmissionPage({
                   <span className="flex items-center gap-2 text-xs">
                     {review.recommendation ? (
                       <span className="rounded border border-border px-2 py-0.5 text-muted-foreground">
-                        {review.recommendation}
+                        {formatRecommendationLabel(review.recommendation)}
                       </span>
                     ) : null}
                     {review.weightedScore !== null ? (
@@ -330,6 +353,15 @@ export default async function ChairSubmissionPage({
           <UserPlus className="size-4" aria-hidden />
           Decisão do comitê
         </h2>
+
+        {acceptanceContext && !isDecided ? (
+          <p className="rounded-md border border-border bg-surface-low/60 px-3 py-2 text-xs text-muted-foreground">
+            Esta proposta veio de uma chamada: para <strong className="text-foreground">aceitar</strong> já
+            criando a atividade na programação ou convidando o proponente como palestrante, use o{' '}
+            <strong className="text-foreground">Protocolo de aceite</strong> logo abaixo. Para solicitar
+            revisão ou rejeitar, use este formulário.
+          </p>
+        ) : null}
 
         <DecisionForm
           tenantSlug={tenantSlug}

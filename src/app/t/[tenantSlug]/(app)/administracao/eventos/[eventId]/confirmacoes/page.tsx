@@ -114,7 +114,7 @@ export default async function EventConfirmationsPage({
           <p className="text-xs text-muted-foreground">
             A confirmação é escolhida no cadastro da atividade, em{' '}
             <Link
-              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}`)}
+              href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/programacao`)}
               className="underline"
             >
               Programação

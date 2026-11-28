@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Megaphone } from 'lucide-react';
 
@@ -7,14 +6,11 @@ import { requireUuidParam } from '@/lib/validation/id';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
 import { getAdminEvent } from '@/lib/admin/catalog-service';
-import {
-  PROPOSAL_KINDS,
-  PROPOSAL_KIND_LABELS,
-} from '@/domain/proposals/call-rules';
 import { saveCallAction } from '@/app/actions/call-actions';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
-import { AdminForm, Field, SelectField } from '@/components/admin/admin-form';
+import { AdminForm } from '@/components/admin/admin-form';
+import { CallCreateFields } from '@/components/admin/call-create-fields';
 import { RubricEditor } from '@/components/admin/rubric-editor';
 
 export const metadata = { title: 'Nova chamada de propostas' };
@@ -53,11 +49,6 @@ export default async function EventNewCallPage({
   const event = await getAdminEvent(tenantId, eventId);
   if (!event) notFound();
 
-  const kindOptions = PROPOSAL_KINDS.map((kind) => ({
-    value: kind,
-    label: PROPOSAL_KIND_LABELS[kind],
-  }));
-
   const trackOptions = [
     { value: '', label: 'Sem trilha (chamada não científica)' },
     ...event.tracks.map((track) => ({ value: track.id, label: track.name })),
@@ -93,14 +84,6 @@ export default async function EventNewCallPage({
           },
           { label: 'Nova chamada' },
         ]}
-        actions={
-          <Link
-            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/chamadas`)}
-            className="text-sm underline underline-offset-4 text-muted-foreground hover:text-foreground"
-          >
-            ← Voltar para Chamadas
-          </Link>
-        }
       />
 
       <section
@@ -126,60 +109,14 @@ export default async function EventNewCallPage({
           <input type="hidden" name="eventSlug" value={event.slug} />
           <input type="hidden" name="eventTimezone" value={event.timezone} />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField label="Tipo de proposta" name="kind" options={kindOptions} defaultValue="PAPER" />
-            <Field
-              label="Identificador na URL"
-              name="slug"
-              required
-              hint="Minúsculas, números e hífen. É o endereço público do formulário."
+          <div className="space-y-4">
+            <CallCreateFields
+              eventTimezone={event.timezone}
+              trackOptions={trackOptions}
+              blindOptions={blindOptions}
+              blindHint={blindHint}
             />
-            <Field label="Título da chamada" name="title" required />
-            <Field label="Resumo" name="summary" hint="Uma linha que a página pública mostra no cartão." />
-            <div className="sm:col-span-2">
-              <Field
-                label="Orientações ao proponente"
-                name="instructions"
-                hint="O que precisa ser dito a quem vai propor: formato, critérios, o que anexar."
-              />
-            </div>
-            <Field
-              label="Abre em"
-              name="opensAt"
-              type="datetime-local"
-              hint={`No fuso do evento (${event.timezone}).`}
-            />
-            <Field
-              label="Encerra em"
-              name="closesAt"
-              type="datetime-local"
-              hint={`No fuso do evento (${event.timezone}).`}
-            />
-            <SelectField
-              label="Revisão cega"
-              name="requiresBlindReview"
-              options={blindOptions}
-              defaultValue=""
-              hint={blindHint}
-            />
-            <Field
-              label="Propostas por autor"
-              name="maxSubmissionsPerAuthor"
-              type="number"
-              min={0}
-              defaultValue={0}
-              hint="0 = sem limite."
-            />
-            <div className="sm:col-span-2">
-              <SelectField
-                label="Trilha"
-                name="trackId"
-                options={trackOptions}
-                defaultValue=""
-                hint="A trilha traz a rubrica e a afinidade dos revisores. Chamada de palestrante não precisa."
-              />
-            </div>
-            <div className="sm:col-span-2 pt-2 border-t border-border">
+            <div className="pt-2 border-t border-border">
               <RubricEditor criteria={[]} scope="CALL" scopeLabel="Nova chamada" testId="call-rubric" />
             </div>
           </div>

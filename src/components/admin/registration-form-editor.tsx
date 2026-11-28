@@ -1,37 +1,19 @@
+'use client';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PAINEL — O editor de UM campo do formulário de inscrição (FASE 70 · fatia 3)
+ *  PAINEL — O editor de UM campo do formulário de inscrição (FASE 70 · FASE 136)
  *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE ESTE ARQUIVO NÃO TEM `'use client'`
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O editor mostra o que o DOMÍNIO exige, e quem sabe o que o domínio exige é o
- *  servidor: os tipos da allowlist, os tetos de cada campo e a finalidade obrigatória
- *  do texto longo saem daqui lidos dos módulos de domínio — não de uma lista copiada
- *  para o cliente, que divergiria no dia em que um tipo novo entrasse. O envio fica
- *  com o `AdminForm` (FASE 7), que é a moldura provada sem JavaScript.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  TODOS OS CAMPOS DO EDITOR APARECEM DE UMA VEZ, E ISSO É DE PROPÓSITO
- *  ─────────────────────────────────────────────────────────────────────────────
- *  Seria mais bonito mostrar só os campos do tipo escolhido (o `maxLength` quando é
- *  texto, as opções quando é escolha única). Isso exige JavaScript: sem ele o
- *  organizador escolheria "Escolha única" e não teria onde digitar as opções. Aqui
- *  todos aparecem, cada um com a dica dizendo a que tipo pertence — e quem preencher
- *  um campo do tipo errado é RECUSADO pelo domínio, com o motivo escrito.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O `id` DE CADA CONTROLE CARREGA O PREFIXO, E O `name` NÃO
- *  ─────────────────────────────────────────────────────────────────────────────
- *  A tela tem um editor por campo, e todos repetem `label`, `type`, `purpose`… Como
- *  `name`, isso é o que o `<form>` precisa. Como `id`, seria um documento com o
- *  mesmo identificador N vezes e um `<label for>` apontando para o controle de OUTRO
- *  formulário — a armadilha que o `AdminForm` documenta. Por isso o `id` é prefixado
- *  (`field-<key>-label`), e é ele que o `<label>` procura.
+ *  Progressivo (ADR-529):
+ *   • Com JavaScript ativo (`useIsInteractive()`), mostra APENAS os controles do
+ *     tipo selecionado (`Limite de caracteres` para texto, `Mín/Máx` para número,
+ *     `Opções` para escolha única) e oferece 5 presets de perguntas comuns em 1
+ *     clique no cadastro de novo campo.
+ *   • Sem JavaScript, renderiza todos os controles como fallback completo.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { AlertTriangle } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { AlertTriangle, Sparkles } from 'lucide-react';
 
 import {
   FORM_CHOICE_OPTIONS_MAX,
@@ -45,44 +27,21 @@ import {
   FORM_PURPOSE_MAX,
   FORM_SHORT_TEXT_MAX,
   THIRD_PARTY_FORBIDDEN_FORM_KEYS,
-  formFieldRequiresPurpose,
   type FormFieldType,
   type RegistrationFormField,
 } from '@/domain/events/registration-form-spec-rules';
+import {
+  REGISTRATION_FIELD_PRESETS,
+  fieldControlsForType,
+  type RegistrationFieldPreset,
+} from '@/domain/events/registration-ux-rules';
 import { AdminForm } from '@/components/admin/admin-form';
 import { Checkbox, Input, Label, Select, Textarea } from '@/components/ui';
+import { useIsInteractive } from '@/hooks/use-is-interactive';
 import { saveRegistrationFormFieldAction } from '@/app/actions/registration-form-actions';
 
-/**
- * O texto do aviso. Existe como constante porque é REQUISITO, não enfeite: foi ele
- * que o humano escolheu ao liberar o texto livre, e ele é lido pela página e pelo
- * teste.
- */
 export const FREE_TEXT_NOTICE_KEYS = THIRD_PARTY_FORBIDDEN_FORM_KEYS;
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  O AVISO DO TEXTO LIVRE
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  POR QUE ELE É REQUISITO, E NÃO UMA NOTA DE RODAPÉ
- *  ─────────────────────────────────────────────────────────────────────────────
- *  O sistema NÃO OFERECE campo de dado sensível: a allowlist de tipos é curta e
- *  fechada, e um tipo inventado (`CPF`) é recusado com o motivo escrito. O que essa
- *  garantia NÃO cobre — e prometer que cobre seria propaganda — é alguém DIGITAR um
- *  CPF num campo de texto livre: texto curto é texto curto, e o sistema não tem como
- *  reconhecer a string como documento. Quem cobre esse risco é este aviso e o
- *  caminho de ELIMINAÇÃO das respostas. Ele fica ao lado do editor porque é ali que
- *  a decisão de pedir acontece.
- *
- *  ─────────────────────────────────────────────────────────────────────────────
- *  AS CORES SÃO AS MEDIDAS DA FASE 52
- *  ─────────────────────────────────────────────────────────────────────────────
- *  `warning-strong` sobre `warning-soft` (6,44:1 no claro; 9,17:1 na escala escura)
- *  e o corpo do texto no token de texto do TEMA (`text-foreground`). Nada de
- *  `opacity` em texto — é a família do defeito da FASE 66.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
 export function FreeTextFieldNotice() {
   return (
     <section
@@ -126,7 +85,6 @@ export function FreeTextFieldNotice() {
   );
 }
 
-/** Rótulo de verdade + dica, com o `id` prefixado que separa um editor do outro. */
 function EditorField({
   id,
   label,
@@ -158,11 +116,6 @@ const TYPE_OPTIONS = FORM_FIELD_TYPES.map((type) => ({
   label: FORM_FIELD_TYPE_LABELS[type],
 }));
 
-/**
- * O editor de UM campo — usado tanto para o campo NOVO quanto para editar um que já
- * existe. Um só desenho para os dois: dois formulários parecidos divergiriam no
- * primeiro ajuste, e o organizador veria campos diferentes conforme o caminho.
- */
 export function RegistrationFieldForm({
   tenantSlug,
   eventId,
@@ -173,24 +126,31 @@ export function RegistrationFieldForm({
 }: {
   tenantSlug: string;
   eventId: string;
-  /** `null` = campo novo (a `key` ainda não existe). */
   field: RegistrationFormField | null;
-  /** Prefixo dos `id` desta instância — é o que evita id repetido entre editores. */
   idPrefix: string;
   testId: string;
   submitLabel: string;
 }) {
-  const type: FormFieldType = field?.type ?? 'SHORT_TEXT';
+  const interactive = useIsInteractive();
+  const [selectedType, setSelectedType] = useState<FormFieldType>(field?.type ?? 'SHORT_TEXT');
+  const [label, setLabel] = useState(field?.label ?? '');
+  const [help, setHelp] = useState(field?.help ?? '');
+  const [optionsText, setOptionsText] = useState((field?.options ?? []).join('\n'));
+  const [purpose, setPurpose] = useState(field?.purpose ?? '');
 
-  /**
-   * A finalidade é OBRIGATÓRIA no texto longo (`formFieldRequiresPurpose`), e o
-   * `required` do HTML só pode ser afirmado quando o TIPO JÁ EXISTE — no campo novo
-   * ele seria uma promessa sobre uma escolha que ainda não foi feita (e marcar
-   * `required` sempre recusaria o texto curto sem finalidade, que o domínio aceita).
-   * Quem fecha a porta do texto longo sem finalidade, nos dois casos, é o validador
-   * do domínio — e é a mensagem dele que aparece.
-   */
-  const purposeRequired = field !== null && formFieldRequiresPurpose(type);
+  const controls = fieldControlsForType(selectedType);
+  const showMaxLength = !interactive || controls.showMaxLength;
+  const showMinMax = !interactive || controls.showMinMax;
+  const showOptions = !interactive || controls.showOptions;
+  const purposeRequired = (field !== null || interactive) && controls.requiresPurpose;
+
+  const applyPreset = (preset: RegistrationFieldPreset) => {
+    setLabel(preset.label);
+    setSelectedType(preset.type);
+    setHelp(preset.help);
+    setOptionsText((preset.options ?? []).join('\n'));
+    setPurpose(preset.purpose ?? '');
+  };
 
   return (
     <AdminForm
@@ -201,13 +161,32 @@ export function RegistrationFieldForm({
     >
       <input type="hidden" name="tenantSlug" value={tenantSlug} />
       <input type="hidden" name="eventId" value={eventId} />
-      {/**
-        * A `key` de ORIGEM: é ela que diz qual campo está sendo editado. Sem isto,
-        * renomear um identificador criaria um campo a mais em vez de mudar o que
-        * existe — e o antigo ficaria no formulário perguntando o que ninguém mais
-        * quer perguntar.
-        */}
       <input type="hidden" name="originalKey" value={field?.key ?? ''} />
+
+      {field === null && interactive ? (
+        <div
+          className="space-y-1.5 rounded-md border border-border bg-surface-low/60 p-3"
+          data-testid="form-field-presets"
+        >
+          <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
+            Perguntas prontas (preenchem os campos abaixo em 1 clique):
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {REGISTRATION_FIELD_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                data-testid={`form-field-preset-${preset.id}`}
+                className="rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+              >
+                + {preset.buttonLabel}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <EditorField
@@ -221,8 +200,99 @@ export function RegistrationFieldForm({
             aria-describedby={`${idPrefix}-label-hint`}
             required
             maxLength={FORM_LABEL_MAX}
-            defaultValue={field?.label ?? ''}
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
             data-testid={`${idPrefix}-label`}
+          />
+        </EditorField>
+
+        <EditorField
+          id={`${idPrefix}-type`}
+          label="Tipo do campo"
+          hint={`Só estes ${FORM_FIELD_TYPES.length} tipos existem — dado sensível não tem tipo no sistema.`}
+        >
+          <Select
+            id={`${idPrefix}-type`}
+            name="type"
+            aria-describedby={`${idPrefix}-type-hint`}
+            value={selectedType}
+            onChange={(event) => setSelectedType(event.target.value as FormFieldType)}
+            data-testid={`${idPrefix}-type`}
+          >
+            {TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </EditorField>
+
+        {showMaxLength ? (
+          <EditorField
+            id={`${idPrefix}-maxLength`}
+            label="Limite de caracteres"
+            hint={`Só para texto curto (até ${FORM_SHORT_TEXT_MAX}) e texto longo (até ${FORM_LONG_TEXT_MAX}). Em branco vale o teto do tipo.`}
+          >
+            <Input
+              id={`${idPrefix}-maxLength`}
+              name="maxLength"
+              type="number"
+              min={1}
+              max={FORM_LONG_TEXT_MAX}
+              aria-describedby={`${idPrefix}-maxLength-hint`}
+              defaultValue={field?.maxLength ?? ''}
+              data-testid={`${idPrefix}-maxLength`}
+            />
+          </EditorField>
+        ) : null}
+
+        {showMinMax ? (
+          <>
+            <EditorField
+              id={`${idPrefix}-min`}
+              label="Valor mínimo"
+              hint="Só para o tipo Número, em inteiros. Os limites são aceitos (18 passa numa faixa 18..99)."
+            >
+              <Input
+                id={`${idPrefix}-min`}
+                name="min"
+                type="number"
+                aria-describedby={`${idPrefix}-min-hint`}
+                defaultValue={field?.min ?? ''}
+                data-testid={`${idPrefix}-min`}
+              />
+            </EditorField>
+
+            <EditorField
+              id={`${idPrefix}-max`}
+              label="Valor máximo"
+              hint="Só para o tipo Número, em inteiros."
+            >
+              <Input
+                id={`${idPrefix}-max`}
+                name="max"
+                type="number"
+                aria-describedby={`${idPrefix}-max-hint`}
+                defaultValue={field?.max ?? ''}
+                data-testid={`${idPrefix}-max`}
+              />
+            </EditorField>
+          </>
+        ) : null}
+
+        <EditorField
+          id={`${idPrefix}-help`}
+          label="Texto de ajuda"
+          hint={`Aparece abaixo do campo para o participante, até ${FORM_HELP_MAX} caracteres.`}
+        >
+          <Input
+            id={`${idPrefix}-help`}
+            name="help"
+            aria-describedby={`${idPrefix}-help-hint`}
+            maxLength={FORM_HELP_MAX}
+            value={help}
+            onChange={(event) => setHelp(event.target.value)}
+            data-testid={`${idPrefix}-help`}
           />
         </EditorField>
 
@@ -242,89 +312,7 @@ export function RegistrationFieldForm({
           />
         </EditorField>
 
-        <EditorField
-          id={`${idPrefix}-type`}
-          label="Tipo do campo"
-          hint={`Só estes ${FORM_FIELD_TYPES.length} tipos existem — dado sensível não tem tipo no sistema.`}
-        >
-          <Select
-            id={`${idPrefix}-type`}
-            name="type"
-            aria-describedby={`${idPrefix}-type-hint`}
-            defaultValue={type}
-            data-testid={`${idPrefix}-type`}
-          >
-            {TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </EditorField>
-
-        <EditorField
-          id={`${idPrefix}-maxLength`}
-          label="Limite de caracteres"
-          hint={`Só para texto curto (até ${FORM_SHORT_TEXT_MAX}) e texto longo (até ${FORM_LONG_TEXT_MAX}). Em branco vale o teto do tipo.`}
-        >
-          <Input
-            id={`${idPrefix}-maxLength`}
-            name="maxLength"
-            type="number"
-            min={1}
-            max={FORM_LONG_TEXT_MAX}
-            aria-describedby={`${idPrefix}-maxLength-hint`}
-            defaultValue={field?.maxLength ?? ''}
-            data-testid={`${idPrefix}-maxLength`}
-          />
-        </EditorField>
-
-        <EditorField
-          id={`${idPrefix}-min`}
-          label="Valor mínimo"
-          hint="Só para o tipo Número, em inteiros. Os limites são aceitos (18 passa numa faixa 18..99)."
-        >
-          <Input
-            id={`${idPrefix}-min`}
-            name="min"
-            type="number"
-            aria-describedby={`${idPrefix}-min-hint`}
-            defaultValue={field?.min ?? ''}
-            data-testid={`${idPrefix}-min`}
-          />
-        </EditorField>
-
-        <EditorField
-          id={`${idPrefix}-max`}
-          label="Valor máximo"
-          hint="Só para o tipo Número, em inteiros."
-        >
-          <Input
-            id={`${idPrefix}-max`}
-            name="max"
-            type="number"
-            aria-describedby={`${idPrefix}-max-hint`}
-            defaultValue={field?.max ?? ''}
-            data-testid={`${idPrefix}-max`}
-          />
-        </EditorField>
-
-        <EditorField
-          id={`${idPrefix}-help`}
-          label="Texto de ajuda"
-          hint={`Aparece abaixo do campo para o participante, até ${FORM_HELP_MAX} caracteres.`}
-        >
-          <Input
-            id={`${idPrefix}-help`}
-            name="help"
-            aria-describedby={`${idPrefix}-help-hint`}
-            maxLength={FORM_HELP_MAX}
-            defaultValue={field?.help ?? ''}
-            data-testid={`${idPrefix}-help`}
-          />
-        </EditorField>
-
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 sm:col-span-2">
           <span className="flex items-center gap-2">
             <Checkbox
               id={`${idPrefix}-required`}
@@ -341,33 +329,37 @@ export function RegistrationFieldForm({
         </div>
       </div>
 
-      <EditorField
-        id={`${idPrefix}-options`}
-        label="Opções da escolha única"
-        hint={`Só para o tipo Escolha única: uma por linha, até ${FORM_CHOICE_OPTIONS_MAX} opções de ${FORM_CHOICE_OPTION_MAX} caracteres. Opção repetida é recusada.`}
-      >
-        <Textarea
+      {showOptions ? (
+        <EditorField
           id={`${idPrefix}-options`}
-          name="options"
-          rows={3}
-          aria-describedby={`${idPrefix}-options-hint`}
-          defaultValue={(field?.options ?? []).join('\n')}
-          data-testid={`${idPrefix}-options`}
-        />
-      </EditorField>
+          label="Opções da escolha única"
+          hint={`Só para o tipo Escolha única: uma por linha, até ${FORM_CHOICE_OPTIONS_MAX} opções de ${FORM_CHOICE_OPTION_MAX} caracteres. Opção repetida é recusada.`}
+        >
+          <Textarea
+            id={`${idPrefix}-options`}
+            name="options"
+            rows={3}
+            aria-describedby={`${idPrefix}-options-hint`}
+            value={optionsText}
+            onChange={(event) => setOptionsText(event.target.value)}
+            data-testid={`${idPrefix}-options`}
+          />
+        </EditorField>
+      ) : null}
 
       <EditorField
         id={`${idPrefix}-purpose`}
-        label="Finalidade do dado"
+        label={purposeRequired ? 'Finalidade do dado (obrigatória)' : 'Finalidade do dado'}
         hint={`Para que a resposta serve, até ${FORM_PURPOSE_MAX} caracteres. Obrigatória no tipo Texto longo — o sistema recusa o texto longo sem ela, e é o que a LGPD pede.`}
       >
         <Textarea
           id={`${idPrefix}-purpose`}
           name="purpose"
           rows={2}
-          required={purposeRequired}
+          aria-required={purposeRequired || undefined}
           aria-describedby={`${idPrefix}-purpose-hint`}
-          defaultValue={field?.purpose ?? ''}
+          value={purpose}
+          onChange={(event) => setPurpose(event.target.value)}
           data-testid={`${idPrefix}-purpose`}
         />
       </EditorField>

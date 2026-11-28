@@ -4,17 +4,10 @@ import { CalendarPlus } from 'lucide-react';
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { PERMISSIONS } from '@/domain/rbac/permissions';
 import { tenantPath } from '@/domain/tenancy/resolution';
-import { AdminForm, CheckboxField, Field, SelectField } from '@/components/admin/admin-form';
+import { AdminForm } from '@/components/admin/admin-form';
+import { EventCreateFields } from '@/components/admin/event-create-fields';
 import { saveEventAction } from '@/app/actions/admin-actions';
-import {
-  defaultEventPeriod,
-  onlineRoomFieldVisibility,
-} from '@/domain/events/event-form-defaults';
-import {
-  EVENT_MODALITY_OPTIONS,
-  type EventModalityValue,
-} from '@/domain/events/event-modality-rules';
-import { EVENT_CATEGORY_OPTIONS } from '@/domain/events/event-category-rules';
+import { defaultEventPeriod } from '@/domain/events/event-form-defaults';
 import { toLocalInput } from '@/lib/events/activity-presentation';
 import { PageHeader } from '@/components/ui';
 import { TENANT_NAV_GROUPS } from '@/components/shell/tenant-nav';
@@ -63,8 +56,6 @@ export default async function NewAdminEventPage({
   });
 
   const { startsAt: defaultStart, endsAt: defaultEnd } = defaultEventPeriod(new Date());
-  const modalidadePadrao: EventModalityValue = 'IN_PERSON';
-  const salaOnline = onlineRoomFieldVisibility({ modality: modalidadePadrao });
 
   return (
     <main className="max-w-4xl space-y-8">
@@ -95,65 +86,11 @@ export default async function NewAdminEventPage({
         >
           <input type="hidden" name="tenantSlug" value={tenantSlug} />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Identificador (URL)" name="slug" required placeholder="congresso-2027" />
-            <Field label="Título" name="title" required placeholder="Congresso de Tecnologia 2027" />
-            <Field label="Resumo" name="summary" placeholder="Uma linha sobre o evento" />
-            <Field label="Local" name="venueName" placeholder="Centro de Convenções" />
-
-            {salaOnline.show ? (
-              <Field
-                label="Endereço da sala online"
-                name="onlineUrl"
-                type="url"
-                placeholder="https://sala.exemplo.com/entrar"
-                notice={salaOnline.notice}
-                hint={salaOnline.hint}
-              />
-            ) : null}
-
-            <Field label="Cidade" name="city" placeholder="Salvador" />
-            <Field label="UF" name="state" placeholder="BA" />
-
-            <Field
-              label="Início"
-              name="startsAt"
-              type="datetime-local"
-              required
-              defaultValue={toLocalInput(defaultStart)}
-            />
-            <Field
-              label="Término"
-              name="endsAt"
-              type="datetime-local"
-              required
-              defaultValue={toLocalInput(defaultEnd)}
-            />
-            <Field label="Fuso horário" name="timezone" required defaultValue="America/Bahia" />
-            <Field label="Vagas (vazio = ilimitado)" name="capacity" type="number" min={0} />
-            <Field label="Cor principal" name="primaryColor" placeholder="#1d4ed8" hint="Hexadecimal ou oklch()" />
-            <Field label="Inscrições abrem em" name="registrationOpensAt" type="datetime-local" />
-            <Field label="Inscrições fecham em" name="registrationClosesAt" type="datetime-local" />
-
-            <CheckboxField
-              label="Este evento recebe trabalhos"
-              name="usesCall"
-              hint="Ligue para receber propostas: a janela, a rubrica e as trilhas ficam em “Chamadas de trabalhos”."
-            />
-            <SelectField label="Situação" name="status" options={STATUS_LABELS} defaultValue="DRAFT" />
-            <SelectField label="Modalidade" name="modality" options={EVENT_MODALITY_OPTIONS} defaultValue={modalidadePadrao} />
-            <SelectField
-              label="Categoria temática"
-              name="category"
-              options={[{ value: '', label: 'Sem categoria específica' }, ...EVENT_CATEGORY_OPTIONS]}
-              defaultValue=""
-            />
-            <CheckboxField
-              label="Exigir vínculo com a instituição para se inscrever"
-              name="registrationRequiresMembership"
-              hint="Desmarcado, qualquer pessoa com conta pode se inscrever (evento aberto)."
-            />
-          </div>
+          <EventCreateFields
+            defaultStartLocal={toLocalInput(defaultStart)}
+            defaultEndLocal={toLocalInput(defaultEnd)}
+            statusOptions={STATUS_LABELS}
+          />
         </AdminForm>
       </section>
     </main>

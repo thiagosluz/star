@@ -5,6 +5,7 @@ import { AlertCircle, Gavel } from 'lucide-react';
 
 import type { ActionState } from '@/app/actions/review-actions';
 import type { ReviewConsensus } from '@/domain/review/review-rules';
+import { formatRecommendationLabel } from '@/domain/review/review-ux-rules';
 import { SubmitButton as UiSubmitButton } from '@/components/ui';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
@@ -99,7 +100,7 @@ export function DecisionForm({
                 key={recommendation}
                 className="rounded border border-border px-2 py-0.5 text-muted-foreground"
               >
-                {recommendation}: {count}
+                {formatRecommendationLabel(recommendation)}: {count}
               </li>
             ))}
         </ul>
@@ -123,7 +124,9 @@ export function DecisionForm({
         {suggested ? (
           <p className="text-xs text-muted-foreground">
             Sugestão a partir da média:{' '}
-            <span className="font-medium text-foreground">{suggested}</span>{' '}
+            <span className="font-medium text-foreground">
+              {formatRecommendationLabel(suggested)}
+            </span>{' '}
             <span className="opacity-70">
               — é apenas uma sugestão; a decisão é do comitê.
             </span>

@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { AlertTriangle, ClipboardList, Info } from 'lucide-react';
+import { AlertTriangle, ClipboardList, ExternalLink, Info } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -88,6 +89,16 @@ export default async function EventRegistrationFormPage({
         title="Formulário de inscrição"
         eyebrow={TENANT_NAV_GROUPS.operacao}
         description={`${event.title} · o que o participante responde ao se inscrever neste evento. Sem nenhum campo declarado, vale o formulário de sempre.`}
+        actions={
+          <Link
+            href={tenantPath(tenantSlug, `/eventos/${event.slug}/inscricao`)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-muted"
+            data-testid="registration-form-view-public"
+          >
+            Ver página de inscrição
+            <ExternalLink className="size-3.5" aria-hidden />
+          </Link>
+        }
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
           { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },

@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { DoorOpen } from 'lucide-react';
+import { ArrowRight, DoorOpen } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/auth/guard-page';
 import { requireUuidParam } from '@/lib/validation/id';
@@ -57,6 +58,16 @@ export default async function EventRoomsPage({
         title="Salas"
         eyebrow={TENANT_NAV_GROUPS.operacao}
         description="Os espaços do evento e a capacidade de cada um — a sala é o teto das vagas da atividade."
+        actions={
+          <Link
+            href={tenantPath(tenantSlug, `/administracao/eventos/${eventId}/programacao`)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-muted"
+            data-testid="rooms-go-schedule"
+          >
+            Ir para a programação
+            <ArrowRight className="size-3.5" aria-hidden />
+          </Link>
+        }
         breadcrumbs={[
           { label: 'Painel', href: tenantPath(tenantSlug, '/dashboard') },
           { label: 'Administração', href: tenantPath(tenantSlug, '/administracao') },

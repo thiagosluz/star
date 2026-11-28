@@ -118,7 +118,16 @@ export function ReviewForm({
 
       {/* ── Notas por critério ────────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-sm font-medium">Avaliação por critério</h3>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-medium">Avaliação por critério</h3>
+          <span
+            className="text-xs text-muted-foreground tabular-nums"
+            data-testid="review-progress"
+          >
+            {rubric.filter((criterion) => Number.isFinite(scores[criterion.key])).length} de{' '}
+            {rubric.length} critérios avaliados
+          </span>
+        </div>
 
         {rubric.map((criterion) => (
           <div key={criterion.key} className="space-y-1.5">
@@ -150,6 +159,14 @@ export function ReviewForm({
               step={0.5}
               required
               value={scores[criterion.key] ?? Math.round(criterion.maxScore / 2)}
+              onPointerDown={() => {
+                if (!Number.isFinite(scores[criterion.key])) {
+                  setScores((previous) => ({
+                    ...previous,
+                    [criterion.key]: Math.round(criterion.maxScore / 2),
+                  }));
+                }
+              }}
               onChange={(event) =>
                 setScores((previous) => ({
                   ...previous,

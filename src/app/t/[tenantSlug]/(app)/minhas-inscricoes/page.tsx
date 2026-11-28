@@ -5,6 +5,11 @@ import { CalendarDays, Ticket } from 'lucide-react';
 import { getRequestContext } from '@/lib/auth/session';
 import { listMyRegistrations } from '@/lib/events/registration-read-service';
 import { tenantPath } from '@/domain/tenancy/resolution';
+import {
+  registrationStatusTone,
+  summarizeMyRegistrations,
+  type RegistrationStatusTone,
+} from '@/domain/events/registration-ux-rules';
 import { CancelRegistrationButton } from '@/components/events/cancel-registration-button';
 import { AcceptPromotionButton } from '@/components/events/accept-promotion-button';
 import { EraseFormResponsesButton } from '@/components/events/erase-form-responses-button';
@@ -21,6 +26,13 @@ const STATUS_LABEL: Record<string, string> = {
   NO_SHOW: 'Não compareceu',
   /** `PENDING` = vaga RETIDA aguardando a confirmação da equipe (FASE 34). */
   PENDING: 'Vaga reservada — falta confirmar',
+};
+
+const STATUS_TONE_CLASS: Record<RegistrationStatusTone, string> = {
+  success: 'border-success/40 bg-success-soft text-success-strong font-medium',
+  warning: 'border-warning-strong/40 bg-warning-soft text-warning-strong font-medium',
+  info: 'border-primary/30 bg-primary/10 text-primary font-medium',
+  neutral: 'border-border text-muted-foreground',
 };
 
 /** Inscrições do usuário na instituição ativa. */
@@ -48,6 +60,7 @@ export default async function MyRegistrationsPage({
     context.activeTenant.tenantId,
     context.user.id,
   );
+  const summary = summarizeMyRegistrations(registrations);
 
   return (
     <main className="max-w-4xl space-y-8">
@@ -71,15 +84,43 @@ export default async function MyRegistrationsPage({
         *  em medir — usá-la para carimbar um link novo é o caminho mais curto para
         *  ninguém revisar as imagens.
         */}
-      <p className="text-sm">
-        <Link
-          href={tenantPath(tenantSlug, '/minha-agenda')}
-          className="text-muted-foreground underline underline-offset-4"
-          data-testid="minha-agenda-link"
-        >
-          Ver a minha agenda do dia
-        </Link>
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm">
+          <Link
+            href={tenantPath(tenantSlug, '/minha-agenda')}
+            className="text-muted-foreground underline underline-offset-4"
+            data-testid="minha-agenda-link"
+          >
+            Ver a minha agenda do dia
+          </Link>
+        </p>
+
+        {summary.total > 0 ? (
+          <div
+            className="flex flex-wrap items-center gap-2 text-xs"
+            data-testid="my-registrations-summary"
+          >
+            <span className="rounded-md border border-border bg-card px-2.5 py-1 text-muted-foreground">
+              {summary.total} inscrição(ões)
+            </span>
+            {summary.confirmed + summary.attended > 0 ? (
+              <span className="rounded-md border border-success/40 bg-success-soft px-2.5 py-1 font-medium text-success-strong">
+                {summary.confirmed + summary.attended} confirmada(s)
+              </span>
+            ) : null}
+            {summary.pendingConfirmation > 0 ? (
+              <span className="rounded-md border border-warning-strong/40 bg-warning-soft px-2.5 py-1 font-medium text-warning-strong">
+                {summary.pendingConfirmation} aguardando confirmação
+              </span>
+            ) : null}
+            {summary.waitlisted > 0 ? (
+              <span className="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                {summary.waitlisted} na fila de espera
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       {registrations.length === 0 ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6">
@@ -107,7 +148,7 @@ export default async function MyRegistrationsPage({
               <div className="min-w-0 space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                    className={`rounded border px-2 py-0.5 text-xs ${STATUS_TONE_CLASS[registrationStatusTone(registration.status)]}`}
                     data-testid="registration-status"
                   >
                     {STATUS_LABEL[registration.status] ?? registration.status}

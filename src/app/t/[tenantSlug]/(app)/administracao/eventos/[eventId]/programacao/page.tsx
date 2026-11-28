@@ -10,6 +10,12 @@ import { getAdminEvent } from '@/lib/admin/catalog-service';
 import { activityStatusLabel, activityTypeLabel } from '@/domain/events/activity-rules';
 import { roomCapacityLabel } from '@/domain/events/event-rules';
 import {
+  formatWorkloadHuman,
+  groupActivitiesByDay,
+  summarizeSchedule,
+} from '@/domain/events/schedule-ux-rules';
+import { formatTimePtBr } from '@/domain/shared/date-format';
+import {
   activitySeatsLabel,
   openActivityOverflowsRoom,
   toLocalInput,
@@ -115,6 +121,9 @@ export default async function EventSchedulePage({
     })),
   ];
 
+  const scheduleSummary = summarizeSchedule(event.activities);
+  const scheduleDays = groupActivitiesByDay(event.activities, event.timezone);
+
   return (
     <main className="max-w-4xl space-y-8" data-testid="event-schedule-page">
       <PageHeader
@@ -145,51 +154,93 @@ export default async function EventSchedulePage({
           A sala é o teto das vagas e o teto do horário: o sistema recusa atividade que
           atravessa outra na mesma sala.
         </p>
-        <div className="space-y-4 pt-4">
+
+        {event.activities.length > 0 ? (
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-xs shadow-sm"
+            data-testid="schedule-summary"
+          >
+            <span className="font-medium text-foreground">
+              {scheduleSummary.totalActivities} atividade(s)
+            </span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">
+              Carga programada: <strong className="text-foreground">{scheduleSummary.totalWorkloadLabel}</strong>
+            </span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">
+              {scheduleDays.length} dia(s) de grade
+            </span>
+            {scheduleSummary.withoutRoomCount > 0 ? (
+              <>
+                <span className="text-muted-foreground">·</span>
+                <span className="font-medium text-warning-strong">
+                  {scheduleSummary.withoutRoomCount} sem sala definida
+                </span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="space-y-5 pt-2">
           {event.activities.length > 0 ? (
-            <ul
-              className="divide-y divide-border rounded-xl border border-border bg-card shadow-sm"
-              data-testid="activity-list"
-            >
-              {event.activities.map((activity) => (
-                <li key={activity.id} className="space-y-3 p-4 text-sm" data-testid={`activity-row-${activity.id}`}>
-                  <div className="space-y-0.5">
-                    <p className="flex flex-wrap items-center gap-2 font-medium">
-                      {activity.title}
-                      {/**
-                        * "Aberta" é a informação que muda o comportamento da inscrição —
-                        * o organizador precisa vê-la na lista, e não descobrir na tela de
-                        * edição. O rótulo do TIPO vem do domínio (português), nunca do
-                        * enum do banco.
-                        */}
-                      {!activity.requiresRegistration ? (
-                        <span
-                          className="rounded border border-secondary/50 px-1.5 py-0.5 text-xs text-secondary-strong"
-                          data-testid={`activity-open-${activity.id}`}
-                        >
-                          Aberta a todos os inscritos
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {activityTypeLabel(activity.type)} ·{' '}
-                      {activity.startsAt.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} ·{' '}
-                      {activity.workloadMinutes} min · {activity.roomName ?? 'sem sala'} ·{' '}
-                      {activity.requiresRegistration
-                        ? activitySeatsLabel(activity)
-                        : 'sem controle de vagas'}
-                      {activity.waitlistEnabled && activity.requiresRegistration ? ' · lista de espera' : ''} ·{' '}
-                      {activityStatusLabel(activity.status)} · {activity.registrationCount} inscrito(s)
-                    </p>
-                    {openActivityOverflowsRoom(activity, event.registrationCount) ? (
-                      <p className="text-xs text-warning-strong" data-testid={`activity-room-overflow-${activity.id}`}>
-                        A sala comporta {activity.roomCapacity} lugares e o evento já tem{' '}
-                        {event.registrationCount} inscrito(s): esta atividade é aberta a todos os inscritos, então
-                        o público não cabe no espaço. Considere uma sala maior ou uma atividade com inscrição própria
-                        e vagas limitadas.
-                      </p>
-                    ) : null}
-                  </div>
+            <div className="space-y-5" data-testid="activity-list">
+              {scheduleDays.map((day) => (
+                <div key={day.dateKey} className="space-y-2" data-testid={`schedule-day-${day.dateKey}`}>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {day.label} ({day.items.length})
+                  </h2>
+                  <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-sm">
+                    {day.items.map((activity) => (
+                      <li key={activity.id} className="space-y-3 p-4 text-sm" data-testid={`activity-row-${activity.id}`}>
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <p className="flex flex-wrap items-center gap-2 font-semibold text-foreground">
+                                {activity.title}
+                                {!activity.requiresRegistration ? (
+                                  <span
+                                    className="rounded border border-secondary/50 px-1.5 py-0.5 text-xs font-medium text-secondary-strong"
+                                    data-testid={`activity-open-${activity.id}`}
+                                  >
+                                    Aberta a todos os inscritos
+                                  </span>
+                                ) : null}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                                <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono font-medium text-primary">
+                                  {formatTimePtBr(activity.startsAt, event.timezone)}–{formatTimePtBr(activity.endsAt, event.timezone)}
+                                </span>
+                                <span className="rounded-md border border-border bg-surface-low px-2 py-0.5 text-foreground">
+                                  {activityTypeLabel(activity.type)}
+                                </span>
+                                <span className="rounded-md border border-border bg-surface-low px-2 py-0.5 text-muted-foreground">
+                                  {formatWorkloadHuman(activity.workloadMinutes)} ({activity.workloadMinutes} min)
+                                </span>
+                                <span className="rounded-md border border-border bg-surface-low px-2 py-0.5 text-muted-foreground">
+                                  {activity.roomName ?? 'Sem sala'}
+                                </span>
+                                <span className="rounded-md border border-border bg-surface-low px-2 py-0.5 text-muted-foreground">
+                                  {activity.requiresRegistration
+                                    ? activitySeatsLabel(activity)
+                                    : 'Sem controle de vagas'}
+                                  {activity.waitlistEnabled && activity.requiresRegistration ? ' · lista de espera' : ''}
+                                </span>
+                                <span className="rounded-md border border-border bg-surface-low px-2 py-0.5 text-muted-foreground">
+                                  {activityStatusLabel(activity.status)} · {activity.registrationCount} inscrito(s)
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          {openActivityOverflowsRoom(activity, event.registrationCount) ? (
+                            <p className="text-xs text-warning-strong" data-testid={`activity-room-overflow-${activity.id}`}>
+                              A sala comporta {activity.roomCapacity} lugares e o evento já tem{' '}
+                              {event.registrationCount} inscrito(s): esta atividade é aberta a todos os inscritos, então
+                              o público não cabe no espaço. Considere uma sala maior ou uma atividade com inscrição própria
+                              e vagas limitadas.
+                            </p>
+                          ) : null}
+                        </div>
 
                   <div className="flex flex-wrap items-start gap-3">
                     {/* ── Editar: os mesmos campos da criação, preenchidos ─────── */}
@@ -369,8 +420,11 @@ export default async function EventSchedulePage({
                     </InlineActionForm>
                   </div>
                 </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : (
             <p
               className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm"

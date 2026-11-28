@@ -199,10 +199,10 @@ describe('a catraca da fonte única', () => {
 
   it('as quatro telas de formulário leem a lista do domínio, e não uma cópia', () => {
     const telas = [
-      'src/app/t/[tenantSlug]/(app)/administracao/eventos/novo/page.tsx',
+      'src/components/admin/event-create-fields.tsx',
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/dados/page.tsx',
       'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/programacao/page.tsx',
-      'src/app/t/[tenantSlug]/(app)/administracao/eventos/[eventId]/programacao/nova/page.tsx',
+      'src/components/admin/activity-create-fields.tsx',
     ];
 
     for (const tela of telas) {

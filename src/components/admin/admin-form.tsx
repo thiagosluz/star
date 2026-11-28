@@ -265,6 +265,8 @@ export function Field({
   name,
   type = 'text',
   defaultValue,
+  value,
+  onChange,
   required = false,
   placeholder,
   hint,
@@ -277,6 +279,8 @@ export function Field({
   name: string;
   type?: string;
   defaultValue?: string | number | null;
+  value?: string | number;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
   required?: boolean;
   placeholder?: string;
   hint?: string;
@@ -305,7 +309,8 @@ export function Field({
         name={name}
         aria-label={label}
         type={type}
-        defaultValue={defaultValue ?? undefined}
+        {...(value !== undefined ? { value } : { defaultValue: defaultValue ?? undefined })}
+        onChange={onChange}
         required={required}
         placeholder={placeholder}
         min={min}
@@ -322,17 +327,26 @@ export function SelectField({
   name,
   options,
   defaultValue,
+  value,
+  onChange,
   hint,
 }: {
   label: string;
   name: string;
   options: readonly { value: string; label: string }[];
   defaultValue?: string | null;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLSelectElement>;
   hint?: string;
 }) {
   return (
     <AdminFieldShell label={label} hint={hint}>
-      <Select name={name} aria-label={label} defaultValue={defaultValue ?? undefined}>
+      <Select
+        name={name}
+        aria-label={label}
+        {...(value !== undefined ? { value } : { defaultValue: defaultValue ?? undefined })}
+        onChange={onChange}
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

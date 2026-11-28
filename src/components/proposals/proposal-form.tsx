@@ -15,6 +15,7 @@ import {
   MIN_ABSTRACT_LENGTH,
   MIN_KEYWORDS,
 } from '@/domain/review/submission-rules';
+import { countProposalKeywords } from '@/domain/review/review-ux-rules';
 import type { ProposalFieldSpec } from '@/domain/proposals/call-rules';
 
 /**
@@ -192,9 +193,24 @@ export function ProposalForm({
           campo que aceita 30 enquanto o servidor exige 150 faz a pessoa perder o texto
           digitado no fim do formulário.
         */}
-        <p className="text-xs text-muted-foreground">
-          De {MIN_ABSTRACT_LENGTH} a {MAX_ABSTRACT_LENGTH} caracteres.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            De {MIN_ABSTRACT_LENGTH} a {MAX_ABSTRACT_LENGTH} caracteres.
+          </span>
+          <span
+            className={`tabular-nums font-medium ${
+              formDataState.abstract.trim().length >= MIN_ABSTRACT_LENGTH &&
+              formDataState.abstract.trim().length <= MAX_ABSTRACT_LENGTH
+                ? 'text-success-strong'
+                : formDataState.abstract.trim().length > 0
+                  ? 'text-warning-strong'
+                  : 'text-muted-foreground'
+            }`}
+            data-testid="proposal-abstract-counter"
+          >
+            {formDataState.abstract.trim().length} / {MIN_ABSTRACT_LENGTH}–{MAX_ABSTRACT_LENGTH}
+          </span>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -215,10 +231,29 @@ export function ProposalForm({
             palavras distintas. O campo diz isso antes de a pessoa enviar, em vez de
             revelar no erro — e é por elas que a afinidade dos revisores é calculada.
           */}
-          <p className="text-xs text-muted-foreground">
-            De {MIN_KEYWORDS} a {MAX_KEYWORDS}, separadas por vírgula — são elas que ligam sua
-            proposta a quem tem afinidade com o tema.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>
+              De {MIN_KEYWORDS} a {MAX_KEYWORDS}, separadas por vírgula — são elas que ligam sua
+              proposta a quem tem afinidade com o tema.
+            </span>
+            {(() => {
+              const keywordCount = countProposalKeywords(formDataState.keywords);
+              const tone =
+                keywordCount >= MIN_KEYWORDS && keywordCount <= MAX_KEYWORDS
+                  ? 'text-success-strong'
+                  : keywordCount > 0
+                    ? 'text-warning-strong'
+                    : 'text-muted-foreground';
+              return (
+                <span
+                  className={`tabular-nums font-medium ${tone}`}
+                  data-testid="proposal-keywords-counter"
+                >
+                  {keywordCount} de {MIN_KEYWORDS}–{MAX_KEYWORDS}
+                </span>
+              );
+            })()}
+          </div>
         </div>
 
         <div className="space-y-1.5">
