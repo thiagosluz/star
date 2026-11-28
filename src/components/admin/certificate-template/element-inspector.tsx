@@ -29,6 +29,9 @@ import {
 } from '@/domain/certificates/certificate-layout-rules';
 import {
   STUDIO_COLOR_SWATCHES,
+  STUDIO_FONT_PREVIEW_SAMPLE,
+  buildSignatureBlockText,
+  resolveStageFontStyle,
   type StudioPageAlignAction,
 } from '@/domain/certificates/certificate-studio-rules';
 import { Button, Input, Select, Textarea } from '@/components/ui';
@@ -118,16 +121,38 @@ export function ElementInspector({
           </Select>
         </label>
       ) : element.kind === 'TEXT' || element.kind === 'BODY' ? (
-        <label className="block space-y-1 font-medium text-foreground">
-          <span>{element.kind === 'BODY' ? 'Texto do corpo (com {{variáveis}})' : 'Texto'}</span>
-          <Textarea
-            value={element.text}
-            rows={element.kind === 'BODY' ? 3 : 2}
-            className="min-h-0 py-2 text-xs"
-            onChange={(e) => onUpdate({ text: e.target.value })}
-            data-testid="inspector-text"
-          />
-        </label>
+        <div className="space-y-1.5">
+          <label className="block space-y-1 font-medium text-foreground">
+            <span>{element.kind === 'BODY' ? 'Texto do corpo (com {{variáveis}})' : 'Texto'}</span>
+            <Textarea
+              value={element.text}
+              rows={element.kind === 'BODY' ? 3 : 2}
+              className="min-h-0 py-2 text-xs"
+              onChange={(e) => onUpdate({ text: e.target.value })}
+              data-testid="inspector-text"
+            />
+          </label>
+          {element.kind === 'TEXT' ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onUpdate({
+                  text: buildSignatureBlockText({
+                    name: 'Prof. Dr. Nome da Coordenação',
+                    role: 'Coordenação Geral do Evento',
+                  }),
+                  align: 'CENTER',
+                  heightMm: Math.max(element.heightMm, 18),
+                })
+              }
+              data-testid="inspector-apply-signature-template"
+            >
+              Inserir modelo de assinatura
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="space-y-1.5">
@@ -198,6 +223,14 @@ export function ElementInspector({
               />
             </label>
           </div>
+
+          <p
+            data-testid="inspector-font-preview"
+            className="rounded-sm border border-border bg-surface-low px-2.5 py-1.5 text-sm text-foreground"
+            style={resolveStageFontStyle(element.font)}
+          >
+            {STUDIO_FONT_PREVIEW_SAMPLE}
+          </p>
 
           <div className="space-y-1.5">
             <span className="block font-medium text-foreground">Alinhamento do texto</span>

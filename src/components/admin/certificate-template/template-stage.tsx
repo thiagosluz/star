@@ -11,10 +11,13 @@ import {
   type CertificatePreviewVariant,
 } from '@/domain/certificates/certificate-layout-rules';
 import {
+  STUDIO_GRID_STEP_MM,
   ensureStageReadableColor,
   resolveStageElementPreviewText,
   resolveStageFontStyle,
+  resolveStageWidthPx,
   snapElementPosition,
+  type StudioZoomPercent,
 } from '@/domain/certificates/certificate-studio-rules';
 import {
   STAGE_HINT_ID,
@@ -29,6 +32,8 @@ export interface TemplateStageProps {
   selected: number | null;
   backgroundHref: string | null;
   previewVariant?: CertificatePreviewVariant;
+  zoom?: StudioZoomPercent;
+  snapGrid?: boolean;
   onSelect: (index: number) => void;
   onMove: (index: number, xMm: number, yMm: number) => void;
   onResize: (index: number, widthMm: number, heightMm: number) => void;
@@ -36,13 +41,15 @@ export interface TemplateStageProps {
 
 const PT_TO_MM = 0.3528;
 
-/** Palco WYSIWYG proporcional para arrastar, redimensionar, encaixar no centro e mover por teclado (mm). */
+/** Palco WYSIWYG proporcional para arrastar, redimensionar, encaixar no centro/grade e mover por teclado (mm). */
 export function TemplateStage({
   page,
   elements,
   selected,
   backgroundHref,
   previewVariant = 'FULL',
+  zoom = 100,
+  snapGrid = false,
   onSelect,
   onMove,
   onResize,
@@ -122,6 +129,7 @@ export function TemplateStage({
         widthMm: state.origin.widthMm,
         heightMm: state.origin.heightMm,
         page,
+        gridStepMm: snapGrid ? STUDIO_GRID_STEP_MM : undefined,
       });
 
       setGuides({ centerX: snapped.snapCenterX, centerY: snapped.snapCenterY });
@@ -182,12 +190,42 @@ export function TemplateStage({
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
           data-testid="template-stage"
-          className="relative w-full min-w-[1200px] overflow-hidden rounded-md border border-border bg-white shadow-sm"
-          style={{ aspectRatio: `${widthMm} / ${heightMm}` }}
+          className="relative w-full overflow-hidden rounded-md border border-border bg-white shadow-sm"
+          style={{
+            aspectRatio: `${widthMm} / ${heightMm}`,
+            minWidth: `${resolveStageWidthPx(zoom)}px`,
+          }}
         >
         {backgroundHref ? (
           // eslint-disable-next-line @next/next/no-img-element -- a arte é um data: URI do bucket privado
           <img src={backgroundHref} alt="" className="pointer-events-none absolute inset-0 size-full object-fill" />
+        ) : null}
+
+        {snapGrid ? (
+          <svg
+            aria-hidden="true"
+            data-testid="stage-grid-overlay"
+            viewBox={`0 0 ${widthMm} ${heightMm}`}
+            preserveAspectRatio="none"
+            className="pointer-events-none absolute inset-0 size-full text-border/70"
+          >
+            <defs>
+              <pattern
+                id="studio-grid-5mm"
+                width={STUDIO_GRID_STEP_MM}
+                height={STUDIO_GRID_STEP_MM}
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d={`M ${STUDIO_GRID_STEP_MM} 0 L 0 0 0 ${STUDIO_GRID_STEP_MM}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="0.25"
+                />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#studio-grid-5mm)" />
+          </svg>
         ) : null}
 
         {guides.centerX ? (

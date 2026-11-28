@@ -142,6 +142,7 @@ export function CertificateTemplateEditor({
       ) : null}
 
       <TemplateWorkbench
+        tenantSlug={tenantSlug}
         model={model}
         elements={elements}
         selected={selected}

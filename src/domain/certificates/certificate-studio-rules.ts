@@ -210,6 +210,33 @@ export const STUDIO_COLOR_SWATCHES: readonly StudioColorSwatch[] = [
 ];
 
 export const SNAP_TOLERANCE_MM = 3;
+export const STUDIO_GRID_STEP_MM = 5;
+export const STUDIO_ZOOM_LEVELS = [75, 100, 125] as const;
+export type StudioZoomPercent = (typeof STUDIO_ZOOM_LEVELS)[number];
+export const STUDIO_BASE_STAGE_WIDTH_PX = 1200;
+export const STUDIO_FONT_PREVIEW_SAMPLE = 'Certificado · AaBbCc 123';
+
+export function resolveStageWidthPx(zoom: StudioZoomPercent): number {
+  return Math.round((STUDIO_BASE_STAGE_WIDTH_PX * zoom) / 100);
+}
+
+export function buildSignatureBlockText(input: {
+  name: string;
+  role: string;
+  institution?: string;
+}): string {
+  const line = '______________________________';
+  const parts = [line, input.name.trim(), input.role.trim()];
+  if (input.institution?.trim()) {
+    parts.push(input.institution.trim());
+  }
+  return parts.filter(Boolean).join('\n');
+}
+
+function snapToGridMm(value: number, stepMm: number, maxMm: number): number {
+  const snapped = Math.round(value / stepMm) * stepMm;
+  return roundMm(Math.max(0, Math.min(maxMm, snapped)));
+}
 
 export function snapElementPosition(input: {
   xMm: number;
@@ -218,6 +245,7 @@ export function snapElementPosition(input: {
   heightMm: number;
   page: CertificatePageFormat;
   toleranceMm?: number;
+  gridStepMm?: number;
 }): { xMm: number; yMm: number; snapCenterX: boolean; snapCenterY: boolean } {
   const [pageW, pageH] = pageDimsMm(input.page);
   const tolerance = input.toleranceMm ?? SNAP_TOLERANCE_MM;
@@ -226,10 +254,22 @@ export function snapElementPosition(input: {
 
   const snapCenterX = Math.abs(input.xMm - centerX) <= tolerance;
   const snapCenterY = Math.abs(input.yMm - centerY) <= tolerance;
+  const grid = input.gridStepMm && input.gridStepMm > 0 ? input.gridStepMm : null;
+
+  const nextX = snapCenterX
+    ? centerX
+    : grid
+      ? snapToGridMm(input.xMm, grid, Math.max(0, pageW - input.widthMm))
+      : roundMm(input.xMm);
+  const nextY = snapCenterY
+    ? centerY
+    : grid
+      ? snapToGridMm(input.yMm, grid, Math.max(0, pageH - input.heightMm))
+      : roundMm(input.yMm);
 
   return {
-    xMm: snapCenterX ? centerX : roundMm(input.xMm),
-    yMm: snapCenterY ? centerY : roundMm(input.yMm),
+    xMm: nextX,
+    yMm: nextY,
     snapCenterX,
     snapCenterY,
   };
