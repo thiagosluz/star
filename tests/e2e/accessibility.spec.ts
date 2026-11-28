@@ -2716,6 +2716,7 @@ test.describe('telas autenticadas', () => {
     await expect(page.getByTestId('template-preview')).toBeVisible();
     await expect(page.getByTestId('template-preview-worst-svg')).toBeVisible();
 
+    await page.getByTestId('elements-advanced-toggle').click();
     await page.getByLabel('Tipo do elemento 3').selectOption('BODY');
     await expect(page.getByTestId('body-field-2')).toBeVisible();
     await expect(page.getByTestId('body-variable-legend-2')).toBeVisible();

@@ -66,7 +66,7 @@ export function TemplateWorkbench({
   onRedo: () => void;
 }) {
   const [stageVariant, setStageVariant] = useState<CertificatePreviewVariant>('FULL');
-  const [zoom, setZoom] = useState<StudioZoomPercent>(100);
+  const [zoom, setZoom] = useState<StudioZoomPercent>('fit');
   const [snapGrid, setSnapGrid] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -135,7 +135,7 @@ export function TemplateWorkbench({
         />
       ) : null}
 
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
@@ -161,7 +161,7 @@ export function TemplateWorkbench({
                         : 'text-muted-foreground hover:text-foreground'
                         }`}
                     >
-                      {level}%
+                      {level === 'fit' ? 'Ajustar' : `${level}%`}
                     </button>
                   ))}
                 </div>

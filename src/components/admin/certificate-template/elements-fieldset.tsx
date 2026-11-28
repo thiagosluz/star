@@ -33,7 +33,7 @@ export function TemplateElementsFieldset({
   onAddElement: () => void;
   onRemoveSelected: () => void;
 }) {
-  return (
+  const fieldsetContent = (
     <fieldset className="space-y-3">
       <legend className="text-sm font-semibold">Elementos da página</legend>
 
@@ -43,7 +43,7 @@ export function TemplateElementsFieldset({
       </p>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] text-xs">
+        <table className="w-full min-w-[1040px] text-xs">
           <thead className="text-left text-muted-foreground">
             <tr>
               <th className="p-1">#</th>
@@ -120,5 +120,24 @@ export function TemplateElementsFieldset({
         </p>
       )}
     </fieldset>
+  );
+
+  if (!interactive) {
+    return fieldsetContent;
+  }
+
+  return (
+    <details
+      className="rounded-lg border border-border bg-card p-4"
+      data-testid="elements-advanced-details"
+    >
+      <summary
+        className="cursor-pointer text-sm font-medium text-foreground"
+        data-testid="elements-advanced-toggle"
+      >
+        Modo avançado: tabela de coordenadas em milímetros ({elementsCount} elementos)
+      </summary>
+      <div className="mt-4">{fieldsetContent}</div>
+    </details>
   );
 }

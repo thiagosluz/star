@@ -48,7 +48,7 @@ export function TemplateStage({
   selected,
   backgroundHref,
   previewVariant = 'FULL',
-  zoom = 100,
+  zoom = 'fit',
   snapGrid = false,
   onSelect,
   onMove,
@@ -193,7 +193,7 @@ export function TemplateStage({
           className="relative w-full overflow-hidden rounded-md border border-border bg-white shadow-sm"
           style={{
             aspectRatio: `${widthMm} / ${heightMm}`,
-            minWidth: `${resolveStageWidthPx(zoom)}px`,
+            ...(resolveStageWidthPx(zoom) ? { minWidth: `${resolveStageWidthPx(zoom)}px` } : {}),
           }}
         >
         {backgroundHref ? (
@@ -266,15 +266,25 @@ export function TemplateStage({
           return (
             <div
               key={`${element.id}-${index}`}
-              role="button"
+              role="group"
+              aria-roledescription="elemento do certificado"
               tabIndex={0}
               aria-label={accessibleLabel}
               aria-describedby={STAGE_HINT_ID}
-              title={`Elemento ${index + 1}: ${label}`}
+              title={`Elemento ${index + 1}: ${label} (duplo clique para editar)`}
               data-testid={`stage-element-${index}`}
               onPointerDown={(event) => {
                 onSelect(index);
                 beginDrag(event, index, 'move');
+              }}
+              onDoubleClick={() => {
+                onSelect(index);
+                window.requestAnimationFrame(() => {
+                  const target =
+                    document.querySelector<HTMLElement>('[data-testid="inspector-text"]') ??
+                    document.querySelector<HTMLElement>('[data-testid="inspector-convert-editable"]');
+                  target?.focus();
+                });
               }}
               onKeyDown={(event) => handleKeyDown(event, index)}
               onFocus={() => onSelect(index)}

@@ -28,9 +28,11 @@ import {
   MAX_LAYOUT_ELEMENTS,
 } from '@/domain/certificates/certificate-layout-rules';
 import {
+  STUDIO_BODY_VARIABLE_CHIPS,
   STUDIO_COLOR_SWATCHES,
   STUDIO_FONT_PREVIEW_SAMPLE,
   buildSignatureBlockText,
+  convertVariableElementToEditable,
   resolveStageFontStyle,
   type StudioPageAlignAction,
 } from '@/domain/certificates/certificate-studio-rules';
@@ -104,35 +106,112 @@ export function ElementInspector({
         </div>
       </div>
 
+      <label className="block space-y-1 font-medium text-foreground">
+        <span>Tipo de elemento</span>
+        <Select
+          value={element.kind}
+          onChange={(e) => {
+            const nextKind = e.target.value as EditorElement['kind'];
+            if (nextKind === 'BODY') {
+              onUpdate({
+                kind: 'BODY',
+                variable: '',
+                text:
+                  element.text.trim() ||
+                  'Certificamos que {{nome}} participou de {{evento}}, realizado em {{periodo}}, com carga horária de {{carga_horaria}}.',
+                heightMm: Math.max(element.heightMm, 32),
+              });
+              return;
+            }
+            if (nextKind === 'TEXT') {
+              onUpdate({
+                kind: 'TEXT',
+                variable: '',
+                text: element.text.trim() || 'Texto personalizado',
+              });
+              return;
+            }
+            if (nextKind === 'VARIABLE') {
+              onUpdate({ kind: 'VARIABLE', variable: element.variable || 'nome', text: '' });
+              return;
+            }
+            onUpdate({ kind: 'QR', variable: '', text: '' });
+          }}
+          data-testid="inspector-kind"
+        >
+          <option value="TEXT">Texto livre (editável)</option>
+          <option value="BODY">Corpo com variáveis {'{{...}}'}</option>
+          <option value="VARIABLE">Campo automático do sistema</option>
+          <option value="QR">QR Code de validação</option>
+        </Select>
+      </label>
+
       {element.kind === 'VARIABLE' ? (
-        <label className="block space-y-1 font-medium text-foreground">
-          <span>Campo dinâmico</span>
-          <Select
-            value={element.variable}
-            onChange={(e) => onUpdate({ variable: e.target.value })}
-            data-testid="inspector-variable"
-          >
-            <option value="">Escolha uma variável…</option>
-            {CERTIFICATE_VARIABLES.map((v) => (
-              <option key={v.key} value={v.key}>
-                {v.label}
-              </option>
-            ))}
-          </Select>
-        </label>
+        <div className="space-y-2">
+          <label className="block space-y-1 font-medium text-foreground">
+            <span>Campo dinâmico</span>
+            <Select
+              value={element.variable}
+              onChange={(e) => onUpdate({ variable: e.target.value })}
+              data-testid="inspector-variable"
+            >
+              <option value="">Escolha uma variável…</option>
+              {CERTIFICATE_VARIABLES.map((v) => (
+                <option key={v.key} value={v.key}>
+                  {v.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <div className="space-y-1.5 rounded-md border border-border bg-surface-low p-2.5">
+            <p className="text-xs text-muted-foreground">
+              Preenchido automaticamente em cada certificado emitido. Quer escrever ou alterar o texto?
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdate(convertVariableElementToEditable(element))}
+              data-testid="inspector-convert-editable"
+            >
+              Personalizar este texto
+            </Button>
+          </div>
+        </div>
       ) : element.kind === 'TEXT' || element.kind === 'BODY' ? (
         <div className="space-y-1.5">
           <label className="block space-y-1 font-medium text-foreground">
             <span>{element.kind === 'BODY' ? 'Texto do corpo (com {{variáveis}})' : 'Texto'}</span>
             <Textarea
               value={element.text}
-              rows={element.kind === 'BODY' ? 3 : 2}
+              rows={element.kind === 'BODY' ? 4 : 2}
               className="min-h-0 py-2 text-xs"
               onChange={(e) => onUpdate({ text: e.target.value })}
               data-testid="inspector-text"
             />
           </label>
-          {element.kind === 'TEXT' ? (
+          {element.kind === 'BODY' ? (
+            <div className="space-y-1">
+              <span className="block text-xs text-muted-foreground">Inserir campo automático no texto:</span>
+              <div className="flex flex-wrap gap-1">
+                {STUDIO_BODY_VARIABLE_CHIPS.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={() =>
+                      onUpdate({
+                        text: `${element.text}${element.text.endsWith(' ') || !element.text ? '' : ' '}{{${chip.key}}}`,
+                      })
+                    }
+                    data-testid={`inspector-insert-var-${chip.key}`}
+                    className="rounded-sm border border-border bg-surface-low px-2 py-0.5 text-xs font-medium text-foreground transition hover:bg-muted"
+                  >
+                    + {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
             <Button
               type="button"
               variant="outline"
@@ -151,7 +230,7 @@ export function ElementInspector({
             >
               Inserir modelo de assinatura
             </Button>
-          ) : null}
+          )}
         </div>
       ) : null}
 

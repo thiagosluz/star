@@ -353,7 +353,7 @@ export function CertificateTemplatesScreen({ data }: { data: CertificateTemplate
                   <CardContent className="flex h-full flex-col justify-between gap-3">
                     <div className="space-y-2.5">
                       <div
-                        className="w-full overflow-hidden rounded-md border border-border bg-surface-low"
+                        className="w-full overflow-hidden rounded-md border border-border bg-surface-low [&_svg]:block [&_svg]:size-full"
                         style={{ aspectRatio: aspect }}
                         data-testid={`preset-thumbnail-${item.id}`}
                         // SVG gerado no servidor por `renderCertificateLayoutSvg` a partir dos presets puros.
@@ -369,11 +369,11 @@ export function CertificateTemplatesScreen({ data }: { data: CertificateTemplate
                     </div>
 
                     <Link
-                      href={`${basePath}?novo=${item.id}`}
+                      href={`${basePath}?novo=${item.id}#editor`}
                       className="inline-flex w-fit items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
                       data-testid={`preset-use-${item.id}`}
                     >
-                      <Plus className="size-3.5" aria-hidden /> Usar este modelo
+                      <Plus className="size-3.5" aria-hidden /> Criar a partir deste modelo
                     </Link>
                   </CardContent>
                 </Card>
@@ -385,14 +385,18 @@ export function CertificateTemplatesScreen({ data }: { data: CertificateTemplate
 
       {/* ── Editor ───────────────────────────────────────────────────────────── */}
       {data.editorModel ? (
-        <section className="space-y-4" aria-labelledby="editor">
+        <section id="editor" className="scroll-mt-4 space-y-4" aria-labelledby="editor-heading">
           <SectionHeading
             title={
               data.editingName
                 ? `Editando: ${data.editingName}`
                 : `Novo modelo a partir de "${data.presetName ?? 'modelo pronto'}"`
             }
-            description="Arraste no palco para posicionar ou digite as medidas. A prévia sai do mesmo renderizador do PDF emitido."
+            description={
+              data.editingName
+                ? 'Clique em qualquer texto no palco para editar ou arraste para posicionar. A prévia sai do mesmo renderizador do PDF emitido.'
+                : 'Rascunho aberto — defina o nome e para quem é este certificado logo abaixo, personalize no palco e clique em Criar e salvar modelo.'
+            }
           />
 
           {/**

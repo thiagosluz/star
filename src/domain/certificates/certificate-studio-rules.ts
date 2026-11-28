@@ -211,13 +211,46 @@ export const STUDIO_COLOR_SWATCHES: readonly StudioColorSwatch[] = [
 
 export const SNAP_TOLERANCE_MM = 3;
 export const STUDIO_GRID_STEP_MM = 5;
-export const STUDIO_ZOOM_LEVELS = [75, 100, 125] as const;
+export const STUDIO_ZOOM_LEVELS = ['fit', 75, 100, 125] as const;
 export type StudioZoomPercent = (typeof STUDIO_ZOOM_LEVELS)[number];
 export const STUDIO_BASE_STAGE_WIDTH_PX = 1200;
 export const STUDIO_FONT_PREVIEW_SAMPLE = 'Certificado · AaBbCc 123';
 
-export function resolveStageWidthPx(zoom: StudioZoomPercent): number {
+export const STUDIO_BODY_VARIABLE_CHIPS: readonly { readonly key: string; readonly label: string }[] = [
+  { key: 'nome', label: 'Nome' },
+  { key: 'evento', label: 'Evento' },
+  { key: 'atividade', label: 'Atividade' },
+  { key: 'periodo', label: 'Período' },
+  { key: 'carga_horaria', label: 'Carga horária' },
+  { key: 'cpf', label: 'CPF' },
+];
+
+export function resolveStageWidthPx(zoom: StudioZoomPercent): number | null {
+  if (zoom === 'fit') return null;
   return Math.round((STUDIO_BASE_STAGE_WIDTH_PX * zoom) / 100);
+}
+
+/**
+ * Converte um elemento automático (`VARIABLE`) em texto editável pelo organizador
+ * mantendo posição, fonte, tamanho, cor e alinhamento (FASE 134 · ADR-525).
+ */
+export function convertVariableElementToEditable(
+  element: StudioElementLike,
+): Partial<StudioElementLike> {
+  if (element.variable === 'corpo') {
+    return {
+      kind: 'BODY',
+      variable: '',
+      text: 'Certificamos que {{nome}} participou de {{evento}}, realizado em {{periodo}}, com carga horária de {{carga_horaria}}.',
+      heightMm: Math.max(element.heightMm, 32),
+    };
+  }
+
+  return {
+    kind: 'TEXT',
+    variable: '',
+    text: resolveStageElementPreviewText(element, 'FULL'),
+  };
 }
 
 export function buildSignatureBlockText(input: {
